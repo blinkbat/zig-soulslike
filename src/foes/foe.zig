@@ -4,6 +4,7 @@ const mathx = @import("../core/mathx.zig");
 const combat = @import("../play/combat.zig");
 const gfx = @import("../gfx/gfx.zig");
 const wf = @import("../world/worldfmt.zig");
+const caves = @import("../world/caves.zig");
 const foestat = @import("foestat.zig");
 const props = @import("../props/props.zig");
 const fen = @import("fenlurker.zig");
@@ -147,7 +148,7 @@ pub fn poiseCurve(k: wf.FoeKind) f32 {
     return switch (homeOf(k)) {
         .any, .ruins, .village, .wetland => 1.00,
         .rock, .forest => 1.15,
-        .ash, .bone, .firelands => 1.35,
+        .ash, .bone, .firelands, .palace => 1.35,
         .fungal => 1.55,
     };
 }
@@ -253,6 +254,10 @@ pub const PARRY_LEAD: f32 = 0.18;
 pub fn inParryWindow(left: f32) bool {
     return left >= 0 and left <= PARRY_LEAD;
 }
+
+/// The slowest frame a catch may not be skipped at — a blow whose impact fell between two frames still lands
+/// on the one that crossed it. `Parry.window` and `Parry.contact` are the two readers and must agree.
+pub const CONTACT_FRAME: f32 = 1.0 / 30.0;
 
 pub fn setParry(foes: anytype, p: Parry) void {
     for (foes) |*f| {
@@ -838,18 +843,22 @@ const WOUND_HAZE_HEAVY = 3;
 const WOUND_HAZE_LIGHT = 2;
 pub const WOUND_PARTS = 1 + WOUND_HAZE_HEAVY;
 
+pub const Contact = enum { hit, block, parry };
+
+pub fn contactFlash(pool: []Particle, head: *usize, at: rl.Vector3, dir: rl.Vector3, kind: Contact, scale: f32) void {
+    const r: f32 = switch (kind) { .hit => 0.20, .block => 0.24, .parry => 0.48 };
+    emitPart(pool, head, .{
+        .p = at, .v = mathx.scaleV(dir, 0.35),
+        .life = if (kind == .parry) 0.12 else 0.085,
+        .r0 = r * scale, .r1 = r * scale * 0.20,
+        .col = if (kind == .parry) mathx.rgba(255, 239, 174, 245) else HIT_FLASH,
+        .style = .flash, .add = true,
+    });
+}
+
 fn woundImpact(self: anytype, s: Strike, heavy: bool) void {
     if (comptime !@hasField(std.meta.Child(@TypeOf(self)), "parts")) return;
-    const fr: f32 = if (heavy) 0.15 else 0.10;
-    emitPart(&self.parts, &self.fxHead, .{
-        .p = s.contact,
-        .v = mathx.scaleV(s.dir, 0.6),
-        .life = 0.07,
-        .r0 = fr * self.scale,
-        .r1 = fr * self.scale * 0.3,
-        .col = HIT_FLASH,
-        .add = true,
-    });
+    contactFlash(&self.parts, &self.fxHead, s.contact, s.dir, .hit, self.scale * (if (heavy) @as(f32, 1.25) else 0.85));
     var i: usize = 0;
     const n: usize = if (heavy) WOUND_HAZE_HEAVY else WOUND_HAZE_LIGHT;
     while (i < n) : (i += 1) {
@@ -857,11 +866,12 @@ fn woundImpact(self: anytype, s: Strike, heavy: bool) void {
             .p = mathx.addV(s.contact, mathx.scaleV(randomUnit(&self.fxRng), 0.06 * self.scale)),
             .v = v3(s.dir.x * self.fxRng.range(0.4, 0.9), self.fxRng.range(0.2, 0.6), s.dir.z * self.fxRng.range(0.4, 0.9)),
             .life = self.fxRng.range(0.45, 0.75),
-            .r0 = 0.05 * self.scale,
-            .r1 = 0.16 * self.scale,
+            .r0 = 0.10 * self.scale,
+            .r1 = 0.32 * self.scale,
             .col = HIT_HAZE,
             .grav = -0.25,
             .drag = 2.5,
+            .style = .smoke,
         });
     }
 }
@@ -918,7 +928,7 @@ pub const Parry = struct {
     }
 
     pub fn window(self: *const Parry, left: f32) bool {
-        return inParryWindow(left) or (self.live and left < 0 and left >= -1.0 / 30.0);
+        return inParryWindow(left) or (self.live and left < 0 and left >= -CONTACT_FRAME);
     }
 
     // Timing earns the catch; the moving blow delivers it. No attack clock is changed.
@@ -934,7 +944,7 @@ pub const Parry = struct {
             self.pending = null;
             return false;
         }
-        const arrives = if (touching) |hit| hit else left <= 0 and left >= -1.0 / 30.0;
+        const arrives = if (touching) |hit| hit else left <= 0 and left >= -CONTACT_FRAME;
         if (self.live and (inParryWindow(left) or arrives)) self.pending = .{ .reach = radius, .left = left };
         if (self.pending == null) return false;
         self.pending.?.left = left;
@@ -1175,6 +1185,15 @@ pub fn fxStream(seed: f32, mul: f32, salt: u64) mathx.Rng {
     return mathx.Rng.init(@as(u64, @intFromFloat(@abs(seed) * mul)) +% salt);
 }
 
+const particleart = @import("../gfx/particleart.zig");
+pub const ParticleStyle = particleart.Style;
+
+/// The sprite atlas, made at BOOT. Solved on the first mote instead it is a 44 ms stall (measured, Debug:
+/// 44 cells of 96x96 of value noise) on the frame something first emits, which is the frame a fight starts.
+pub fn buildParticleAtlas() void {
+    _ = particleart.texture();
+}
+
 pub const Particle = struct {
     p: rl.Vector3 = mathx.zero3,
     v: rl.Vector3 = mathx.zero3,
@@ -1194,6 +1213,9 @@ pub const Particle = struct {
     add: bool = false,
     landed: bool = false,
     floor: ?f32 = null,
+    style: ParticleStyle = .auto,
+    seed: f32 = 0,
+    curl: f32 = 0,
 };
 
 pub fn emitTicks(acc: *f32, dt: f32, rate: f32, cap: usize) usize {
@@ -1254,6 +1276,7 @@ test "A SLOW EMITTER RUNS AT ITS OWN RATE — a cap of one is not a hitch every 
 pub fn emitPart(pool: []Particle, head: *usize, q: Particle) void {
     pool[head.*] = q;
     pool[head.*].max = q.life;
+    pool[head.*].seed = @mod(@as(f32, @floatFromInt(head.*)) * 2.399963 + q.p.x * 1.37 + q.p.z * 0.73, std.math.tau);
     head.* = (head.* + 1) % pool.len;
 }
 
@@ -1274,6 +1297,7 @@ pub const Spray = struct {
     bounce: f32 = 0,
     splat: f32 = 0,
     drag: f32 = 0,
+    style: ParticleStyle = .auto,
 };
 
 pub fn spray(pool: []Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32, scale: f32, s: Spray) void {
@@ -1300,6 +1324,8 @@ pub fn spray(pool: []Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3, di
             .bounce = s.bounce,
             .splat = s.splat,
             .drag = s.drag,
+            .style = s.style,
+            .add = s.style == .spark,
         });
     }
 }
@@ -1763,7 +1789,7 @@ pub fn rekindle(self: anytype, frac: f32) void {
     self.t = 0;
 }
 
-const SPLAT_HOLD: f32 = 0.7;
+const SPLAT_HOLD: f32 = 1.4;
 
 pub fn tickParticles(pool: []Particle, dt: f32, floor: f32) void {
     for (pool) |*q| {
@@ -1774,6 +1800,12 @@ pub fn tickParticles(pool: []Particle, dt: f32, floor: f32) void {
         q.p.y += q.v.y * dt;
         q.p.z += q.v.z * dt;
         q.v.y -= q.grav * dt;
+        if (q.curl != 0) {
+            const a = q.curl * dt;
+            const x = q.v.x;
+            q.v.x = x * mathx.cosf(a) - q.v.z * mathx.sinf(a);
+            q.v.z = x * mathx.sinf(a) + q.v.z * mathx.cosf(a);
+        }
         if (q.drag > 0) {
             const k = 1.0 / (1.0 + q.drag * dt);
             q.v.x *= k;
@@ -1784,6 +1816,8 @@ pub fn tickParticles(pool: []Particle, dt: f32, floor: f32) void {
         if (q.p.y < at) {
             q.p.y = at;
             if (q.splat > 0) {
+                q.r0 = mathx.maxF(q.r0 * 0.72, q.r1);
+                q.r1 = q.r0 * 1.18;
                 q.landed = true;
                 q.v = mathx.zero3;
                 q.life = SPLAT_HOLD;
@@ -1881,22 +1915,16 @@ pub fn Trail(comptime N: usize) type {
 
 const STREAK_MIN_RADII: f32 = 1.6;
 
-var moteSoft: ?rl.Texture2D = null;
-var moteGrain: ?rl.Texture2D = null;
+/// The alpha pool sorts back to front, and the depth off the lens is solved ONCE A MOTE rather than once a
+/// COMPARE: at 1,536 motes that is 1,536 dot products a frame against ~33,000, measured 0.196 ms against 0.552.
+const Ordered = struct { depth: f32, at: u32 };
+var particleOrder = std.ArrayList(Ordered).init(std.heap.page_allocator);
 
-fn moteTexture(density: f32) rl.Texture2D {
-    const img = rl.genImageGradientRadial(64, 64, density, mathx.rgba(255, 255, 255, 255), mathx.rgba(255, 255, 255, 0));
-    defer rl.unloadImage(img);
-    const tex = rl.loadTextureFromImage(img) catch @panic("mote sprite");
-    rl.setTextureFilter(tex, .bilinear);
-    return tex;
+fn farthestFirst(_: void, a: Ordered, b: Ordered) bool {
+    return a.depth > b.depth;
 }
 
 pub fn drawParticles(pool: []const Particle) void {
-    if (moteSoft == null) {
-        moteSoft = moteTexture(0.12);
-        moteGrain = moteTexture(0.55);
-    }
     var any = false;
     for (pool) |*q| {
         if (q.life > 0 and motesVisible(q.p, q.r0 + q.r1)) {
@@ -1905,6 +1933,7 @@ pub fn drawParticles(pool: []const Particle) void {
         }
     }
     if (!any) return;
+    _ = particleart.texture();
     rl.gl.rlDisableBackfaceCulling();
     rl.gl.rlDisableDepthMask();
     drawPass(pool, false);
@@ -1915,37 +1944,48 @@ pub fn drawParticles(pool: []const Particle) void {
     rl.gl.rlEnableBackfaceCulling();
 }
 
-fn wantsSoft(q: *const Particle) bool {
-    return q.add or q.landed or q.r1 > q.r0;
+pub fn particleStyle(q: *const Particle) ParticleStyle {
+    if (q.style != .auto) return q.style;
+    if (q.splat > 0) return .blood;
+    if (q.add) return if (q.stretch > 0) .spark else if (q.max <= 0.10 and q.r0 >= 0.08) .flash else .glow;
+    if (q.r1 > q.r0) return .smoke;
+    return .grain;
+}
+
+fn cloudStyle(style: ParticleStyle) bool {
+    return style == .smoke or style == .spore or style == .chaos;
 }
 
 fn drawPass(pool: []const Particle, add: bool) void {
-    var open: u32 = 0;
-    for (pool) |*q| {
-        if (q.life <= 0 or q.add != add) continue;
+    particleOrder.clearRetainingCapacity();
+    for (pool, 0..) |*q, i| {
+        if (q.life <= 0 or q.add != add or !motesVisible(q.p, q.r0 + q.r1)) continue;
+        const depth = mathx.dotV(mathx.subV(q.p, lensAt), lensFwd);
+        particleOrder.append(.{ .depth = depth, .at = @intCast(i) }) catch @panic("particle order");
+    }
+    if (particleOrder.items.len == 0) return;
+    if (!add) std.sort.pdq(Ordered, particleOrder.items, {}, farthestFirst);
+    rl.gl.rlSetTexture(particleart.texture().id);
+    rl.gl.rlBegin(rl.gl.rl_quads);
+    for (particleOrder.items) |row| {
+        const q = &pool[row.at];
         const frac = mathx.clampF(q.life / q.max, 0, 1);
         const rad = mathx.lerpF(q.r1, q.r0, frac);
         if (rad <= 0.0004) continue;
         if (!motesVisible(q.p, rad)) continue;
         const col = if (q.col1) |c1| mathx.lerpColor(q.col, c1, 1.0 - frac) else q.col;
-        const a = mathx.u8f(@as(f32, @floatFromInt(col.a)) * frac);
-        const soft = wantsSoft(q);
-        const want = (if (soft) moteSoft else moteGrain).?.id;
-        if (want != open) {
-            if (open != 0) rl.gl.rlEnd();
-            rl.gl.rlSetTexture(want);
-            rl.gl.rlBegin(rl.gl.rl_quads);
-            open = want;
-        }
+        const style = particleStyle(q);
+        const volume = cloudStyle(style);
+        const fade = if (volume) mathx.smoothstep(0, 0.14, 1 - frac) * mathx.smoothstep(0, 0.48, frac) else if (q.landed) mathx.smoothstep(0, 0.5, frac) else @sqrt(frac);
+        const a = mathx.u8f(@as(f32, @floatFromInt(col.a)) * fade);
         rl.gl.rlColor4ub(col.r, col.g, col.b, a);
         if (q.landed) {
             const s = rad * q.splat;
-            quad(
-                v3(q.p.x - s, q.p.y + 0.005, q.p.z - s),
-                v3(q.p.x + s, q.p.y + 0.005, q.p.z - s),
-                v3(q.p.x + s, q.p.y + 0.005, q.p.z + s),
-                v3(q.p.x - s, q.p.y + 0.005, q.p.z + s),
-            );
+            const x = v3(mathx.cosf(q.seed) * s, 0, mathx.sinf(q.seed) * s);
+            const z = v3(-x.z * 0.72, 0, x.x * 0.72);
+            const p = mathx.addV(q.p, v3(0, 0.008, 0));
+            particleart.quad(style, q.seed, .{ mathx.subV(mathx.subV(p, x), z), mathx.subV(mathx.addV(p, x), z),
+                mathx.addV(mathx.addV(p, x), z), mathx.addV(mathx.subV(p, x), z) });
             continue;
         }
         if (q.stretch > 0) {
@@ -1960,38 +2000,115 @@ fn drawPass(pool: []const Particle, add: bool) void {
                 if (sl > 1e-4) {
                     side = mathx.scaleV(side, rad / sl);
                     const tail = mathx.scaleV(axis, sp * q.stretch);
-                    quad(
+                    particleart.quad(style, q.seed, .{
                         v3(q.p.x - tail.x - side.x, q.p.y - tail.y - side.y, q.p.z - tail.z - side.z),
-                        v3(q.p.x - side.x, q.p.y - side.y, q.p.z - side.z),
-                        v3(q.p.x + side.x, q.p.y + side.y, q.p.z + side.z),
                         v3(q.p.x - tail.x + side.x, q.p.y - tail.y + side.y, q.p.z - tail.z + side.z),
-                    );
+                        v3(q.p.x + side.x, q.p.y + side.y, q.p.z + side.z),
+                        v3(q.p.x - side.x, q.p.y - side.y, q.p.z - side.z),
+                    });
                     continue;
                 }
             }
         }
-        quad(
-            v3(q.p.x - (lensRight.x + lensUp.x) * rad, q.p.y - (lensRight.y + lensUp.y) * rad, q.p.z - (lensRight.z + lensUp.z) * rad),
-            v3(q.p.x + (lensRight.x - lensUp.x) * rad, q.p.y + (lensRight.y - lensUp.y) * rad, q.p.z + (lensRight.z - lensUp.z) * rad),
-            v3(q.p.x + (lensRight.x + lensUp.x) * rad, q.p.y + (lensRight.y + lensUp.y) * rad, q.p.z + (lensRight.z + lensUp.z) * rad),
-            v3(q.p.x - (lensRight.x - lensUp.x) * rad, q.p.y - (lensRight.y - lensUp.y) * rad, q.p.z - (lensRight.z - lensUp.z) * rad),
-        );
+        const age = q.max - q.life;
+        const roll = if (style == .flame) mathx.sinf(q.seed + age * 5) * 0.55 else q.seed + age * (if (volume) @as(f32, 0.22) else 0.8);
+        const cs = mathx.cosf(roll);
+        const sn = mathx.sinf(roll);
+        const wide = rad * (if (style == .flame) @as(f32, 0.70) else 1);
+        const tall = rad * (if (style == .flame) 1.25 + 0.45 * mathx.sinf(q.seed) else @as(f32, 1));
+        const right = mathx.scaleV(mathx.addV(mathx.scaleV(lensRight, cs), mathx.scaleV(lensUp, sn)), wide);
+        const up = mathx.scaleV(mathx.subV(mathx.scaleV(lensUp, cs), mathx.scaleV(lensRight, sn)), tall);
+        const drift = if (volume) rad * 0.20 else 0;
+        const p = mathx.addV(q.p, v3(mathx.sinf(q.seed + age * 1.7) * drift, mathx.sinf(q.seed * 2 + age) * drift, mathx.cosf(q.seed + age * 1.3) * drift));
+        particleart.quad(style, q.seed, .{ mathx.subV(mathx.subV(p, right), up), mathx.subV(mathx.addV(p, right), up),
+            mathx.addV(mathx.addV(p, right), up), mathx.addV(mathx.subV(p, right), up) });
     }
-    if (open != 0) {
-        rl.gl.rlEnd();
-        rl.gl.rlSetTexture(0);
+    rl.gl.rlEnd();
+    rl.gl.rlSetTexture(0);
+}
+
+pub const CloudLook = struct {
+    at: rl.Vector3,
+    radius: f32,
+    height: f32,
+    time: f32,
+    amount: f32 = 1,
+    seed: u64 = 1,
+    style: ParticleStyle = .spore,
+    col: rl.Color,
+    shade: rl.Color,
+};
+
+pub const CLOUD_LOBES = 48;
+
+pub fn cloudParticles(out: *[CLOUD_LOBES]Particle, look: CloudLook) void {
+    var rng = mathx.Rng.init(look.seed);
+    for (out, 0..) |*q, i| {
+        const a = rng.angle();
+        const r = @sqrt(rng.float()) * look.radius * 0.72;
+        const period = rng.range(2.8, 5.2);
+        const phase = @mod(look.time / period + rng.float(), 1.0);
+        const size = look.radius * rng.range(0.24, 0.43);
+        const y = rng.range(0.18, 0.72) * look.height;
+        const spin = a + look.time * (if (look.style == .chaos) @as(f32, -0.20) else 0.055);
+        const rise = (phase - 0.5) * look.height * 0.18;
+        const tint = mathx.lerpColor(look.col, look.shade, rng.range(0.1, 0.75));
+        q.* = .{
+            .p = v3(look.at.x + mathx.cosf(spin) * r, look.at.y + y + rise, look.at.z + mathx.sinf(spin) * r),
+            .max = period, .life = period * (1 - phase),
+            .r0 = size * 0.72, .r1 = size,
+            .col = mathx.withAlpha(tint, mathx.u8f(@as(f32, @floatFromInt(tint.a)) * mathx.clampF(look.amount, 0, 1))),
+            .style = look.style, .seed = a,
+        };
+        if (i % 6 == 0) {
+            q.r0 = size * 0.08;
+            q.r1 = size * 0.035;
+            q.style = if (look.style == .chaos) .spark else if (look.style == .frost) .frost else .grain;
+            q.col = mathx.withAlpha(look.col, mathx.u8f(190 * mathx.clampF(look.amount, 0, 1)));
+        }
     }
 }
 
-fn quad(c0: rl.Vector3, c1: rl.Vector3, c2: rl.Vector3, c3: rl.Vector3) void {
-    rl.gl.rlTexCoord2f(0, 0);
-    rl.gl.rlVertex3f(c0.x, c0.y, c0.z);
-    rl.gl.rlTexCoord2f(1, 0);
-    rl.gl.rlVertex3f(c1.x, c1.y, c1.z);
-    rl.gl.rlTexCoord2f(1, 1);
-    rl.gl.rlVertex3f(c2.x, c2.y, c2.z);
-    rl.gl.rlTexCoord2f(0, 1);
-    rl.gl.rlVertex3f(c3.x, c3.y, c3.z);
+pub fn drawCloud(look: CloudLook) void {
+    if (look.amount <= 0.005 or look.radius <= 0.01 or !motesVisible(look.at, look.radius + look.height)) return;
+    var pool: [CLOUD_LOBES]Particle = undefined;
+    cloudParticles(&pool, look);
+    drawParticles(&pool);
+}
+
+pub fn drawAura(at: rl.Vector3, radius: f32, time: f32, style: ParticleStyle, core: rl.Color, edge: rl.Color) void {
+    if (radius <= 0.005 or !motesVisible(at, radius * 2)) return;
+    var pool: [12]Particle = undefined;
+    var rng = mathx.Rng.init(0xA07A);
+    for (&pool, 0..) |*q, i| {
+        const a = rng.angle() + time * (if (style == .chaos) @as(f32, -2.1) else 0.6);
+        const u = @mod(time * rng.range(0.7, 1.4) + rng.float(), 1);
+        const r = radius * (if (style == .chaos) 1 - u else u) * 0.7;
+        q.* = .{
+            .p = mathx.addV(at, v3(mathx.cosf(a) * r, (u - 0.4) * radius * 1.1, mathx.sinf(a) * r)),
+            .life = 1 - u, .max = 1, .r0 = radius * 0.7, .r1 = radius * 0.22,
+            .col = if (i % 3 == 0) core else edge, .style = style, .seed = a,
+            .add = style != .spore and (style != .chaos or i % 3 == 0),
+        };
+    }
+    drawParticles(&pool);
+}
+
+test "cloud lobes stay bounded, seeded and fade out without keeping a hazard alive" {
+    var a: [CLOUD_LOBES]Particle = undefined;
+    var b: [CLOUD_LOBES]Particle = undefined;
+    var look = CloudLook{ .at = v3(2, 3, 4), .radius = 2, .height = 1.5, .time = 1.2,
+        .col = mathx.rgba(170, 180, 120, 150), .shade = mathx.rgba(100, 95, 65, 120) };
+    cloudParticles(&a, look);
+    cloudParticles(&b, look);
+    for (a, b) |p, q| {
+        try std.testing.expectEqualDeep(p, q);
+        try std.testing.expect(p.life > 0 and p.life <= p.max);
+        try std.testing.expect(mathx.distXZ(p.p, look.at) <= look.radius);
+    }
+    look.amount = 0;
+    cloudParticles(&b, look);
+    for (b) |p| try std.testing.expectEqual(@as(u8, 0), p.col.a);
 }
 
 
@@ -2174,7 +2291,7 @@ pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want:
     for (m.foes[0..m.nfoes]) |h| {
         if (h.kind != want or n.* >= out.len) continue;
         // ON THE GROUND: a spawn table stores x/z only, so a foe on a sculpted rise dropped at y = 0 is buried to the waist.
-        const home = v3(h.x, m.heightAt(h.x, h.z), h.z);
+        const home = v3(h.x, caves.homeY(m, h.x, h.z, h.under), h.z);
         out[n.*] = T.spawn(home, mathx.radians(h.yaw), h.scale, h.seed);
         armStats(&out[n.*], want);
         armPost(&out[n.*], h, home);
@@ -2195,7 +2312,7 @@ pub fn resetRoles(
     for (m.foes[0..m.nfoes]) |h| {
         const role = roleOf(h.kind) orelse continue;
         if (n.* >= out.len) continue;
-        const home = v3(h.x, m.heightAt(h.x, h.z), h.z);
+        const home = v3(h.x, caves.homeY(m, h.x, h.z, h.under), h.z);
         out[n.*] = T.spawnAs(role, home, mathx.radians(h.yaw), h.scale, h.seed);
         armStats(&out[n.*], h.kind);
         armPost(&out[n.*], h, home);
@@ -3063,7 +3180,7 @@ test "A CLOUD BILLS YOU ON ENTRY AND THEN ON THE CLOCK" {
 }
 
 
-test "THE RING KEEPS A BURST CONTIGUOUS, so the draw does not flip sprite per mote" {
+test "legacy emitters select distinct matter, haze and contact sprites" {
     var pool = [_]Particle{.{}} ** 84;
     var head: usize = 0;
     var rng = mathx.Rng.init(0xFEED);
@@ -3079,20 +3196,18 @@ test "THE RING KEEPS A BURST CONTIGUOUS, so the draw does not flip sprite per mo
     spray(&pool, &head, &rng, v3(0, 0.6, 0), v3(1, 0, 0), 18, 6.4, 1.0, blood);
     for (0..14) |_| emitPart(&pool, &head, .{ .p = v3(0, 0.1, 0), .life = 0.5, .r0 = 0.08, .r1 = 0.22, .col = DUST });
 
-    var flips: usize = 0;
     var live: usize = 0;
-    for ([_]bool{ false, true }) |add| {
-        var open: ?bool = null;
-        for (&pool) |*q| {
-            if (q.life <= 0 or q.add != add) continue;
-            live += 1;
-            const soft = wantsSoft(q);
-            if (open == null or open.? != soft) flips += 1;
-            open = soft;
+    for (&pool) |*q| {
+        if (q.life <= 0) continue;
+        live += 1;
+        if (q.add) {
+            try std.testing.expectEqual(ParticleStyle.flash, particleStyle(q));
+        } else if (q.r1 > q.r0) {
+            try std.testing.expectEqual(ParticleStyle.smoke, particleStyle(q));
+        } else {
+            try std.testing.expectEqual(ParticleStyle.grain, particleStyle(q));
         }
     }
-    std.debug.print("\n  draw batching: {d} live motes in {d} sprite runs\n", .{ live, flips });
-    try std.testing.expect(flips <= 6);
     try std.testing.expect(live > 55);
 }
 
@@ -3384,3 +3499,4 @@ test "AND THE HOUR IS ARMED OFF THE MAP ROW, both ways a group is filled" {
     try std.testing.expectEqual(wf.FoeWhen.night, out[0].leash.win.when);
     try std.testing.expectEqual(wf.FoeWhen.day, out[1].leash.win.when);
 }
+

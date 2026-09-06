@@ -192,9 +192,11 @@ const PELVIS_SHARE: f32 = 1.0 / 6.0;
 const HIT_CHIP_LIGHT = 6;
 const HIT_CHIP_HEAVY = 13;
 const WAKE_GRIT: usize = 22;
+const PARRY_CHIPS = 12;
 const PARTS = 74;
 comptime {
-    std.debug.assert(@as(f32, PARTS) >= @as(f32, @floatFromInt(WAKE_GRIT + foe.hitParts(HIT_CHIP_HEAVY) + foe.WOUND_PARTS)));
+    // A caught stroke chips on the same frame the hero's own blow can wound it, over the grit of the waking.
+    std.debug.assert(@as(f32, PARTS) >= @as(f32, @floatFromInt(WAKE_GRIT + PARRY_CHIPS + foe.hitParts(HIT_CHIP_HEAVY) + foe.WOUND_PARTS)));
 }
 
 const State = enum { stone, wake, seat, idle, walk, rake, slam, burst, stunlight, stunheavy, dead };
@@ -523,13 +525,14 @@ pub const Owlbear = struct {
         }
 
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, moveSpeed, moveYaw, self.facing);
-        if ((self.state == .rake or self.state == .slam) and self.t >= self.row().windDur and self.t - dt < self.row().windDur) sfx.world(.stone_grind, self.pos);
+        const mv = self.row();
+        const striking = self.state == .rake or self.state == .slam;
+        if (striking and self.t >= mv.windDur and self.t - dt < mv.windDur) sfx.world(.stone_grind, self.pos);
         self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);
         self.pose();
-        const mv = self.row();
         if (foe.catchMelee(self, foe.hurtReach(mv.maxR, self.scale), mv.frontDot, self.toImpact())) {
-            self.chips(foe.markOn(self.xf[WRR], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), 12);
-        } else if ((self.state == .rake or self.state == .slam) and self.t >= mv.windDur + mv.strikeDur * IMPACT_K and self.t < mv.windDur + mv.strikeDur) {
+            self.chips(foe.markOn(self.xf[WRR], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), PARRY_CHIPS);
+        } else if (striking and self.t >= mv.windDur + mv.strikeDur * IMPACT_K and self.t < mv.windDur + mv.strikeDur) {
             self.tryStroke(quarry, mv);
         }
         self.tryHit(blade);

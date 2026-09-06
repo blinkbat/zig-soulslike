@@ -8,6 +8,7 @@ const mapart = @import("mapart.zig");
 const wf = @import("../world/worldfmt.zig");
 const dialogmod = @import("../world/dialog.zig");
 const envmod = @import("../world/env.zig");
+const caves = @import("../world/caves.zig");
 const gfx = @import("../gfx/gfx.zig");
 const daynight = @import("../world/daynight.zig");
 const objview = @import("objview.zig");
@@ -83,6 +84,8 @@ fn undoDropOldest() void {
 }
 
 var clipOps: [MAX_MARKED]wf.Op = undefined;
+/// Cut and paste carry the scatter block beside the op: it lives in the source map's pool, and a clipboard holding only the `Op` would paste a belt with no extent.
+var clipScats: [MAX_MARKED]wf.Scatter = undefined;
 var nClipOps: usize = 0;
 var clipFoes: [MAX_MARKED]wf.Foe = undefined;
 var nClipFoes: usize = 0;
@@ -92,6 +95,7 @@ var listing: wf.Listing = .{};
 
 pub const Layer = enum(u8) {
     ground,
+    caves,
     locations,
     decor,
     props,
@@ -103,6 +107,7 @@ pub const Layer = enum(u8) {
     fn label(l: Layer) [:0]const u8 {
         return switch (l) {
             .ground => "Ground",
+            .caves => "Caves",
             .locations => "Locations",
             .decor => "Decor",
             .props => "Props",
@@ -114,13 +119,14 @@ pub const Layer = enum(u8) {
     fn opLayer(l: Layer) bool {
         return switch (l) {
             .decor, .props, .interact => true,
-            .ground, .locations, .units => false,
+            .ground, .caves, .locations, .units => false,
         };
     }
 };
 
 const layerTips = [Layer.N][:0]const u8{
     "Shape the land and paint the soil (Tab cycles layers)",
+    "Carve chambers UNDER the land, and open them through a hillside",
     "Zone density and the clearings it keeps out of",
     "Small accoutrements - plants, but also cobbles, shards and scree",
     "Props - stone, timber, fire, water",
@@ -148,12 +154,23 @@ const groundBrushes = [_][:0]const u8{
     "cinder",
     "spore",
     "bloom",
+    "sand",
     "Water",
     "Oil",
     "Fungal",
     "Lava",
     "Erase",
 };
+const caveBrushes = [_][:0]const u8{ "Carve", "Entrance", "Fill", "Sample" };
+pub const CaveBrush = enum { carve, entrance, fill, sample };
+
+const caveTips = [_][:0]const u8{
+    "Sweep to hollow rock out at the panel's floor and headroom. [ ] sets how wide the passage is",
+    "Sweep from open ground into the hillside: the floor grades down from where the stroke began and the hill opens where it is thick enough to roof one",
+    "Sweep to put the rock back",
+    "Click a chamber to take its floor and headroom into the panel",
+};
+
 const locationBrushes = [_][:0]const u8{ "Clearing", "Zone", "Location", "Arena", "Erase" };
 const decorBrushes = [_][:0]const u8{ "Single", "Patch", "Scatter", "Erase" };
 const propBrushes = [_][:0]const u8{ "Stamp", "Row", "Ring", "Cluster", "Ivy", "Erase" };
@@ -213,6 +230,16 @@ const GROUND_SOIL_0: usize = GROUND_CLIFF_0 + GROUND_CLIFF_N;
 
 const SCULPT_EVEN: f32 = 0.5;
 
+/// An Entrance floor falls this much per metre run — well inside `MAX_SLOPE`, so the grade it lays is walkable without the author solving one.
+const ENTRANCE_GRADE: f32 = 0.5;
+/// How far under the ground an entrance starts, so the first step in is a step and not a drop.
+const ENTRANCE_SINK: f32 = 0.25;
+const HEAD_MIN: f32 = 2.0;
+const CAVE_PICK_STEP: f32 = 0.35;
+const CAVE_PICK_REACH: f32 = 400.0;
+/// Under this much rock over a ceiling the hill is not a roof any more, and the panel says so.
+const CAVE_COVER_MIN: f32 = 0.5;
+
 /// The brush shortcuts, and the count the panel numbers its buttons off — ONE declaration, because a tenth key added to the list and not to the count is a button that answers a press it does not advertise.
 const DIGITS = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine };
 const DIGIT_KEYS: usize = DIGITS.len;
@@ -236,6 +263,7 @@ const groundTips = [_][:0]const u8{
     "Sweep across a face to open a WAY UP it: drops the cut and grades what is left until it is walkable",
     "Sweep to give the drop back its ramp",
     "[ ] sets radius",
+    "",
     "",
     "",
     "",
@@ -345,6 +373,7 @@ const unitTips = blk: {
 fn layerIcon(l: Layer) ui.Icon {
     return switch (l) {
         .ground => .ground,
+        .caves => .ground,
         .locations => .locations,
         .decor => .decor,
         .props => .props,
@@ -459,6 +488,7 @@ fn brushSectionFor(l: Layer, i: usize) ?[:0]const u8 {
 fn brushIconsFor(l: Layer) ?[]const ui.Icon {
     return switch (l) {
         .ground => null,
+        .caves => null,
         .locations => &locationIcons,
         .decor => &decorIcons,
         .props => &propIcons,
@@ -470,6 +500,7 @@ fn brushIconsFor(l: Layer) ?[]const ui.Icon {
 fn brushesFor(l: Layer) []const [:0]const u8 {
     return switch (l) {
         .ground => &groundBrushes,
+        .caves => &caveBrushes,
         .locations => &locationBrushes,
         .decor => &decorBrushes,
         .props => &propBrushes,
@@ -481,6 +512,7 @@ fn brushesFor(l: Layer) []const [:0]const u8 {
 fn brushTipsFor(l: Layer) []const [:0]const u8 {
     return switch (l) {
         .ground => &groundTips,
+        .caves => &caveTips,
         .locations => &locationTips,
         .decor => &decorTips,
         .props => &propTips,
@@ -512,7 +544,7 @@ comptime {
     }
 }
 
-pub const GroundBrush = enum { raise, lower, smooth, flat, pool, cliff, stair, ramp, slope, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, water, oil, fungal, lava, erase };
+pub const GroundBrush = enum { raise, lower, smooth, flat, pool, cliff, stair, ramp, slope, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, sand, water, oil, fungal, lava, erase };
 
 fn cliffCaseOf(b: GroundBrush) ?u8 {
     return switch (b) {
@@ -596,6 +628,7 @@ comptime {
     pinBrushes(PropBrush, &propBrushes);
     pinBrushes(InteractBrush, &interactBrushes);
     pinBrushes(GroundBrush, &groundBrushes);
+    pinNames(CaveBrush, &caveBrushes);
     const foeFields = @typeInfo(wf.FoeKind).@"enum".fields;
     const npcFields = @typeInfo(wf.NpcKind).@"enum".fields;
     const unitFields = @typeInfo(UnitBrush).@"enum".fields;
@@ -620,6 +653,13 @@ fn pinIcons(comptime E: type, comptime row: []const ui.Icon) void {
 }
 
 fn pinBrushes(comptime E: type, comptime names: []const [:0]const u8) void {
+    pinNames(E, names);
+    const fields = @typeInfo(E).@"enum".fields;
+    if (!std.mem.eql(u8, fields[fields.len - 1].name, "erase")) @compileError("editor: " ++ @typeName(E) ++ " must end in `erase`");
+}
+
+/// The Caves layer takes this one and not `pinBrushes`: its eraser is FILL, which puts the rock back rather than clearing a placement.
+fn pinNames(comptime E: type, comptime names: []const [:0]const u8) void {
     const fields = @typeInfo(E).@"enum".fields;
     if (fields.len != names.len) @compileError("editor: " ++ @typeName(E) ++ " and its brush table are different lengths");
     for (fields, names) |f, n| {
@@ -628,7 +668,6 @@ fn pinBrushes(comptime E: type, comptime names: []const [:0]const u8) void {
             if (a != std.ascii.toLower(b)) @compileError("editor: brush " ++ n ++ " does not match " ++ @typeName(E) ++ "." ++ f.name);
         }
     }
-    if (!std.mem.eql(u8, fields[fields.len - 1].name, "erase")) @compileError("editor: " ++ @typeName(E) ++ " must end in `erase`");
 }
 
 const floraKinds = props.FLORA_KINDS;
@@ -640,7 +679,7 @@ fn kindPool(l: Layer) ?[]const Kind {
         .decor => &floraKinds,
         .props => &solidKinds,
         .interact => &interactKinds,
-        .ground, .locations, .units => null,
+        .ground, .caves, .locations, .units => null,
     };
 }
 
@@ -832,23 +871,41 @@ fn hasSpan(k: wf.OpKind) bool {
     };
 }
 
-fn opAnchor(o: *const wf.Op) rl.Vector3 {
-    if (hasSpan(o.op)) return v3((o.x + o.x1) * 0.5, 0, (o.z + o.z1) * 0.5);
+/// An op and the scatter block that belongs with it, before either is in a map.
+const Row = struct { o: wf.Op, s: wf.Scatter };
+
+fn opAnchor(o: *const wf.Op, s: *const wf.Scatter) rl.Vector3 {
+    if (hasSpan(o.op)) return v3((o.x + s.x1) * 0.5, 0, (o.z + s.z1) * 0.5);
     return v3(o.x, 0, o.z);
 }
 
-fn translateOp(o: *wf.Op, dx: f32, dz: f32) void {
+fn opAnchorAt(m: *const wf.Map, i: usize) rl.Vector3 {
+    return opAnchor(&m.ops[i], m.scatAt(i));
+}
+
+/// A detached op and its block — the clipboard's pair, and what a duplicate is built from.
+fn translatePair(o: *wf.Op, s: *wf.Scatter, dx: f32, dz: f32) void {
     o.x += dx;
     o.z += dz;
     if (hasSpan(o.op)) {
-        o.x1 += dx;
-        o.z1 += dz;
+        s.x1 += dx;
+        s.z1 += dz;
     }
+}
+
+fn translateOp(m: *wf.Map, i: usize, dx: f32, dz: f32) void {
+    const o = &m.ops[i];
+    o.x += dx;
+    o.z += dz;
+    if (!hasSpan(o.op)) return;
+    const s = m.scatMut(i) catch return;
+    s.x1 += dx;
+    s.z1 += dz;
 }
 
 fn eraseMiss(l: Layer) [:0]const u8 {
     return switch (l) {
-        .ground => "",
+        .ground, .caves => "",
         .locations => "nothing here (the last zone is the fallback and stays)",
         .units => "no spawn inside the brush",
         .decor, .props, .interact => "nothing in this layer here",
@@ -881,6 +938,14 @@ pub const Editor = struct {
     showFog: bool = true,
     showShadows: bool = false,
     brush: [Layer.N]usize = [_]usize{0} ** Layer.N,
+    /// The floor a carve lays down and the room over it, in world metres. Pinned for the whole stroke.
+    caveFloorY: f32 = -3.0,
+    caveHead: f32 = 2.8,
+    /// THE VIEWING CHOICE, kept across layers: furnishing a chamber must not mean fighting the roof back on every time the Props tab is opened.
+    caveView: bool = true,
+    /// Where an Entrance stroke began, so its floor can grade down from the ground it started on.
+    entranceFrom: ?rl.Vector3 = null,
+    caveStroke: bool = false,
     decorKind: Kind = .fern,
     propKind: Kind = .pillar,
     interactKind: Kind = .chest,
@@ -1103,14 +1168,14 @@ pub const Editor = struct {
         return switch (self.layer) {
             .decor => &self.decorKind,
             .interact => &self.interactKind,
-            .ground, .locations, .props, .units => &self.propKind,
+            .ground, .caves, .locations, .props, .units => &self.propKind,
         };
     }
     fn kindForLayer(self: *const Editor) Kind {
         return switch (self.layer) {
             .decor => self.decorKind,
             .interact => self.interactKind,
-            .ground, .locations, .props, .units => self.propKind,
+            .ground, .caves, .locations, .props, .units => self.propKind,
         };
     }
 
@@ -1206,12 +1271,28 @@ pub const Editor = struct {
     }
 
     fn resolveCursor(self: *Editor) void {
+        envmod.Env.cutaway = self.caveView;
         self.cursor = self.traceGround();
     }
 
     fn traceGround(self: *const Editor) ?rl.Vector3 {
         const ray = rl.getScreenToWorldRay(rl.getMousePosition(), self.cam);
         if (ray.direction.y > -1e-4) return null;
+        if (self.layer != .caves and self.caveView) {
+            if (self.traceCave(ray)) |q| return q;
+        }
+        // CARVING READS A PLANE, NOT THE HILL: the rock a chamber goes under is exactly what the cursor would otherwise land on.
+        if (self.layer == .caves) {
+            const plane = envmod.groundY() + self.caveFloorY;
+            const t = (plane - ray.position.y) / ray.direction.y;
+            if (t <= 0) return null;
+            var q = mathx.addV(ray.position, mathx.scaleV(ray.direction, t));
+            if (self.snap) {
+                q.x = @round(q.x / SNAP) * SNAP;
+                q.z = @round(q.z / SNAP) * SNAP;
+            }
+            return q;
+        }
         var p = blk: {
             if (self.world) |w| break :blk w.rayGround(ray.position, ray.direction) orelse return null;
             const t = (envmod.groundY() - ray.position.y) / ray.direction.y;
@@ -1224,6 +1305,21 @@ pub const Editor = struct {
             p.y = self.groundHeight(p.x, p.z);
         }
         return p;
+    }
+
+    /// The first chamber floor the ray reaches. Marched, because a cave floor is not a plane and the hill over it is not drawn in this view.
+    fn traceCave(self: *const Editor, ray: rl.Ray) ?rl.Vector3 {
+        const w = self.world orelse return null;
+        if (!w.caveAny) return null;
+        var s: f32 = 1.0;
+        while (s < CAVE_PICK_REACH) : (s += CAVE_PICK_STEP) {
+            const p = mathx.addV(ray.position, mathx.scaleV(ray.direction, s));
+            const c = caves.sampleAt(w.caveFields(), p.x, p.z);
+            if (!c.hollow() or p.y > c.roof) continue;
+            if (p.y > c.floor) continue;
+            return v3(p.x, c.floor, p.z);
+        }
+        return null;
     }
 
     pub fn groundHeight(self: *const Editor, x: f32, z: f32) f32 {
@@ -1399,14 +1495,15 @@ pub const Editor = struct {
     }
     pub fn gradientForShot(self: *Editor, m: *wf.Map, i: usize) void {
         if (i >= m.nops) return;
-        const o = &m.ops[i];
-        self.setLayer(layerOf(o));
+        const ox = m.ops[i].x;
+        self.setLayer(layerOf(&m.ops[i]));
         self.sel = i;
-        o.gAxis = .x;
-        o.gA = @min(o.x, o.x1);
-        o.gB = @max(o.x, o.x1);
-        if (o.gB - o.gA < 1.0) o.gB = o.gA + 1.0;
-        o.gFloor = 0.25;
+        const s = m.scatMut(i) catch return;
+        s.gAxis = .x;
+        s.gA = @min(ox, s.x1);
+        s.gB = @max(ox, s.x1);
+        if (s.gB - s.gA < 1.0) s.gB = s.gA + 1.0;
+        s.gFloor = 0.25;
     }
 
     pub fn statsForShot(self: *Editor, tableName: []const u8, row: usize) void {
@@ -1459,14 +1556,15 @@ pub const Editor = struct {
     fn focusOn(self: *Editor, m: *const wf.Map, i: usize) void {
         if (i >= m.nops) return;
         const o = m.ops[i];
+        const s = m.scatAt(i);
         const span = switch (o.op) {
-            .belt, .ivy => @max(@abs(o.x1 - o.x), @abs(o.z1 - o.z)),
+            .belt, .ivy => @max(@abs(s.x1 - o.x), @abs(s.z1 - o.z)),
             .disc => o.r1 * 2,
-            .ring => o.r0 * 2,
-            .line => mathx.distXZ(v3(o.x, 0, o.z), v3(o.x1, 0, o.z1)),
+            .ring => s.r0 * 2,
+            .line => mathx.distXZ(v3(o.x, 0, o.z), v3(s.x1, 0, s.z1)),
             .at => AT_SPAN,
         };
-        const c = opAnchor(&o);
+        const c = opAnchor(&o, s);
         self.lookAtGround(c.x, c.z, span);
     }
 
@@ -1709,6 +1807,20 @@ pub const Editor = struct {
         self.editing = true;
     }
 
+    /// An op's edit spans two records, so the snapshot has to roll BOTH back before it is taken.
+    fn bankOpGesture(self: *Editor, m: *wf.Map, i: usize, before: wf.Op, beforeScat: wf.Scatter) void {
+        if (self.editing) return;
+        const liveOp = m.ops[i];
+        const liveScat = m.scatAt(i).*;
+        const slot = m.ops[i].scat;
+        m.ops[i] = before;
+        if (slot != 0) m.scats[slot - 1] = beforeScat;
+        self.bank(m);
+        m.ops[i] = liveOp;
+        if (slot != 0) m.scats[slot - 1] = liveScat;
+        self.editing = true;
+    }
+
     fn bankGesture(self: *Editor, comptime T: type, m: *wf.Map, target: *T, before: T) void {
         if (self.editing) return;
         const live = target.*;
@@ -1777,6 +1889,70 @@ pub const Editor = struct {
             return;
         }
 
+
+        if (self.layer == .caves and !self.selecting) {
+            if (rl.isMouseButtonDown(.left) and (self.painting or !blocked)) {
+                if (ground) |g| {
+                    const b = @as(CaveBrush, @enumFromInt(self.brushIdx()));
+                    if (!self.painting) {
+                        if (b != .sample) self.bank(m);
+                        self.painting = true;
+                        self.entranceFrom = g;
+                    }
+                    var span: [4]usize = wf.EMPTY_SPAN;
+                    const moved = switch (b) {
+                        .carve => caves.carve(caves.gridsOf(m), .{
+                            .px = g.x,
+                            .pz = g.z,
+                            .r = self.radius,
+                            .floor = self.caveFloorY,
+                            .roof = self.caveFloorY + self.caveHead,
+                        }, &span),
+                        .entrance => blk: {
+                            const from = self.entranceFrom orelse g;
+                            const dx = g.x - from.x;
+                            const dz = g.z - from.z;
+                            const run = @sqrt(dx * dx + dz * dz);
+                            const ux = if (run > 1e-4) dx / run else 0;
+                            const uz = if (run > 1e-4) dz / run else 0;
+                            const start = self.groundHeight(from.x, from.z) - envmod.groundY() - ENTRANCE_SINK;
+                            const floor = start - ENTRANCE_GRADE * run;
+                            break :blk caves.carve(caves.gridsOf(m), .{
+                                .px = g.x,
+                                .pz = g.z,
+                                .r = self.radius,
+                                .floor = floor,
+                                .roof = floor + self.caveHead,
+                                .dx = -ENTRANCE_GRADE * ux,
+                                .dz = -ENTRANCE_GRADE * uz,
+                                .floorMin = self.caveFloorY,
+                            }, &span);
+                        },
+                        .fill => caves.fill(caves.gridsOf(m), .{ .px = g.x, .pz = g.z, .r = self.radius, .floor = 0, .roof = 0 }, &span),
+                        .sample => blk: {
+                            const s = caves.sampleAt(caves.fieldsOf(m), g.x, g.z);
+                            if (s.hollow()) {
+                                self.caveFloorY = s.floor;
+                                self.caveHead = mathx.maxF(s.headroom(), HEAD_MIN);
+                            }
+                            break :blk false;
+                        },
+                    };
+                    if (moved) {
+                        env.carveCave(m, span);
+                        self.caveStroke = true;
+                    }
+                }
+            } else if (self.painting and rl.isMouseButtonReleased(.left)) {
+                self.painting = false;
+                self.entranceFrom = null;
+                if (self.caveStroke) {
+                    self.rebuild(m, env);
+                    self.caveStroke = false;
+                }
+            }
+            return;
+        }
         if (self.layer == .ground and !self.selecting) {
             if (rl.isMouseButtonDown(.left) and (self.painting or !blocked)) {
                 if (ground) |g| {
@@ -1914,6 +2090,7 @@ pub const Editor = struct {
                         if (!self.dwellerMisplaced(env, g)) self.addUnit(m, g);
                     }
                 },
+                .caves => {},
                 .locations, .decor, .props, .interact => {
                     if (ground) |g| {
                         self.dragging = true;
@@ -2185,8 +2362,9 @@ pub const Editor = struct {
         var o = wf.defaults(.at);
         o.kind = self.kindForLayer();
         o.rise = props.info(o.kind).stack * 4.0;
+        var sc = wf.Scatter{};
         switch (self.layer) {
-            .ground, .units => return,
+            .ground, .caves, .units => return,
             .locations => @panic("editor: locations layer reached the op placer"),
             .decor => switch (@as(DecorBrush, @enumFromInt(self.brushIdx()))) {
                 .single => {
@@ -2196,10 +2374,14 @@ pub const Editor = struct {
                     o.scale = 1;
                 },
                 .scatter => {
-                    o = self.rectBelt(m, a, b);
+                    const row = self.rectBelt(m, a, b);
+                    o = row.o;
+                    sc = row.s;
                 },
                 .patch => {
-                    o = self.discOp(m, a, span);
+                    const row = self.discOp(m, a, span);
+                    o = row.o;
+                    sc = row.s;
                 },
                 .erase => return,
             },
@@ -2224,23 +2406,27 @@ pub const Editor = struct {
                     o.kind = self.propKind;
                     o.x = a.x;
                     o.z = a.z;
-                    o.x1 = b.x;
-                    o.z1 = b.z;
-                    o.r0 = @max(props.info(self.propKind).bound * 1.2, 2.0);
                     o.seed = self.freshSeed(m);
+                    sc = wf.scatDefaults(.line);
+                    sc.x1 = b.x;
+                    sc.z1 = b.z;
+                    sc.r0 = @max(props.info(self.propKind).bound * 1.2, 2.0);
                 },
                 .ring => {
                     o = wf.defaults(.ring);
                     o.kind = self.propKind;
                     o.x = a.x;
                     o.z = a.z;
-                    o.r0 = @max(span, MIN_BRUSH_R);
-                    o.n = 9;
-                    o.skip = 4; // the gap, so a fresh ring never reads as a fence
                     o.seed = self.freshSeed(m);
+                    sc = wf.scatDefaults(.ring);
+                    sc.r0 = @max(span, MIN_BRUSH_R);
+                    sc.n = 9;
+                    sc.skip = 4; // the gap, so a fresh ring never reads as a fence
                 },
                 .cluster => {
-                    o = self.discOp(m, a, span);
+                    const row = self.discOp(m, a, span);
+                    o = row.o;
+                    sc = row.s;
                 },
                 .ivy => {
                     o = wf.defaults(.ivy);
@@ -2248,11 +2434,12 @@ pub const Editor = struct {
                     const box = normRect(a, b);
                     o.x = box.x0;
                     o.z = box.z0;
-                    o.x1 = box.x1;
-                    o.z1 = box.z1;
-                    o.sLo = 0.85;
-                    o.sHi = 1.5;
                     o.seed = self.freshSeed(m);
+                    sc = wf.scatDefaults(.ivy);
+                    sc.x1 = box.x1;
+                    sc.z1 = box.z1;
+                    sc.sLo = 0.85;
+                    sc.sHi = 1.5;
                 },
                 .erase => return,
             },
@@ -2263,7 +2450,7 @@ pub const Editor = struct {
             return;
         }
         self.bank(m);
-        const idx = m.add(o) catch {
+        const idx = (if (o.op == .at) m.add(o) else m.addScat(o, sc)) catch {
             self.say(FULL_MSG);
             return;
         };
@@ -2283,30 +2470,32 @@ pub const Editor = struct {
         return @intFromFloat(mathx.clampF(area / AREA_PER_INSTANCE, FRESH_N_LO, FRESH_N_HI));
     }
 
-    fn rectBelt(self: *Editor, m: *const wf.Map, a: rl.Vector3, b: rl.Vector3) wf.Op {
+    fn rectBelt(self: *Editor, m: *const wf.Map, a: rl.Vector3, b: rl.Vector3) Row {
         var o = wf.defaults(.belt);
         o.kind = self.kindForLayer();
         const box = normRect(a, b);
         o.x = box.x0;
         o.z = box.z0;
-        o.x1 = box.x1;
-        o.z1 = box.z1;
-        o.n = countForArea((o.x1 - o.x) * (o.z1 - o.z));
         o.seed = self.freshSeed(m);
-        return o;
+        var s = wf.scatDefaults(.belt);
+        s.x1 = box.x1;
+        s.z1 = box.z1;
+        s.n = countForArea((s.x1 - o.x) * (s.z1 - o.z));
+        return .{ .o = o, .s = s };
     }
 
-    fn discOp(self: *Editor, m: *const wf.Map, centre: rl.Vector3, span: f32) wf.Op {
+    fn discOp(self: *Editor, m: *const wf.Map, centre: rl.Vector3, span: f32) Row {
         var o = wf.defaults(.disc);
         o.kind = self.kindForLayer();
         o.x = centre.x;
         o.z = centre.z;
-        o.r0 = 0;
         o.r1 = @max(span, MIN_BRUSH_R);
-        o.n = countForArea(std.math.pi * o.r1 * o.r1);
-        o.bias = 0.5;
         o.seed = self.freshSeed(m);
-        return o;
+        var s = wf.scatDefaults(.disc);
+        s.r0 = 0;
+        s.n = countForArea(std.math.pi * o.r1 * o.r1);
+        s.bias = 0.5;
+        return .{ .o = o, .s = s };
     }
 
     fn freshSeed(self: *Editor, m: *const wf.Map) u64 {
@@ -2639,10 +2828,11 @@ pub const Editor = struct {
         const kind: wf.FoeKind = @enumFromInt(bi);
         self.bank(m);
         const seed = @as(f32, @floatFromInt((m.nfoes * 37) % 100)) / 100.0;
-        m.foes[m.nfoes] = .{ .kind = kind, .x = at.x, .z = at.z, .yaw = 0, .scale = 1, .seed = seed };
+        const under = self.caveView and caves.sampleAt(caves.fieldsOf(m), at.x, at.z).hollow();
+        m.foes[m.nfoes] = .{ .kind = kind, .x = at.x, .z = at.z, .yaw = 0, .scale = 1, .seed = seed, .under = under };
         self.selUnit = .{ .foe = m.nfoes };
         m.nfoes += 1;
-        self.sayFmt("+{s} ({d:.0}, {d:.0})", .{ wf.foeName(kind), at.x, at.z });
+        self.sayFmt("+{s} ({d:.0}, {d:.0}){s}", .{ wf.foeName(kind), at.x, at.z, if (under) " underground" else "" });
     }
 
     fn wipeStep(self: *Editor, m: *wf.Map, env: *envmod.Env, g: rl.Vector3) void {
@@ -2674,7 +2864,7 @@ pub const Editor = struct {
 
     fn eraseAt(self: *Editor, m: *wf.Map, env: *envmod.Env, g: rl.Vector3) bool {
         switch (self.layer) {
-            .ground => {},
+            .ground, .caves => {},
             .units => {
                 var i: usize = m.nfoes;
                 while (i > 0) : (i -= 1) {
@@ -2847,9 +3037,10 @@ pub const Editor = struct {
         }
         self.bank(m);
         var o = m.ops[s];
+        var sc = m.scatAt(s).*;
         o.seed = self.freshSeed(m);
-        translateOp(&o, DUPE_OFFSET, 0);
-        const idx = m.add(o) catch return;
+        translatePair(&o, &sc, DUPE_OFFSET, 0);
+        const idx = (if (o.scat == 0) m.add(o) else m.addScat(o, sc)) catch return;
         self.sel = idx;
         self.rebuild(m, env);
         self.sayFmt("duplicated #{d} -> #{d}", .{ s, idx });
@@ -2881,7 +3072,7 @@ pub const Editor = struct {
         } else if (self.layer.opLayer()) {
             for (m.ops[0..m.nops], 0..) |*o, i| {
                 if (layerOf(o) != self.layer) continue;
-                const p = opAnchor(o);
+                const p = opAnchor(o, m.scatOf(o));
                 if (box.holds(p.x, p.z)) self.mark(i);
             }
             self.sel = if (self.nMarked > 0) self.marked[0] else null;
@@ -2902,7 +3093,7 @@ pub const Editor = struct {
                 sz += m.foes[i].z;
             } else {
                 if (i >= m.nops) continue;
-                const p = opAnchor(&m.ops[i]);
+                const p = opAnchorAt(m, i);
                 sx += p.x;
                 sz += p.z;
             }
@@ -2922,7 +3113,7 @@ pub const Editor = struct {
                 m.foes[i].translate(dx, dz);
             } else {
                 if (i >= m.nops) continue;
-                translateOp(&m.ops[i], dx, dz);
+                translateOp(m, i, dx, dz);
             }
         }
         self.rebuild(m, env);
@@ -2948,8 +3139,10 @@ pub const Editor = struct {
             } else {
                 if (i >= m.nops or nClipOps >= MAX_MARKED) continue;
                 var o = m.ops[i];
-                translateOp(&o, -c.x, -c.z);
+                var sc = m.scatAt(i).*;
+                translatePair(&o, &sc, -c.x, -c.z);
                 clipOps[nClipOps] = o;
+                clipScats[nClipOps] = sc;
                 nClipOps += 1;
             }
         }
@@ -2982,14 +3175,15 @@ pub const Editor = struct {
         self.nMarked = 0;
         var seed = self.freshSeed(m);
         var landed: usize = 0;
-        for (clipOps[0..nOps]) |src| {
+        for (clipOps[0..nOps], clipScats[0..nOps]) |src, srcScat| {
             var o = src;
-            translateOp(&o, at.x, at.z);
+            var sc = srcScat;
+            translatePair(&o, &sc, at.x, at.z);
             if (o.op != .at) {
                 o.seed = seed;
                 seed += 1;
             }
-            const idx = m.add(o) catch {
+            const idx = (if (o.scat == 0) m.add(o) else m.addScat(o, sc)) catch {
                 self.say(FULL_MSG);
                 break;
             };
@@ -3281,7 +3475,7 @@ pub const Editor = struct {
         self.selMarked = 0;
         if (self.sel) |s| {
             if (s < m.nops and self.layer.opLayer()) {
-                drawOpGizmo(&m.ops[s], y);
+                drawOpGizmo(&m.ops[s], m.scatAt(s), y);
                 self.selOwned = env.ownedBy(@intCast(s));
                 const view = self.camView();
                 const Mark = struct {
@@ -3310,7 +3504,7 @@ pub const Editor = struct {
                 rl.drawCubeWires(liftAt(f.x, f.z, y + MARK_BOX_H * 0.5), MARK_BOX_W, MARK_BOX_H, MARK_BOX_W, ui.TRIM);
             } else {
                 if (i >= m.nops) continue;
-                const p = opAnchor(&m.ops[i]);
+                const p = opAnchorAt(m, i);
                 ringSeg(p.x, p.z, MARK_RING_R, y, ui.TRIM, MARK_RING_SEG);
             }
         }
@@ -3353,7 +3547,7 @@ pub const Editor = struct {
                     ringSeg(m.foes[i].x + dx, m.foes[i].z + dz, GIZMO_R, y, ui.HOT, MARK_RING_SEG);
                 } else {
                     if (i >= m.nops) continue;
-                    const p = opAnchor(&m.ops[i]);
+                    const p = opAnchorAt(m, i);
                     ringSeg(p.x + dx, p.z + dz, MARK_RING_R, y, ui.HOT, MARK_RING_SEG);
                 }
             }
@@ -3398,20 +3592,20 @@ pub const Editor = struct {
     }
 };
 
-fn drawOpGizmo(o: *const wf.Op, y: f32) void {
+fn drawOpGizmo(o: *const wf.Op, s: *const wf.Scatter, y: f32) void {
     switch (o.op) {
         .at => {
             ringXZ(o.x, o.z, GIZMO_R, y, ui.HOT);
             const d = mathx.headingDir(mathx.radians(o.yaw));
             groundLine(o.x, o.z, o.x + d.x * GIZMO_SPOKE, o.z + d.z * GIZMO_SPOKE, y, ui.HOT);
         },
-        .belt, .ivy => outline(o.x, o.z, o.x1, o.z1, y, ui.HOT),
+        .belt, .ivy => outline(o.x, o.z, s.x1, s.z1, y, ui.HOT),
         .disc => {
             ringXZ(o.x, o.z, o.r1, y, ui.HOT);
-            if (o.r0 > 0.05) ringXZ(o.x, o.z, o.r0, y, ui.alpha(ui.HOT, 130));
+            if (s.r0 > 0.05) ringXZ(o.x, o.z, s.r0, y, ui.alpha(ui.HOT, 130));
         },
-        .ring => ringXZ(o.x, o.z, o.r0, y, ui.HOT),
-        .line => groundLine(o.x, o.z, o.x1, o.z1, y, ui.HOT),
+        .ring => ringXZ(o.x, o.z, s.r0, y, ui.HOT),
+        .line => groundLine(o.x, o.z, s.x1, s.z1, y, ui.HOT),
     }
 }
 
@@ -3975,15 +4169,15 @@ fn centreRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op, step: f32) bool 
     return ch;
 }
 
-fn spanRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
+fn spanRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op, s: *wf.Scatter) bool {
     var ch = coordRow(ctx, x, y, w, "x0", &o.x, 1);
     ch = coordRow(ctx, x, y, w, "z0", &o.z, 1) or ch;
-    ch = coordRow(ctx, x, y, w, "x1", &o.x1, 1) or ch;
-    ch = coordRow(ctx, x, y, w, "z1", &o.z1, 1) or ch;
+    ch = coordRow(ctx, x, y, w, "x1", &s.x1, 1) or ch;
+    ch = coordRow(ctx, x, y, w, "z1", &s.z1, 1) or ch;
     return ch;
 }
 
-fn gradientRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
+fn gradientRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op, s: *wf.Scatter) bool {
     var ch = false;
     hud.mono("density gradient", x, y.*, hud.MONO, ui.alpha(ui.TRIM, 220));
     y.* += hud.monoLineH(hud.MONO);
@@ -3996,24 +4190,24 @@ fn gradientRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op) bool {
             .x => "along x",
             .z => "along z",
         };
-        if (ui.chip(ctx, cx, y.*, lab, o.gAxis == ax, &usedW, "Thin the scatter from one end to the other along this axis. Off spreads it evenly") and o.gAxis != ax) {
-            o.gAxis = ax;
-            if (ax != .none and o.gA == o.gB) {
-                o.gA = if (ax == .x) @min(o.x, o.x1) else @min(o.z, o.z1);
-                o.gB = if (ax == .x) @max(o.x, o.x1) else @max(o.z, o.z1);
-                if (o.gB - o.gA < 1.0) o.gB = o.gA + 1.0;
+        if (ui.chip(ctx, cx, y.*, lab, s.gAxis == ax, &usedW, "Thin the scatter from one end to the other along this axis. Off spreads it evenly") and s.gAxis != ax) {
+            s.gAxis = ax;
+            if (ax != .none and s.gA == s.gB) {
+                s.gA = if (ax == .x) @min(o.x, s.x1) else @min(o.z, s.z1);
+                s.gB = if (ax == .x) @max(o.x, s.x1) else @max(o.z, s.z1);
+                if (s.gB - s.gA < 1.0) s.gB = s.gA + 1.0;
             }
             ch = true;
         }
         cx += usedW;
     }
     y.* += ROW_H + 4;
-    if (o.gAxis == .none) return ch;
-    ch = ui.stepperF(ctx, x, y.*, w, "from", &o.gA, 1, -COORD_LIM, COORD_LIM, "The FULL end of the fade, in world metres") or ch;
+    if (s.gAxis == .none) return ch;
+    ch = ui.stepperF(ctx, x, y.*, w, "from", &s.gA, 1, -COORD_LIM, COORD_LIM, "The FULL end of the fade, in world metres") or ch;
     y.* += ROW_H;
-    ch = ui.stepperF(ctx, x, y.*, w, "to", &o.gB, 1, -COORD_LIM, COORD_LIM, "The THIN end of the fade, in world metres") or ch;
+    ch = ui.stepperF(ctx, x, y.*, w, "to", &s.gB, 1, -COORD_LIM, COORD_LIM, "The THIN end of the fade, in world metres") or ch;
     y.* += ROW_H;
-    ch = ui.slider(ctx, x, y.*, w, "thin end", &o.gFloor, 0, 1, "What share survives at the thin end. 0 fades to nothing, 1 is no fade at all") or ch;
+    ch = ui.slider(ctx, x, y.*, w, "thin end", &s.gFloor, 0, 1, "What share survives at the thin end. 0 fades to nothing, 1 is no fade at all") or ch;
     y.* += ROW_H + SLIDER_DROP;
     return ch;
 }
@@ -4025,6 +4219,56 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     const x = x0 + 10;
     const w = PROP_W - 20;
     var y = BAR_H + 8;
+
+    // THE VIEWING CHOICE FOLLOWS THE AUTHOR OUT OF THE CAVES LAYER, so a chamber can be furnished without the roof coming back on.
+    if (ed.layer != .caves and ed.layer != .ground and m.anyCave()) {
+        if (ui.button(ctx, ui.rect(x, y, w, ROW_H), if (ed.caveView) "Underground" else "Surface", hud.MONO, ed.caveView, "Which of the two the cursor lands on, and which one a body placed here stands on")) ed.caveView = !ed.caveView;
+        y += ROW_H + 6;
+    }
+
+    if (ed.layer == .caves) {
+        const b = @as(CaveBrush, @enumFromInt(ed.brushIdx()));
+        hud.mono(switch (b) {
+            .carve => "CARVE",
+            .entrance => "ENTRANCE",
+            .fill => "FILL",
+            .sample => "SAMPLE",
+        }, x, y, hud.MONO, ui.TITLE);
+        y += ROW_H + 4;
+        _ = ui.slider(ctx, x, y, w, "width", &ed.radius, 1, 24, "How wide the passage is, in metres - the brush IS the passage");
+        y += ROW_H + SLIDER_DROP;
+        _ = ui.stepperF(ctx, x, y, w, "floor", &ed.caveFloorY, 0.25, wf.HEIGHT_MIN, wf.HEIGHT_MAX, "The world height a carve lays its floor at. The cursor rides this plane, so it does not climb the hill you are carving under");
+        y += ROW_H;
+        _ = ui.slider(ctx, x, y, w, "headroom", &ed.caveHead, HEAD_MIN, 8, "Ceiling over that floor, in metres");
+        y += ROW_H + SLIDER_DROP;
+        if (ui.button(ctx, ui.rect(x, y, w, ROW_H), "Cutaway", hud.MONO, ed.caveView, "Take the hill off every chamber so you can see in. A VIEWING AID - it changes nothing in the map")) ed.caveView = !ed.caveView;
+        y += ROW_H + 6;
+
+        var buf: [96]u8 = undefined;
+        const at = ed.groundAt() orelse mathx.zero3;
+        const land = ed.groundHeight(at.x, at.z) - envmod.groundY();
+        const s = caves.sampleAt(caves.fieldsOf(m), at.x, at.z);
+        hud.mono(std.fmt.bufPrintZ(&buf, "hill {d:.2} m   floor {d:.2} m", .{ land, ed.caveFloorY }) catch "", x, y, hud.MONO, ui.LABEL);
+        y += ROW_H;
+        if (s.hollow()) {
+            const thick = land - (s.roof - envmod.groundY());
+            hud.mono(std.fmt.bufPrintZ(&buf, "here: room {d:.2} m", .{s.headroom()}) catch "", x, y, hud.MONO, ui.LABEL);
+            y += ROW_H;
+            hud.mono(if (thick > 0)
+                std.fmt.bufPrintZ(&buf, "roof holds {d:.2} m of rock", .{thick}) catch ""
+            else
+                (std.fmt.bufPrintZ(&buf, "OPEN TO THE SKY - this is a mouth", .{}) catch ""), x, y, hud.MONO, if (thick > 0) ui.LABEL else ui.TRIM);
+            y += ROW_H;
+        } else {
+            const room = land - ed.caveFloorY;
+            hud.mono(std.fmt.bufPrintZ(&buf, "solid rock ({d:.2} m of hill over the floor)", .{room}) catch "", x, y, hud.MONO, ui.LABEL);
+            y += ROW_H;
+            if (room < ed.caveHead + CAVE_COVER_MIN) {
+                hud.mono("TOO THIN to roof a chamber here", x, y, hud.MONO, ui.TRIM);
+                y += ROW_H;
+            }
+        }
+    }
 
     if (ed.layer == .ground) {
         const brush = @as(GroundBrush, @enumFromInt(ed.brushIdx()));
@@ -4496,8 +4740,12 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     hud.mono(owned, x, y, hud.MONO, ui.alpha(ui.LABEL, if (ed.selOwned > ed.selMarked) 255 else 170));
     y += ROW_H + 4;
 
+    // Every op but an `at` was landed with `addScat`, so this is a lookup and the scratch is never written.
+    var scratch = wf.Scatter{};
+    const sc = if (o.op == .at) &scratch else (m.scatMut(s) catch &scratch);
     var changed = false;
     const before = o.*;
+    const beforeScat = sc.*;
 
     switch (o.op) {
         .at => {
@@ -4519,50 +4767,50 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             }
         },
         .belt, .ivy => {
-            changed = spanRows(ctx, x, &y, w, o) or changed;
+            changed = spanRows(ctx, x, &y, w, o, sc) or changed;
             if (o.op == .belt) {
-                changed = ui.stepperI(ctx, x, y, w, "count", &o.n, 5, 0, COUNT_MAX, "How many to try to place. Rejected candidates still cost time, so this is an ASK and not a promise") or changed;
+                changed = ui.stepperI(ctx, x, y, w, "count", &sc.n, 5, 0, COUNT_MAX, "How many to try to place. Rejected candidates still cost time, so this is an ASK and not a promise") or changed;
                 y += ROW_H;
             } else {
-                changed = ui.slider(ctx, x, y, w, "take", &o.chance, 0, 1, "What share of the candidates actually stand. Under 1 is what stops a belt reading as a fence") or changed;
+                changed = ui.slider(ctx, x, y, w, "take", &sc.chance, 0, 1, "What share of the candidates actually stand. Under 1 is what stops a belt reading as a fence") or changed;
                 y += ROW_H + SLIDER_DROP;
             }
         },
         .disc => {
             changed = centreRows(ctx, x, &y, w, o, 1) or changed;
-            changed = ui.stepperF(ctx, x, y, w, "inner", &o.r0, 0.5, 0, 200, "Hole in the middle, in metres. 0 fills the disc") or changed;
+            changed = ui.stepperF(ctx, x, y, w, "inner", &sc.r0, 0.5, 0, 200, "Hole in the middle, in metres. 0 fills the disc") or changed;
             y += ROW_H;
             changed = ui.stepperF(ctx, x, y, w, "outer", &o.r1, 0.5, 0, 200, "How far out it reaches, in metres") or changed;
             y += ROW_H;
-            changed = ui.stepperI(ctx, x, y, w, "count", &o.n, 5, 0, COUNT_MAX, "How many to try to place") or changed;
+            changed = ui.stepperI(ctx, x, y, w, "count", &sc.n, 5, 0, COUNT_MAX, "How many to try to place") or changed;
             y += ROW_H;
-            changed = ui.slider(ctx, x, y, w, "centre bias", &o.bias, 0, 1, "Pull them toward the middle. 0 spreads evenly across the disc") or changed;
+            changed = ui.slider(ctx, x, y, w, "centre bias", &sc.bias, 0, 1, "Pull them toward the middle. 0 spreads evenly across the disc") or changed;
             y += ROW_H + SLIDER_DROP;
         },
         .ring => {
             changed = centreRows(ctx, x, &y, w, o, 1) or changed;
-            changed = ui.stepperF(ctx, x, y, w, "radius", &o.r0, 0.5, 0.5, 200, "How wide the ring stands, in metres") or changed;
+            changed = ui.stepperF(ctx, x, y, w, "radius", &sc.r0, 0.5, 0.5, 200, "How wide the ring stands, in metres") or changed;
             y += ROW_H;
-            changed = ui.stepperI(ctx, x, y, w, "count", &o.n, 1, 2, RING_N_MAX, "How many stand in the ring, spaced evenly") or changed;
+            changed = ui.stepperI(ctx, x, y, w, "count", &sc.n, 1, 2, RING_N_MAX, "How many stand in the ring, spaced evenly") or changed;
             y += ROW_H;
-            changed = ui.stepperI(ctx, x, y, w, "gap at", &o.skip, 1, -1, RING_N_MAX - 1, "Leave one place empty, so the ring has a way in. -1 closes it") or changed;
+            changed = ui.stepperI(ctx, x, y, w, "gap at", &sc.skip, 1, -1, RING_N_MAX - 1, "Leave one place empty, so the ring has a way in. -1 closes it") or changed;
             y += ROW_H;
         },
         .line => {
-            changed = spanRows(ctx, x, &y, w, o) or changed;
-            changed = ui.stepperF(ctx, x, y, w, "step", &o.r0, 0.25, 0.5, 40, "Metres between one and the next along the row") or changed;
+            changed = spanRows(ctx, x, &y, w, o, sc) or changed;
+            changed = ui.stepperF(ctx, x, y, w, "step", &sc.r0, 0.25, 0.5, 40, "Metres between one and the next along the row") or changed;
             y += ROW_H;
-            changed = ui.slider(ctx, x, y, w, "stands", &o.chance, 0, 1, "What share of the places along the row are actually filled. Under 1 is what makes a ruin a ruin") or changed;
+            changed = ui.slider(ctx, x, y, w, "stands", &sc.chance, 0, 1, "What share of the places along the row are actually filled. Under 1 is what makes a ruin a ruin") or changed;
             y += ROW_H + SLIDER_DROP;
         },
     }
 
     if (o.op != .at) {
-        changed = ui.stepperF(ctx, x, y, w, "scale lo", &o.sLo, 0.05, 0.1, 3, "Smallest of the batch. Equal to scale hi means every one is the same size, which reads as fake") or changed;
+        changed = ui.stepperF(ctx, x, y, w, "scale lo", &sc.sLo, 0.05, 0.1, 3, "Smallest of the batch. Equal to scale hi means every one is the same size, which reads as fake") or changed;
         y += ROW_H;
-        changed = ui.stepperF(ctx, x, y, w, "scale hi", &o.sHi, 0.05, 0.1, 3, "Largest of the batch") or changed;
+        changed = ui.stepperF(ctx, x, y, w, "scale hi", &sc.sHi, 0.05, 0.1, 3, "Largest of the batch") or changed;
         y += ROW_H;
-        if (changed and o.sHi < o.sLo) o.sHi = o.sLo;
+        if (changed and sc.sHi < sc.sLo) sc.sHi = sc.sLo;
         changed = ui.stepperF(ctx, x, y, w, "lean max", &o.lean, 1, 0, LEAN_LIM, "How far off plumb any one of them may lean, in degrees") or changed;
         y += ROW_H;
         var sb: [40]u8 = undefined;
@@ -4581,18 +4829,18 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
 
         hud.mono("keeps off", x, y, hud.MONO, ui.alpha(ui.TRIM, 220));
         y += hud.monoLineH(hud.MONO);
-        changed = ui.checkbox(ctx, x, y, "runway", &o.avoid.runway, "Keep clear of the runway - the corridor the player starts in") or changed;
+        changed = ui.checkbox(ctx, x, y, "runway", &sc.avoid.runway, "Keep clear of the runway - the corridor the player starts in") or changed;
         y += 22;
-        changed = ui.checkbox(ctx, x, y, "water", &o.avoid.water, "Keep out of painted water") or changed;
+        changed = ui.checkbox(ctx, x, y, "water", &sc.avoid.water, "Keep out of painted water") or changed;
         y += 22;
-        changed = ui.checkbox(ctx, x, y, "clearings", &o.avoid.clear, "Keep out of the clearings - the circles that hold open ground") or changed;
+        changed = ui.checkbox(ctx, x, y, "clearings", &sc.avoid.clear, "Keep out of the clearings - the circles that hold open ground") or changed;
         y += 22;
-        changed = ui.checkbox(ctx, x, y, "solids", &o.avoid.solid, "Do not stand inside anything already placed") or changed;
+        changed = ui.checkbox(ctx, x, y, "solids", &sc.avoid.solid, "Do not stand inside anything already placed") or changed;
         y += 22;
         if (o.op == .belt or o.op == .disc) {
-            changed = ui.checkbox(ctx, x, y, "cover field", &o.field, "Thin the scatter by the world's own cover noise, so it drops to nothing in clearings. On by default for a belt") or changed;
+            changed = ui.checkbox(ctx, x, y, "cover field", &sc.field, "Thin the scatter by the world's own cover noise, so it drops to nothing in clearings. On by default for a belt") or changed;
             y += 26;
-            changed = gradientRows(ctx, x, &y, w, o) or changed;
+            changed = gradientRows(ctx, x, &y, w, o, sc) or changed;
         }
     }
 
@@ -4620,7 +4868,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     }
 
     if (changed) {
-        ed.bankGesture(wf.Op, m, o, before);
+        ed.bankOpGesture(m, s, before, beforeScat);
         ed.requestRebuild();
     } else if (!ctx.down) {
         ed.endGesture();
@@ -4752,6 +5000,7 @@ fn soilSwatch(s: wf.Soil) rl.Color {
         .cinder => ui.col(58, 42, 36, 255),
         .spore => ui.col(74, 62, 84, 255),
         .bloom => ui.col(150, 96, 112, 255),
+        .sand => ui.col(198, 146, 96, 255),
     };
 }
 

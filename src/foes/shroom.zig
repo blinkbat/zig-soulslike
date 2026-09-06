@@ -736,6 +736,11 @@ pub const Cloud = struct {
     }
     pub fn drawFx(self: *const Cloud) void {
         if (!foe.motesVisible(self.pos, self.radius() + CLOUD_PUFF_MAX)) return;
+        if (self.live) foe.drawCloud(.{
+            .at = self.pos, .radius = self.radius(), .height = 1.45, .time = self.t,
+            .amount = mathx.smoothstep(0, 0.24, self.t) * (1 - mathx.smoothstep(CLOUD_LIFE - 0.6, CLOUD_LIFE, self.t)),
+            .col = mathx.withAlpha(SPORE, 142), .shade = mathx.withAlpha(SPORE_VIO, 125),
+        });
         foe.drawParticles(&self.parts);
     }
 };

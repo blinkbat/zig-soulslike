@@ -123,10 +123,12 @@ const FLAME_RATE_LIT: f32 = 64.0;
 const SMOKE_RATE: f32 = 10.0;
 const HIT_CHIP_LIGHT = 5;
 const HIT_CHIP_HEAVY = 11;
+const PARRY_CHIPS = 9;
 const PARTS = 68;
 comptime {
+    // A caught bough chips on the same frame the hero's own blow can wound it, over a lit wight's flame rate.
     std.debug.assert(@as(f32, PARTS) >= FLAME_RATE_LIT * 0.52 +
-        @as(f32, @floatFromInt(foe.hitParts(HIT_CHIP_HEAVY) + foe.WOUND_PARTS)));
+        @as(f32, @floatFromInt(PARRY_CHIPS + foe.hitParts(HIT_CHIP_HEAVY) + foe.WOUND_PARTS)));
 }
 
 const State = enum { idle, walk, bough, stunlight, stunheavy, dead };
@@ -381,10 +383,11 @@ pub const Wight = struct {
         if (self.state == .bough and self.t >= self.windDur() and self.t - dt < self.windDur()) sfx.world(.wood_swing, self.pos);
         self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);
         self.pose();
-        const until: ?f32 = if (self.state == .bough) self.windDur() + self.strikeDur() * BOUGH_IMPACT_K - self.t else null;
+        const at = self.windDur() + self.strikeDur() * BOUGH_IMPACT_K;
+        const until: ?f32 = if (self.state == .bough) at - self.t else null;
         if (foe.catchMelee(self, foe.hurtReach(BOUGH_R, self.scale), BOUGH_FRONT_DOT, until)) {
-            self.chips(foe.markOn(self.xf[WRR], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), 9);
-        } else if (self.state == .bough and self.t >= self.windDur() + self.strikeDur() * BOUGH_IMPACT_K and self.t < self.windDur() + self.strikeDur()) {
+            self.chips(foe.markOn(self.xf[WRR], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), PARRY_CHIPS);
+        } else if (self.state == .bough and self.t >= at and self.t < self.windDur() + self.strikeDur()) {
             self.tryBough(quarry);
         }
         self.tryHit(blade);
@@ -491,6 +494,7 @@ pub const Wight = struct {
                 .life = self.fxRng.range(if (flame) 0.26 else 0.6, if (flame) 0.52 else 1.1),
                 .r0 = if (flame) sig.r0 else 0.05,
                 .r1 = if (flame) sig.r1 * 1.5 else 0.16,
+                .style = if (flame) .flame else .smoke,
                 .col = if (flame) sig.core else ROT,
                 .col1 = if (flame) sig.ash else foe.DUST_THIN,
                 .grav = if (flame) sig.grav else -0.5,

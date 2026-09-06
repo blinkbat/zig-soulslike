@@ -4,6 +4,7 @@ const rl = @import("raylib");
 const game = @import("game.zig");
 const combat = @import("play/combat.zig");
 const gfx = @import("gfx/gfx.zig");
+const elemfx = @import("gfx/elemfx.zig");
 const editormod = @import("ui/editor.zig");
 const heromod = @import("play/hero.zig");
 const frogmod = @import("foes/frog.zig");
@@ -263,7 +264,7 @@ fn shootClear(g: *Game, name: [:0]const u8, yaw: f32, pitch: f32, dist: f32) voi
     g.rig.pitch = pitch;
     g.rig.dist = dist;
     g.rig.eased = -1;
-    g.rig.followClear(g.hero.shoulderPoint(), game.camFloor(g), game.CamFloor.at, 0);
+    g.rig.followRoofed(g.hero.shoulderPoint(), game.camFloor(g), game.CamFloor.at, game.CamFloor.roof, 0);
     shoot(g, name);
 }
 
@@ -612,6 +613,51 @@ pub fn runLandShots(g: *Game) void {
             shootAt(g, name, v3(g.hero.pos.x, g.hero.pos.y + 1.0, g.hero.pos.z), 20, 0.12, 6.0);
         }
         frames += feet.len;
+    }
+    if (std.mem.startsWith(u8, stem, "test_caves")) {
+        const CAM_CLEAR: f32 = 0.45;
+        const views = [_]struct { tag: []const u8, hx: f32, hz: f32, under: bool, ax: f32, az: f32, up: f32, yaw: f32, pitch: f32, dist: f32 }{
+            .{ .tag = "mouth", .hx = 56, .hz = 20, .under = false, .ax = 49, .az = 20, .up = 1.4, .yaw = 90, .pitch = 0.10, .dist = 14.0 },
+            .{ .tag = "inside", .hx = 45, .hz = 20, .under = true, .ax = 42, .az = 20, .up = 1.2, .yaw = 90, .pitch = 0.06, .dist = 7.0 },
+            .{ .tag = "lookingout", .hx = 43, .hz = 20, .under = true, .ax = 48, .az = 20, .up = 1.2, .yaw = 270, .pitch = 0.04, .dist = 8.0 },
+            .{ .tag = "bend", .hx = 24, .hz = 2, .under = true, .ax = 22, .az = 0, .up = 1.2, .yaw = 60, .pitch = 0.10, .dist = 9.0 },
+            .{ .tag = "chamber", .hx = 0, .hz = 0, .under = true, .ax = 0, .az = 0, .up = 1.0, .yaw = 45, .pitch = 0.16, .dist = 15.0 },
+            .{ .tag = "overhead", .hx = 0, .hz = 0, .under = false, .ax = 20, .az = 10, .up = 4.0, .yaw = 200, .pitch = 1.10, .dist = 62.0 },
+        };
+        for (views, 0..) |f, i| {
+            standHero(g, f.hx, f.hz, std.math.pi);
+            // UNDER THE ROOF, not on the hill: `standAt` reads the foot height to choose a surface, so a shot that wants the chamber has to ask from inside it.
+            const foot: f32 = if (f.under) g.env.caveFloorAt(f.hx, f.hz) else g.env.groundAt(f.hx, f.hz);
+            g.hero.pos.y = g.env.standAt(f.hx, f.hz, foot);
+            g.hero.pose();
+            game.pinSkyForShot(g);
+            const aimFoot: f32 = if (f.under) g.env.caveFloorAt(f.ax, f.az) else g.env.groundAt(f.ax, f.az);
+            const name = std.fmt.bufPrintZ(&buf, DIR_LAND ++ "/{s}_{d:0>2}_{s}.png", .{ stem, i + 10, f.tag }) catch unreachable;
+            const aimY = g.env.standAt(f.ax, f.az, aimFoot) + f.up;
+            // DERIVED FROM THE ROOM, not picked: the eye ends at target + back*dist, and a boom solved for open ground puts it through the ceiling.
+            var pitch = f.pitch;
+            if (f.under) {
+                const head = g.env.caveRoofAt(f.ax, f.az) - CAM_CLEAR - aimY;
+                pitch = mathx.clampF(head / f.dist, -0.4, f.pitch);
+            }
+            shootAt(g, name, v3(f.ax, aimY, f.az), f.yaw, pitch, f.dist);
+        }
+        frames += views.len;
+        const probes = [_]struct { tag: []const u8, x: f32, z: f32 }{
+            .{ .tag = "chamber", .x = 0, .z = 0 },
+            .{ .tag = "bend", .x = 22, .z = 0 },
+            .{ .tag = "low", .x = 28, .z = 6 },
+            .{ .tag = "mouth", .x = 50, .z = 20 },
+        };
+        for (probes) |q| {
+            const land = g.env.groundAt(q.x, q.z);
+            const floor = g.env.caveFloorAt(q.x, q.z);
+            const roof = g.env.caveRoofAt(q.x, q.z);
+            std.debug.print(
+                "  {s}: hill {d:.2}  floor {d:.2}  roof {d:.2}  room {d:.2}  rock over it {d:.2}\n",
+                .{ q.tag, land, floor, roof, roof - floor, land - roof },
+            );
+        }
     }
     if (std.mem.startsWith(u8, stem, "01_")) {
         const basin = [_]struct { tag: []const u8, hx: f32, hz: f32, ax: f32, az: f32, up: f32, yaw: f32, pitch: f32, dist: f32 }{
@@ -2168,9 +2214,115 @@ pub fn runShots(g: *Game) void {
     if (stageOn("editorgap")) editorGapShots(g);
 }
 
+fn particleStudyShots(g: *Game) void {
+    game.clearFoesForShot(g);
+    const at = v3(0, game.envGroundAt(&g.env, 0, 12), 12);
+    const side = mathx.perpXZ(LIT_BACK);
+    standSettled(g, at.x + side.x * 2.2, at.z + side.z * 2.2, mathx.headingXZ(LIT_BACK));
+    const source = mathx.addV(at, v3(0, 1.15, 0));
+    var name: [128]u8 = undefined;
+    for (std.enums.values(combat.Elem)) |e| {
+        for ([_]bool{ false, true }) |stream| {
+            g.hero.fx = @splat(.{});
+            g.hero.fxHead = 0;
+            var rng = mathx.Rng.init(0xFA77);
+            var acc: f32 = 0;
+            if (!stream) elemfx.burst(&g.hero.fx, &g.hero.fxHead, &rng, source, side, e, 36, 1.0);
+            const frames: usize = if (stream) 48 else if (e == .lightning) 1 else 9;
+            for (0..frames) |_| {
+                foemod.tickParticles(&g.hero.fx, SHOT_DT, at.y);
+                if (stream) elemfx.pour(&g.hero.fx, &g.hero.fxHead, &rng, source, side, e,
+                    foemod.emitDue(&acc, SHOT_DT, elemfx.POUR_RATE), mathx.radians(18), 3.5, 1);
+            }
+            const file = std.fmt.bufPrintZ(&name, "shots/particles_study_{s}_{s}.png", .{ @tagName(e), if (stream) "stream" else "burst" }) catch unreachable;
+            shootAt(g, file, mathx.addV(source, mathx.scaleV(side, if (stream) @as(f32, 1.1) else 0.3)), LIT_YAW, 0.18, 6.6);
+        }
+    }
+    for ([_]foemod.Contact{ .hit, .block, .parry }) |kind| {
+        g.hero.setGuard(kind != .hit);
+        for (0..12) |_| g.hero.update(SHOT_DT, 0, 0, null);
+        g.hero.pose();
+        g.hero.fx = @splat(.{});
+        g.hero.fxHead = 0;
+        if (kind == .parry) g.hero.noteParry() else if (kind == .block) g.hero.blockSparks(0.7) else {
+            var rng = mathx.Rng.init(0xB100D);
+            foemod.contactFlash(&g.hero.fx, &g.hero.fxHead, source, side, .hit, 1);
+            foemod.spray(&g.hero.fx, &g.hero.fxHead, &rng, source, side, 14, 4.6, 1, .{
+                .fanLo = 0.3, .fanHi = 1.2, .upLo = 0.5, .upHi = 2.4,
+                .lifeLo = 0.6, .lifeHi = 0.9, .rLo = 0.03, .rHi = 0.05, .r1 = 0.012,
+                .col = mathx.rgba(112, 22, 16, 235), .col1 = mathx.rgba(52, 9, 7, 225),
+                .grav = foemod.BLOOD_GRAV, .stretch = foemod.BLOOD_STRETCH, .splat = 3, .drag = foemod.BLOOD_DRAG,
+            });
+        }
+        var clock: f32 = 0;
+        for ([_]f32{ 0.033, 0.18, 0.65 }) |t| {
+            while (clock + STAMP_EPS < t) {
+                const dt = @min(SHOT_DT, t - clock);
+                foemod.tickParticles(&g.hero.fx, dt, at.y);
+                clock += dt;
+            }
+            const file = std.fmt.bufPrintZ(&name, "shots/particles_study_{s}_{d:.2}.png", .{ @tagName(kind), t }) catch unreachable;
+            const focus = if (kind == .hit) source else g.hero.shieldFaceWorld().at;
+            shootAt(g, file, mathx.addV(focus, v3(0, -0.25, 0)), LIT_YAW, 0.25, 4.8);
+        }
+    }
+    g.hero.fx = @splat(.{});
+    g.cluster.spawnCloud(at);
+    var clock: f32 = 0;
+    for ([_]f32{ 0.25, 1.2, 2.7, 4.2 }) |t| {
+        while (clock + STAMP_EPS < t) {
+            const dt = @min(SHOT_DT, t - clock);
+            for (&g.cluster.clouds) |*c| c.update(dt);
+            clock += dt;
+        }
+        const file = std.fmt.bufPrintZ(&name, "shots/particles_study_spores_{d:.2}.png", .{t}) catch unreachable;
+        shootAt(g, file, mathx.addV(at, v3(0, 0.85, 0)), LIT_YAW, 0.20, 6.6);
+    }
+    game.clearFoesForShot(g);
+    g.hero.setGuard(false);
+    g.warren.n = 1;
+    const frog = &g.warren.frogs[0];
+    frog.* = frogmod.Frog.spawn(at, mathx.headingXZ(LIT_BACK), 1, 0.3);
+    frog.pose();
+    frog.tryHit(foemod.shaftThrough(mathx.addV(frog.centerWorld(), mathx.scaleV(LIT_BACK, frog.hurtRadius() * 0.8)), .{ .dmg = 8, .poise = 35 }));
+    for (0..12) |_| studyStep(frog, SHOT_DT, mathx.addV(at, mathx.scaleV(side, 10)), game.PLAY_HALF);
+    shootAt(g, "shots/particles_study_frog_hit.png", frog.centerWorld(), LIT_YAW, 0.22, 5.2);
+    for (0..28) |_| studyStep(frog, SHOT_DT, mathx.addV(at, mathx.scaleV(side, 10)), game.PLAY_HALF);
+    shootAt(g, "shots/particles_study_frog_blood.png", frog.centerWorld(), LIT_YAW, 0.38, 5.2);
+    game.clearFoesForShot(g);
+    g.vigil.gas[0] = .{ .pos = at, .live = true };
+    for (0..72) |_| g.vigil.gas[0].update(SHOT_DT);
+    shootAt(g, "shots/particles_study_knight_gas.png", mathx.addV(at, v3(0, 0.8, 0)), LIT_YAW, 0.20, 6.6);
+    game.clearFoesForShot(g);
+    g.conclave.dusts[0] = .{ .at = at, .live = true, .t = 1.2, .seed = 0.3 };
+    shootAt(g, "shots/particles_study_magus_dust.png", mathx.addV(at, v3(0, 0.8, 0)), LIT_YAW, 0.20, 6.6);
+    game.clearFoesForShot(g);
+    g.bed.n = 1;
+    const bloom = &g.bed.blooms[0];
+    bloom.* = @TypeOf(bloom.*).spawn(at, mathx.headingXZ(LIT_BACK), 1, 0.3);
+    bloom.debugPour();
+    for (0..110) |_| studyStep(bloom, SHOT_DT, g.hero.pos, game.PLAY_HALF);
+    shootAt(g, "shots/particles_study_sleep.png", mathx.addV(at, v3(0, 0.9, 0)), LIT_YAW, 0.20, 6.6);
+    game.clearFoesForShot(g);
+    g.brood.pools[0] = broodmod.Pool.splash(at, 0.3);
+    for (0..72) |_| g.brood.pools[0].update(SHOT_DT);
+    shootAt(g, "shots/particles_study_venom.png", mathx.addV(at, v3(0, 0.35, 0)), LIT_YAW, 0.30, 5.8);
+    game.clearFoesForShot(g);
+    g.herd.spores[0] = .{ .at = source, .live = true, .t = 1.2, .seed = 0.3 };
+    shootAt(g, "shots/particles_study_deer_spore.png", source, LIT_YAW, 0.12, 3.5);
+    game.clearFoesForShot(g);
+    g.ring.n = 1;
+    const mage = &g.ring.mages[0];
+    mage.* = @TypeOf(mage.*).spawn(at, mathx.headingXZ(LIT_BACK), 1, 0.3);
+    mage.stageGather(0.92);
+    shootAt(g, "shots/particles_study_cupped_fire.png", mage.cupWorld(), LIT_YAW, 0.20, 4.0);
+    game.clearFoesForShot(g);
+}
+
 fn runUnitStudies(g: *Game, directOnly: bool) bool {
     game.pinHourForShot(g, game.daynight.SHOT_HOUR);
     const studies = [_]struct { tag: []const u8, run: *const fn (*Game) void }{
+        .{ .tag = "particles_study", .run = particleStudyShots },
         .{ .tag = "foes_study", .run = broadFoeShots },
         .{ .tag = "parry_study", .run = parryStudyShots },
         .{ .tag = "frog_study", .run = frogStudyShots },
@@ -4791,7 +4943,7 @@ fn editorShots(g: *Game) void {
     g.editor.setLayer(.props);
 
     for (g.map.slice(), 0..) |o, i| {
-        if (o.op == .belt and o.nmix > 3) {
+        if (o.op == .belt and g.map.scatOf(&o).nmix > 3) {
             g.editor.sel = i;
             g.editor.focusOnForShot(&g.map, i);
             break;

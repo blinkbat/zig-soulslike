@@ -199,6 +199,8 @@ pub const Course = struct {
     sillY: f32 = 0,
     headY: f32 = 0,
     core: f32 = 0.80,
+    /// The stone this run is cut from; null is the grey `STONE` set every ruin is built of. `burn` is the core, because a wall's guts are the face's own stone unweathered.
+    tone: ?Tone = null,
 };
 
 
@@ -228,7 +230,7 @@ pub fn courseInto(bb: *Builder, r: *mathx.Rng, ax: f32, az: f32, bx: f32, bz: f3
                     v3(ux * w * 0.5, 0, uz * w * 0.5),
                     v3(0, ch * 0.56, 0),
                     v3(-uz * spec.thick * spec.core, 0, ux * spec.thick * spec.core),
-                    MORTAR,
+                    if (spec.tone) |tn| tn.burn else MORTAR,
                 );
             }
         }
@@ -245,7 +247,9 @@ pub fn courseInto(bb: *Builder, r: *mathx.Rng, ax: f32, az: f32, bx: f32, bz: f3
             if (s > spec.gapLo and s < spec.gapHi and yc > spec.sillY and yc < spec.headY) continue;
             if (r.float() < crumble) continue;
             const bw = (runLen / @as(f32, @floatFromInt(nb))) * r.range(1.20, 1.50);
-            const col = if (r.float() < 0.15) STONE_LT else if (r.float() < 0.32) STONE_DK else STONE;
+            const col = if (spec.tone) |tn|
+                (if (r.float() < 0.15) tn.stoneLt else if (r.float() < 0.32) tn.stoneDk else tn.stone)
+            else if (r.float() < 0.15) STONE_LT else if (r.float() < 0.32) STONE_DK else STONE;
             bb.addBox(
                 v3(ax + ux * (t * runLen) + r.signed() * 0.016, yc, az + uz * (t * runLen) + r.signed() * 0.016),
                 v3(ux * bw * 0.5, r.signed() * 0.006, uz * bw * 0.5),
@@ -257,10 +261,10 @@ pub fn courseInto(bb: *Builder, r: *mathx.Rng, ax: f32, az: f32, bx: f32, bz: f3
     }
 }
 
-pub fn courseStack(bb: *Builder, r: *mathx.Rng, cx: f32, y0: f32, cz: f32, w: f32, d: f32, ch: f32, n: i32, taper: f32) f32 {
+pub fn courseStack(bb: *Builder, r: *mathx.Rng, cx: f32, y0: f32, cz: f32, w: f32, d: f32, ch: f32, n: i32, taper: f32, tone: ?Tone) f32 {
     bb.setMat(.stone);
     const total = ch * @as(f32, @floatFromInt(n));
-    bb.addCube(v3(cx, y0 + total * 0.5, cz), v3(w * (1.0 - taper * 0.5) * 0.94, total, d * (1.0 - taper * 0.5) * 0.94), MORTAR);
+    bb.addCube(v3(cx, y0 + total * 0.5, cz), v3(w * (1.0 - taper * 0.5) * 0.94, total, d * (1.0 - taper * 0.5) * 0.94), if (tone) |t| t.burn else MORTAR);
     var y = y0;
     var i: i32 = 0;
     while (i < n) : (i += 1) {
@@ -273,7 +277,9 @@ pub fn courseStack(bb: *Builder, r: *mathx.Rng, cx: f32, y0: f32, cz: f32, w: f3
             v3(sw * 0.5, r.signed() * 0.008, r.signed() * 0.007),
             v3(0, h * 0.5, 0),
             v3(r.signed() * 0.007, 0, sd * 0.5),
-            if (r.float() < (if (@mod(i, 2) == 0) @as(f32, 0.5) else 0.24)) STONE_DK else if (r.float() < 0.16) STONE_LT else STONE,
+            if (tone) |tn|
+                (if (r.float() < (if (@mod(i, 2) == 0) @as(f32, 0.5) else 0.24)) tn.stoneDk else if (r.float() < 0.16) tn.stoneLt else tn.stone)
+            else if (r.float() < (if (@mod(i, 2) == 0) @as(f32, 0.5) else 0.24)) STONE_DK else if (r.float() < 0.16) STONE_LT else STONE,
         );
         y += ch;
     }
@@ -340,6 +346,155 @@ pub fn crackInto(bb: *Builder, a: rl.Vector3, dir: rl.Vector3, side: rl.Vector3,
         v3(nx / nl * into, ny / nl * into, nz / nl * into),
         STONE_DK,
     );
+}
+
+/// **THE PALETTE A GILDED FAMILY IS DRAWN IN, AND THE ONLY THING THAT SEPARATES TWO OF THEM.** The muqarnas,
+/// the band, the ring and the star below are ONE implementation each; the Gilded Ruins pass `propgold.GILT`
+/// and the Sun Palace `proppalace.SUN`, and nothing else about the ornament differs.
+pub const Tone = struct {
+    stone: rl.Color,
+    stoneLt: rl.Color,
+    stoneDk: rl.Color,
+    /// The same stone with the fire's or the sun's mark on it, not a third stone.
+    burn: rl.Color,
+    gold: rl.Color,
+    goldLt: rl.Color,
+    goldDk: rl.Color,
+
+    pub fn stoneOf(t: Tone, r: *mathx.Rng) rl.Color {
+        const f = r.float();
+        if (f < 0.16) return t.stoneLt;
+        if (f < 0.34) return t.stoneDk;
+        if (f < 0.42) return t.burn;
+        return t.stone;
+    }
+
+    pub fn goldOf(t: Tone, r: *mathx.Rng) rl.Color {
+        const f = r.float();
+        if (f < 0.30) return t.goldLt;
+        if (f < 0.52) return t.goldDk;
+        return t.gold;
+    }
+};
+
+pub const MUQ_TIERS: i32 = 4;
+// Share of the whole rise each tier hangs out past the one below. Real ones project under half.
+pub const MUQ_STEP: f32 = 0.15;
+comptime {
+    // `muqarnasInto` widens each tier over `MUQ_TIERS - 1`; at one tier that is a divide by zero.
+    std.debug.assert(MUQ_TIERS > 1);
+}
+
+/// `addDome` spends `sides * 3` triangles on each niche: at 8 that is 2,688 on one column, at 6 it is 2,016, and the difference is invisible on a hollow 0.34 m across at the 320 m the kind is drawn to.
+const NICHE_SIDES: i32 = 6;
+
+pub fn muqarnasInto(bb: *Builder, r: *mathx.Rng, c: rl.Vector3, face: rl.Vector3, w: f32, up: f32, gild: f32, t: Tone) void {
+    const th = up / @as(f32, @floatFromInt(MUQ_TIERS));
+    const f = mathx.normV(v3(face.x, 0, face.z));
+    const s = v3(-f.z, 0, f.x);
+    var tier: i32 = 0;
+    while (tier < MUQ_TIERS) : (tier += 1) {
+        const ft = @as(f32, @floatFromInt(tier));
+        const y = c.y + th * (ft + 0.5);
+        const grow = 0.58 + 0.42 * ft / @as(f32, @floatFromInt(MUQ_TIERS - 1));
+        const half = w * 0.5 * grow;
+        const out = MUQ_STEP * up * ft;
+        const depth = th * 1.05;
+        bb.setMat(.stone);
+        bb.addBox(
+            v3(c.x + f.x * (out + depth * 0.5), y + th * 0.30, c.z + f.z * (out + depth * 0.5)),
+            v3(s.x * half, r.signed() * 0.004, s.z * half),
+            v3(0, th * 0.20, 0),
+            v3(f.x * depth * 0.5, 0, f.z * depth * 0.5),
+            if (r.float() < 0.22) t.stoneLt else t.stone,
+        );
+        const cells: i32 = 2 + tier;
+        var i: i32 = 0;
+        while (i < cells) : (i += 1) {
+            const u = (@as(f32, @floatFromInt(i)) + 0.5) / @as(f32, @floatFromInt(cells));
+            const off = (u - 0.5) * half * 2.0;
+            const pitch = half * 2.0 / @as(f32, @floatFromInt(cells));
+            const cx = c.x + s.x * (off + pitch * 0.5) + f.x * (out + depth * 0.42);
+            const cz = c.z + s.z * (off + pitch * 0.5) + f.z * (out + depth * 0.42);
+            if (i + 1 < cells) {
+                bb.addBox(
+                    v3(cx, y - th * 0.12, cz),
+                    v3(s.x * pitch * 0.16, 0, s.z * pitch * 0.16),
+                    v3(0, th * 0.36, 0),
+                    v3(f.x * depth * 0.40, 0, f.z * depth * 0.40),
+                    t.stoneOf(r),
+                );
+            }
+            const nx = c.x + s.x * off + f.x * (out + depth * 0.12);
+            const nz = c.z + s.z * off + f.z * (out + depth * 0.12);
+            const nr = @min(pitch * 0.40, th * 0.42);
+            const leaf = r.float() < gild;
+            bb.setMat(if (leaf) .gilt else .stone);
+            bb.addDome(
+                v3(nx, y - th * 0.06, nz),
+                f,
+                nr,
+                NICHE_SIDES,
+                if (leaf) t.goldOf(r) else t.burn,
+            );
+        }
+    }
+}
+
+/// A COURSE OF IT IS ALWAYS GONE — the chance a plate has been prised off, one number for the band and the ring.
+const GILT_GONE: f32 = 0.22;
+
+/// A gilded frieze round a SQUARE mass; `halfX`/`halfZ` are the mass's own half-extents.
+pub fn giltBandInto(bb: *Builder, r: *mathx.Rng, cx: f32, y: f32, cz: f32, halfX: f32, halfZ: f32, h: f32, t: Tone) void {
+    bb.setMat(.gilt);
+    for ([_][2]f32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } }) |s| {
+        if (r.float() < GILT_GONE) continue;
+        const along = v3(s[1] * halfX * 0.92, 0, s[0] * halfZ * 0.92);
+        bb.addBox(
+            v3(cx + s[0] * halfX, y + r.signed() * 0.01, cz + s[1] * halfZ),
+            along,
+            v3(0, h * 0.5, 0),
+            v3(s[0] * 0.022, 0, s[1] * 0.022),
+            t.goldOf(r),
+        );
+    }
+}
+
+/// …and the same frieze round a ROUND or POLYGONAL one. Plates laid tangentially with gaps: a four-plate square band on a 0.40 m column hangs its corners 0.16 m out in the air.
+pub fn giltRingInto(bb: *Builder, r: *mathx.Rng, cx: f32, y: f32, cz: f32, radius: f32, h: f32, sides: i32, t: Tone) void {
+    bb.setMat(.gilt);
+    const n: f32 = @floatFromInt(sides);
+    var i: i32 = 0;
+    while (i < sides) : (i += 1) {
+        if (r.float() < GILT_GONE) continue;
+        const a = std.math.tau * (@as(f32, @floatFromInt(i)) + 0.5) / n;
+        const ca = mathx.cosf(a);
+        const sa = mathx.sinf(a);
+        const half = std.math.tau * radius / n * 0.46;
+        bb.addBox(
+            v3(cx + ca * radius, y + r.signed() * 0.01, cz + sa * radius),
+            v3(-sa * half, 0, ca * half),
+            v3(0, h * 0.5, 0),
+            v3(ca * 0.026, 0, sa * 0.026),
+            t.goldOf(r),
+        );
+    }
+}
+
+/// The eight-point star (khatim) — two squares at 45 degrees. Laid FLAT as a plan for basins and paving.
+pub fn starInto(bb: *Builder, r: *mathx.Rng, c: rl.Vector3, out: f32, h: f32, col: rl.Color, t: Tone) void {
+    for ([_]f32{ 0, 45.0 }) |deg| {
+        const a = mathx.radians(deg);
+        const ca = mathx.cosf(a);
+        const sa = mathx.sinf(a);
+        bb.addBox(
+            c,
+            v3(ca * out, 0, sa * out),
+            v3(0, h * 0.5, 0),
+            v3(-sa * out, 0, ca * out),
+            if (r.float() < 0.3) t.stoneDk else col,
+        );
+    }
 }
 
 pub const WEAVE = rgba(88, 80, 62, 255);

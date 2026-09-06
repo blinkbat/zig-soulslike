@@ -338,6 +338,7 @@ pub const sceneFS =
     \\  if (id==8) return vec3(0.058, 0.044, 0.038);  // cinder, a burnt crust warmer and darker than ash
     \\  if (id==9) return vec3(0.058, 0.048, 0.062);  // spore floor, the one COLD ground
     \\  if (id==10) return vec3(0.115, 0.055, 0.070);  // fungal bloom - the one PINK ground, mauve at 122/85/97 on screen
+    \\  if (id==11) return vec3(0.215, 0.100, 0.044);  // desert sand - the BRIGHTEST ground in the table, 162/115/79 and hard orange
     \\  return vec3(0.046, 0.062, 0.034);
     \\}
     \\int soilAt(vec2 w){
@@ -400,6 +401,26 @@ pub const sceneFS =
     \\// because they are dilated by the same walk off the same paint, and because a second sampler would be an
     \\// eighteenth texture unit — GL 3.3 only promises sixteen to a fragment stage.
     \\uniform sampler2D waterEdgeMap;
+    \\uniform sampler2D caveCovMap;   // excavated coverage TIMES the rock over its ceiling: 0 is solid rock or open sky
+    \\uniform sampler2D caveRoofMap;  // the ceiling height
+    \\uniform float caveHalf;
+    \\uniform float caveBase;
+    \\uniform int   caveOn;
+    \\
+    \\// HOW COVERED THIS FRAGMENT IS. Position, not a flag: standing in the mouth, the hillside outside is
+    \\// still in daylight and the chamber behind is still dark, in the same frame.
+    \\float shelterAt(vec3 wp){
+    \\  if (caveOn == 0) return 0.0;
+    \\  vec2 uv = wp.xz/(2.0*caveHalf) + 0.5;
+    \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
+    \\  float cov = texture(caveCovMap, uv).r;
+    \\  if (cov < 0.02) return 0.0;
+    \\  float rb = texture(caveRoofMap, uv).r;
+    \\  float roof = caveBase + (rb*255.0 - 64.0)*0.25;    // `wf.heightOf`
+    \\  // FULL AT THE WALL AND AT THE CEILING, not fading out at them: the contour runs through cov 0.5 and the
+    \\  // wall's own surface stands on it, so a falloff keyed to either one rings every chamber in daylight.
+    \\  return clamp((roof - wp.y)/0.75 + 1.0, 0.0, 1.0)*clamp(cov*2.0, 0.0, 1.0);
+    \\}
     \\int waterCellAt(vec2 w){
     \\  vec2 uv = w/(2.0*waterHalf) + 0.5;
     \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 1;   // natural water
@@ -471,7 +492,7 @@ pub const sceneFS =
     \\  wet = wet*wet;                                  // the last metre or so does most of the work
     \\  return mix(c, c*0.42 + vec3(0.020, 0.019, 0.014), wet*0.85);
     \\}
-    \\vec3 paintedSoil(vec3 c, vec2 p, float blades, float f3, float px){
+    \\vec3 paintedSoil(vec3 c, vec2 p, float blades, float f2, float f3, float px){
     \\  if (soilOn == 0) return c;
     \\  // **THE POLICY IS READ FIRST, AT THE UNWARPED POSITION.** It has to be: the warp is what the policy
     \\  // decides, so sampling the edge through it would ask the answer to choose the question. The map is
@@ -490,7 +511,10 @@ pub const sceneFS =
     \\    if (t == id) cov += 1.0;
     \\  }
     \\  if (id == 0) return c;
-    \\  vec3 s = soilColor(id)*(0.80 + 0.50*blades + 0.20*f3);
+    \\  // SAND IS FINER AND FLATTER THAN ANY BLADE: a 58-cell hash at a third the amplitude, or the grain
+    \\  // reads as gravel and a desert floor comes back looking like scree.
+    \\  float g = (id==11) ? (0.88 + 0.20*fspk(p, 58.0, px) + 0.16*f3 + 0.10*f2) : (0.80 + 0.50*blades + 0.20*f3);
+    \\  vec3 s = soilColor(id)*g;
     \\  // THE TWO COVERAGES MULTIPLY, and they answer different questions: the brush's own strength, and how
     \\  // much of this cell's NEIGHBOURHOOD is the same material. `k.z` is how much of the second one the
     \\  // shape wants — 0 cuts the ring out entirely and the edge lands wherever the coverage does.
@@ -531,7 +555,7 @@ pub const sceneFS =
     \\  }
     \\  float marsh = smoothstep(44.0, 108.0, p.x);
     \\  c = mix(c, c*vec3(1.06, 0.97, 0.74), marsh*0.42);
-    \\  c = paintedSoil(c, p, blades, f3, px);
+    \\  c = paintedSoil(c, p, blades, f2, f3, px);
     \\  // LAST, over the paint as well: sand is soaked by the water standing on it, whatever material somebody painted there.
     \\  c = wetShore(c, p);
     \\  return c*(0.78 + 0.22*fvn(p, 0.03, vec2(9.7), px));
@@ -825,19 +849,25 @@ pub const sceneFS =
     \\    // `matAlbedo` one line up, so a tar pit reads its own crawl off the same swell field.
     \\    if (mi == 9) { vec2 sk = liquidSwell(sheetKind); n = waterNormal(p, uTime, pxP, sk.x, sk.y); nv = clamp(dot(n, V), 0.0, 1.0); }
     \\  }
+    \\  // A SHEET SEEN FROM BEHIND IS ITS OWN UNDERSIDE — the hill over a chamber is one surface, and from
+    \\  // inside it its normal points the other way, which is what makes it read as rock overhead and not as sky.
+    \\  if (!gl_FrontFacing) n = -n;
     \\  float ndl = dot(n, L);
     \\  float diff = clamp((ndl + 0.12)/1.12, 0.0, 1.0); // tighter wrap = crisper terminator (more contrast)
     \\  float sh = shadowFrac(fragPosition, ndl);
     \\  // Golden-hour split: warm amber key vs cool slate sky ambient + warm dirt bounce.
     \\  vec3 hemi = mix(ambGround, ambSky, n.y*0.5 + 0.5); // darker floor — darks go DARKER
-    \\  vec3 lit = base*(hemi*(1.0 - 0.62*sh) + keyCol*diff*1.72*(1.0 - sh)
+    \\  // UNDER ROCK THE SKY IS GONE AND SO IS THE SUN, and what is left is whatever is carried down there.
+    \\  float shelter = shelterAt(fragPosition);
+    \\  hemi *= mix(1.0, 0.16, shelter);   // a chamber with no torch reads as gloom, not as a black screen
+    \\  vec3 lit = base*(hemi*(1.0 - 0.62*sh) + keyCol*diff*1.72*(1.0 - sh)*(1.0 - shelter)
     \\                   + pointLights(fragPosition, n));                                   // + torch/firelight
     \\  if (groundMode == 0){
     \\    // Cool sky rim on props/hero — lifts silhouettes off the dark ground (cheap atmospheric backlight; NOT on terrain, where grazing angles would sheen it all).
     \\    float rim = (mi == 9) ? 0.0 : pow(1.0 - nv, 2.6);
     \\    // The rim IS the sky, so it takes the sky's own ambient rather than a colour of its own — which is
     \\    // what carries it from slate at noon to near-nothing at midnight without a second dial.
-    \\    lit += rim*ambSky*0.51*(0.6 + 0.4*n.y)*(1.0 - 0.5*sh);
+    \\    lit += rim*ambSky*0.51*(0.6 + 0.4*n.y)*(1.0 - 0.5*sh)*(1.0 - shelter);
     \\    // SHINY METAL (STEEL, id 4): a hot, tight Blinn-Phong sun glint + a cool sky sheen on grazing angles, so blades/armour/steel props read as polished metal (not matte).
     \\    if (mi == 4){
     \\      vec3 H = normalize(L + V);

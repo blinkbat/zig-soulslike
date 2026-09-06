@@ -10,6 +10,7 @@ const propfx = @import("../props/propfx.zig");
 const art = @import("../props/propart.zig");
 const proprock = @import("../props/proprock.zig");
 const wf = @import("worldfmt.zig");
+const caves = @import("caves.zig");
 const chestmod = @import("../play/chest.zig");
 const pickupmod = @import("../play/pickup.zig");
 const item = @import("../play/item.zig");
@@ -42,7 +43,8 @@ comptime {
 }
 
 const MAX_PROPS = 24576;
-const MAX_SOLIDS = 8192;
+/// PROPS AND CLIFF STAMPS SHARE THIS. `MAX_CLIFF_SOLIDS` of face rock is appended after the props, so the cap has to clear both or a heavily cut map panics in `buildSolids`.
+const MAX_SOLIDS = 16384;
 pub const MAX_WARDS = 64;
 pub const MAX_ILLUSIONS = 32;
 /// Seconds an illusory wall takes to thin to nothing once struck; it stops being a wall on the first frame.
@@ -113,8 +115,8 @@ const OCCL_TALL: f32 = 1.15;
 const OCCL_REACH: f32 = CELL;
 const OCCL_DEPTH_BAND: f32 = 1.6;
 
-/// Room for a corner where four dense cells meet: the fitted cliffs stand up ten to twenty-seven solids each where the old pair stood two.
-pub const MAX_NEAR = 256;
+/// Room for a corner where four dense cells meet: the fitted cliffs stand up ten to twenty-seven solids each where the old pair stood two. The shipped map's densest 2x2 measures 215 BEFORE any cliff stamp, and the test that watches it cannot build them (they need GL), so the margin here is the only guard.
+pub const MAX_NEAR = 512;
 
 const GROUND_Y: f32 = 0.01;
 
@@ -504,6 +506,19 @@ pub const Env = struct {
     cliffSolids: [MAX_CLIFF_SOLIDS]collision.Solid = undefined,
     cliffSolidTile: [MAX_CLIFF_SOLIDS]u16 = undefined,
     ncliffSolids: usize = 0,
+    caveCovSrc: [wf.CAVE_CELLS]u8 = [_]u8{0} ** wf.CAVE_CELLS,
+    caveFloorSrc: [wf.CAVE_CELLS]u8 = [_]u8{wf.HEIGHT_ZERO} ** wf.CAVE_CELLS,
+    caveRoofSrc: [wf.CAVE_CELLS]u8 = [_]u8{wf.HEIGHT_ZERO} ** wf.CAVE_CELLS,
+    caveHalf: f32 = wf.DEFAULT_HALF,
+    caveAny: bool = false,
+    /// The roof the SHADER reads: the ceiling height where there is one, and 0 where the roof is through the hill. Cut here, because the fragment has no terrain height to test against.
+    caveShelterSrc: [wf.CAVE_CELLS]u8 = [_]u8{0} ** wf.CAVE_CELLS,
+    /// The chamber shells, tiled the way the terrain is: floor, walls and ceiling of every carve inside the tile.
+    shells: [NTILES]rl.Model = undefined,
+    shellBuilt: [NTILES]bool = [_]bool{false} ** NTILES,
+    /// The same tile with the hill taken off every chamber, not just the mouths — the editor's cutaway, built only where there is a cave to look into.
+    cutaways: [NTILES]rl.Model = undefined,
+    cutawayBuilt: [NTILES]bool = [_]bool{false} ** NTILES,
     skirt: rl.Model = undefined,
     skirtBuilt: bool = false,
     stat_draws: u32 = 0,
@@ -564,8 +579,9 @@ pub const Env = struct {
         self.mapHalf = m.half;
         self.uploadSoil(m);
         self.uploadWater(m);
-        const fresh = self.heightStale(m);
+        const fresh = self.heightStale(m) or self.caveStale(m);
         self.adoptHeight(m);
+        self.adoptCave(m);
         self.materialize(m);
         if (fresh) self.rebuildTerrain();
     }
@@ -593,10 +609,84 @@ pub const Env = struct {
         self.heightAny = m.anyHeight();
     }
 
+    /// A FLAT MAP WITH A CAVE IN IT IS STILL TILED. The one world-spanning quad has no cell to cut a mouth out of, and no tile to hang a chamber's shell on.
+    pub fn tiled(self: *const Env) bool {
+        return self.heightAny or self.caveAny;
+    }
+
+    pub fn caveFields(self: *const Env) caves.Fields {
+        return .{
+            .cov = &self.caveCovSrc,
+            .floor = &self.caveFloorSrc,
+            .roof = &self.caveRoofSrc,
+            .half = self.caveHalf,
+            .any = self.caveAny,
+            .base = GROUND_Y,
+        };
+    }
+
+    pub fn adoptCave(self: *Env, m: *const wf.Map) void {
+        self.caveCovSrc = m.caveCov;
+        self.caveFloorSrc = m.caveFloor;
+        self.caveRoofSrc = m.caveRoof;
+        self.caveHalf = m.half;
+        self.caveAny = m.anyCave();
+        self.cutShelter();
+        if (self.scene) |sc| sc.setCave(&self.caveShelterSrc, &self.caveRoofSrc, self.caveHalf, GROUND_Y, self.caveAny);
+    }
+
+    /// Only the OPEN points cost a terrain sample; solid rock is a byte compare.
+    fn cutShelter(self: *Env) void {
+        if (!self.caveAny) {
+            @memset(&self.caveShelterSrc, 0);
+            return;
+        }
+        for (self.caveCovSrc, self.caveRoofSrc, 0..) |cov, rb, i| {
+            if (cov < caves.EDGE) {
+                self.caveShelterSrc[i] = 0;
+                continue;
+            }
+            const ix = i % caves.N;
+            const iz = i / caves.N;
+            const p = caves.pointAt(self.caveHalf, ix, iz);
+            const thick = self.groundAt(p[0], p[1]) - (GROUND_Y + wf.heightOf(rb));
+            // COVERAGE TIMES HOW MUCH ROCK IS OVER IT, so the field the shader interpolates falls to nothing at a mouth instead of stepping off a sentinel.
+            const roofed = mathx.clampF(thick / SHELTER_FADE, 0, 1);
+            self.caveShelterSrc[i] = @intFromFloat(@round(@as(f32, @floatFromInt(cov)) * roofed));
+        }
+    }
+
+
+    fn caveStale(self: *const Env, m: *const wf.Map) bool {
+        return !(self.caveHalf == m.half and self.caveAny == m.anyCave() and
+            std.mem.eql(u8, &self.caveCovSrc, &m.caveCov) and
+            std.mem.eql(u8, &self.caveFloorSrc, &m.caveFloor) and
+            std.mem.eql(u8, &self.caveRoofSrc, &m.caveRoof));
+    }
+
+    /// A carve stroke's rebuild. `span` is a CAVE-lattice rect; the hill over it is rebuilt too, because a mouth is a hole in the terrain.
+    pub fn carveCave(self: *Env, m: *const wf.Map, span: [4]usize) void {
+        const wasAny = self.caveAny;
+        self.adoptCave(m);
+        if (wasAny != self.caveAny) return self.rebuildTerrain();
+        if (!self.tiled() or span[0] > span[2] or span[1] > span[3]) return;
+        const lo = tileOf((span[0] -| 1) / 2);
+        const hi = tileOf(@min((span[2] + 1) / 2, wf.HEIGHT_N - 1));
+        const zlo = tileOf((span[1] -| 1) / 2);
+        const zhi = tileOf(@min((span[3] + 1) / 2, wf.HEIGHT_N - 1));
+        var tz = zlo;
+        while (tz <= zhi) : (tz += 1) {
+            var tx = lo;
+            while (tx <= hi) : (tx += 1) self.buildTile(tz * TILES + tx);
+        }
+        buildSolids(self);
+    }
+
     /// `rebuildTerrain` remakes all 225 tiles: 12.5 MB of vertices, 1350 GL objects, 27.6 ms.
     pub fn uploadHeight(self: *Env, m: *const wf.Map) void {
-        if (!self.heightStale(m)) return;
+        if (!self.heightStale(m) and !self.caveStale(m)) return;
         self.adoptHeight(m);
+        self.adoptCave(m);
         self.rebuildTerrain();
     }
 
@@ -629,13 +719,13 @@ pub const Env = struct {
     fn rebuildTerrain(self: *Env) void {
         terrainBuilds += 1;
         for (0..NTILES) |i| {
-            if (!self.heightAny) {
+            if (!self.tiled()) {
                 self.dropTile(i);
                 continue;
             }
             self.buildTile(i);
         }
-        if (self.heightAny) {
+        if (self.tiled()) {
             self.buildSkirt();
         } else if (self.skirtBuilt) {
             unloadTerrain(self.skirt);
@@ -661,9 +751,158 @@ pub const Env = struct {
             unloadTerrain(self.casters[i]);
             self.casterBuilt[i] = false;
         }
+        if (self.shellBuilt[i]) {
+            unloadTerrain(self.shells[i]);
+            self.shellBuilt[i] = false;
+        }
+        if (self.cutawayBuilt[i]) {
+            unloadTerrain(self.cutaways[i]);
+            self.cutawayBuilt[i] = false;
+        }
         if (!self.tileBuilt[i]) return;
         unloadTerrain(self.tiles[i]);
         self.tileBuilt[i] = false;
+    }
+
+
+    fn caveBreachedAt(self: *const Env, cx: usize, cz: usize) bool {
+        if (!self.caveAny) return false;
+        const step = caves.cellStep(self.caveHalf);
+        const p = caves.pointAt(self.caveHalf, cx, cz);
+        const mx = p[0] + step * 0.5;
+        const mz = p[1] + step * 0.5;
+        const s = caves.sampleAt(self.caveFields(), mx, mz);
+        return s.hollow() and s.roof + MOUTH_EPS >= self.groundAt(mx, mz);
+    }
+
+    fn caveCellOf(self: *const Env, cx: usize, cz: usize) CaveCell {
+        const f = self.caveFields();
+        const p = caves.pointAt(self.caveHalf, cx, cz);
+        var c = CaveCell{
+            .x0 = p[0],
+            .z0 = p[1],
+            .step = caves.cellStep(self.caveHalf),
+            .cov = undefined,
+            .floor = undefined,
+            .roof = undefined,
+            .land = undefined,
+            .breached = self.caveBreachedAt(cx, cz),
+        };
+        for (wf.CLIFF_RING, 0..) |d, k| {
+            const ix = @min(cx + @as(usize, @intFromFloat(d[0])), caves.N - 1);
+            const iz = @min(cz + @as(usize, @intFromFloat(d[1])), caves.N - 1);
+            c.cov[k] = caves.covAt(f, ix, iz);
+            c.floor[k] = caves.floorAtPoint(f, ix, iz);
+            c.roof[k] = caves.roofAtPoint(f, ix, iz);
+            const q = caves.pointAt(self.caveHalf, ix, iz);
+            c.land[k] = self.groundAt(q[0], q[1]);
+        }
+        return c;
+    }
+
+    fn caveOpenNear(self: *const Env, cx: usize, cz: usize) bool {
+        if (!self.caveAny) return false;
+        const f = self.caveFields();
+        for (wf.CLIFF_RING) |d| {
+            const ix = @min(cx + @as(usize, @intFromFloat(d[0])), caves.N - 1);
+            const iz = @min(cz + @as(usize, @intFromFloat(d[1])), caves.N - 1);
+            if (caves.covAt(f, ix, iz) >= caves.EDGE_F) return true;
+        }
+        return false;
+    }
+
+    /// Every carve inside the tile: floor, walls, ceiling, and the cut rim of the hill at a mouth. Returns the vertical extent so the tile's cull bound reaches down into it.
+    fn buildShell(self: *const Env, b: *gfx.Builder, x0: usize, z0: usize, x1: usize, z1: usize, yLo: *f32, yHi: *f32) void {
+        if (!self.caveAny) return;
+        const cz1 = @min(2 * z1, caves.N - 1);
+        const cx1 = @min(2 * x1, caves.N - 1);
+        var cz = 2 * z0;
+        while (cz < cz1) : (cz += 1) {
+            var cx = 2 * x0;
+            while (cx < cx1) : (cx += 1) {
+                if (!self.caveOpenNear(cx, cz)) continue;
+                const c = self.caveCellOf(cx, cz);
+                const mean = (c.cov[0] + c.cov[1] + c.cov[2] + c.cov[3]) * 0.25;
+                const cell = caves.cellShapes(c.cov, mean);
+                for (c.floor, c.roof) |fy, ry| {
+                    yLo.* = @min(yLo.*, fy);
+                    yHi.* = @max(yHi.*, ry);
+                }
+                for (cell.open[0..cell.nopen]) |*s| {
+                    shellFan(b, &c, s, c.floor, true);
+                    if (!c.breached) shellFan(b, &c, s, c.roof, false);
+                    shellWalls(b, &c, s);
+                }
+                if (!c.breached) continue;
+                const solidSide = [4]bool{
+                    cx == 0 or !self.caveBreachedAt(cx - 1, cz),
+                    cz + 2 >= caves.N or !self.caveBreachedAt(cx, cz + 1),
+                    cx + 2 >= caves.N or !self.caveBreachedAt(cx + 1, cz),
+                    cz == 0 or !self.caveBreachedAt(cx, cz - 1),
+                };
+                for (solidSide, 0..) |solid, side| {
+                    if (solid) mouthBand(b, &c, side);
+                }
+            }
+        }
+    }
+
+    fn mouthCell(self: *const Env, ix: usize, iz: usize, cutAll: bool) bool {
+        if (!self.caveAny) return false;
+        for (0..2) |sz| {
+            for (0..2) |sx| {
+                const cx = 2 * ix + sx;
+                const cz = 2 * iz + sz;
+                if (self.caveBreachedAt(cx, cz)) return true;
+                if (cutAll and self.caveOpenNear(cx, cz)) return true;
+            }
+        }
+        return false;
+    }
+
+    /// The hill over a mouth, cut to the cave's own contour. A sub-cell the cave has not breached is whole; a breached one keeps only its ROCK side, on the crossing points the shell's walls stand on.
+    fn mouthTerrain(self: *const Env, b: *gfx.Builder, ix: usize, iz: usize, cutAll: bool) void {
+        const nrm = [4]rl.Vector3{
+            self.pointNormal(ix, iz),
+            self.pointNormal(ix, iz + 1),
+            self.pointNormal(ix + 1, iz + 1),
+            self.pointNormal(ix + 1, iz),
+        };
+        for (0..2) |sz| {
+            for (0..2) |sx| {
+                const cx = 2 * ix + sx;
+                const cz = 2 * iz + sz;
+                const c = self.caveCellOf(cx, cz);
+                const base = [2]f32{ @floatFromInt(sx), @floatFromInt(sz) };
+                if (!c.breached and !(cutAll and self.caveOpenNear(cx, cz))) {
+                    var p: [4]rl.Vector3 = undefined;
+                    var n: [4]rl.Vector3 = undefined;
+                    for (wf.CLIFF_RING, 0..) |d, k| {
+                        const u = [2]f32{ d[0], d[1] };
+                        p[k] = c.world(u, c.at(u, c.land));
+                        n[k] = normalAt(nrm, (base[0] + u[0]) * 0.5, (base[1] + u[1]) * 0.5);
+                    }
+                    b.quadSmooth(p[0], p[1], p[2], p[3], n[0], n[1], n[2], n[3], rl.Color.white);
+                    continue;
+                }
+                const mean = (c.cov[0] + c.cov[1] + c.cov[2] + c.cov[3]) * 0.25;
+                const cell = caves.cellShapes(c.cov, mean);
+                for (cell.rock[0..cell.nrock]) |*s| {
+                    if (s.n < 3) continue;
+                    var i: usize = 1;
+                    while (i + 1 < s.n) : (i += 1) {
+                        const tri = [3][2]f32{ s.pts[0], s.pts[i], s.pts[i + 1] };
+                        var p: [3]rl.Vector3 = undefined;
+                        var n: [3]rl.Vector3 = undefined;
+                        for (tri, 0..) |u, k| {
+                            p[k] = c.world(u, c.at(u, c.land));
+                            n[k] = normalAt(nrm, (base[0] + u[0]) * 0.5, (base[1] + u[1]) * 0.5);
+                        }
+                        b.triSmooth(p[0], p[1], p[2], n[0], n[1], n[2], rl.Color.white);
+                    }
+                }
+            }
+        }
     }
 
     fn buildTile(self: *Env, i: usize) void {
@@ -678,6 +917,8 @@ pub const Env = struct {
         const half = self.heightHalf;
         const step = 2 * half / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
         var b = gfx.Builder.init();
+        var cutb = gfx.Builder.init();
+        var cutAny = false;
         var fb = gfx.Builder.init();
         fb.setMat(.stone);
         var sb = gfx.Builder.init();
@@ -701,6 +942,22 @@ pub const Env = struct {
                 const t = wf.cliffTiers(ha, hb, hc, hd);
                 yLo = @min(yLo, t.lo);
                 yHi = @max(yHi, t.hi);
+                if (self.caveAny) {
+                    if (self.mouthCell(ix, iz, true)) {
+                        self.mouthTerrain(&cutb, ix, iz, true);
+                        cutAny = true;
+                    } else cutb.quadSmooth(
+                        v3(xa, ha, za),
+                        v3(xa, hd, zb),
+                        v3(xb, hc, zb),
+                        v3(xb, hb, za),
+                        self.pointNormal(ix, iz),
+                        self.pointNormal(ix, iz + 1),
+                        self.pointNormal(ix + 1, iz + 1),
+                        self.pointNormal(ix + 1, iz),
+                        rl.Color.white,
+                    );
+                }
                 const case = self.cliffField[iz * wf.HEIGHT_N + ix];
                 if (case == wf.CLIFF_STAIR) {
                     const tread = self.cellSurface(ix, iz);
@@ -737,6 +994,10 @@ pub const Env = struct {
                     });
                     continue;
                 }
+                if (self.mouthCell(ix, iz, false)) {
+                    self.mouthTerrain(&b, ix, iz, false);
+                    continue;
+                }
                 b.quadSmooth(
                     v3(xa, ha, za),
                     v3(xa, hd, zb),
@@ -750,9 +1011,20 @@ pub const Env = struct {
                 );
             }
         }
+        var shb = gfx.Builder.init();
+        shb.setMat(.stone);
+        self.buildShell(&shb, x0, z0, x1, z1, &yLo, &yHi);
         const sh = if (self.scene) |sc| sc.shader else self.ground.materials[0].shader;
         self.tiles[i] = b.toModel(sh);
         self.tileBuilt[i] = true;
+        if (cutAny and cutb.pos.items.len > 0) {
+            self.cutaways[i] = cutb.toModel(sh);
+            self.cutawayBuilt[i] = true;
+        } else cutb.deinit();
+        if (shb.pos.items.len > 0) {
+            self.shells[i] = shb.toModel(sh);
+            self.shellBuilt[i] = true;
+        } else shb.deinit();
         if (fb.pos.items.len > 0) {
             self.faces[i] = fb.toModel(sh);
             self.faceBuilt[i] = true;
@@ -1038,6 +1310,7 @@ pub const Env = struct {
         var p = Placer{ .e = self, .m = m, .flat = !m.anyHeight() };
         for (m.slice(), 0..) |*o, i| {
             p.cur = @intCast(i);
+            p.under = o.under;
             p.expand(o);
         }
         buildSolids(self);
@@ -1075,6 +1348,8 @@ pub const Env = struct {
             if (props.info(pr.kind).light != null) o.seed = src.seed +% k;
             m.ops[s + k] = o;
         }
+        // The scatter block the exploded op held is unreferenced now that every slot it occupied is an `at`.
+        m.compactScats();
         return n;
     }
 
@@ -1300,7 +1575,24 @@ pub const Env = struct {
         };
         var look = Look{ .a = from, .b = to };
         self.eachSolidAlong(from, to, &look, Look.one);
-        return look.clear;
+        if (!look.clear) return false;
+        return !self.rockBetween(from, to);
+    }
+
+    /// ROCK IS OPAQUE. Nothing on the hill sees a body in the chamber under it, and nothing shoots one through the roof.
+    pub fn rockBetween(self: *const Env, from: rl.Vector3, to: rl.Vector3) bool {
+        if (!self.caveAny) return false;
+        const d = mathx.subV(to, from);
+        const len = @sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+        if (len < 1e-3) return false;
+        const steps: usize = @intFromFloat(@min(@ceil(len / ROCK_PROBE), 64));
+        var i: usize = 1;
+        while (i < steps) : (i += 1) {
+            const u = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(steps));
+            const p = mathx.addV(from, mathx.scaleV(d, u));
+            if (caves.spaceAt(self.caveFields(), self.groundAt(p.x, p.z), p.x, p.y, p.z) == .rock) return true;
+        }
+        return false;
     }
 
     pub fn wardCrossed(self: *const Env, a: rl.Vector3, b: rl.Vector3) ?u8 {
@@ -1524,10 +1816,47 @@ pub const Env = struct {
         return false;
     }
 
+    /// THE LAND, THE CHAMBER UNDER IT, OR A DECK — and `footY` is what decides, because height alone cannot tell a hillside from the roof of a cave.
     pub fn standAt(self: *const Env, x: f32, z: f32, footY: f32) f32 {
+        const s = self.supportAt(x, z, footY);
+        if (self.deckAt(x, z, footY)) |d| return mathx.maxF(s.y, d);
+        return s.y;
+    }
+
+    pub fn supportAt(self: *const Env, x: f32, z: f32, footY: f32) caves.Support {
         const g = self.groundAt(x, z);
-        if (self.deckAt(x, z, footY)) |d| return mathx.maxF(g, d);
-        return g;
+        if (!self.caveAny) return .{ .y = g, .surface = .land };
+        return caves.supportAt(self.caveFields(), g, x, z, footY);
+    }
+
+    pub fn underground(self: *const Env, x: f32, z: f32, footY: f32) bool {
+        return self.supportAt(x, z, footY).surface == .cave;
+    }
+
+    /// How covered a point is, 0 out under the sky and 1 under solid rock. The CPU's read of what the shader shades by.
+    pub fn shelterAt(self: *const Env, x: f32, y: f32, z: f32) f32 {
+        if (!self.caveAny) return 0;
+        return caves.shelterAt(self.caveFields(), self.groundAt(x, z), x, y, z, SHELTER_FADE);
+    }
+
+    /// The chamber floor here, or nothing where there is no chamber.
+    pub fn caveStandAt(self: *const Env, x: f32, z: f32) ?f32 {
+        const s = caves.sampleAt(self.caveFields(), x, z);
+        return if (s.hollow()) s.floor else null;
+    }
+
+    pub fn caveFloorAt(self: *const Env, x: f32, z: f32) f32 {
+        return caves.sampleAt(self.caveFields(), x, z).floor;
+    }
+
+    pub fn caveRoofAt(self: *const Env, x: f32, z: f32) f32 {
+        return caves.sampleAt(self.caveFields(), x, z).roof;
+    }
+
+    /// The rock over a body's head, or nothing where it stands under the sky.
+    pub fn ceilingAt(self: *const Env, x: f32, z: f32, footY: f32) ?f32 {
+        if (!self.underground(x, z, footY)) return null;
+        return caves.sampleAt(self.caveFields(), x, z).roof;
     }
 
     pub fn ladderNear(self: *const Env, p: rl.Vector3, footY: f32, reach: f32) ?Rung {
@@ -1605,7 +1934,7 @@ pub const Env = struct {
         if (!self.heightAny or dist <= 0) return to;
         if (self.deepRefusedPast(from.x, from.z, to.x, to.z, wade)) return v3(from.x, from.y, from.z);
         if (self.stepOk(from, dir, dist)) return to;
-        const g = self.gradAt(from.x, from.z);
+        const g = self.blockGrad(from);
         const gl = @sqrt(g[0] * g[0] + g[1] * g[1]);
         if (gl < 1e-5) return to;
         const ux = g[0] / gl;
@@ -1619,6 +1948,15 @@ pub const Env = struct {
         const slide = v3(from.x + tx / tl * dist, from.y, from.z + tz / tl * dist);
         if (self.stepOk(from, v3(tx / tl, 0, tz / tl), dist)) return slide;
         return v3(from.x, from.y, from.z);
+    }
+
+    /// A wall refuses a step by its own gradient: underground that is the ROCK's, and above it the hill's.
+    fn blockGrad(self: *const Env, from: rl.Vector3) [2]f32 {
+        if (self.caveAny and self.underground(from.x, from.z, from.y)) {
+            const g = caves.covGrad(self.caveFields(), from.x, from.z);
+            return .{ -g[0], -g[1] };
+        }
+        return self.gradAt(from.x, from.z);
     }
 
     /// Only a cliff cell can make one — a ramp's descent over a frame's travel is bounded by `MAX_SLOPE`. Measured where a body STANDS (`standAt` off `from.y`), so the head of a flight is not a lip.
@@ -1781,8 +2119,8 @@ pub const Env = struct {
         for (m.foes[0..m.nfoes]) |f| {
             if (foemod.poolBand(f.kind) == null) continue;
             _ = m.paintWater(f.x, f.z, step, true, null, null);
-            const xs = wf.pointSpan(f.x, radius, m.half, step) orelse continue;
-            const zs = wf.pointSpan(f.z, radius, m.half, step) orelse continue;
+            const xs = wf.pointSpan(f.x, radius, m.half, step, wf.HEIGHT_N) orelse continue;
+            const zs = wf.pointSpan(f.z, radius, m.half, step, wf.HEIGHT_N) orelse continue;
             for (0..8) |_| {
                 var iz = zs[0];
                 while (iz <= zs[1]) : (iz += 1) {
@@ -1810,6 +2148,12 @@ pub const Env = struct {
     pub fn wadeDepth(self: *const Env, x: f32, z: f32) f32 {
         if (self.paintedDepth(x, z) <= 0) return 0;
         return mathx.maxF(0, WATER_Y - self.groundAt(x, z));
+    }
+
+    /// THE AIR IN A CHAMBER IS DRY even where a pool is painted over the hill above it: the sheet is the LAND's, and a body under a roof is not in it.
+    pub fn wadeDepthUnder(self: *const Env, x: f32, z: f32, footY: f32) f32 {
+        if (self.caveAny and self.underground(x, z, footY)) return 0;
+        return self.wadeDepth(x, z);
     }
 
     pub fn deepRefused(self: *const Env, fromX: f32, fromZ: f32, toX: f32, toZ: f32) bool {
@@ -1889,26 +2233,30 @@ pub const Env = struct {
         if (self.skirtBuilt) self.skirt.materials[0].shader = sh;
     }
 
+    /// The editor's underground view: where a tile has a cutaway, the hill over its chambers is not drawn.
+    pub var cutaway: bool = false;
+
     pub fn drawGround(self: *Env, view: ?*const View) void {
-        if (!self.heightAny) {
+        if (!self.tiled()) {
             const k = groundOut(self.mapHalf) / GROUND_HALF;
             rl.drawModelEx(self.ground, mathx.zero3, v3(0, 1, 0), 0, v3(k, 1, k), rl.Color.white);
             return;
         }
-        for (self.tiles[0..], self.tileBuilt[0..], self.tileMid[0..], self.tileRad[0..]) |t, built, mid, rad| {
+        for (self.tiles[0..], self.tileBuilt[0..], self.tileMid[0..], self.tileRad[0..], 0..) |t, built, mid, rad, i| {
             if (!built) continue;
             if (view) |vw| {
                 if (!vw.visible(mid, rad, GROUND_HALF)) continue;
             }
             self.stat_draws += 1;
-            rl.drawModel(t, mathx.zero3, 1.0, rl.Color.white);
+            const cut = cutaway and self.cutawayBuilt[i];
+            rl.drawModel(if (cut) self.cutaways[i] else t, mathx.zero3, 1.0, rl.Color.white);
         }
         if (self.skirtBuilt) rl.drawModel(self.skirt, mathx.zero3, 1.0, rl.Color.white);
     }
 
     /// Drawn OUTSIDE `drawGround`'s `groundMode`, so they take the stone albedo.
     pub fn drawCliffFaces(self: *Env, view: ?*const View) void {
-        if (!self.heightAny) return;
+        if (!self.tiled()) return;
         for (self.faces[0..], self.faceBuilt[0..], self.tileMid[0..], self.tileRad[0..]) |f, built, mid, rad| {
             if (!built) continue;
             if (view) |vw| {
@@ -1919,10 +2267,23 @@ pub const Env = struct {
         }
     }
 
+    /// The chambers, drawn with the cliff faces' stone rather than the ground's soil.
+    pub fn drawCaveShells(self: *Env, view: ?*const View) void {
+        if (!self.caveAny) return;
+        for (self.shells[0..], self.shellBuilt[0..], self.tileMid[0..], self.tileRad[0..]) |s, built, mid, rad| {
+            if (!built) continue;
+            if (view) |vw| {
+                if (!vw.visible(mid, rad, GROUND_HALF)) continue;
+            }
+            self.stat_draws += 1;
+            rl.drawModel(s, mathx.zero3, 1.0, rl.Color.white);
+        }
+    }
+
     /// Depth pass only, and only the triangles that face AWAY from the sun (the caller culls front faces): the lit
     /// side of a hill never meets its own depth, so it cannot acne, and the far side is the silhouette that throws.
     pub fn drawGroundCasters(self: *Env, focus: rl.Vector3) void {
-        if (!self.heightAny) return;
+        if (!self.tiled()) return;
         for (self.tiles[0..], self.tileBuilt[0..], self.tileMid[0..], self.tileRad[0..], self.tileH[0..]) |t, built, mid, rad, top| {
             if (!built) continue;
             if (!castsInto(focus, mid, rad, top)) continue;
@@ -1933,7 +2294,7 @@ pub const Env = struct {
 
     /// Depth pass only — the plate stands inside the rock.
     pub fn drawCliffCasters(self: *Env, focus: rl.Vector3) void {
-        if (!self.heightAny) return;
+        if (!self.tiled()) return;
         for (self.casters[0..], self.casterBuilt[0..], self.tileMid[0..], self.tileRad[0..], self.tileH[0..]) |c, built, mid, rad, top| {
             if (!built) continue;
             if (!castsInto(focus, mid, rad, top)) continue;
@@ -2231,6 +2592,139 @@ pub const Env = struct {
     }
 };
 
+
+const MOUTH_EPS: f32 = 0.02;
+/// Metres of rock over a ceiling before the inside is fully sheltered. The mouth's own daylight reaches this far in.
+const SHELTER_FADE: f32 = 2.0;
+/// How finely a sight line is walked for rock. Half a passage's width, so a wall between two bodies is never stepped over.
+const ROCK_PROBE: f32 = 1.0;
+
+fn normalAt(n: [4]rl.Vector3, u: f32, w: f32) rl.Vector3 {
+    const x = caves.bilerp(.{ n[0].x, n[1].x, n[2].x, n[3].x }, u, w);
+    const y = caves.bilerp(.{ n[0].y, n[1].y, n[2].y, n[3].y }, u, w);
+    const z = caves.bilerp(.{ n[0].z, n[1].z, n[2].z, n[3].z }, u, w);
+    const len = @sqrt(x * x + y * y + z * z);
+    if (len < 1e-5) return v3(0, 1, 0);
+    return v3(x / len, y / len, z / len);
+}
+
+
+fn shapeCentre(s: *const caves.Shape) [2]f32 {
+    var cx: f32 = 0;
+    var cz: f32 = 0;
+    for (s.pts[0..s.n]) |q| {
+        cx += q[0];
+        cz += q[1];
+    }
+    const n: f32 = @floatFromInt(s.n);
+    return .{ cx / n, cz / n };
+}
+
+const CaveCell = struct {
+    /// World position of the cell's low corner and its span.
+    x0: f32,
+    z0: f32,
+    step: f32,
+    cov: [4]f32,
+    floor: [4]f32,
+    roof: [4]f32,
+    land: [4]f32,
+    breached: bool,
+
+    fn at(_: *const CaveCell, u: [2]f32, v: [4]f32) f32 {
+        return caves.bilerp(v, u[0], u[1]);
+    }
+
+    fn world(self: *const CaveCell, u: [2]f32, y: f32) rl.Vector3 {
+        return v3(self.x0 + u[0] * self.step, y, self.z0 + u[1] * self.step);
+    }
+
+    /// The ceiling in a breached cell is the sky, so its walls run up to the HILL and not to a roof that is no longer there.
+    fn top(self: *const CaveCell, u: [2]f32) f32 {
+        const r = self.at(u, self.roof);
+        return if (self.breached) self.at(u, self.land) else r;
+    }
+};
+
+fn shellFan(b: *gfx.Builder, c: *const CaveCell, s: *const caves.Shape, y: [4]f32, up: bool) void {
+    if (s.n < 3) return;
+    const n = if (up) v3(0, 1, 0) else v3(0, -1, 0);
+    var i: usize = 1;
+    while (i + 1 < s.n) : (i += 1) {
+        const a = s.pts[0];
+        const p = s.pts[i];
+        const q = s.pts[i + 1];
+        const va = c.world(a, c.at(a, y));
+        const vp = c.world(p, c.at(p, y));
+        const vq = c.world(q, c.at(q, y));
+        if (up) {
+            b.triSmooth(va, vp, vq, n, n, n, rl.Color.white);
+        } else {
+            b.triSmooth(va, vq, vp, n, n, n, rl.Color.white);
+        }
+    }
+}
+
+fn shellWalls(b: *gfx.Builder, c: *const CaveCell, s: *const caves.Shape) void {
+    if (s.n < 3) return;
+    const mid = shapeCentre(s);
+    for (0..s.n) |i| {
+        if (!s.wall[i]) continue;
+        const ua = s.pts[i];
+        const ub = s.pts[(i + 1) % s.n];
+        const f0 = c.at(ua, c.floor);
+        const f1 = c.at(ub, c.floor);
+        const t0 = c.top(ua);
+        const t1 = c.top(ub);
+        if (t0 - f0 < 1e-3 and t1 - f1 < 1e-3) continue;
+        var nx = mid[0] - (ua[0] + ub[0]) * 0.5;
+        var nz = mid[1] - (ua[1] + ub[1]) * 0.5;
+        const len = @sqrt(nx * nx + nz * nz);
+        if (len < 1e-5) continue;
+        nx /= len;
+        nz /= len;
+        const n = v3(nx, 0, nz);
+        const a = c.world(ua, f0);
+        const bb = c.world(ua, t0);
+        const cc = c.world(ub, t1);
+        const d = c.world(ub, f1);
+        const e0 = rl.Vector3{ .x = bb.x - a.x, .y = bb.y - a.y, .z = bb.z - a.z };
+        const e1 = rl.Vector3{ .x = d.x - a.x, .y = d.y - a.y, .z = d.z - a.z };
+        const gx = e0.y * e1.z - e0.z * e1.y;
+        const gz = e0.x * e1.y - e0.y * e1.x;
+        if (gx * nx + gz * nz >= 0) {
+            b.quad(a, bb, cc, d, n, rl.Color.white);
+        } else {
+            b.quad(a, d, cc, bb, n, rl.Color.white);
+        }
+    }
+}
+
+/// The cut edge of the hillside at a mouth: from the ceiling the neighbour still has, up to the hill this cell has lost.
+fn mouthBand(b: *gfx.Builder, c: *const CaveCell, side: usize) void {
+    const ring = [4][2][2]f32{
+        .{ .{ 0, 0 }, .{ 0, 1 } },
+        .{ .{ 0, 1 }, .{ 1, 1 } },
+        .{ .{ 1, 1 }, .{ 1, 0 } },
+        .{ .{ 1, 0 }, .{ 0, 0 } },
+    };
+    const ua = ring[side][0];
+    const ub = ring[side][1];
+    const r0 = c.at(ua, c.roof);
+    const r1 = c.at(ub, c.roof);
+    const l0 = c.at(ua, c.land);
+    const l1 = c.at(ub, c.land);
+    if (l0 - r0 < 1e-3 and l1 - r1 < 1e-3) return;
+    var nx = 0.5 - (ua[0] + ub[0]) * 0.5;
+    var nz = 0.5 - (ua[1] + ub[1]) * 0.5;
+    const len = @sqrt(nx * nx + nz * nz);
+    if (len < 1e-5) return;
+    nx /= len;
+    nz /= len;
+    const n = v3(nx, 0, nz);
+    b.quad(c.world(ua, r0), c.world(ua, l0), c.world(ub, l1), c.world(ub, r1), n, rl.Color.white);
+}
+
 pub fn castsInto(focus: rl.Vector3, pos: rl.Vector3, bound: f32, top: f32) bool {
     const reach = shadowBox() + bound + top * gfx.sunReach;
     return mathx.dist2XZ(focus, pos) <= reach * reach;
@@ -2383,12 +2877,10 @@ pub const StampSolids = struct {
 };
 const MAX_TILE_STAMPS = 640;
 
-/// A chord of the cut and the two outward directions its ends may move in: along their own lattice edge, toward the low corner. Null is the normal.
+/// A chord of the cut: the two lattice crossings its ends sit on.
 pub const Chord = struct {
     u: [2]f32,
     w: [2]f32,
-    outU: ?[2]f32 = null,
-    outW: ?[2]f32 = null,
 };
 
 fn faceKind(x: f32, z: f32) *const proprock.CliffKind {
@@ -2933,15 +3425,12 @@ fn cliffCell(b: *gfx.Builder, fb: Face, a: [2]f32, c: [2]f32, h: [4]f32, cw: wf.
     var xp: [4][2]f32 = undefined;
     var hiAt: [4]f32 = undefined;
     var loAt: [4]f32 = undefined;
-    var lowWay: [4][2]f32 = undefined;
     for (0..4) |i| {
         if (!cut[i]) continue;
         const j = (i + 1) % 4;
         xp[i] = cellWorld(cw.xp[i], a, c);
         hiAt[i] = (lv.hi[i] + lv.hi[j]) * 0.5;
         loAt[i] = (lv.lo[i] + lv.lo[j]) * 0.5;
-        const toNext = [2]f32{ wf.CLIFF_RING[j][0] - wf.CLIFF_RING[i][0], wf.CLIFF_RING[j][1] - wf.CLIFF_RING[i][1] };
-        lowWay[i] = if (high[i]) toNext else .{ -toNext[0], -toNext[1] };
     }
     const cellW = c[0] - a[0];
     var start: usize = 0;
@@ -3020,7 +3509,7 @@ fn cliffCell(b: *gfx.Builder, fb: Face, a: [2]f32, c: [2]f32, h: [4]f32, cw: wf.
             if (chordHigh[i] == centreHigh) continue;
             const eu = chordEdge[i][0];
             const ew = chordEdge[i][1];
-            const ch = Chord{ .u = chord[i][0], .w = chord[i][1], .outU = lowWay[eu], .outW = lowWay[ew] };
+            const ch = Chord{ .u = chord[i][0], .w = chord[i][1] };
             cliffWall(fb, ch, .{ loAt[eu], loAt[ew] }, .{ hiAt[eu], hiAt[ew] }, if (centreHigh) cm else chordMid[i], cellW);
         }
         return;
@@ -3029,7 +3518,7 @@ fn cliffCell(b: *gfx.Builder, fb: Face, a: [2]f32, c: [2]f32, h: [4]f32, cw: wf.
         if (!chordHigh[i]) continue;
         const eu = chordEdge[i][0];
         const ew = chordEdge[i][1];
-        const ch = Chord{ .u = chord[i][0], .w = chord[i][1], .outU = lowWay[eu], .outW = lowWay[ew] };
+        const ch = Chord{ .u = chord[i][0], .w = chord[i][1] };
         cliffWall(fb, ch, .{ loAt[eu], loAt[ew] }, .{ hiAt[eu], hiAt[ew] }, chordMid[i], cellW);
     }
 }
@@ -3169,6 +3658,7 @@ const Placer = struct {
     m: *const wf.Map,
     flat: bool,
     cur: u16 = 0,
+    under: bool = false,
     left: i32 = 0,
     lean: f32 = 0,
     leanDir: f32 = 0,
@@ -3181,7 +3671,7 @@ const Placer = struct {
 
     fn groundY(self: *const Placer, x: f32, z: f32) f32 {
         if (self.flat) return 0;
-        return self.m.heightAt(x, z);
+        return caves.homeY(self.m, x, z, self.under);
     }
 
     fn atY(self: *Placer, kind: Kind, x: f32, y: f32, z: f32, yaw: f32, scale: f32, rng: *mathx.Rng) void {
@@ -3221,18 +3711,18 @@ const Placer = struct {
         self.e.nlights += 1;
     }
 
-    fn accepts(self: *Placer, o: *const wf.Op, x: f32, z: f32, rng: *mathx.Rng) bool {
-        if (self.rejects(o, x, z)) return false;
-        if (o.field and rng.float() > FIELD_FLOOR + (1.0 - FIELD_FLOOR) * coverField(x, z)) return false;
-        if (o.gAxis != .none and rng.float() > o.gradAt(x, z)) return false;
+    fn accepts(self: *Placer, s: *const wf.Scatter, x: f32, z: f32, rng: *mathx.Rng) bool {
+        if (self.rejects(s, x, z)) return false;
+        if (s.field and rng.float() > FIELD_FLOOR + (1.0 - FIELD_FLOOR) * coverField(x, z)) return false;
+        if (s.gAxis != .none and rng.float() > s.gradAt(x, z)) return false;
         return true;
     }
 
-    fn rejects(self: *Placer, o: *const wf.Op, x: f32, z: f32) bool {
-        if (o.avoid.runway and self.m.onRunway(x, z)) return true;
-        if (o.avoid.water and self.e.inWater(x, z, 1.04)) return true;
-        if (o.avoid.clear and self.m.inClearing(x, z)) return true;
-        if (o.avoid.solid and self.blockedHere(x, z)) return true;
+    fn rejects(self: *Placer, s: *const wf.Scatter, x: f32, z: f32) bool {
+        if (s.avoid.runway and self.m.onRunway(x, z)) return true;
+        if (s.avoid.water and self.e.inWater(x, z, 1.04)) return true;
+        if (s.avoid.clear and self.m.inClearing(x, z)) return true;
+        if (s.avoid.solid and self.blockedHere(x, z)) return true;
         return false;
     }
 
@@ -3259,91 +3749,92 @@ const Placer = struct {
         self.leanDir = o.leanDir;
         self.leanExact = o.op == .at;
         self.rise = o.rise;
+        const s = self.m.scatOf(o);
         switch (o.op) {
             .at => self.atY(o.kind, o.x, self.groundY(o.x, o.z) + o.r1, o.z, o.yaw, o.scale, &rng),
-            .belt => self.belt(o, &rng),
-            .disc => self.disc(o, &rng),
-            .ring => self.ring(o, &rng),
-            .line => self.line(o, &rng),
-            .ivy => self.ivy(o, &rng),
+            .belt => self.belt(o, s, &rng),
+            .disc => self.disc(o, s, &rng),
+            .ring => self.ring(o, s, &rng),
+            .line => self.line(o, s, &rng),
+            .ivy => self.ivy(o, s, &rng),
         }
     }
 
-    fn belt(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
+    fn belt(self: *Placer, o: *const wf.Op, s: *const wf.Scatter, rng: *mathx.Rng) void {
         var i: i32 = 0;
-        while (i < o.n) : (i += 1) {
+        while (i < s.n) : (i += 1) {
             if (!self.spend()) return;
-            const x = rng.range(o.x, o.x1);
-            const z = rng.range(o.z, o.z1);
-            if (!self.accepts(o, x, z, rng)) continue;
-            self.at(o.pick(rng), x, z, rng.range(0, 360), rng.range(o.sLo, o.sHi), rng);
+            const x = rng.range(o.x, s.x1);
+            const z = rng.range(o.z, s.z1);
+            if (!self.accepts(s, x, z, rng)) continue;
+            self.at(s.pick(o.kind, rng), x, z, rng.range(0, 360), rng.range(s.sLo, s.sHi), rng);
         }
     }
 
-    fn disc(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
+    fn disc(self: *Placer, o: *const wf.Op, s: *const wf.Scatter, rng: *mathx.Rng) void {
         var i: i32 = 0;
-        while (i < o.n) : (i += 1) {
+        while (i < s.n) : (i += 1) {
             if (!self.spend()) return;
             const a = rng.angle();
             const t = rng.float();
-            const d = o.r0 + (o.r1 - o.r0) * (t + (@sqrt(t) - t) * o.bias);
+            const d = s.r0 + (o.r1 - s.r0) * (t + (@sqrt(t) - t) * s.bias);
             const x = o.x + mathx.cosf(a) * d;
             const z = o.z + mathx.sinf(a) * d;
-            if (!self.accepts(o, x, z, rng)) continue;
-            self.at(o.pick(rng), x, z, rng.range(0, 360), rng.range(o.sLo, o.sHi), rng);
+            if (!self.accepts(s, x, z, rng)) continue;
+            self.at(s.pick(o.kind, rng), x, z, rng.range(0, 360), rng.range(s.sLo, s.sHi), rng);
         }
     }
 
-    fn ring(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
+    fn ring(self: *Placer, o: *const wf.Op, s: *const wf.Scatter, rng: *mathx.Rng) void {
         var i: i32 = 0;
-        while (i < o.n) : (i += 1) {
+        while (i < s.n) : (i += 1) {
             if (!self.spend()) return;
-            if (i == o.skip) continue;
-            const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(o.n));
-            const r = o.r0 * rng.range(0.94, 1.06);
+            if (i == s.skip) continue;
+            const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(s.n));
+            const r = s.r0 * rng.range(0.94, 1.06);
             const x = o.x + mathx.cosf(a) * r;
             const z = o.z + mathx.sinf(a) * r;
-            if (self.rejects(o, x, z)) continue;
+            if (self.rejects(s, x, z)) continue;
             self.at(
-                o.pick(rng),
+                s.pick(o.kind, rng),
                 x,
                 z,
                 mathx.degrees(-a) + 90 + rng.signed() * 12,
-                rng.range(o.sLo, o.sHi),
+                rng.range(s.sLo, s.sHi),
                 rng,
             );
         }
     }
 
-    fn line(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
-        const dx = o.x1 - o.x;
-        const dz = o.z1 - o.z;
+    fn line(self: *Placer, o: *const wf.Op, s: *const wf.Scatter, rng: *mathx.Rng) void {
+        const dx = s.x1 - o.x;
+        const dz = s.z1 - o.z;
         const len = @sqrt(dx * dx + dz * dz);
-        if (len < 1e-4 or o.r0 < 1e-4) return;
+        if (len < 1e-4 or s.r0 < 1e-4) return;
         const ux = dx / len;
         const uz = dz / len;
         const yaw = mathx.degrees(std.math.atan2(-uz, ux));
-        var t: f32 = o.r0 * 0.5;
-        while (t < len) : (t += o.r0 * rng.range(1.0, 1.5)) {
+        var t: f32 = s.r0 * 0.5;
+        while (t < len) : (t += s.r0 * rng.range(1.0, 1.5)) {
             if (!self.spend()) return;
-            if (rng.float() > o.chance) continue;
+            if (rng.float() > s.chance) continue;
             const x = o.x + ux * t + rng.signed() * 0.6;
             const z = o.z + uz * t + rng.signed() * 0.6;
-            if (self.rejects(o, x, z)) continue;
-            self.at(o.pick(rng), x, z, yaw + rng.signed() * 6, rng.range(o.sLo, o.sHi), rng);
+            if (self.rejects(s, x, z)) continue;
+            self.at(s.pick(o.kind, rng), x, z, yaw + rng.signed() * 6, rng.range(s.sLo, s.sHi), rng);
         }
     }
 
-    fn ivy(self: *Placer, o: *const wf.Op, rng: *mathx.Rng) void {
+    fn ivy(self: *Placer, o: *const wf.Op, s: *const wf.Scatter, rng: *mathx.Rng) void {
         const n = self.e.nprops;
         for (self.e.props[0..n]) |pr| {
             if (!props.ivyClimbs(pr.kind)) continue;
-            if (!wf.inRect(pr.pos.x, pr.pos.z, o.x, o.z, o.x1, o.z1)) continue;
-            if (rng.float() > o.chance) continue;
+            if (!wf.inRect(pr.pos.x, pr.pos.z, o.x, o.z, s.x1, s.z1)) continue;
+            if (rng.float() > s.chance) continue;
             const nfo = props.info(pr.kind);
             const a = rng.angle();
             const d = nfo.bound * pr.scale * rng.range(0.18, 0.42);
-            self.at(o.kind, pr.pos.x + mathx.cosf(a) * d, pr.pos.z + mathx.sinf(a) * d, mathx.degrees(a), rng.range(o.sLo, o.sHi), rng);
+            self.at(o.kind, pr.pos.x + mathx.cosf(a) * d, pr.pos.z + mathx.sinf(a) * d, mathx.degrees(a), rng.range(s.sLo, s.sHi), rng);
         }
     }
 };
@@ -4570,7 +5061,7 @@ test "A RUN IS WHOLE SECTIONS, AND THE FILE MAY NOT SHOW A HEIGHT THE WORLD ROUN
     const seg = props.info(.ladder).stack;
     try std.testing.expect(seg > 0);
     for (props.INFO) |row| {
-        if (row.stack > 0) try std.testing.expect(row.kind == .ladder or row.kind == .stairflight);
+        if (row.stack > 0) try std.testing.expect(row.kind == .ladder or row.kind == .stairflight or row.kind == .palacestair);
         if (row.flight != null) try std.testing.expect(row.stack > 0);
     }
     try std.testing.expectApproxEqAbs(seg * 8, snapRise(.ladder, 1, 7.15), 1e-4);
@@ -5247,15 +5738,22 @@ test "AN OP MAY NOT SPIN — the rebuild's cost is the map's size, never a numbe
     m.* = .{};
     e.* = .{ .ground = undefined, .models = undefined };
 
-    m.nops = 1;
-    m.ops[0] = .{ .op = .line, .kind = .block, .x = -200, .z = 0, .x1 = 200, .z1 = 0, .r0 = 0.0001, .chance = 0.0, .sLo = 1, .sHi = 1 };
+    _ = try m.addScat(
+        .{ .op = .line, .kind = .block, .x = -200, .z = 0 },
+        .{ .x1 = 200, .z1 = 0, .r0 = 0.0001, .chance = 0.0, .sLo = 1, .sHi = 1 },
+    );
     var t = try std.time.Timer.start();
     e.materialize(m);
     const spin = @as(f64, @floatFromInt(t.read())) / 1e6;
     std.debug.print("\n  a line op at the parser's own floor: {d:.1} ms a rebuild, {d} ops capped\n", .{ spin, e.opsCapped });
     try std.testing.expect(e.opsCapped == 1);
 
-    m.ops[0] = .{ .op = .belt, .kind = .block, .x = -200, .z = -200, .x1 = 200, .z1 = 200, .n = 2_000_000, .sLo = 1, .sHi = 1 };
+    m.nops = 0;
+    m.nscats = 0;
+    _ = try m.addScat(
+        .{ .op = .belt, .kind = .block, .x = -200, .z = -200 },
+        .{ .x1 = 200, .z1 = 200, .n = 2_000_000, .sLo = 1, .sHi = 1 },
+    );
     t.reset();
     e.materialize(m);
     const flood = @as(f64, @floatFromInt(t.read())) / 1e6;

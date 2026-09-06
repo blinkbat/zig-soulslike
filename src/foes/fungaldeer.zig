@@ -1022,7 +1022,8 @@ pub const Herd = struct {
             const heat = s.heat();
             const pulse = 1.0 + 0.12 * mathx.sinf((s.t + s.seed * 2.0) * 7.0);
             rl.drawSphereEx(s.at, SPORE_R * pulse, 7, 6, mathx.lerpColor(mathx.withAlpha(SPORE_SKIN, 255), mathx.withAlpha(SPORE_CORE, 255), heat));
-            rl.drawSphereEx(s.at, SPORE_R * (1.9 + 0.9 * heat) * pulse, 8, 6, mathx.withAlpha(SPORE_CORE, mathx.u8f(40.0 + 46.0 * heat)));
+            foe.drawAura(s.at, SPORE_R * (1.9 + 0.9 * heat) * pulse, s.t + s.seed, .spore,
+                mathx.withAlpha(SPORE_CORE, 150), mathx.withAlpha(SPORE_SKIN, 115));
         }
         foe.drawParticles(&self.parts);
     }

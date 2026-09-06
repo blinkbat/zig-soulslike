@@ -140,8 +140,8 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `world/trigger.zig` | SC1's conditions + actions, and the switches / counters / timers they compose through |
 | `world/dialog.zig` | one conversation: the node-tree walk and the BG2-style panel, with a live portrait |
 | `world/env.zig` | THE WORLD — terrain, op replay, `coverField`, uniform grid, cullers, occluder fade, lights |
-| `props/props.zig` | prop vocabulary + the `INFO` table; `displayName`/`group`/`stock` are exhaustive switches. `decks`/`stack`/`climb` are the ladder's and the deck's |
-| `prop*.zig` | meshes by family — `propart` (palette + weathering), `propruins`, `propgold`, `propbuild`, `propvillage`, `propmarket`, `propforge`, `proprock`, `propwood`, `propflora`, `propfungus`, `propcoral`, `propash`, `propbone`, `propember` (the Firelands — basalt riven by glowing seams), `propfx` |
+| `props/props.zig` | prop vocabulary + the `INFO` table; `displayName`/`group`/`biome` are exhaustive switches; `stock` reads the row's own `flora`/`interact`. `decks`/`stack`/`climb` are the ladder's and the deck's |
+| `prop*.zig` | meshes by family — `propart` (palette + weathering), `propruins`, `propgold`, `propbuild`, `propvillage`, `propmarket`, `propforge`, `proprock`, `propwood`, `propflora`, `propfungus`, `propcoral`, `propash`, `propbone`, `propember` (the Firelands — basalt riven by glowing seams), `proppalace` + `propdesert` (the Sun Palace — gold, emerald and sandstone over orange sand), `propfx` |
 | `foes/foestat.zig` | the pools the bench lays over a fresh body — one multiplier per kind, applied in `foe.resetGroup`/`resetRoles`, and where the authored HP is LEARNED from the first body made |
 | `foes/foe.zig` | THE FOE STANDARD — contract, `Blade`/`strike`/`weaponReaches`/`Blow`, `Trail`, particles, `Leash` |
 | `foes/npc.zig` | THE FOLK, all three on the hero's scaffold — the wanderer's staff, the caravaneer's neck and muzzle, and MOSSBEARD, the tree smith whose idle IS a hammer stroke |
@@ -348,8 +348,9 @@ Two things in that table are load-bearing beyond navigation:
   chest), and the pool it goes into is whoever's the caller hands over (the rider's own 20 HP). A point that GOES (the
   rider shot off) is a count that drops, and the lock falls back onto the body that carried it.
 - **A BLOW IS BILLED FROM ITS IMPACT, NOT FROM THE STRIKE'S FIRST FRAME.** At `s = 0` of every strike the limb is
-  still where the wind left it; it arrives at `*_IMPACT_K` of the strike (0.4–0.5, the owlbear's 0.42, the
-  hollow's 0.45), and that ONE number is what `toImpact` hands the parry window AND where the `try*` gate opens
+  still where the wind left it; it arrives at `*_IMPACT_K` of the strike — 0.25 for the mastodon's tail up to 0.85
+  for the ogre's slam, and 0.68 across the seven families that keep swinging into the catch (`foe.catchMelee`) —
+  and that ONE number is what `toImpact` hands the parry window AND where the `try*` gate opens
   (`s >= STRIKE * IMPACT_K`). Billing from `s >= 0` landed the owlbear's slam up to 0.10 s before the paws did
   and the lurker's skull while it was still reared. A stroke judged off a SWEPT SEGMENT (`foe.weaponReaches`,
   the delver's claw, the skitterer's tip) is exempt: it bills when the edge actually crosses him.
@@ -1449,7 +1450,7 @@ colour of the news. Resistances are never a headline — a coat's cold ward is r
   `ptree.Bonus` itself so a node the tree grows tomorrow shows up here without a hand), and the portrait.
   `StatList` builds a column first and draws it after, into its own store: `hud.fmt`'s ring is sixteen deep
   and a column is longer.
-- **THE PRIMS ARE `uiart`'S**: `rule`, `arrow`, `pill`, `meter`/`meterShift`. Text stays in `book.zig`
+- **THE PRIMS ARE `uiart`'S**: `rule`, `arrow`, `pill`, `meter`. Text stays in `book.zig`
   (`uiart` does not import `hud`).
 
 ### The two purses, in the book
@@ -2305,6 +2306,35 @@ window.
   the strike, `154`–`155` the fog and one mist bank — forced through the debug row (`game.forceFogForShot`) so
   the air is photographed APART from the rain.
 
+### The Sun Palace (`proppalace.zig`, `propdesert.zig`)
+
+Gold, emerald and sandstone in a desert — the Gilded Ruins' architecture at three times the scale, and the
+only biome whose FLOOR is authored (`wf.Soil.sand`).
+
+- **ONE MUQARNAS, ONE BAND, ONE RING, ONE STAR** (`propart.muqarnasInto`/`giltBandInto`/`giltRingInto`/
+  `starInto`, each taking an `art.Tone`). The Gilded Ruins pass `propgold.GILT` and the palace `proppalace.SUN`;
+  what separates the two families is that row and the three motifs the palace adds — the stepped fret
+  (`grecaInto`, Mitla's), the sun sign (`ziaInto`, four groups of four) and the pecked panel (`glyphBandInto`).
+  `art.Course.tone` is the same idea for coursed stone: `null` is the grey every ruin is built of.
+- **THE FRET IS ONE LINE THAT NEVER CROSSES ITSELF** — two continuous rails with a meander between them, one
+  repeat per band height. Broken into separate keys it reads as a row of blocks; at a third the pitch the
+  whole frieze greys out at twenty metres.
+- **THE SIGN IS SIZED OFF THE WALL THAT HOLDS IT**, never off the prop. A Zia whose rays carry past the cornice
+  is a spiked mess; `sunGateMesh` solves its radius from the tympanum's own height.
+- **THE JEWEL IS A LIGHT, NOT A COLOUR.** Alpha is the emissive channel, so `EMERALD_LT` (150) burns hardest and
+  `EMERALD_DK` (238) barely at all. Two kinds carry a real point light off `GEM_LIGHT`: the vault's pedestal
+  stone and the shard.
+- **THREE ARE WALKED INTO AND ONE IS WALKED UP.** The hall's and the vault's colliders are SHELLS with doorways
+  (the course over a door is a `Part.y0` lintel), and the terrace carries a deck at 4.00 m reached by
+  `palacestair` — the third kind that stacks, and the widest flight in the game at 5.2 m.
+- **THE SAND IS THE ONLY PAINTED GROUND WITH ITS OWN GRAIN.** `shaders.paintedSoil` branches on its ordinal for
+  a 58-cell hash at a third the amplitude of `blades`; on the generic term a desert floor comes back as scree.
+- **EVERY PLANT HERE IS TALLER THAN IT IS WIDE**, which is what water-starved looks like. A cactus is FLESH
+  (`addCapsule`), its flutes are 4% of the radius proud, and one pale areole stands in for twenty spines —
+  the halo is the read, and it has to beat the flesh (198 on screen against 118) or the plant is a green post.
+- `worlds/test_palace.world` is the bench: the avenue north from the bonfire through the gate to the terrace
+  and the spire, with the hall west and the vault east, on a floor painted `sand` end to end (`soil: 11x12544`).
+
 ### Elevation
 
 The world is a HEIGHTFIELD you sculpt (Ground layer > Raise/Lower/Smooth/Flat), stored as one QUANTISED height
@@ -2478,6 +2508,65 @@ Ground layer > Cliff paints it, Slope takes it back.
   face there; the lip is terraced to two tiers now, `-1.75` m over `-15.00`, which is a **13.25 m** face and
   past `FALL_DEATH`. Walking off it kills.
 
+### Caves — a second surface UNDER the heightfield (`caves.zig`)
+
+A heightfield holds one height per lattice point, so the land can never be over anything. A cave is a
+SECOND surface: three grids on their own lattice (`wf.CAVE_N`, 447 points, **half the terrain's cell** and
+sharing its points, so cave point 2i IS terrain point i) holding COVERAGE, a FLOOR and a CEILING.
+Ground layer > Caves paints them; no `cave:` row means the map loads and walks exactly as it did.
+
+- **THE CEILING DECIDES WHICH WORLD A BODY IS IN** (`caves.supportAt`, and `env.standAt` routes through it).
+  Feet under a chamber's roof are in the chamber; feet at or over it are on the land. Height alone cannot
+  tell a hillside from the roof of the cave under it, and a step allowance cannot either — solved that way
+  the hero walked OVER the hill instead of into the mouth, because the hill was within one step the whole way.
+- **NOTHING ELSE IN THE WALK CHANGED.** `stepOk`, `brink`, `gateTerrain` and `groundActor` all ask `standAt`,
+  so a cave floor is followed, and a cave WALL refuses a step for free: rock answers with the LAND's height,
+  which is a rise no step can take. Only the SLIDE needed teaching — `env.blockGrad` reads the coverage
+  gradient underground, so a body slides along the rock instead of along the hill over its head.
+- **ONE CONTOUR SERVES THE ROCK AND THE AIR** (`caves.cellShapes`). Marching squares on the cell's four
+  coverage corners at `CAVE_EDGE`, with the cell's own middle deciding a saddle the way `cliffCut` does.
+  The open polygon is the floor and the ceiling, the chords are the walls, and the ROCK polygon is what is
+  left of the hill — same crossing points, so a mouth cannot crack against the hill it opens through.
+- **A MOUTH IS WHERE THE CEILING COMES UP THROUGH THE HILL.** No flag: `roof >= groundAt` and the cell drops
+  its ceiling, the terrain over it is cut to the contour, and `mouthBand` closes the cut edge from the
+  neighbour's ceiling up to the hill. Which is why the Entrance tool needs no hand-solved ramp — carve a
+  passage out toward open ground and the hill opens itself where it gets too thin to roof one.
+- **THE CARVE FLOOR IS A FIELD, NOT A NUMBER** (`caves.Brush.dx/dz`). A stroke stamps a disc many times over;
+  with one floor per stamp the overlaps walked the floor down under themselves and the mouth ended a metre
+  below the ground it started on. A slope written per CELL is the same value however many stamps cover it.
+- **UNDER ROCK THE SKY IS GONE AND SO IS THE SUN** (`shelterAt` in the scene shader, slots 18/19). Per
+  FRAGMENT, off world position: from inside the mouth the hillside outside is still in daylight while the
+  chamber behind is dark, in the same frame. The field is coverage TIMES the rock over the ceiling, so it
+  falls to nothing at a mouth on its own; the ambient keeps 16% under cover and torches are untouched.
+  **BOTH FALLOFFS ARE FULL AT THE SURFACE THEY MEET** — keyed to the coverage contour or to the ceiling they
+  ring every chamber in daylight, because the wall's own face stands exactly on that contour.
+- **A SHEET SEEN FROM BEHIND IS ITS OWN UNDERSIDE** — the fragment shader flips the normal on back faces and
+  `game` draws the ground two-sided while the eye is under the surface. Without it a chamber looks up
+  through the hill at the sky.
+- **THE BOOM IS PINNED BOTH WAYS** (`camera.followRoofed`): it already shortened against rock (rock answers
+  as the hill), and it now stops at the ceiling as well. A test walks it in a 3 m room. **THE NEAR PLANE IS
+  0.55 m**, so a shot that PLACES a camera underground rather than solving one will clip through the floor.
+- **ROCK IS OPAQUE** (`env.rockBetween`, walked at `ROCK_PROBE`): nothing on the hill sees or shoots a body
+  in the chamber under it. A jump stops at the ceiling (`hero.capUnderRoof`), and the air in a chamber is
+  DRY even under a painted pool (`env.wadeDepthUnder`).
+- **A PLACEMENT CARRIES ITS OWN SURFACE** — `under=1` on a `foe:` row or an `at:` op (one byte, and it fits
+  in `Op`'s existing padding: 64 B either way). `caves.homeY` gives the land back if the chamber it named
+  has since been filled, rather than dropping the body through the world.
+- **ONE UNDERGROUND LEVEL PER POSITION.** Two tunnels crossing at different heights are not representable;
+  that needs a different representation, not another brush.
+- `worlds/test_caves.world` is the bench, authored by `caves.bench` and rewritten by its own test: a 10 m
+  hill with a 3 m chamber under it, a bent passage, a 2.25 m low stretch, a mouth out on the flat, and a
+  fire on the chamber floor. `--shot-land --map worlds/test_caves.world` frames the mouth, the inside,
+  looking out, the bend, the chamber and the hill overhead, and prints the roof thickness at each.
+
+**Authoring one** (Ground > Caves): set FLOOR and HEADROOM, then Carve under a hill — the cursor rides the
+floor plane, not the hill, or it would climb the very rock you are carving under. Drag Entrance from open
+ground toward it and the grade and the opening come out walkable. Fill puts rock back. Cutaway takes the
+hill off every chamber, and that viewing choice FOLLOWS YOU into Props and Units, so a chamber can be
+furnished without the roof coming back on; a body placed in that view is marked `under`. F5 starts on the
+chamber floor under the editor camera. The panel says how much rock is over the ceiling and refuses to
+pretend a hill 2 m thick can roof a 3 m room.
+
 ### Illusory walls — a cliff face that is not there
 
 **`props.illusory` IS `cliff2`'S OWN MESH WASHED TOWARD SLATE** (`proprock.illusoryMesh`, `Builder.wash` at
@@ -2535,10 +2624,16 @@ where there is one and `groundAt` stays the question about the LAND.
   through the walk band (`#` stone over a metre, `=` over the step, `_` a step a body walks over, `o`
   collider, `@`/`+`/`,` both), which is what every part in `INFO` was sized off — author a collider from the
   map, never from the number that looked right. Stone under `STEP_UP` owes no collider and the audit does not
-  count it. **FIVE KINDS ARE LOOSE ON PURPOSE AND STAY FLAGGED**: the conifer and the willow (boughs and
-  fronds are walked through; the collider is the bole), the ash dune (walked round, its collider the ridge),
-  the fog gate (the ward is the wall) and the awning (cloth over two posts). Everything else under `LOOK` is
-  a defect.
+  count it. **SIX KINDS ARE LOOSE ON PURPOSE AND STAY FLAGGED**: the conifer and the willow (boughs and
+  fronds are walked through; the collider is the bole), the ash dune and the sand dune (walked OVER, their
+  collider the crest — a dune's plan is a lens and no box holds one without standing out in the open), the fog
+  gate (the ward is the wall) and the awning (cloth over two posts). Everything else under `LOOK` is a defect.
+  **`solidMat` DOES NOT COUNT `Mat.plant`**, so a body of leaves audits as nothing and its collider is measured
+  against the woody part alone: an agave's is its heart, not its blades.
+
+- **PLANT THE ROUND SILHOUETTE, MEASURE THE SQUARE ONE.** A degenerate segment with `flat` (`ax == bx`,
+  `az == bz`) is a SQUARE of side `2r` — how every plinth, pier and kilt here is held — and a round part is the
+  same capsule without it. Choosing wrong is most of the audit's `LOOK` lines.
 - **A COLLIDER MAY HAVE SQUARE ENDS** (`Part.flat`, `collision.Solid.flat`, `collision.box`): the solid is the
   capsule's own bounding rectangle in the segment's frame, so a wall, a block, a plinth or a house has
   corners. Round ends left a 7.7 m keep's corners 2 m in the open and every altar and slab with a phantom
@@ -3045,11 +3140,11 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   wander made of straight capsules is a chain of elbows. Total arc is per-segment curl TIMES segment count, so
   moving either the length or the count re-brackets the curl.
 - **A MOTE IS A CAMERA-FACING TEXTURED BILLBOARD, NEVER A SOLID SPHERE** (`foe.drawParticles`, `foe.setLens`).
-  A hard-edged Lambert ball reads as a flat circle; a quad through a radial-gradient sprite has the soft falloff
-  every real particle kit is built on, and at 4 vertices costs a tenth of the sphere. Two sprites, lazily built
-  on first draw: SOFT is the glow (light, smoke, stains), GRAIN keeps a near-solid core for matter in flight
-  (blood, chips, clods). Two passes per pool — alpha MATTER first, then additive LIGHT — depth TESTED, never
-  WRITTEN.
+  `gfx/particleart.zig` builds one seeded atlas with four variants per style. `Particle.style` picks the
+  shape; legacy emitters infer matter, haze, spark or blood from their properties. Alpha MATTER sorts back
+  to front within each pool, then additive LIGHT; depth TESTED, never WRITTEN. Reuse `foe.drawCloud`,
+  `drawAura` and `contactFlash` rather than adding sphere clouds or another contact emitter.
+  `--shot --shot-only particles_study` and `docs/PARTICLE_PASS.md` cover this pass.
 - **A POOL NOBODY CAN SEE MAY NOT BE DRAWN** (`foe.motesVisible`) — not for the per-mote cost but for the COUNT:
   twelve chaos clouds at 132 motes each still walk their whole array. The gate is a REACH and a HEMISPHERE and
   **it is not the frustum and may never become one** — `env.View` is the frustum, there is one of them, and a

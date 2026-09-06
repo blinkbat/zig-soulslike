@@ -106,10 +106,12 @@ const SPORE_RATE: f32 = 9.0;
 const SPORE_RATE_FEED: f32 = 34.0;
 const HIT_PUFF_LIGHT = 5;
 const HIT_PUFF_HEAVY = 10;
+const PARRY_PUFF = 9;
 const PARTS = 56;
 comptime {
+    // A caught bite puffs on the same frame the hero's own blow can wound it, over a feeding body's spore rate.
     std.debug.assert(@as(f32, PARTS) >= SPORE_RATE_FEED * 0.7 +
-        @as(f32, @floatFromInt(foe.hitParts(HIT_PUFF_HEAVY) + foe.WOUND_PARTS)));
+        @as(f32, @floatFromInt(PARRY_PUFF + foe.hitParts(HIT_PUFF_HEAVY) + foe.WOUND_PARTS)));
 }
 
 const State = enum { idle, prowl, bite, rush, feed, stunlight, stunheavy, dead };
@@ -396,10 +398,11 @@ pub const Gorger = struct {
         if (self.state == .bite and self.t >= BITE_WIND and self.t - dt < BITE_WIND) sfx.world(.toad_chomp, self.pos);
         self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);
         self.pose();
-        const until: ?f32 = if (self.state == .bite) BITE_WIND + BITE_STRIKE * BITE_IMPACT_K - self.t else null;
+        const at = BITE_WIND + BITE_STRIKE * BITE_IMPACT_K;
+        const until: ?f32 = if (self.state == .bite) at - self.t else null;
         if (foe.catchMelee(self, foe.hurtReach(BITE_R, self.scale), BITE_FRONT_DOT, until)) {
-            self.puff(foe.markOn(self.xf[JAW], mathx.zero3), 9);
-        } else if (self.state == .bite and self.t >= BITE_WIND + BITE_STRIKE * BITE_IMPACT_K and self.t < BITE_WIND + BITE_STRIKE) {
+            self.puff(foe.markOn(self.xf[JAW], mathx.zero3), PARRY_PUFF);
+        } else if (self.state == .bite and self.t >= at and self.t < BITE_WIND + BITE_STRIKE) {
             self.tryBite(quarry);
         }
         self.tryHit(blade);

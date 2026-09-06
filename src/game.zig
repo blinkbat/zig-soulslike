@@ -406,6 +406,7 @@ pub const Game = struct {
         g.sporefall = weathermod.Spore.build(g.scene.shader);
         g.emberfall = weathermod.Ember.build(g.scene.shader);
         phase(&initTimer, "foes");
+        foemod.buildParticleAtlas();
         g.arrowModel = archermod.arrowMesh(g.scene.shader);
         g.clumpModel = koboldmod.clumpMesh(g.scene.shader);
         g.crockModel = archermod.crockMesh(g.scene.shader);
@@ -1605,7 +1606,7 @@ fn aggroOfRail(comptime i: usize) f32 {
 }
 
 fn wadeDrag(g: *const Game) f32 {
-    return wadeDragAt(g.env.wadeDepth(g.hero.pos.x, g.hero.pos.z));
+    return wadeDragAt(g.env.wadeDepthUnder(g.hero.pos.x, g.hero.pos.z, g.hero.footY()));
 }
 
 test "wading costs the run first and never roots him" {
@@ -1928,6 +1929,7 @@ fn heroFooting(g: *Game, was_: rl.Vector3) void {
         h.startFall(h.pos.y, mathx.dirXZ(was_, h.pos), h.speedS);
     }
     g.heroDeck = if (h.airborne()) null else g.env.deckAt(h.pos.x, h.pos.z, h.pos.y);
+    if (g.env.ceilingAt(h.pos.x, h.pos.z, h.footY())) |roof| h.capUnderRoof(roof);
 }
 
 pub fn envGroundAt(e: *const envmod.Env, x: f32, z: f32) f32 {
@@ -1940,6 +1942,10 @@ pub const CamFloor = struct {
 
     pub fn at(c: CamFloor, x: f32, z: f32) f32 {
         return c.e.standAt(x, z, c.footY);
+    }
+
+    pub fn roof(c: CamFloor, x: f32, z: f32) ?f32 {
+        return c.e.ceilingAt(x, z, c.footY);
     }
 };
 
@@ -4264,10 +4270,10 @@ fn markGlare(g: *Game) void {
 }
 
 fn markWade(g: *Game) void {
-    const quarry = g.env.wadeDepth(g.hero.pos.x, g.hero.pos.z);
+    const quarry = g.env.wadeDepthUnder(g.hero.pos.x, g.hero.pos.z, g.hero.footY());
     const Depth = struct {
         fn at(e: *const envmod.Env, p: rl.Vector3) f32 {
-            return e.wadeDepth(p.x, p.z);
+            return e.wadeDepthUnder(p.x, p.z, p.y);
         }
     };
     inline for (FOE_GROUPS) |gr| {
@@ -4776,9 +4782,14 @@ pub fn drawScene(g: *Game) void {
     var lightBuf: [RESERVED_LIGHTS]gfx.Light = undefined;
     g.env.uploadLights(&g.scene, &view, @floatCast(rl.getTime()), reservedLights(g, &lightBuf));
     g.scene.setGround(true);
+    // UNDER THE SURFACE THE HILL IS DRAWN FROM BOTH SIDES, or the eye in a chamber looks up through it at the sky.
+    const sunk = cam.position.y < g.env.groundAt(cam.position.x, cam.position.z) - 0.1;
+    if (sunk) rl.gl.rlDisableBackfaceCulling();
     g.env.drawGround(&view);
+    if (sunk) rl.gl.rlEnableBackfaceCulling();
     g.scene.setGround(false);
     g.env.drawCliffFaces(&view);
+    g.env.drawCaveShells(&view);
     if (shows(g, .ground)) g.env.drawWater();
     if (g.menu.wireframe) rl.gl.rlEnableWireMode();
     drawCasters(g, .{ .view = view });
@@ -4817,10 +4828,12 @@ pub fn drawScene(g: *Game) void {
     }
     if (g.editor.on) g.editor.draw3D(&g.map, &g.env);
     if (skyLive(g)) {
-        if (!g.editor.on) g.rainfall.draw(&g.scene, cam.position, g.hero.pos, g.wetNow, g.weather.t);
+        // THE SKY'S OWN WEATHER STOPS AT A ROOF. The fall is a column on the man, so it fades as he takes cover and comes back as he steps out.
+        const open = 1.0 - g.env.shelterAt(g.hero.pos.x, g.hero.footY(), g.hero.pos.z);
+        if (!g.editor.on) g.rainfall.draw(&g.scene, cam.position, g.hero.pos, g.wetNow * open, g.weather.t);
         if (!g.editor.on) g.mist.draw(&g.scene, cam.position, fogAmt(g), bankTint(g));
-        g.sporefall.draw(&g.scene, cam.position, if (g.editor.on) cam.position else g.hero.pos, g.sporeNow, g.weather.slowSecs());
-        g.emberfall.draw(&g.scene, cam.position, if (g.editor.on) cam.position else g.hero.pos, g.emberNow, g.weather.slowSecs());
+        g.sporefall.draw(&g.scene, cam.position, if (g.editor.on) cam.position else g.hero.pos, g.sporeNow * open, g.weather.slowSecs());
+        g.emberfall.draw(&g.scene, cam.position, if (g.editor.on) cam.position else g.hero.pos, g.emberNow * open, g.weather.slowSecs());
         if (!g.editor.on) g.skein.draw(&g.scene);
     }
     rl.endMode3D();
@@ -5197,6 +5210,10 @@ pub fn run(mode: Mode) void {
                     rl.hideCursor();
                     armScript(g);
                     g.hero.pos = mathx.ground(g.editor.cam.target.x, g.editor.cam.target.z);
+                    // PLAY HERE MEANS HERE: from the underground view he starts on the chamber floor, not on the hill over it.
+                    if (g.editor.caveView) {
+                        if (g.env.caveStandAt(g.hero.pos.x, g.hero.pos.z)) |y| g.hero.pos.y = y;
+                    }
                     plantActor(g, &g.hero.pos);
                     g.hero.pos = g.env.resolveHeroSide(g.hero.pos, HERO_R, g.hero.pos.y);
                     g.hero.setSpawn(g.hero.pos, g.hero.facing);
@@ -5882,7 +5899,7 @@ pub fn run(mode: Mode) void {
         g.rig.tickShake(rawDt);
         g.rig.aimB = g.hero.aimB;
         g.rig.tickLift(g.hero.lift, liftShare(&g.hero), dt);
-        g.rig.followClear(g.hero.shoulderPoint(), camFloor(g), CamFloor.at, dt);
+        g.rig.followRoofed(g.hero.shoulderPoint(), camFloor(g), CamFloor.at, CamFloor.roof, dt);
         sfx.listen(g.rig.cam.position, g.rig.rightXZ());
         sfx.ambience(rawDt);
         footsteps(g, &lastPhase);
@@ -5974,7 +5991,7 @@ fn stepOverlay(g: *const Game, x: f32, z: f32) ?sfx.Id {
     if (v >= worldfmt.Soil.N) return null;
     return switch (@as(worldfmt.Soil, @enumFromInt(v))) {
         .stone => .step_stone,
-        .none, .dirt, .turf, .silt, .ash, .moss, .bone, .cinder, .spore, .bloom => null,
+        .none, .dirt, .turf, .silt, .ash, .moss, .bone, .cinder, .spore, .bloom, .sand => null,
     };
 }
 

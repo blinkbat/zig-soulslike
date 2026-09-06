@@ -121,10 +121,12 @@ const SEAM_RATE: f32 = 14.0;
 const SEAM_RATE_RAKE: f32 = 60.0;
 const HIT_ASH_LIGHT = 4;
 const HIT_ASH_HEAVY = 9;
-const PARTS = 52;
+const PARRY_ASH = 9;
+const PARTS = 60;
 comptime {
+    // A caught rake bursts ash on the same frame the hero's own blow can wound it, over the raking seam rate.
     std.debug.assert(@as(f32, PARTS) >= SEAM_RATE_RAKE * 0.52 +
-        @as(f32, @floatFromInt(foe.hitParts(HIT_ASH_HEAVY) + foe.WOUND_PARTS)));
+        @as(f32, @floatFromInt(PARRY_ASH + foe.hitParts(HIT_ASH_HEAVY) + foe.WOUND_PARTS)));
 }
 
 const State = enum { idle, walk, rake, stunlight, stunheavy, dead };
@@ -351,10 +353,11 @@ pub const Cinder = struct {
         if (self.state == .rake and self.t >= RAKE_WIND and self.t - dt < RAKE_WIND) sfx.world(.swing_heavy, self.pos);
         self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);
         self.pose();
-        const until: ?f32 = if (self.state == .rake) RAKE_WIND + RAKE_STRIKE * RAKE_IMPACT_K - self.t else null;
+        const at = RAKE_WIND + RAKE_STRIKE * RAKE_IMPACT_K;
+        const until: ?f32 = if (self.state == .rake) at - self.t else null;
         if (foe.catchMelee(self, foe.hurtReach(RAKE_R, self.scale), RAKE_FRONT_DOT, until)) {
-            self.ashBurst(foe.markOn(self.xf[WRR], mathx.zero3), 9);
-        } else if (self.state == .rake and self.t >= RAKE_WIND + RAKE_STRIKE * RAKE_IMPACT_K and self.t < RAKE_WIND + RAKE_STRIKE) {
+            self.ashBurst(foe.markOn(self.xf[WRR], mathx.zero3), PARRY_ASH);
+        } else if (self.state == .rake and self.t >= at and self.t < RAKE_WIND + RAKE_STRIKE) {
             self.tryRake(quarry);
         }
         self.tryHit(blade);
@@ -436,6 +439,7 @@ pub const Cinder = struct {
                 .life = self.fxRng.range(0.24, 0.52),
                 .r0 = sig.r0,
                 .r1 = sig.r1,
+                .style = .flame,
                 .col = sig.core,
                 .col1 = sig.cool,
                 .grav = sig.grav,
@@ -640,6 +644,7 @@ pub const Scorch = struct {
                 .life = self.flameRng.range(0.28, 0.52),
                 .r0 = sig.r0 * 1.4,
                 .r1 = sig.r1 * 1.6,
+                .style = .flame,
                 .col = if (cold > 0.7) sig.cool.? else sig.core,
                 .col1 = sig.ash,
                 .grav = sig.grav * 0.7,

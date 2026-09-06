@@ -646,7 +646,7 @@ const BREATH_SHIVER_HZ = 12.0;
 
 const DUST_MOTES = 96;
 
-/// A ring overwrites its oldest silently, so these ADD rather than take the largest. Worst is 1552 against 1536.
+/// A ring overwrites its oldest silently, so these ADD rather than take the largest, and `FX_N` is the sum.
 const FX_WORST = blk: {
     const gather = CAST_MOTE_RATE_HI * CAST_MOTE_LIFE_HI;
     const release = CAST_SPARKS + CAST_COLLAR + 1;
@@ -657,7 +657,7 @@ const FX_WORST = blk: {
     const struck = LEVIN_STEPS * LEVIN_SPARKS + LEVIN_BURST + SIPHON_MOTES;
     // A fire burst emits its ASH beside every third mote (`elemfx.burstCount`), so 22 steps of 4 is 110, not 88.
     const lance = LANCE_STEPS * elemfx.burstCount(.fire, LANCE_SPARKS);
-    const blocked = BLOCK_GRIT_MAX + BLOCK_SPARK_MAX + 1;
+    const blocked = BLOCK_GRIT_MAX + BLOCK_SPARK_MAX + 2;
     const wake = FOG_WAKE_RATE * FOG_WAKE_LIFE_HI;
     break :blk gather + breath + wake +
         @as(f32, release + erupt + caught + struck + 2 * BOLT_BURST + lance + blocked + SUNDER_MOTES + DUST_MOTES);
@@ -925,11 +925,10 @@ const PARRY_SPARKS = 42;
 const PARRY_SPARK_FAN = 9.0;
 const PARRY_SPARK_OUT_LO = 1.0;
 const PARRY_SPARK_OUT_HI = 3.2;
-const PARRY_SPARK_R0_LO = 0.009;
-const PARRY_SPARK_R0_HI = 0.019;
+const PARRY_SPARK_R0_LO = 0.014;
+const PARRY_SPARK_R0_HI = 0.026;
 const PARRY_SPARK_GRAV = 9.0;
 const SPARK_PROUD: f32 = 0.02;
-const PARRY_FLASH_R = 0.12;
 const PARRY_FLASH_LIFE = 0.075;
 const PARRY_GLINT = 8;
 const PARRY_GLINT_FAN = 4.5;
@@ -947,8 +946,8 @@ const BLOCK_GRIT_FAN = 3.4;
 const BLOCK_GRIT_GRAV = 13.0;
 const BLOCK_GRIT_LIFE_LO = 0.10;
 const BLOCK_GRIT_LIFE_HI = 0.30;
-const BLOCK_PUFF_R = 0.11;
-const BLOCK_PUFF_LIFE = 0.16;
+const BLOCK_PUFF_R = 0.18;
+const BLOCK_PUFF_LIFE = 0.34;
 
 /// Gravity is NEGATIVE here. Colours are `propfx.FOG_WAKE_*`.
 const FOG_WAKE_OUT_LO = 0.35;
@@ -1903,6 +1902,17 @@ pub const Hero = struct {
         self.lift = self.airY - self.pos.y;
     }
 
+    /// A JUMP STOPS AT THE ROCK. The crown may not pass the ceiling, and the rise it had left is spent there — a knock, not a bounce.
+    pub fn capUnderRoof(self: *Hero, roofY: f32) void {
+        if (!self.airborne()) return;
+        const lid = roofY - H;
+        if (self.airY <= lid) return;
+        self.airY = mathx.maxF(lid, self.pos.y);
+        self.airTop = mathx.maxF(self.airTop, self.airY);
+        if (self.vertVel > 0) self.vertVel = 0;
+        self.lift = mathx.maxF(self.airY - self.pos.y, 0);
+    }
+
     /// THE GROUND IS NOT A BLOW: billed straight to `vit`, past armour and past the guard.
     fn hitGround(self: *Hero, drop: f32) combat.HitResult {
         const dmg = fallDamage(drop, self.vit.hpMax, self.sheet.at(.dexterity));
@@ -2324,7 +2334,7 @@ pub const Hero = struct {
                 .add = true,
             });
         }
-        foemod.emitPart(&self.fx, &self.fxHead, .{ .p = at, .v = mathx.scaleV(o.n, 0.8), .life = PARRY_FLASH_LIFE, .r0 = PARRY_FLASH_R, .r1 = PARRY_FLASH_R * 0.25, .col = PARRY_SPARK_HOT, .add = true });
+        foemod.contactFlash(&self.fx, &self.fxHead, at, o.n, .parry, 1.0);
     }
 
     pub fn fogWake(self: *Hero, at: rl.Vector3, along: rl.Vector3, n: u32) void {
@@ -2357,6 +2367,7 @@ pub const Hero = struct {
         const o = self.sparkOrigin();
         const at = o.at;
         const w = mathx.clampF(weight, 0, 1);
+        foemod.contactFlash(&self.fx, &self.fxHead, at, o.n, .block, 0.7 + 0.3 * w);
         const n: u32 = @intFromFloat(mathx.lerpF(BLOCK_GRIT_MIN, BLOCK_GRIT_MAX, w));
         var rng = foemod.fxStream(self.elapsed, 911.0, 0x8B08);
         var i: u32 = 0;

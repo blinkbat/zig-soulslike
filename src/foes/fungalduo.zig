@@ -990,12 +990,6 @@ pub const Swordsman = struct {
         };
     }
 
-    fn parryable(self: *const Swordsman) ?f32 {
-        const left = self.toImpact() orelse return null;
-        if (!self.parry.window(left)) return null;
-        return foe.hurtReach(SW_KIT_R, self.scale) + SW_BLADE_LEN * self.scale * 0.5;
-    }
-
     pub fn takeParry(self: *Swordsman) void {
         const reach = foe.hurtReach(SW_KIT_R, self.scale) + SW_BLADE_LEN * self.scale * 0.5;
         const swinging = switch (self.state) { .slash, .slash2, .heavy, .lunge => true, else => false };
@@ -2299,12 +2293,13 @@ pub const Conclave = struct {
         for (&self.orbs) |*o| {
             if (!o.live) continue;
             rl.drawModelEx(self.orbModel, o.at, v3(0, 1, 0), mathx.degrees(o.spin), v3(1, 1, 1), rl.Color.white);
-            rl.drawSphereEx(o.at, ORB_R * (2.1 + 0.16 * mathx.sinf(o.t * 16.0)), 8, 6, mathx.withAlpha(CHAOS_CORE, 64));
+            foe.drawAura(o.at, ORB_R * 1.9, o.t, .chaos, mathx.withAlpha(CHAOS_CORE, 135), mathx.withAlpha(CHAOS_EDGE, 110));
         }
         for (&self.mists) |*g| {
             const a = g.amt();
             if (a <= 0.02) continue;
-            rl.drawSphereEx(v3(g.at.x, g.at.y + MIST_R * 0.16, g.at.z), MIST_R * (0.55 + 0.45 * a), 10, 6, mathx.withAlpha(MIST_COL, mathx.u8f(46.0 * a)));
+            foe.drawCloud(.{ .at = g.at, .radius = MIST_R * (0.55 + 0.45 * a), .height = MIST_R * 0.65,
+                .time = g.t, .amount = a, .col = mathx.withAlpha(MIST_COL, 115), .shade = mathx.withAlpha(DUST_DK, 105) });
         }
         for (&self.dusts) |*g| drawDust(g);
         foe.drawParticles(&self.parts);
@@ -2448,20 +2443,12 @@ const SPORE_SPRAY = foe.Spray{
     .col1 = rgba(146, 136, 90, 0), .drag = 2.6,
 };
 
-/// FIVE overlapping puffs on their own drifts, so a cloud is a mass rather than a ball, and it climbs as it thins.
 fn drawDust(g: *const Dust) void {
     const a = g.amt();
     if (a <= 0.02) return;
-    const r = g.radius();
-    const lift = 0.26 + 0.30 * mathx.clampF(g.t / DUST_LIFE, 0, 1);
-    var i: usize = 0;
-    while (i < 5) : (i += 1) {
-        const k = @as(f32, @floatFromInt(i));
-        const ang = g.seed * std.math.tau + k * 1.257 + g.t * 0.30;
-        const off = r * (0.16 + 0.13 * k);
-        const at = v3(g.at.x + mathx.cosf(ang) * off, g.at.y + r * (lift + 0.10 * @sin(k)), g.at.z + mathx.sinf(ang) * off);
-        rl.drawSphereEx(at, r * (0.48 - 0.05 * k), 9, 6, mathx.withAlpha(if (i % 2 == 1) DUST_DK else DUST_COL, mathx.u8f(64.0 * a)));
-    }
+    foe.drawCloud(.{ .at = g.at, .radius = g.radius(), .height = g.radius() * 0.85,
+        .time = g.t, .amount = a, .seed = @intFromFloat(@abs(g.seed) * 1000),
+        .col = mathx.withAlpha(DUST_COL, 156), .shade = mathx.withAlpha(DUST_DK, 135) });
 }
 
 const GROUND_THREAT = foe.Threat{};

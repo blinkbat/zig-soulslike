@@ -16,6 +16,8 @@ const SLOT_WATER: i32 = 14;
 const SLOT_SOILCOV: i32 = 15;
 const SLOT_SOILEDGE: i32 = 16;
 const SLOT_WATEREDGE: i32 = 17;
+const SLOT_CAVECOV: i32 = 18;
+const SLOT_CAVEROOF: i32 = 19;
 
 pub const SOIL_N: i32 = 112;
 
@@ -23,6 +25,8 @@ pub const SOIL_N: i32 = 112;
 pub const WATER_N: i32 = 224;
 
 pub const HEIGHT_N: i32 = 224;
+/// Half the terrain's cell, sharing its lattice points.
+pub const CAVE_N: i32 = 2 * HEIGHT_N - 1;
 
 /// Re-exported from the shader, which is where the GLSL that indexes `liquidTone` is generated from it.
 pub const LIQUID_N: usize = glsl.LIQUID_N;
@@ -434,6 +438,11 @@ pub const Scene = struct {
     soilTex: rl.Texture2D,
     soilCovTex: rl.Texture2D,
     soilEdgeTex: rl.Texture2D,
+    caveCovTex: rl.Texture2D = undefined,
+    caveRoofTex: rl.Texture2D = undefined,
+    loc_caveOn: i32 = -1,
+    loc_caveHalf: i32 = -1,
+    loc_caveBase: i32 = -1,
     loc_soilOn: i32,
     loc_soilHalf: i32,
     loc_soilCell: i32,
@@ -464,6 +473,10 @@ pub const Scene = struct {
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "soilEdgeMap"), &slotSoilEdge, .int);
         var slotWaterEdge = SLOT_WATEREDGE;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterEdgeMap"), &slotWaterEdge, .int);
+        var slotCaveCov = SLOT_CAVECOV;
+        rl.setShaderValue(shader, rl.getShaderLocation(shader, "caveCovMap"), &slotCaveCov, .int);
+        var slotCaveRoof = SLOT_CAVEROOF;
+        rl.setShaderValue(shader, rl.getShaderLocation(shader, "caveRoofMap"), &slotCaveRoof, .int);
         var waterOff: i32 = 0;
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterOn"), &waterOff, .int);
         rl.setShaderValue(shader, rl.getShaderLocation(shader, "waterSheet"), &waterOff, .int);
@@ -484,6 +497,11 @@ pub const Scene = struct {
             .soilTex = loadFieldTexture(SOIL_N, .point),
             .soilCovTex = loadFieldTexture(SOIL_N, .bilinear),
             .soilEdgeTex = loadFieldTexture(SOIL_N, .point),
+            .caveCovTex = loadFieldTexture(CAVE_N, .bilinear),
+            .caveRoofTex = loadFieldTexture(CAVE_N, .bilinear),
+            .loc_caveOn = rl.getShaderLocation(shader, "caveOn"),
+            .loc_caveHalf = rl.getShaderLocation(shader, "caveHalf"),
+            .loc_caveBase = rl.getShaderLocation(shader, "caveBase"),
             .loc_soilOn = rl.getShaderLocation(shader, "soilOn"),
             .loc_soilHalf = rl.getShaderLocation(shader, "soilHalf"),
             .loc_soilCell = rl.getShaderLocation(shader, "soilCell"),
@@ -692,6 +710,21 @@ pub fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []con
         rl.setShaderValue(self.shader, self.loc_soilCell, &cell, .float);
     }
 
+    /// `cov` is coverage ALREADY MULTIPLIED by how much rock stands over the ceiling, so it falls to nothing at a mouth and the shader needs no terrain height of its own.
+    pub fn setCave(self: *Scene, cov: []const u8, roof: []const u8, half: f32, base: f32, any: bool) void {
+        const n: usize = @intCast(CAVE_N);
+        std.debug.assert(cov.len == n * n);
+        std.debug.assert(roof.len == cov.len);
+        rl.updateTexture(self.caveCovTex, cov.ptr);
+        rl.updateTexture(self.caveRoofTex, roof.ptr);
+        var on: i32 = if (any) 1 else 0;
+        rl.setShaderValue(self.shader, self.loc_caveOn, &on, .int);
+        var h = half;
+        rl.setShaderValue(self.shader, self.loc_caveHalf, &h, .float);
+        var b = base;
+        rl.setShaderValue(self.shader, self.loc_caveBase, &b, .float);
+    }
+
     fn bindSoil(self: *Scene) void {
         rl.gl.rlActiveTextureSlot(SLOT_SOIL);
         rl.gl.rlEnableTexture(self.soilTex.id);
@@ -703,6 +736,10 @@ pub fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []con
         rl.gl.rlEnableTexture(self.soilEdgeTex.id);
         rl.gl.rlActiveTextureSlot(SLOT_WATEREDGE);
         rl.gl.rlEnableTexture(self.waterEdgeTex.id);
+        rl.gl.rlActiveTextureSlot(SLOT_CAVECOV);
+        rl.gl.rlEnableTexture(self.caveCovTex.id);
+        rl.gl.rlActiveTextureSlot(SLOT_CAVEROOF);
+        rl.gl.rlEnableTexture(self.caveRoofTex.id);
         rl.gl.rlActiveTextureSlot(0);
     }
 

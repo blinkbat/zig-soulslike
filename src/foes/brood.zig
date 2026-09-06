@@ -805,6 +805,11 @@ pub const Pool = struct {
     }
 
     pub fn drawFx(self: *const Pool) void {
+        if (self.live) foe.drawCloud(.{
+            .at = self.pos, .radius = self.radius(), .height = 0.45, .time = self.t,
+            .amount = self.strength() * 0.5, .style = .smoke,
+            .col = mathx.withAlpha(VENOM, 105), .shade = mathx.withAlpha(VENOM_VAPOUR, 85),
+        });
         foe.drawParticles(&self.parts);
     }
     pub fn xform(self: *const Pool) rl.Matrix {

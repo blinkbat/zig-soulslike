@@ -14,8 +14,10 @@ pub const DEFAULT_HALF: f32 = 280.0;
 
 pub const MAX_DECLARED_HALF: f32 = 312.0;
 
-/// Raised from 2048 when the global cover op was baked into ordinary decor, and again when the WOOD went the same way (`env.explodeOp`). This number IS memory: the editor's 24-deep undo ring is whole-`Map` copies.
-pub const MAX_OPS: usize = 20480;
+/// Raised from 2048 when the global cover op was baked into ordinary decor, again when the WOOD went the same way (`env.explodeOp`), and again once `Scatter` took 80 bytes off every row. This number IS memory: the editor's 24-deep undo ring is whole-`Map` copies, at 64 B an op across 25 live maps.
+pub const MAX_OPS: usize = 40960;
+/// Scatter ops are an authoring convenience that `env.explodeOp` bakes away, so a map holds a handful: fifteen across every world in the repo, all of them `belt`.
+pub const MAX_SCATTERS: usize = 512;
 pub const MAX_MIX: usize = 24;
 pub const MAX_LOOT: usize = 8;
 pub const MAX_SEAL: usize = 4;
@@ -48,27 +50,15 @@ pub const Avoid = struct {
 
 pub const Axis = enum(u8) { none, x, z };
 
-pub const Op = struct {
-    op: OpKind = .at,
-    kind: Kind = .pillar,
-    x: f32 = 0,
-    z: f32 = 0,
+/// EVERYTHING A SCATTER OP NEEDS AND AN `at` NEVER READS, held in `Map.scats` and reached through `Op.scat`. It sits here rather than in `Op` because a map is seventeen thousand `at` rows and this block was 79 of every 144 bytes on each of them — and the editor's undo ring is 24 whole-`Map` copies.
+pub const Scatter = struct {
     x1: f32 = 0,
     z1: f32 = 0,
     r0: f32 = 0,
-    /// disc outer radius — and, for an `at`, HOW FAR OFF THE GROUND the one prop is lifted, in metres (`env.Placer.expand`). It is not one of `at`'s positionals, so it only ever arrives as an `r1=` tail.
-    r1: f32 = 0,
-    yaw: f32 = 0,
-    scale: f32 = 1,
-    rise: f32 = 0,
-    /// TIP THE PROP OFF PLUMB: `lean` degrees, toward the compass direction `leanDir` (measured like yaw).
-    lean: f32 = 0,
-    leanDir: f32 = 0,
     sLo: f32 = 0.85,
     sHi: f32 = 1.15,
     n: i32 = 0,
     skip: i32 = -1,
-    seed: u64 = 0,
     chance: f32 = 1.0,
     bias: f32 = 0,
     field: bool = false,
@@ -79,6 +69,42 @@ pub const Op = struct {
     avoid: Avoid = .{},
     mix: [MAX_MIX]Kind = undefined,
     nmix: u8 = 0,
+
+    pub fn pick(self: *const Scatter, kind: Kind, r: *mathx.Rng) Kind {
+        if (self.nmix == 0) return kind;
+        return self.mix[@intCast(r.intn(@intCast(self.nmix)))];
+    }
+
+    pub fn gradAt(self: *const Scatter, px: f32, pz: f32) f32 {
+        const v = switch (self.gAxis) {
+            .none => return 1.0,
+            .x => px,
+            .z => pz,
+        };
+        return self.gFloor + (1.0 - self.gFloor) * mathx.smoothstep(self.gA, self.gB, v);
+    }
+};
+
+/// What an `at` reads and no more. Everything a scatter op adds lives in `Scatter`.
+pub const Op = struct {
+    op: OpKind = .at,
+    kind: Kind = .pillar,
+    x: f32 = 0,
+    z: f32 = 0,
+    /// disc outer radius — and, for an `at`, HOW FAR OFF THE GROUND the one prop is lifted, in metres (`env.Placer.expand`). It is not one of `at`'s positionals, so it only ever arrives as an `r1=` tail.
+    r1: f32 = 0,
+    yaw: f32 = 0,
+    scale: f32 = 1,
+    rise: f32 = 0,
+    /// TIP THE PROP OFF PLUMB: `lean` degrees, toward the compass direction `leanDir` (measured like yaw).
+    lean: f32 = 0,
+    leanDir: f32 = 0,
+    /// PLANTED ON THE CHAMBER FLOOR, not on the hill over it. A row without it is the outdoor placement it always was.
+    under: bool = false,
+    /// An `at` reads this too: `Placer.atY` draws a lit prop's flicker phase off the op's own stream.
+    seed: u64 = 0,
+    /// Its slot in `Map.scats` PLUS ONE, 0 for an `at` — `Map.scatOf` hands back a default-valued `Scatter` for 0, so a read never has to branch.
+    scat: u16 = 0,
     /// What is in the CONTAINER this op placed — a chest, or an item pickup (`props.holdsLoot`). Written and parsed on `nloot > 0` alone and never on the kind.
     loot: [MAX_LOOT]item.Kind = undefined,
     nloot: u8 = 0,
@@ -95,24 +121,25 @@ pub const Op = struct {
         return sealHas(self.seal(), k);
     }
 
-    pub fn pick(self: *const Op, r: *mathx.Rng) Kind {
-        if (self.nmix == 0) return self.kind;
-        return self.mix[@intCast(r.intn(@intCast(self.nmix)))];
-    }
-
     pub fn stream(self: *const Op) mathx.Rng {
         return mathx.Rng.init(self.seed);
     }
-
-    pub fn gradAt(self: *const Op, px: f32, pz: f32) f32 {
-        const v = switch (self.gAxis) {
-            .none => return 1.0,
-            .x => px,
-            .z => pz,
-        };
-        return self.gFloor + (1.0 - self.gFloor) * mathx.smoothstep(self.gA, self.gB, v);
-    }
 };
+
+const NO_SCATTER: Scatter = .{};
+
+/// A row's positionals span both structs now (`disc` takes `r0` off the scatter and `r1` off the op), so the field walks resolve a name against whichever one declares it.
+fn FieldOf(comptime name: []const u8) type {
+    return if (@hasField(Op, name)) @FieldType(Op, name) else @FieldType(Scatter, name);
+}
+
+fn opFieldPtr(o: *Op, s: *Scatter, comptime name: []const u8) *FieldOf(name) {
+    return if (comptime @hasField(Op, name)) &@field(o, name) else &@field(s, name);
+}
+
+fn opFieldVal(o: *const Op, s: *const Scatter, comptime name: []const u8) FieldOf(name) {
+    return if (comptime @hasField(Op, name)) @field(o, name) else @field(s, name);
+}
 
 fn fieldsOf(comptime k: OpKind) []const []const u8 {
     return switch (k) {
@@ -130,25 +157,33 @@ comptime {
     for (@typeInfo(OpKind).@"enum".fields) |ek| {
         const k: OpKind = @enumFromInt(ek.value);
         for (fieldsOf(k)) |name| {
-            if (!@hasField(Op, name)) @compileError("worldfmt: " ++ @tagName(k) ++ " names a field Op does not have: " ++ name);
+            if (!@hasField(Op, name) and !@hasField(Scatter, name))
+                @compileError("worldfmt: " ++ @tagName(k) ++ " names a field neither Op nor Scatter has: " ++ name);
         }
+    }
+    // An `at` is stored WITHOUT a `Scatter`, so every one of its positionals has to sit on `Op` itself.
+    for (fieldsOf(.at)) |name| {
+        if (!@hasField(Op, name)) @compileError("worldfmt: an `at` positional cannot live on Scatter: " ++ name);
     }
 }
 
 pub fn defaults(k: OpKind) Op {
-    var o = Op{ .op = k };
+    return .{ .op = k };
+}
+
+pub fn scatDefaults(k: OpKind) Scatter {
+    var s = Scatter{};
     switch (k) {
-        .at => {},
+        .at, .disc => {},
         .belt => {
-            o.avoid = .{ .runway = true, .water = true };
-            o.field = true;
+            s.avoid = .{ .runway = true, .water = true };
+            s.field = true;
         },
-        .disc => {},
-        .ring => o.skip = -1,
-        .line => o.chance = 0.78,
-        .ivy => o.chance = 0.55,
+        .ring => s.skip = -1,
+        .line => s.chance = 0.78,
+        .ivy => s.chance = 0.55,
     }
-    return o;
+    return s;
 }
 
 
@@ -506,6 +541,8 @@ pub const Foe = struct {
     seed: f32 = 0,
     ai: FoeAi = .hold,
     when: FoeWhen = .derived,
+    /// POSTED IN THE CHAMBER, not on the hill over it. A row without it is the outdoor placement it always was.
+    under: bool = false,
     wp: [MAX_WP]Wp = [_]Wp{.{}} ** MAX_WP,
     nwp: u8 = 0,
 
@@ -1168,6 +1205,7 @@ pub const Soil = enum(u8) {
     cinder,
     spore,
     bloom,
+    sand,
 
     pub const N = @typeInfo(Soil).@"enum".fields.len;
 
@@ -1236,8 +1274,9 @@ pub const Edge = enum(u8) {
 };
 
 comptime {
-    // `shaders.zig`'s `soilColor(id)` carries one branch per id from 1 up; a soil added without a colour there comes out as the fallback, which is a new material that draws as moss.
-    std.debug.assert(Soil.N == 11);
+    // `shaders.zig`'s `soilColor(id)` carries one branch per id from 1 up; a soil added without a colour there comes out as the fallback, which is a new material that draws as moss. `paintedSoil` branches on SAND's ordinal besides, for its grain.
+    std.debug.assert(Soil.N == 12);
+    std.debug.assert(@intFromEnum(Soil.sand) == 11);
     // …AND `shaders.zig`'s `edgeShape(e)` BRANCHES ON THESE ORDINALS, 0..7 in this order: an inserted row would silently re-point every stroke in every map at the wrong shape.
     std.debug.assert(Edge.N == 8);
     std.debug.assert(@intFromEnum(Edge.blend) == 0);
@@ -1338,6 +1377,16 @@ pub const HEIGHT_ZERO: u8 = 64;
 /// How far the encoding reaches: 16 m down (deep enough for any basin) and ~48 m up.
 pub const HEIGHT_MIN: f32 = -@as(f32, @floatFromInt(HEIGHT_ZERO)) * HEIGHT_STEP;
 pub const HEIGHT_MAX: f32 = @as(f32, @floatFromInt(255 - HEIGHT_ZERO)) * HEIGHT_STEP;
+
+/// THE CAVE LATTICE HALVES THE TERRAIN'S CELL — 1.26 m on the shipped 560 m map, where the terrain's 2.51 m cell cannot hold a passage at all. `2n-1` points, so cave point (2i,2j) IS terrain point (i,j) and a mouth can share its vertices with the hill.
+pub const CAVE_N: usize = 2 * HEIGHT_N - 1;
+pub const CAVE_CELLS: usize = CAVE_N * CAVE_N;
+
+comptime {
+    std.debug.assert(CAVE_N == @as(usize, @intCast(gfx.CAVE_N)));
+}
+/// Coverage at or over this is excavated, so a cave wall lands BETWEEN lattice points instead of on a cell boundary.
+pub const CAVE_EDGE: u8 = 128;
 
 /// One case per height CELL, indexed by the cell's low corner. 3..255 are unclaimed, and a map that uses one is a LOAD ERROR on a build that does not know it.
 pub const CLIFF_NONE: u8 = 0;
@@ -1552,8 +1601,8 @@ pub fn sampleGrad(field: []const u8, cliff: []const u8, half: f32, px: f32, pz: 
 
 pub const EMPTY_SPAN: [4]usize = .{ 1, 1, 0, 0 };
 
-pub fn pointSpan(c: f32, r: f32, half: f32, step: f32) ?[2]usize {
-    const last: f32 = @floatFromInt(HEIGHT_N - 1);
+pub fn pointSpan(c: f32, r: f32, half: f32, step: f32, n: usize) ?[2]usize {
+    const last: f32 = @floatFromInt(n - 1);
     const a = @ceil((c - r + half) / step);
     const b = @floor((c + r + half) / step);
     if (b < 0 or a > last) return null;
@@ -1579,6 +1628,8 @@ pub const Map = struct {
 
     ops: [MAX_OPS]Op = undefined,
     nops: usize = 0,
+    scats: [MAX_SCATTERS]Scatter = undefined,
+    nscats: usize = 0,
     locations: [MAX_LOCATIONS]Location = undefined,
     nlocations: usize = 0,
     zones: [MAX_ZONES]Zone = undefined,
@@ -1617,6 +1668,9 @@ pub const Map = struct {
     waterKind: [WATER_CELLS]u8 = [_]u8{@intFromEnum(Liquid.water)} ** WATER_CELLS,
     height: [HEIGHT_CELLS]u8 = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS,
     cliff: [HEIGHT_CELLS]u8 = [_]u8{CLIFF_NONE} ** HEIGHT_CELLS,
+    caveCov: [CAVE_CELLS]u8 = [_]u8{0} ** CAVE_CELLS,
+    caveFloor: [CAVE_CELLS]u8 = [_]u8{HEIGHT_ZERO} ** CAVE_CELLS,
+    caveRoof: [CAVE_CELLS]u8 = [_]u8{HEIGHT_ZERO} ** CAVE_CELLS,
 
     pub fn label(self: *const Map) []const u8 {
         return std.mem.sliceTo(&self.name, 0);
@@ -1630,6 +1684,7 @@ pub const Map = struct {
 
     pub fn clear(self: *Map) void {
         self.nops = 0;
+        self.nscats = 0;
         self.nzones = 0;
         self.nclearings = 0;
         self.narenas = 0;
@@ -1644,6 +1699,9 @@ pub const Map = struct {
         // To the DATUM, not to zero: `@memset(.., 0)` here would drop the ground to HEIGHT_MIN.
         self.height = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS;
         self.cliff = [_]u8{CLIFF_NONE} ** HEIGHT_CELLS;
+        self.caveCov = [_]u8{0} ** CAVE_CELLS;
+        self.caveFloor = [_]u8{HEIGHT_ZERO} ** CAVE_CELLS;
+        self.caveRoof = [_]u8{HEIGHT_ZERO} ** CAVE_CELLS;
     }
 
     pub fn blank(self: *Map, name: []const u8) void {
@@ -1658,17 +1716,67 @@ pub const Map = struct {
         // NO GROUND COVER: a blank map used to open with a global `cover:` op. Cover is ordinary `at:` decor now.
     }
 
+    /// The scatter block behind an op, or a default-valued one when it has none — so a read never has to branch on the op kind.
+    pub fn scatOf(self: *const Map, o: *const Op) *const Scatter {
+        if (o.scat == 0) return &NO_SCATTER;
+        return &self.scats[o.scat - 1];
+    }
+
+    pub fn scatAt(self: *const Map, i: usize) *const Scatter {
+        return self.scatOf(&self.ops[i]);
+    }
+
+    /// The block behind op `i`, minted at that op kind's defaults if it had none.
+    pub fn scatMut(self: *Map, i: usize) !*Scatter {
+        const o = &self.ops[i];
+        if (o.scat == 0) {
+            if (self.nscats >= MAX_SCATTERS) return error.TooManyScatters;
+            self.scats[self.nscats] = scatDefaults(o.op);
+            self.nscats += 1;
+            o.scat = @intCast(self.nscats);
+        }
+        return &self.scats[o.scat - 1];
+    }
+
     pub fn add(self: *Map, o: Op) !usize {
         if (self.nops >= MAX_OPS) return error.TooManyOps;
         self.ops[self.nops] = o;
+        self.ops[self.nops].scat = 0;
         self.nops += 1;
         return self.nops - 1;
+    }
+
+    pub fn addScat(self: *Map, o: Op, s: Scatter) !usize {
+        if (self.nops >= MAX_OPS) return error.TooManyOps;
+        if (self.nscats >= MAX_SCATTERS) return error.TooManyScatters;
+        self.scats[self.nscats] = s;
+        self.nscats += 1;
+        self.ops[self.nops] = o;
+        self.ops[self.nops].scat = @intCast(self.nscats);
+        self.nops += 1;
+        return self.nops - 1;
+    }
+
+    /// Drop every scatter block no op points at any more and renumber the survivors. A handle is an index, so this has to run whenever an op is dropped or written over.
+    pub fn compactScats(self: *Map) void {
+        if (self.nscats == 0) return;
+        var kept: [MAX_SCATTERS]Scatter = undefined;
+        var n: usize = 0;
+        for (self.ops[0..self.nops]) |*o| {
+            if (o.scat == 0) continue;
+            kept[n] = self.scats[o.scat - 1];
+            n += 1;
+            o.scat = @intCast(n);
+        }
+        @memcpy(self.scats[0..n], kept[0..n]);
+        self.nscats = n;
     }
 
     pub fn remove(self: *Map, i: usize) void {
         if (i >= self.nops) return;
         std.mem.copyForwards(Op, self.ops[i .. self.nops - 1], self.ops[i + 1 .. self.nops]);
         self.nops -= 1;
+        self.compactScats();
     }
 
     pub fn splice(self: *Map, i: usize, n: usize) !void {
@@ -1679,6 +1787,8 @@ pub const Map = struct {
         if (self.nops + grow > MAX_OPS) return error.TooManyOps;
         std.mem.copyBackwards(Op, self.ops[i + n .. self.nops + grow], self.ops[i + 1 .. self.nops]);
         self.nops += grow;
+        // The widened hole holds n copies of one op and so n copies of ONE handle; only the first keeps it, or `compactScats` would mint a record per copy.
+        for (self.ops[i + 1 .. i + n]) |*o| o.scat = 0;
     }
 
     pub fn reorder(self: *Map, from: usize, to: usize) void {
@@ -1922,6 +2032,14 @@ pub const Map = struct {
         return false;
     }
 
+    /// The COVERAGE decides: floor and roof under solid rock are whatever the last fill left and mean nothing.
+    pub fn anyCave(self: *const Map) bool {
+        for (self.caveCov) |v| {
+            if (v >= CAVE_EDGE) return true;
+        }
+        return false;
+    }
+
     pub fn anyCliff(self: *const Map) bool {
         for (self.cliff) |v| {
             if (v != CLIFF_NONE) return true;
@@ -1934,8 +2052,8 @@ pub const Map = struct {
         const step = 2 * self.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
         const r = mathx.maxF(radius, step * 0.5);
         out.* = EMPTY_SPAN;
-        const xs = pointSpan(px, r, self.half, step) orelse return false;
-        const zs = pointSpan(pz, r, self.half, step) orelse return false;
+        const xs = pointSpan(px, r, self.half, step, HEIGHT_N) orelse return false;
+        const zs = pointSpan(pz, r, self.half, step, HEIGHT_N) orelse return false;
         out.* = .{ xs[0], zs[0], xs[1], zs[1] };
         var changed = false;
         var iz = zs[0];
@@ -1973,8 +2091,8 @@ pub const Map = struct {
         const step = 2 * self.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
         const r = mathx.maxF(radius, step * 0.5);
         out.* = EMPTY_SPAN;
-        const xs = pointSpan(px, r, self.half, step) orelse return false;
-        const zs = pointSpan(pz, r, self.half, step) orelse return false;
+        const xs = pointSpan(px, r, self.half, step, HEIGHT_N) orelse return false;
+        const zs = pointSpan(pz, r, self.half, step, HEIGHT_N) orelse return false;
         out.* = .{ xs[0], zs[0], xs[1], zs[1] };
         const lo = xs[0];
         const hi = xs[1];
@@ -2086,7 +2204,7 @@ pub fn write(m: *const Map, w: anytype) !void {
     }
     if (m.nzones + m.nclearings + m.nlocations + m.narenas > 0) try w.writeAll("\n");
 
-    for (m.ops[0..m.nops]) |*o| try writeOp(o, w);
+    for (m.ops[0..m.nops]) |*o| try writeOp(o, m.scatOf(o), w);
 
     var anyPaint = false;
     for (m.soil) |v| {
@@ -2126,6 +2244,12 @@ pub fn write(m: *const Map, w: anytype) !void {
         try w.writeAll("\n");
         try writeGrid(w, "hgt", &m.height);
     }
+    if (m.anyCave()) {
+        try w.writeAll("\n");
+        try writeGrid(w, "cave", &m.caveCov);
+        try writeGrid(w, "cavefloor", &m.caveFloor);
+        try writeGrid(w, "caveroof", &m.caveRoof);
+    }
     // Its OWN test, not `anyHeight`'s: paint a face on a map before sculpting it and a nested write drops the flags on the way out.
     if (m.anyCliff()) {
         try w.writeAll("\n");
@@ -2137,6 +2261,7 @@ pub fn write(m: *const Map, w: anytype) !void {
         try w.print("foe: {s} {d:.2} {d:.2} {d:.1} {d:.2} {d:.2}", .{ @tagName(f.kind), f.x, f.z, f.yaw, f.scale, f.seed });
         if (f.ai != .hold) try w.print(" ai={s}", .{@tagName(f.ai)});
         if (f.when != .derived) try w.print(" when={s}", .{@tagName(f.when)});
+        if (f.under) try w.writeAll(" under=1");
         for (f.route()) |q| try w.print(" wp={d:.2},{d:.2}", .{ q.x, q.z });
         try w.print("\n", .{});
     }
@@ -2252,14 +2377,15 @@ fn writeAct(m: *const Map, w: anytype, a: *const Act) !void {
     }
 }
 
-fn writeOp(o: *const Op, w: anytype) !void {
+fn writeOp(o: *const Op, s: *const Scatter, w: anytype) !void {
     try w.print("{s}:", .{@tagName(o.op)});
     const d = defaults(o.op);
+    const ds = scatDefaults(o.op);
     switch (o.op) {
         inline else => |k| {
             inline for (comptime fieldsOf(k)) |name| {
                 try w.writeAll(" ");
-                try writeTail(w, @field(o, name));
+                try writeTail(w, opFieldVal(o, s, name));
             }
             inline for (@typeInfo(Op).@"struct".fields) |f| {
                 if (comptime canTail(k, f.name)) {
@@ -2269,11 +2395,19 @@ fn writeOp(o: *const Op, w: anytype) !void {
                     }
                 }
             }
+            inline for (@typeInfo(Scatter).@"struct".fields) |f| {
+                if (comptime canTail(k, f.name)) {
+                    if (!eqlVal(@field(s, f.name), @field(ds, f.name))) {
+                        try w.print(" {s}=", .{f.name});
+                        try writeTail(w, @field(s, f.name));
+                    }
+                }
+            }
         },
     }
-    if (o.nmix > 0) {
+    if (s.nmix > 0) {
         try w.writeAll(" mix=");
-        try writeMix(w, o.mix[0..o.nmix]);
+        try writeMix(w, s.mix[0..s.nmix]);
     }
     if (o.nloot > 0) {
         try w.writeAll(" loot=");
@@ -2345,6 +2479,7 @@ pub const ParseError = error{
     BadNumber,
     BadKind,
     TooManyOps,
+    TooManyScatters,
     TooManyZones,
     TooManyLocations,
     TooManyClearings,
@@ -2388,6 +2523,9 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     var wKindAt: usize = 0;
     var hgtAt: usize = 0;
     var cliffAt: usize = 0;
+    var caveAt: usize = 0;
+    var caveFAt: usize = 0;
+    var caveRAt: usize = 0;
     var cur = Cursor{};
     var lines = std.mem.splitScalar(u8, text, '\n');
     var ln: usize = 0;
@@ -2443,6 +2581,12 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             wKindAt = try readGrid(&it, &m.waterKind, wKindAt, Liquid.N);
         } else if (std.mem.eql(u8, rec, "hgt")) {
             hgtAt = try readGrid(&it, &m.height, hgtAt, 256);
+        } else if (std.mem.eql(u8, rec, "cave")) {
+            caveAt = try readGrid(&it, &m.caveCov, caveAt, 256);
+        } else if (std.mem.eql(u8, rec, "cavefloor")) {
+            caveFAt = try readGrid(&it, &m.caveFloor, caveFAt, 256);
+        } else if (std.mem.eql(u8, rec, "caveroof")) {
+            caveRAt = try readGrid(&it, &m.caveRoof, caveRAt, 256);
         } else if (std.mem.eql(u8, rec, "cliff")) {
             cliffAt = try readGrid(&it, &m.cliff, cliffAt, CLIFF_N);
         } else if (std.mem.eql(u8, rec, "foe")) {
@@ -2463,6 +2607,8 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
                     f.ai = try enumFromName(FoeAi, val);
                 } else if (std.mem.eql(u8, key, "when")) {
                     f.when = try enumFromName(FoeWhen, val);
+                } else if (std.mem.eql(u8, key, "under")) {
+                    f.under = !std.mem.eql(u8, val, "0");
                 } else if (std.mem.eql(u8, key, "wp")) {
                     if (f.nwp >= MAX_WP) return ParseError.TooManyWaypoints;
                     const comma = std.mem.indexOfScalar(u8, val, ',') orelse return ParseError.MissingField;
@@ -2477,8 +2623,15 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             m.nfoes += 1;
         } else if (enumFromName(OpKind, rec)) |k| {
             if (m.nops >= MAX_OPS) return ParseError.TooManyOps;
-            m.ops[m.nops] = try parseOp(k, &it);
-            m.nops += 1;
+            const row = try parseOp(k, &it);
+            if (k == .at) {
+                _ = m.add(row.o) catch return ParseError.TooManyOps;
+            } else {
+                _ = m.addScat(row.o, row.s) catch |e| return switch (e) {
+                    error.TooManyOps => ParseError.TooManyOps,
+                    error.TooManyScatters => ParseError.TooManyScatters,
+                };
+            }
         } else |_| {
             return ParseError.UnknownRecord;
         }
@@ -2492,6 +2645,15 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     if (wKindAt != 0 and wKindAt != m.waterKind.len) return ParseError.MissingField;
     if (hgtAt != 0 and hgtAt != m.height.len) return ParseError.MissingField;
     if (cliffAt != 0 and cliffAt != m.cliff.len) return ParseError.MissingField;
+    if (caveAt != 0 and caveAt != m.caveCov.len) return ParseError.MissingField;
+    if (caveFAt != 0 and caveFAt != m.caveFloor.len) return ParseError.MissingField;
+    if (caveRAt != 0 and caveRAt != m.caveRoof.len) return ParseError.MissingField;
+    // A floor at or over its ceiling is not a chamber; the sampler would hand back a surface with no air over it.
+    if (caveAt != 0) {
+        for (m.caveCov, m.caveFloor, m.caveRoof) |c, f, r| {
+            if (c >= CAVE_EDGE and heightOf(r) <= heightOf(f)) return ParseError.BadNumber;
+        }
+    }
     if (edgeAt == 0) fillLegacyEdges(m);
     lineOut.* = 0;
     try link(m);
@@ -2934,20 +3096,24 @@ fn parseArena(it: *std.mem.TokenIterator(u8, .any)) !Arena {
     return a;
 }
 
-fn parseOp(kind: OpKind, it: *std.mem.TokenIterator(u8, .any)) !Op {
+const ParsedOp = struct { o: Op, s: Scatter };
+
+fn parseOp(kind: OpKind, it: *std.mem.TokenIterator(u8, .any)) !ParsedOp {
     var o = defaults(kind);
+    var s = scatDefaults(kind);
     switch (kind) {
         inline else => |k| {
             inline for (comptime fieldsOf(k)) |name| {
                 const tok = it.next() orelse return ParseError.MissingField;
-                @field(o, name) = try parseVal(@TypeOf(@field(o, name)), tok);
+                const dst = opFieldPtr(&o, &s, name);
+                dst.* = try parseVal(FieldOf(name), tok);
             }
             while (it.next()) |tok| {
                 const eq = std.mem.indexOfScalar(u8, tok, '=') orelse return ParseError.UnknownKey;
                 const key = tok[0..eq];
                 const val = tok[eq + 1 ..];
                 if (std.mem.eql(u8, key, "mix")) {
-                    o.nmix = try parseMix(val, &o.mix);
+                    s.nmix = try parseMix(val, &s.mix);
                     continue;
                 }
                 if (std.mem.eql(u8, key, "loot")) {
@@ -2967,11 +3133,19 @@ fn parseOp(kind: OpKind, it: *std.mem.TokenIterator(u8, .any)) !Op {
                         }
                     }
                 }
+                inline for (@typeInfo(Scatter).@"struct".fields) |f| {
+                    if (comptime canTail(k, f.name)) {
+                        if (std.mem.eql(u8, key, f.name)) {
+                            @field(s, f.name) = try parseVal(@TypeOf(@field(s, f.name)), val);
+                            matched = true;
+                        }
+                    }
+                }
                 if (!matched) return ParseError.UnknownKey;
             }
         },
     }
-    return o;
+    return .{ .o = o, .s = s };
 }
 
 fn parseLoot(s: []const u8, out: *[MAX_LOOT]item.Kind) !u8 {
@@ -3227,8 +3401,8 @@ fn isPositional(comptime k: OpKind, comptime name: []const u8) bool {
 
 fn canTail(comptime k: OpKind, comptime name: []const u8) bool {
     @setEvalBranchQuota(20000);
-    // The array-plus-count pairs are written by hand as their own `key=` tail (see writeOp), so the generic field walk must not also try to emit them — an `[8]item.Kind` has no `writeTail` form.
-    const never = [_][]const u8{ "op", "mix", "nmix", "loot", "nloot", "boss", "nboss" };
+    // The array-plus-count pairs are written by hand as their own `key=` tail (see writeOp), so the generic field walk must not also try to emit them — an `[8]item.Kind` has no `writeTail` form. `scat` is an index into `Map.scats` and means nothing outside the loaded map.
+    const never = [_][]const u8{ "op", "scat", "mix", "nmix", "loot", "nloot", "boss", "nboss" };
     for (never) |n| {
         if (std.mem.eql(u8, n, name)) return false;
     }
@@ -3574,14 +3748,106 @@ test "THE SHIPPED MAPS SIT INSIDE THE READ BUFFER, and `save` refuses to write o
 
     var o = defaults(.at);
     o.kind = .pillar;
-    o.nmix = MAX_MIX;
-    for (&o.mix) |*k| k.* = .trestletable;
     o.nloot = MAX_LOOT;
+    for (&o.loot) |*k| k.* = .smithing_stone;
     while (m.nops < MAX_OPS) _ = try m.add(o);
     try std.testing.expectError(error.MapTooLarge, save(kept, m));
     try std.testing.expectError(error.FileNotFound, std.fs.cwd().access(kept ++ ".tmp", .{}));
     try load(kept, back, &line);
     try std.testing.expectEqual(@as(usize, 1), back.nops);
+}
+
+test "EVERY MAP SURVIVES A REWRITE — an op row is two records now and the file may not say so" {
+    const ta = std.testing.allocator;
+    const m = try ta.create(Map);
+    defer ta.destroy(m);
+    const back = try ta.create(Map);
+    defer ta.destroy(back);
+    var dir = try std.fs.cwd().openDir(DIR, .{ .iterate = true });
+    defer dir.close();
+    var it = dir.iterate();
+    var seen: usize = 0;
+    var scatters: usize = 0;
+    while (try it.next()) |ent| {
+        if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, EXT)) continue;
+        var pbuf: [256]u8 = undefined;
+        const path = try std.fmt.bufPrint(&pbuf, DIR ++ "/{s}", .{ent.name});
+        const text = try readForTest(ta, path, TEXT_CAP);
+        defer ta.free(text);
+        var line: usize = 0;
+        try parse(text, m, &line);
+
+        var once = std.ArrayList(u8).init(ta);
+        defer once.deinit();
+        try write(m, once.writer());
+        try parse(once.items, back, &line);
+        var twice = std.ArrayList(u8).init(ta);
+        defer twice.deinit();
+        try write(back, twice.writer());
+
+        try std.testing.expectEqualStrings(once.items, twice.items);
+        try std.testing.expectEqual(m.nops, back.nops);
+        try std.testing.expectEqual(m.nscats, back.nscats);
+        for (m.ops[0..m.nops], back.ops[0..back.nops], 0..) |a, b, i| {
+            try std.testing.expectEqual(a.op, b.op);
+            try std.testing.expectEqual(a.kind, b.kind);
+            try std.testing.expectEqual(a.seed, b.seed);
+            try std.testing.expectEqual(m.scatAt(i).n, back.scatAt(i).n);
+            try std.testing.expectEqual(m.scatAt(i).nmix, back.scatAt(i).nmix);
+        }
+        scatters += m.nscats;
+        seen += 1;
+    }
+    std.debug.print("\n  {d} maps reparse to the same bytes, {d} scatter blocks across them (cap {d})\n", .{ seen, scatters, MAX_SCATTERS });
+    try std.testing.expect(seen >= 3);
+}
+
+test "A SCATTER BLOCK FOLLOWS ITS OP through a delete, a reorder and an explode" {
+    var m = Map{};
+    var at = defaults(.at);
+    at.kind = .pillar;
+
+    var belt = defaults(.belt);
+    belt.kind = .fern;
+    var bs = scatDefaults(.belt);
+    bs.n = 77;
+
+    var line = defaults(.line);
+    line.kind = .birch;
+    var ls = scatDefaults(.line);
+    ls.n = 0;
+    ls.r0 = 3.5;
+
+    _ = try m.add(at);
+    const bi = try m.addScat(belt, bs);
+    _ = try m.add(at);
+    const li = try m.addScat(line, ls);
+    try std.testing.expectEqual(@as(usize, 2), m.nscats);
+    try std.testing.expectEqual(@as(i32, 77), m.scatAt(bi).n);
+    try std.testing.expectApproxEqAbs(@as(f32, 3.5), m.scatAt(li).r0, 1e-6);
+
+    // Drop the `at` BETWEEN them: both handles are indices and both shift.
+    m.remove(2);
+    try std.testing.expectEqual(@as(usize, 2), m.nscats);
+    try std.testing.expectEqual(@as(i32, 77), m.scatAt(1).n);
+    try std.testing.expectApproxEqAbs(@as(f32, 3.5), m.scatAt(2).r0, 1e-6);
+
+    m.reorder(1, 2);
+    try std.testing.expectEqual(OpKind.line, m.ops[1].op);
+    try std.testing.expectApproxEqAbs(@as(f32, 3.5), m.scatAt(1).r0, 1e-6);
+    try std.testing.expectEqual(@as(i32, 77), m.scatAt(2).n);
+
+    // What `env.explodeOp` does: widen the belt's slot and write plain `at` rows over every one of them.
+    try m.splice(2, 4);
+    for (2..6) |i| m.ops[i] = at;
+    m.compactScats();
+    try std.testing.expectEqual(@as(usize, 1), m.nscats);
+    try std.testing.expectApproxEqAbs(@as(f32, 3.5), m.scatAt(1).r0, 1e-6);
+    for (2..6) |i| try std.testing.expectEqual(@as(u16, 0), m.ops[i].scat);
+
+    // An `at` never mints one, however it is added.
+    _ = try m.add(at);
+    try std.testing.expectEqual(@as(usize, 1), m.nscats);
 }
 
 test "an op round-trips through write and parse" {
@@ -3591,21 +3857,22 @@ test "an op round-trips through write and parse" {
     o.kind = .fern;
     o.x = -152;
     o.z = -125;
-    o.x1 = -54;
-    o.z1 = 132;
-    o.n = 220;
-    o.sLo = 0.8;
-    o.sHi = 1.35;
     o.seed = 4711;
-    o.gAxis = .x;
-    o.gA = -54;
-    o.gB = -84;
-    o.gFloor = 0.18;
-    o.nmix = 3;
-    o.mix[0] = .bigtree;
-    o.mix[1] = .conifer;
-    o.mix[2] = .birch;
-    _ = try m.add(o);
+    var s = scatDefaults(.belt);
+    s.x1 = -54;
+    s.z1 = 132;
+    s.n = 220;
+    s.sLo = 0.8;
+    s.sHi = 1.35;
+    s.gAxis = .x;
+    s.gA = -54;
+    s.gB = -84;
+    s.gFloor = 0.18;
+    s.nmix = 3;
+    s.mix[0] = .bigtree;
+    s.mix[1] = .conifer;
+    s.mix[2] = .birch;
+    _ = try m.addScat(o, s);
 
     var buf: [8192]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);
@@ -3616,14 +3883,16 @@ test "an op round-trips through write and parse" {
     try parse(fbs.getWritten(), &back, &ln);
     try std.testing.expectEqual(@as(usize, 1), back.nops);
     const b = back.ops[0];
+    const bs = back.scatAt(0);
     try std.testing.expectEqual(Kind.fern, b.kind);
-    try std.testing.expectEqual(@as(i32, 220), b.n);
+    try std.testing.expectEqual(@as(i32, 220), bs.n);
     try std.testing.expectEqual(@as(u64, 4711), b.seed);
-    try std.testing.expectEqual(Axis.x, b.gAxis);
-    try std.testing.expectApproxEqAbs(@as(f32, 0.18), b.gFloor, 1e-6);
-    try std.testing.expectEqual(@as(u8, 3), b.nmix);
-    try std.testing.expectEqual(Kind.conifer, b.mix[1]);
-    try std.testing.expect(b.avoid.runway and b.avoid.water and !b.avoid.solid);
+    try std.testing.expectEqual(Axis.x, bs.gAxis);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.18), bs.gFloor, 1e-6);
+    try std.testing.expectEqual(@as(u8, 3), bs.nmix);
+    try std.testing.expectEqual(Kind.conifer, bs.mix[1]);
+    try std.testing.expect(bs.avoid.runway and bs.avoid.water and !bs.avoid.solid);
+    try std.testing.expectEqual(@as(usize, 1), back.nscats);
 }
 
 test "A FOG GATE'S BOSS ROUND-TRIPS, and the default costs the file nothing" {
@@ -3989,7 +4258,7 @@ test "a value that only LOOKS parseable is a load error too" {
     try std.testing.expectError(ParseError.BadNumber, parse(head ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=ture\n", &m, &ln));
     try std.testing.expectError(ParseError.BadNumber, parse(head ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=yes\n", &m, &ln));
     try parse(head ++ "belt: fern -1 -1 1 1 10 0.8 1.2 field=0\n", &m, &ln);
-    try std.testing.expect(!m.ops[1].field);
+    try std.testing.expect(!m.scatAt(1).field);
     try std.testing.expectError(ParseError.BadNumber, parse(head ++ "at: pillar nan 0 0 1\n", &m, &ln));
     try std.testing.expectError(ParseError.BadNumber, parse(head ++ "foe: toad 0 0 0 1 inf\n", &m, &ln));
     try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: inf\n" ++ head[11..], &m, &ln));
@@ -4035,14 +4304,14 @@ test "reorder preserves every other op's position" {
     var m = Map{};
     for (0..5) |i| {
         var o = defaults(.at);
-        o.n = @intCast(i);
+        o.gold = @intCast(i);
         _ = try m.add(o);
     }
     m.reorder(0, 3);
-    const want = [_]i32{ 1, 2, 3, 0, 4 };
-    for (want, 0..) |v, i| try std.testing.expectEqual(v, m.ops[i].n);
+    const want = [_]u32{ 1, 2, 3, 0, 4 };
+    for (want, 0..) |v, i| try std.testing.expectEqual(v, m.ops[i].gold);
     m.reorder(3, 0);
-    for (0..5) |i| try std.testing.expectEqual(@as(i32, @intCast(i)), m.ops[i].n);
+    for (0..5) |i| try std.testing.expectEqual(@as(u32, @intCast(i)), m.ops[i].gold);
 }
 
 test "A SPAWN'S SCALE IS VALIDATED ON LOAD, because zero is a NaN rig and not a small skeleton" {

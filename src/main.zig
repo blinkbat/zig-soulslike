@@ -208,6 +208,8 @@ test {
     _ = @import("foes/foestat.zig");
     _ = @import("foes/behave.zig");
     _ = @import("gfx/elemfx.zig");
+    _ = @import("gfx/particleart.zig");
+    _ = @import("props/proppalace.zig");
     _ = @import("play/combat.zig");
     _ = @import("play/stats.zig");
     _ = @import("play/item.zig");
@@ -223,6 +225,7 @@ test {
     _ = @import("world/env.zig");
     _ = @import("props/props.zig");
     _ = @import("world/worldfmt.zig");
+    _ = @import("world/caves.zig");
     _ = @import("world/trigger.zig");
     _ = @import("world/dialog.zig");
     _ = @import("foes/npc.zig");
@@ -265,4 +268,5 @@ test {
     _ = @import("props/propcoral.zig");
     _ = @import("props/propgold.zig");
     _ = @import("props/propember.zig");
+    _ = @import("props/propdesert.zig");
 }

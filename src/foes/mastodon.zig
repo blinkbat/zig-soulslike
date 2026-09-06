@@ -280,7 +280,6 @@ pub const Mastodon = struct {
     tailSide: f32 = 1,
     heroSide: f32 = 0,
     passed: bool = false,
-    charging: bool = false,
     landed: bool = false,
     bellowed: bool = false,
     stamped: bool = false,
@@ -490,7 +489,6 @@ pub const Mastodon = struct {
                 }
                 if (self.t >= CHARGE_WIND) {
                     self.passed = false;
-                    self.charging = true;
                     self.bellowed = true;
                     self.enter(.charge);
                 }
@@ -505,7 +503,6 @@ pub const Mastodon = struct {
                 const f = mathx.headingDir(self.facing);
                 if (rel.x * f.x + rel.z * f.z < -self.bodyR()) self.passed = true;
                 if (self.heroLatch or self.passed or self.t >= CHARGE_DUR) {
-                    self.charging = false;
                     self.chargeCd = CHARGE_CD * self.aiRng.range(0.9, 1.25);
                     self.dust(self.footWorld(wolf.PAWL), DUST_STEP * 4, 3.0);
                     self.enter(.charge_rec);
@@ -712,13 +709,11 @@ pub const Mastodon = struct {
     }
     fn enterStun(self: *Mastodon, s: State) void {
         self.heroLatch = false;
-        self.charging = false;
         self.enter(s);
     }
     fn enterDeath(self: *Mastodon) void {
         if (self.state == .dead) return;
         self.heroLatch = false;
-        self.charging = false;
         self.lift = 0;
         self.enter(.dead);
         self.justDied = true;

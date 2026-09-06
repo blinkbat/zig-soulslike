@@ -522,6 +522,11 @@ pub const Gas = struct {
     }
     pub fn drawFx(self: *const Gas) void {
         if (!foe.motesVisible(self.pos, self.radius() + GAS_PUFF_HI)) return;
+        if (self.live) foe.drawCloud(.{
+            .at = self.pos, .radius = self.radius(), .height = GAS_H, .time = self.t,
+            .amount = self.fade() * mathx.smoothstep(0, GAS_GROW, self.t),
+            .style = .chaos, .col = gasTint(EMBER, 0.85), .shade = gasTint(EMBER_MARK_COOL, 0.9),
+        });
         foe.drawParticles(&self.parts);
     }
 };

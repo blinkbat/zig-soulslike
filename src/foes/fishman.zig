@@ -210,9 +210,11 @@ const DISSOLVE = foe.Dissolve{ .rate = 42.0, .spread = 0.5, .rise = 0.7, .flake 
 const HIT_SPRAY_LIGHT = 5;
 const HIT_SPRAY_HEAVY = 11;
 const RITE_MOTES: u32 = 26;
+const PARRY_SPRAY = 9;
 const PARTS = 64;
 comptime {
-    std.debug.assert(@as(f32, PARTS) >= @as(f32, @floatFromInt(RITE_MOTES + foe.hitParts(HIT_SPRAY_HEAVY) + foe.WOUND_PARTS)));
+    // A caught thrust sprays on the same frame the hero's own blow can wound it, over the shaman's ritual motes.
+    std.debug.assert(@as(f32, PARTS) >= @as(f32, @floatFromInt(RITE_MOTES + PARRY_SPRAY + foe.hitParts(HIT_SPRAY_HEAVY) + foe.WOUND_PARTS)));
 }
 
 const State = enum { idle, walk, roll, thrust, cast, rite, stunlight, stunheavy, dead };
@@ -582,10 +584,11 @@ pub const Fishman = struct {
         self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);
         self.pose();
         if (self.state == .cast and self.t >= NET_WIND + 0.068 and self.t - dt < NET_WIND + 0.068) self.loose(quarry);
-        const until: ?f32 = if (self.state == .thrust) THRUST_WIND + THRUST_STRIKE * THRUST_IMPACT_K - self.t else null;
+        const at = THRUST_WIND + THRUST_STRIKE * THRUST_IMPACT_K;
+        const until: ?f32 = if (self.state == .thrust) at - self.t else null;
         if (foe.catchMelee(self, foe.hurtReach(THRUST_R, self.rigSize()), THRUST_FRONT_DOT, until)) {
-            self.spray(foe.markOn(self.xf[HELD], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), 9);
-        } else if (self.state == .thrust and self.t >= THRUST_WIND + THRUST_STRIKE * THRUST_IMPACT_K and self.t < THRUST_WIND + THRUST_STRIKE) {
+            self.spray(foe.markOn(self.xf[HELD], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), PARRY_SPRAY, false);
+        } else if (self.state == .thrust and self.t >= at and self.t < THRUST_WIND + THRUST_STRIKE) {
             self.tryThrust(quarry);
         }
         self.tryHit(blade);
@@ -626,7 +629,7 @@ pub const Fishman = struct {
         if (self.invulnerable()) return;
         const s = foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, .{ .light = 0.75, .heavy = 1.45 });
-        self.spray(s.contact, s.dir, foe.hitParts(if (heavy) HIT_SPRAY_HEAVY else HIT_SPRAY_LIGHT));
+        self.spray(s.contact, s.dir, foe.hitParts(if (heavy) HIT_SPRAY_HEAVY else HIT_SPRAY_LIGHT), true);
         sfx.world(.lurker_hurt, self.pos);
         switch (s.reaction) {
             .death => self.enterDeath(),
@@ -691,9 +694,19 @@ pub const Fishman = struct {
         .col1 = foe.DUST_THIN,
         .grav = foe.BLOOD_GRAV,
         .stretch = foe.BLOOD_STRETCH,
+        .style = .blood,
+        .splat = 3.0,
+        .drag = foe.BLOOD_DRAG,
     };
-    fn spray(self: *Fishman, at: rl.Vector3, dir: rl.Vector3, n: i32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, 2.4, self.rigSize(), SPRAY);
+    fn spray(self: *Fishman, at: rl.Vector3, dir: rl.Vector3, n: i32, bleeding: bool) void {
+        var blood = SPRAY;
+        if (!foe.onDryGround(self) or !bleeding) blood.splat = 0;
+        if (!bleeding) {
+            blood.style = .spark;
+            blood.col = foe.HIT_FLASH;
+            blood.col1 = rgba(218, 147, 71, 180);
+        }
+        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, 2.4, self.rigSize(), blood);
     }
 
     fn riteMotes(self: *Fishman) void {

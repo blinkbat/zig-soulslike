@@ -295,7 +295,6 @@ pub const Kobold = struct {
     dashPhase: f32 = 0,
     hop: f32 = 0,
     healWanted: bool = false,
-    castGlow: f32 = 0,
     whirlPh: f32 = 0,
     moveDir: rl.Vector3 = mathx.zero3,
 
@@ -552,12 +551,10 @@ pub const Kobold = struct {
             },
             .cast => {
                 self.faceToward(hero, dt * 0.2);
-                self.castGlow = mathx.smoothstep(0, 0.85, self.t / CAST_DUR);
                 self.emitCastMotes(dt);
                 if (self.t >= CAST_DUR) {
                     act = .healed;
                     self.castCd = CAST_CD;
-                    self.castGlow = 0;
                     self.decide(d);
                 }
             },
@@ -641,7 +638,6 @@ pub const Kobold = struct {
         self.state = s;
         self.t = 0;
         self.dealt = false;
-        if (s != .cast) self.castGlow = 0;
         switch (s) {
             .cast => sfx.world(.kobold_cast, self.pos),
             .whirl => sfx.world(.kobold_whirl, self.pos),
@@ -880,7 +876,6 @@ pub const Kobold = struct {
         self.t = 0;
         self.dealt = true;
         self.chopsLeft = 0;
-        self.castGlow = 0;
         self.hop = 0;
     }
 
@@ -896,7 +891,6 @@ pub const Kobold = struct {
         self.t = 0;
         self.dealt = true;
         self.chopsLeft = 0;
-        self.castGlow = 0;
         self.hop = 0;
         self.justDied = true;
     }

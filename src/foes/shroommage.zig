@@ -818,8 +818,8 @@ pub const Mage = struct {
         if (k <= 0.02) return;
         const at = self.cupWorld();
         const s = self.scale * k * (1.0 + 0.10 * mathx.sinf(self.elapsed * 13.0));
-        rl.drawSphereEx(at, BALL_R * s, 8, 8, mathx.withAlpha(FIRE_EDGE, mathx.u8f(120.0 * k)));
-        rl.drawSphereEx(at, BALL_CORE * s, 8, 8, mathx.withAlpha(FIRE_CORE, mathx.u8f(220.0 * k)));
+        foe.drawAura(at, BALL_R * s, self.elapsed, .flame,
+            mathx.withAlpha(FIRE_CORE, mathx.u8f(220.0 * k)), mathx.withAlpha(FIRE_EDGE, mathx.u8f(120.0 * k)));
     }
 };
 

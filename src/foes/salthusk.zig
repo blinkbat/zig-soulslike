@@ -124,10 +124,12 @@ const FUSE_RATE: f32 = 90.0;
 const SHARD_PARTS = 46;
 const HIT_GRIT_LIGHT = 4;
 const HIT_GRIT_HEAVY = 9;
+const PARRY_GRIT = 9;
 const PARTS = 128;
 comptime {
+    // A caught clout grits on the same frame the hero's own blow can wound it, over a lit fuse and its shards.
     std.debug.assert(@as(f32, PARTS) >= FUSE_RATE * 0.5 +
-        @as(f32, @floatFromInt(SHARD_PARTS + foe.hitParts(HIT_GRIT_HEAVY) + foe.WOUND_PARTS)));
+        @as(f32, @floatFromInt(SHARD_PARTS + PARRY_GRIT + foe.hitParts(HIT_GRIT_HEAVY) + foe.WOUND_PARTS)));
 }
 
 const State = enum { idle, walk, clout, bursting, stunlight, stunheavy, dead };
@@ -362,10 +364,11 @@ pub const Husk = struct {
         if (self.state == .clout and self.t >= CLOUT_WIND and self.t - dt < CLOUT_WIND) sfx.world(.swing_light, self.pos);
         self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);
         self.pose();
-        const until: ?f32 = if (self.state == .clout) CLOUT_WIND + CLOUT_STRIKE * CLOUT_IMPACT_K - self.t else null;
+        const at = CLOUT_WIND + CLOUT_STRIKE * CLOUT_IMPACT_K;
+        const until: ?f32 = if (self.state == .clout) at - self.t else null;
         if (foe.catchMelee(self, foe.hurtReach(CLOUT_R, self.scale), CLOUT_FRONT_DOT, until)) {
-            self.grit(foe.markOn(self.xf[WRR], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), 9);
-        } else if (self.state == .clout and self.t >= CLOUT_WIND + CLOUT_STRIKE * CLOUT_IMPACT_K and self.t < CLOUT_WIND + CLOUT_STRIKE) {
+            self.grit(foe.markOn(self.xf[WRR], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), PARRY_GRIT);
+        } else if (self.state == .clout and self.t >= at and self.t < CLOUT_WIND + CLOUT_STRIKE) {
             self.tryClout(quarry);
         }
         self.tryHit(blade);

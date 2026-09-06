@@ -110,6 +110,8 @@ const BLINK_ARC_MAX: f32 = 168.0;
 
 const BITE_WIND: f32 = 0.44;
 const BITE_STRIKE: f32 = 0.13;
+/// The jaws are still open at the strike's first frame; they close from here.
+const BITE_IMPACT_K: f32 = 0.68;
 const BITE_RECOVER: f32 = 0.46;
 const BITE_R: f32 = 2.05;
 const BITE_FRONT_DOT: f32 = 0.34;
@@ -213,7 +215,16 @@ const CHIP_SPRAY = foe.Spray{
 const CHIP_LIGHT: i32 = 9;
 const CHIP_HEAVY: i32 = 18;
 const CHIP_DEATH: i32 = 26;
+const PARRY_CHIPS: i32 = 9;
+const RIFT_MOTES: i32 = 16;
+const DRINK_RATE: f32 = 26.0;
+const DRINK_LIFE_HI: f32 = 0.46;
 const PARTS: usize = 96;
+comptime {
+    // The worst frame: the drink stream stood up, a rift, a killing blow's two chip sprays and a caught bite's own.
+    std.debug.assert(@as(f32, PARTS) >= DRINK_RATE * DRINK_LIFE_HI +
+        @as(f32, @floatFromInt(RIFT_MOTES + CHIP_HEAVY + CHIP_DEATH + PARRY_CHIPS + foe.WOUND_PARTS)));
+}
 
 const State = enum { roost, hang, wait, retreat, blinkout, blinkin, wind, strike, recover, feed, repelled, stunlight, stunheavy, dead };
 
@@ -575,14 +586,15 @@ pub const Bat = struct {
         self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);
         self.biteDip = approach(self.biteDip, if (self.state == .feed) 1 else self.motion.drive, 8.0 * dt);
         self.pose();
+        const at = BITE_STRIKE * BITE_IMPACT_K;
         const until: ?f32 = switch (self.state) {
-            .wind => BITE_WIND - self.t + BITE_STRIKE * 0.68,
-            .strike => BITE_STRIKE * 0.68 - self.t,
+            .wind => BITE_WIND - self.t + at,
+            .strike => at - self.t,
             else => null,
         };
         if (foe.catchMelee(self, foe.hurtReach(BITE_R, self.scale), BITE_FRONT_DOT, until)) {
-            self.chips(foe.markOn(self.xf[JAW], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), 9, 2.4);
-        } else if (self.state == .strike and self.t >= BITE_STRIKE * 0.68) {
+            self.chips(foe.markOn(self.xf[JAW], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), PARRY_CHIPS, 2.4);
+        } else if (self.state == .strike and self.t >= at) {
             self.tryBite(quarry);
         }
         self.tryHit(blade);
@@ -729,7 +741,7 @@ pub const Bat = struct {
 
     fn rift(self: *Bat) void {
         var i: i32 = 0;
-        while (i < 16) : (i += 1) {
+        while (i < RIFT_MOTES) : (i += 1) {
             const a = self.fxRng.angle();
             const rr = self.fxRng.range(0.15, 0.62) * self.scale;
             const c = self.centerWorld();
@@ -748,13 +760,13 @@ pub const Bat = struct {
     }
 
     fn emitDrink(self: *Bat, dt: f32) void {
-        var owed = foe.emitDue(&self.fxAccum, dt, 26.0);
+        var owed = foe.emitDue(&self.fxAccum, dt, DRINK_RATE);
         while (owed > 0) : (owed -= 1) {
             const m = foe.markOn(self.xf[JAW], v3(0, -0.04 * H, 0.10 * H));
             foe.emitPart(&self.parts, &self.fxHead, .{
                 .p = m,
                 .v = v3(self.fxRng.signed() * 0.35, self.fxRng.range(-1.4, -0.2), self.fxRng.signed() * 0.35),
-                .life = self.fxRng.range(0.22, 0.46),
+                .life = self.fxRng.range(0.22, DRINK_LIFE_HI),
                 .r0 = self.fxRng.range(0.018, 0.038),
                 .r1 = 0.010,
                 .col = EYE,

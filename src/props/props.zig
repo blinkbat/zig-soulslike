@@ -21,6 +21,8 @@ const gold = @import("propgold.zig");
 const market = @import("propmarket.zig");
 const forge = @import("propforge.zig");
 const ember = @import("propember.zig");
+const palace = @import("proppalace.zig");
+const desert = @import("propdesert.zig");
 
 const v3 = mathx.v3;
 
@@ -208,6 +210,36 @@ pub const Kind = enum(u8) {
     lavacrust,
     emberbed,
     scoria,
+    sunspire,
+    palacegate,
+    palacehall,
+    emeraldvault,
+    palacestair,
+    palacewall,
+    palacecolumn,
+    fallencolumn,
+    palaceterrace,
+    watcheridol,
+    sunobelisk,
+    starbasin,
+    palacebanner,
+    waystele,
+    emeraldshard,
+    palacekiosk,
+    saguaro,
+    saguaro2,
+    deadsaguaro,
+    joshua,
+    ocotillo,
+    agave,
+    yucca,
+    cholla,
+    pricklypear,
+    barrelcactus,
+    deadbrush,
+    tumbleweed,
+    sanddune,
+    sandripples,
 };
 
 
@@ -231,6 +263,8 @@ pub const Group = enum {
     ash,
     market,
     firelands,
+    palace,
+    desert,
 
     pub const N = @typeInfo(Group).@"enum".fields.len;
 
@@ -255,6 +289,8 @@ pub const Group = enum {
             .ash => "Ashfall",
             .market => "Caravan",
             .firelands => "Firelands",
+            .palace => "Sun Palace",
+            .desert => "Desert",
         };
     }
 };
@@ -442,6 +478,36 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .lavacrust => "Lava Crust",
         .emberbed => "Ember Bed",
         .scoria => "Scoria",
+        .sunspire => "Sun Spire",
+        .palacegate => "Sun Gate",
+        .palacehall => "Pillared Hall",
+        .emeraldvault => "Emerald Vault",
+        .palacestair => "Palace Stair",
+        .palacewall => "Palace Wall",
+        .palacecolumn => "Palace Column",
+        .fallencolumn => "Fallen Column",
+        .palaceterrace => "Terrace",
+        .watcheridol => "The Watcher",
+        .sunobelisk => "Sun Obelisk",
+        .starbasin => "Star Basin",
+        .palacebanner => "Gilded Flagpole",
+        .waystele => "Waystele",
+        .emeraldshard => "Emerald Shard",
+        .palacekiosk => "Gilded Kiosk",
+        .saguaro => "Saguaro",
+        .saguaro2 => "Saguaro (Old)",
+        .deadsaguaro => "Saguaro Skeleton",
+        .joshua => "Joshua Tree",
+        .ocotillo => "Ocotillo",
+        .agave => "Agave",
+        .yucca => "Yucca",
+        .cholla => "Cholla",
+        .pricklypear => "Prickly Pear",
+        .barrelcactus => "Barrel Cactus",
+        .deadbrush => "Desert Brush",
+        .tumbleweed => "Tumbleweed",
+        .sanddune => "Sand Dune",
+        .sandripples => "Sand Ripples",
     };
 }
 
@@ -482,6 +548,11 @@ pub fn group(k: Kind) Group {
         .rugpile, .scalepost, .waterjars, .hitchrail => .market,
         .emberrock, .emberrocks, .burningrock, .cindercone, .firespire, .emberpillar, .emberarch,
         .basaltcolumns, .crackedslab, .magmavein, .lavacrust, .emberbed, .scoria => .firelands,
+        .sunspire, .palacegate, .palacehall, .emeraldvault, .palacestair, .palacewall,
+        .palacecolumn, .fallencolumn, .palaceterrace, .watcheridol, .sunobelisk, .starbasin,
+        .palacebanner, .waystele, .emeraldshard, .palacekiosk => .palace,
+        .saguaro, .saguaro2, .deadsaguaro, .joshua, .ocotillo, .agave, .yucca, .cholla,
+        .pricklypear, .barrelcactus, .deadbrush, .tumbleweed, .sanddune, .sandripples => .desert,
     };
 }
 
@@ -496,6 +567,7 @@ pub const Biome = enum {
     bone,
     fungal,
     firelands,
+    palace,
 
     pub const N = @typeInfo(Biome).@"enum".fields.len;
 
@@ -511,6 +583,7 @@ pub const Biome = enum {
             .bone => "Bonefield",
             .fungal => "Mycelian",
             .firelands => "Firelands",
+            .palace => "Sun Palace",
         };
     }
 };
@@ -559,6 +632,12 @@ pub fn biome(k: Kind) Biome {
         .emberrock, .emberrocks, .burningrock, .cindercone, .firespire, .emberpillar, .emberarch,
         .basaltcolumns, .crackedslab, .magmavein, .lavacrust, .emberbed, .scoria,
         => .firelands,
+        .sunspire, .palacegate, .palacehall, .emeraldvault, .palacestair, .palacewall,
+        .palacecolumn, .fallencolumn, .palaceterrace, .watcheridol, .sunobelisk, .starbasin,
+        .palacebanner, .waystele, .emeraldshard, .palacekiosk,
+        .saguaro, .saguaro2, .deadsaguaro, .joshua, .ocotillo, .agave, .yucca, .cholla,
+        .pricklypear, .barrelcactus, .deadbrush, .tumbleweed, .sanddune, .sandripples,
+        => .palace,
     };
 }
 
@@ -725,6 +804,92 @@ const WATCH_DECKS = blk: {
 pub const WATCH_FLOORS = blk: {
     var out: [build.WATCH_STOREYS.len]f32 = undefined;
     for (build.WATCH_STOREYS, 0..) |st, i| out[i] = st.top();
+    break :blk out;
+};
+
+
+/// The hall's shell: two long walls whole, each end split round a horseshoe doorway with the course over it a
+/// LINTEL (`Part.y0`, open to a body on the floor), the eight columns inside, and the drums off the one that
+/// fell. Every extent is `proppalace`'s own, so the mesh and the walls cannot part company.
+const HALL_WALL_R: f32 = 0.52;
+const HALL_PARTS = blk: {
+    const R = HALL_WALL_R;
+    const HX = palace.HALL_HX;
+    const HZ = palace.HALL_HZ;
+    const D = palace.HALL_DOOR_HALF;
+    var out: [8 + palace.HALL_COL_X.len * 2 + 1]Part = undefined;
+    out[0] = .{ .ax = -(HX - R), .az = -HZ, .bx = HX - R, .bz = -HZ, .r = R, .h = palace.HALL_H, .flat = true };
+    out[1] = .{ .ax = -(HX - R), .az = HZ, .bx = HX - R, .bz = HZ, .r = R, .h = palace.HALL_H, .flat = true };
+    var n: usize = 2;
+    for ([_]f32{ -1, 1 }) |sg| {
+        const x = sg * HX;
+        out[n] = .{ .ax = x, .az = -(HZ - R), .bx = x, .bz = -(D + R), .r = R, .h = palace.HALL_H, .flat = true };
+        out[n + 1] = .{ .ax = x, .az = D + R, .bx = x, .bz = HZ - R, .r = R, .h = palace.HALL_H, .flat = true };
+        out[n + 2] = .{ .ax = x, .az = -(D - R), .bx = x, .bz = D - R, .r = R, .h = palace.HALL_H, .y0 = palace.HALL_DOOR_HEAD, .flat = true };
+        n += 3;
+    }
+    for (palace.HALL_COL_X) |cx| {
+        for ([_]f32{ -1, 1 }) |sg| {
+            const cz = sg * palace.HALL_COL_Z;
+            const snapped = palace.hallSnapped(cx, sg);
+            out[n] = .{ .ax = cx, .az = cz, .bx = cx, .bz = cz, .r = 0.72, .h = if (snapped) 3.30 else palace.HALL_COL_H };
+            n += 1;
+        }
+    }
+    out[n] = .{ .ax = 4.55, .az = 5.15, .bx = 7.95, .bz = 5.15, .r = 0.70, .h = 1.05 };
+    n += 1;
+    std.debug.assert(n == out.len);
+    break :blk out;
+};
+
+/// The vault's drum, minus the four segments `proppalace.vaultDoorway` leaves out for its two doors, plus the
+/// pedestal in the middle. Round ends, because a polygon of round-ended segments joins without gaps.
+const VAULT_RING = blk: {
+    const R = palace.VAULT_R;
+    var out: [palace.VAULT_SEGS - 4 + 1]Part = undefined;
+    var n: usize = 0;
+    for (0..palace.VAULT_SEGS) |i| {
+        if (palace.vaultDoorway(i)) continue;
+        const a0 = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, palace.VAULT_SEGS);
+        const a1 = std.math.tau * @as(f32, @floatFromInt(i + 1)) / @as(f32, palace.VAULT_SEGS);
+        out[n] = .{ .ax = R * @cos(a0), .az = R * @sin(a0), .bx = R * @cos(a1), .bz = R * @sin(a1), .r = 0.48, .h = palace.VAULT_WALL + 0.44 };
+        n += 1;
+    }
+    out[n] = .{ .r = 1.75, .h = 1.10 };
+    n += 1;
+    std.debug.assert(n == out.len);
+    break :blk out;
+};
+
+/// The terrace: one drum up to the deck, then the parapet as a LEDGE (`Part.y0` at the deck) on every edge but
+/// the one the stair lands on. `r` sits between the octagon's inradius and its circumradius on purpose.
+const TERR_PARTS = blk: {
+    const N: usize = @intCast(palace.OCTAGON);
+    const RR = palace.TERR_R * 0.97;
+    var out: [N - 1]Part = undefined;
+    out[0] = .{ .r = 5.50, .h = palace.TERR_DECK };
+    var n: usize = 1;
+    for (0..N) |i| {
+        if (i == palace.TERR_GAP_0 or i == palace.TERR_GAP_1) continue;
+        const a0 = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(N));
+        const a1 = std.math.tau * @as(f32, @floatFromInt(i + 1)) / @as(f32, @floatFromInt(N));
+        out[n] = .{ .ax = RR * @cos(a0), .az = RR * @sin(a0), .bx = RR * @cos(a1), .bz = RR * @sin(a1), .r = 0.26, .h = palace.TERR_PARAPET, .y0 = palace.TERR_DECK };
+        n += 1;
+    }
+    std.debug.assert(n == out.len);
+    break :blk out;
+};
+
+const KIOSK_PARTS = blk: {
+    const H = palace.KIOSK_HALF;
+    var out: [4]Part = undefined;
+    var n: usize = 0;
+    for ([_]f32{ -1, 1 }) |sx| {
+        for ([_]f32{ -1, 1 }) |sz| {
+            out[n] = .{ .ax = sx * H, .az = sz * H, .bx = sx * H, .bz = sz * H, .r = palace.KIOSK_PIER + 0.04, .h = palace.KIOSK_SPRING, .flat = true };
+            n += 1;
+        }
+    }
     break :blk out;
 };
 
@@ -1329,6 +1494,61 @@ pub const INFO = [NK]Info{
     .{ .kind = .lavacrust, .build = ember.lavaCrustMesh, .bound = ember.CRUST_R + 0.4, .top = 0.18, .view = 140, .flora = true, .casts = false, .surf = .stone },
     .{ .kind = .emberbed, .build = ember.emberBedMesh, .bound = ember.BED_R + 0.4, .top = 0.22, .view = 130, .flora = true, .casts = false, .surf = .stone },
     .{ .kind = .scoria, .build = ember.scoriaMesh, .bound = ember.SCORIA_R + 0.4, .top = 0.40, .view = 150, .flora = true, .casts = false, .surf = .stone },
+
+    // THE SUN PALACE. The smallest thing here is a signpost and the spire is half again the watchtower; three
+    // of them are walked INTO, so their colliders are shells with doorways and not the mass they enclose.
+    .{ .kind = .sunspire, .build = palace.sunSpireMesh, .bound = palace.SPIRE_TOP + 1.4, .top = palace.SPIRE_TOP, .view = FAR, .solid = true, .parts = &.{
+        .{ .r = 5.15, .h = 4.16, .flat = true },
+        .{ .r = 4.00, .h = 7.87, .flat = true },
+        .{ .r = 3.00, .h = 11.13, .flat = true },
+        .{ .r = 2.40, .h = palace.SPIRE_SHAFT },
+    } },
+    .{ .kind = .palacegate, .build = palace.sunGateMesh, .bound = palace.GATE_TOP + 1.0, .top = palace.GATE_TOP, .view = FAR, .solid = true, .parts = &.{
+        .{ .ax = -palace.GATE_PIER_X, .bx = -palace.GATE_PIER_X, .r = palace.GATE_PIER_HALF + 0.10, .h = palace.GATE_SPRING, .flat = true },
+        .{ .ax = palace.GATE_PIER_X, .bx = palace.GATE_PIER_X, .r = palace.GATE_PIER_HALF + 0.10, .h = palace.GATE_SPRING, .flat = true },
+    } },
+    .{ .kind = .palacehall, .build = palace.palaceHallMesh, .bound = 13.2, .top = palace.HALL_TOP, .view = FAR, .solid = true, .parts = &HALL_PARTS },
+    .{ .kind = .emeraldvault, .build = palace.emeraldVaultMesh, .bound = 13.6, .top = palace.VAULT_TOP, .view = FAR, .solid = true, .parts = &VAULT_RING, .light = .{ .y = 1.95, .col = palace.GEM_LIGHT, .radius = 12.0, .flicker = 0.04 } },
+    .{ .kind = .palacestair, .build = palace.palaceStairMesh, .bound = palace.PSTAIR_RUN + 0.8, .top = palace.PSTAIR_SEG, .view = 320, .stack = palace.PSTAIR_SEG, .flight = .{ .run = palace.PSTAIR_RUN, .halfW = palace.PSTAIR_HALF, .treads = palace.PSTAIR_TREADS }, .surf = .stone },
+    .{ .kind = .palacewall, .build = palace.palaceWallMesh, .bound = palace.PWALL_HALF + 1.8, .top = palace.PWALL_TOP, .view = FAR, .solid = true, .parts = &.{
+        .{ .ax = -palace.PWALL_HALF + 0.6, .bx = palace.PWALL_BREACH_X, .r = 0.60, .h = palace.PWALL_H + 0.40, .flat = true },
+        .{ .ax = palace.PWALL_BREACH_X, .bx = palace.PWALL_HALF - 0.58, .r = 0.58, .h = palace.PWALL_BREACH_H + 0.40, .flat = true },
+    } },
+    .{ .kind = .palacecolumn, .build = palace.palaceColumnMesh, .bound = palace.PCOL_TOP + 0.8, .top = palace.PCOL_TOP, .view = FAR, .parts = circleParts(1.00, palace.PCOL_H + 0.80) },
+    .{ .kind = .fallencolumn, .build = palace.fallenColumnMesh, .bound = 6.4, .top = palace.PFALL_TOP, .view = 260, .parts = &.{
+        .{ .ax = -2.30, .bx = 2.55, .r = 0.88, .h = 1.60 },
+        .{ .ax = palace.PFALL_CAP_X, .bx = palace.PFALL_CAP_X, .r = 1.15, .h = 1.00, .flat = true },
+    } },
+    .{ .kind = .palaceterrace, .build = palace.palaceTerraceMesh, .bound = palace.TERR_R + 1.4, .top = palace.TERR_TOP, .view = FAR, .solid = true, .parts = &TERR_PARTS, .decks = &.{.{ .r = palace.TERR_IN * 0.99, .y = palace.TERR_DECK }} },
+    .{ .kind = .watcheridol, .build = palace.watcherIdolMesh, .bound = palace.IDOL_TOP + 0.8, .top = palace.IDOL_TOP, .view = FAR, .solid = true, .parts = &.{.{ .r = 2.30, .h = 2.15, .flat = true }} },
+    .{ .kind = .sunobelisk, .build = palace.sunObeliskMesh, .bound = palace.OBEL_TOP + 0.8, .top = palace.OBEL_TOP, .view = FAR, .parts = &.{.{ .r = 1.10, .h = palace.OBEL_H, .flat = true }} },
+    .{ .kind = .starbasin, .build = palace.starBasinMesh, .bound = palace.BASIN_R * 2.0, .top = palace.BASIN_TOP, .view = 280, .parts = circleParts(2.95, 1.25) },
+    .{ .kind = .palacebanner, .build = palace.palaceBannerMesh, .bound = palace.POLE_TOP + 0.9, .top = palace.POLE_TOP, .view = FAR, .parts = &.{
+        .{ .r = 0.76, .h = 1.90, .flat = true },
+        .{ .r = 0.20, .h = palace.POLE_H },
+    } },
+    .{ .kind = .waystele, .build = palace.wayStelaMesh, .bound = 3.6, .top = palace.STELE_TOP, .view = 260, .parts = &.{.{ .r = 0.40, .h = palace.STELE_H, .flat = true }} },
+    .{ .kind = .emeraldshard, .build = palace.emeraldShardMesh, .bound = palace.SHARD_TOP + 0.9, .top = palace.SHARD_TOP, .view = 340, .parts = circleParts(2.30, 2.60), .light = .{ .y = palace.SHARD_LIGHT_Y, .col = palace.GEM_LIGHT, .radius = 13.0, .flicker = 0.04 }, .surf = .stone },
+    .{ .kind = .palacekiosk, .build = palace.palaceKioskMesh, .bound = palace.KIOSK_TOP + 0.8, .top = palace.KIOSK_TOP, .view = FAR, .solid = true, .parts = &KIOSK_PARTS },
+
+    // THE DESERT ITSELF. Every plant is taller than it is wide, and the small ones are decor with no shadow
+    // and no collider — the layer's rule, not this family's (`Info.flora`).
+    .{ .kind = .saguaro, .build = desert.saguaroMesh, .bound = desert.SAG_TOP + 0.8, .top = desert.SAG_TOP, .view = 340, .parts = circleParts(0.52, 6.60), .surf = .wood },
+    .{ .kind = .saguaro2, .build = desert.saguaroOldMesh, .bound = desert.SAG2_TOP + 1.0, .top = desert.SAG2_TOP, .view = FAR, .parts = circleParts(0.62, 8.60), .surf = .wood },
+    .{ .kind = .deadsaguaro, .build = desert.deadSaguaroMesh, .bound = desert.SAGDEAD_TOP + 0.9, .top = desert.SAGDEAD_TOP, .view = 300, .parts = circleParts(0.58, 5.40), .surf = .wood },
+    .{ .kind = .joshua, .build = desert.joshuaMesh, .bound = desert.JOSH_TOP + 1.4, .top = desert.JOSH_TOP, .view = 340, .parts = circleParts(0.60, 2.35), .surf = .wood },
+    .{ .kind = .ocotillo, .build = desert.ocotilloMesh, .bound = desert.OCO_TOP + 1.6, .top = desert.OCO_TOP, .view = 290, .parts = circleParts(0.46, 1.85), .surf = .wood },
+    .{ .kind = .agave, .build = desert.agaveMesh, .bound = desert.AGAVE_TOP + 0.6, .top = desert.AGAVE_TOP, .view = 270, .parts = circleParts(0.34, 1.10), .surf = .wood },
+    .{ .kind = .yucca, .build = desert.yuccaMesh, .bound = desert.YUCCA_TOP + 0.7, .top = desert.YUCCA_TOP, .view = 250, .parts = circleParts(0.50, 2.35), .surf = .wood },
+    .{ .kind = .cholla, .build = desert.chollaMesh, .bound = desert.CHOLLA_TOP + 0.9, .top = desert.CHOLLA_TOP, .view = 190, .parts = circleParts(0.60, 1.60), .surf = .wood },
+    .{ .kind = .pricklypear, .build = desert.pricklyPearMesh, .bound = desert.PEAR_TOP + 0.7, .top = desert.PEAR_TOP, .view = 150, .flora = true, .casts = false },
+    .{ .kind = .barrelcactus, .build = desert.barrelCactusMesh, .bound = 1.6, .top = desert.BARREL_TOP, .view = 115, .flora = true, .casts = false },
+    .{ .kind = .deadbrush, .build = desert.deadBrushMesh, .bound = 1.3, .top = desert.BRUSH_TOP, .view = 110, .flora = true, .casts = false },
+    .{ .kind = .tumbleweed, .build = desert.tumbleweedMesh, .bound = 1.1, .top = desert.TUMBLE_TOP, .view = 115, .flora = true, .casts = false },
+    // WALKED OVER, ITS COLLIDER THE CREST — the ash dune's rule. Sized so NOTHING stands in the open (the audit's
+    // `over` is 0), and the price of that is the low sand at the toes being walked into: a lens has no box.
+    .{ .kind = .sanddune, .build = desert.sandDuneMesh, .bound = 10.8, .top = desert.DUNE_TOP, .view = FAR, .parts = &.{.{ .ax = -3.00, .az = desert.DUNE_CREST_Z - 0.30, .bx = 3.00, .bz = desert.DUNE_CREST_Z - 0.30, .r = 1.15, .h = 2.05, .flat = true }}, .surf = .stone },
+    .{ .kind = .sandripples, .build = desert.sandRipplesMesh, .bound = desert.RIPPLE_R + 0.5, .top = 0.12, .view = 130, .flora = true, .casts = false, .surf = .stone },
 };
 
 pub fn info(k: Kind) *const Info {

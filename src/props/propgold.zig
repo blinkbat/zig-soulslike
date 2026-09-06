@@ -23,138 +23,17 @@ pub const GOLD_DK = rgba(38, 30, 14, 255);
 /// **EVERY ARCH IN THE FAMILY IS A HORSESHOE**: it carries PAST the semicircle and tucks back in under itself. Degrees each side beyond 180 — at 0 this is a Roman arch.
 const HORSE_EXTRA: f32 = 32.0;
 
-const MUQ_TIERS: i32 = 4;
-// Share of the whole rise each tier hangs out past the one below. Real ones project under half.
-const MUQ_STEP: f32 = 0.15;
-comptime {
-    // `muqarnasInto` widens each tier over `MUQ_TIERS - 1`; at one tier that is a divide by zero.
-    std.debug.assert(MUQ_TIERS > 1);
-}
-
 /// **THE FAMILY'S PLAN IS AN OCTAGON.** One number: two meshes each declaring `SIDES = 8` is two chances for a nine-sided minaret on an eight-sided plinth.
-const OCTAGON: i32 = 8;
+pub const OCTAGON: i32 = 8;
 
-/// `addDome` spends `sides * 3` triangles on each niche: at 8 that is 2,688 on one column, at 6 it is 2,016, and the difference is invisible on a hollow 0.34 m across at the 320 m the kind is drawn to.
-const NICHE_SIDES: i32 = 6;
+pub const GILT: art.Tone = .{ .stone = ASHLAR, .stoneLt = ASHLAR_LT, .stoneDk = ASHLAR_DK, .burn = SCORCH, .gold = GOLD, .goldLt = GOLD_LT, .goldDk = GOLD_DK };
 
 fn ashlarTone(r: *mathx.Rng) rl.Color {
-    const f = r.float();
-    if (f < 0.16) return ASHLAR_LT;
-    if (f < 0.34) return ASHLAR_DK;
-    if (f < 0.42) return SCORCH;
-    return ASHLAR;
+    return GILT.stoneOf(r);
 }
 
 fn goldTone(r: *mathx.Rng) rl.Color {
-    const f = r.float();
-    if (f < 0.30) return GOLD_LT;
-    if (f < 0.52) return GOLD_DK;
-    return GOLD;
-}
-
-fn muqarnasInto(b: *Builder, r: *mathx.Rng, c: rl.Vector3, face: rl.Vector3, w: f32, up: f32, gild: f32) void {
-    const th = up / @as(f32, @floatFromInt(MUQ_TIERS));
-    const f = mathx.normV(v3(face.x, 0, face.z));
-    const s = v3(-f.z, 0, f.x);
-    var t: i32 = 0;
-    while (t < MUQ_TIERS) : (t += 1) {
-        const ft = @as(f32, @floatFromInt(t));
-        const y = c.y + th * (ft + 0.5);
-        const grow = 0.58 + 0.42 * ft / @as(f32, @floatFromInt(MUQ_TIERS - 1));
-        const half = w * 0.5 * grow;
-        const out = MUQ_STEP * up * ft;
-        const depth = th * 1.05;
-        b.setMat(.stone);
-        b.addBox(
-            v3(c.x + f.x * (out + depth * 0.5), y + th * 0.30, c.z + f.z * (out + depth * 0.5)),
-            v3(s.x * half, r.signed() * 0.004, s.z * half),
-            v3(0, th * 0.20, 0),
-            v3(f.x * depth * 0.5, 0, f.z * depth * 0.5),
-            if (r.float() < 0.22) ASHLAR_LT else ASHLAR,
-        );
-        const cells: i32 = 2 + t;
-        var i: i32 = 0;
-        while (i < cells) : (i += 1) {
-            const u = (@as(f32, @floatFromInt(i)) + 0.5) / @as(f32, @floatFromInt(cells));
-            const off = (u - 0.5) * half * 2.0;
-            const pitch = half * 2.0 / @as(f32, @floatFromInt(cells));
-            const cx = c.x + s.x * (off + pitch * 0.5) + f.x * (out + depth * 0.42);
-            const cz = c.z + s.z * (off + pitch * 0.5) + f.z * (out + depth * 0.42);
-            if (i + 1 < cells) {
-                b.addBox(
-                    v3(cx, y - th * 0.12, cz),
-                    v3(s.x * pitch * 0.16, 0, s.z * pitch * 0.16),
-                    v3(0, th * 0.36, 0),
-                    v3(f.x * depth * 0.40, 0, f.z * depth * 0.40),
-                    ashlarTone(r),
-                );
-            }
-            const nx = c.x + s.x * off + f.x * (out + depth * 0.12);
-            const nz = c.z + s.z * off + f.z * (out + depth * 0.12);
-            const nr = @min(pitch * 0.40, th * 0.42);
-            const leaf = r.float() < gild;
-            b.setMat(if (leaf) .gilt else .stone);
-            b.addDome(
-                v3(nx, y - th * 0.06, nz),
-                f,
-                nr,
-                NICHE_SIDES,
-                if (leaf) goldTone(r) else SCORCH,
-            );
-        }
-    }
-}
-
-fn giltBandInto(b: *Builder, r: *mathx.Rng, cx: f32, y: f32, cz: f32, halfX: f32, halfZ: f32, h: f32) void {
-    b.setMat(.gilt);
-    for ([_][2]f32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } }) |s| {
-        if (r.float() < 0.22) continue; // A COURSE OF IT IS ALWAYS GONE
-        const along = v3(s[1] * halfX * 0.92, 0, s[0] * halfZ * 0.92);
-        b.addBox(
-            v3(cx + s[0] * halfX, y + r.signed() * 0.01, cz + s[1] * halfZ),
-            along,
-            v3(0, h * 0.5, 0),
-            v3(s[0] * 0.022, 0, s[1] * 0.022),
-            goldTone(r),
-        );
-    }
-}
-
-/// …and the same frieze round a ROUND or POLYGONAL one. Plates laid tangentially with gaps: a four-plate square band on a 0.40 m column hangs its corners 0.16 m out in the air.
-fn giltRingInto(b: *Builder, r: *mathx.Rng, cx: f32, y: f32, cz: f32, radius: f32, h: f32, sides: i32) void {
-    b.setMat(.gilt);
-    const n: f32 = @floatFromInt(sides);
-    var i: i32 = 0;
-    while (i < sides) : (i += 1) {
-        if (r.float() < 0.22) continue;
-        const a = std.math.tau * (@as(f32, @floatFromInt(i)) + 0.5) / n;
-        const ca = mathx.cosf(a);
-        const sa = mathx.sinf(a);
-        const half = std.math.tau * radius / n * 0.46;
-        b.addBox(
-            v3(cx + ca * radius, y + r.signed() * 0.01, cz + sa * radius),
-            v3(-sa * half, 0, ca * half),
-            v3(0, h * 0.5, 0),
-            v3(ca * 0.026, 0, sa * 0.026),
-            goldTone(r),
-        );
-    }
-}
-
-/// The eight-point star (khatim) — two squares at 45 degrees. Laid FLAT as a plan for basins and paving.
-fn starInto(b: *Builder, r: *mathx.Rng, c: rl.Vector3, out: f32, h: f32, col: rl.Color) void {
-    for ([_]f32{ 0, 45.0 }) |deg| {
-        const a = mathx.radians(deg);
-        const ca = mathx.cosf(a);
-        const sa = mathx.sinf(a);
-        b.addBox(
-            c,
-            v3(ca * out, 0, sa * out),
-            v3(0, h * 0.5, 0),
-            v3(-sa * out, 0, ca * out),
-            if (r.float() < 0.3) ASHLAR_DK else col,
-        );
-    }
+    return GILT.goldOf(r);
 }
 
 
@@ -414,9 +293,9 @@ pub fn giltArchMesh(shader: rl.Shader) rl.Model {
     for ([_]f32{ -ARCH_HALF, ARCH_HALF }) |x| {
         b.setMat(.stone);
         b.addBox(v3(x, 0.20, 0), v3(0.86, rng.signed() * 0.014, 0.02), v3(rng.signed() * 0.02, 0.20, 0), v3(0.02, 0, 0.86), ASHLAR_DK);
-        _ = art.courseStack(&b, &rng, x, 0.38, 0, 1.10, 1.02, 0.40, 7, 0.06);
-        giltBandInto(&b, &rng, x, 1.34, 0, 0.56, 0.52, 0.13);
-        muqarnasInto(&b, &rng, v3(x, ARCH_SPRING - 0.74, 0), v3(if (x < 0) 1 else -1, 0, 0), 1.00, 0.74, 0.72);
+        _ = art.courseStack(&b, &rng, x, 0.38, 0, 1.10, 1.02, 0.40, 7, 0.06, null);
+        art.giltBandInto(&b, &rng, x, 1.34, 0, 0.56, 0.52, 0.13, GILT);
+        art.muqarnasInto(&b, &rng, v3(x, ARCH_SPRING - 0.74, 0), v3(if (x < 0) 1 else -1, 0, 0), 1.00, 0.74, 0.72, GILT);
     }
 
     // The ring runs from -EXTRA to 180+EXTRA, so both ends tuck back INSIDE the piers — that overhang is the silhouette the whole form is for.
@@ -464,7 +343,7 @@ pub fn giltArchMesh(shader: rl.Shader) rl.Model {
     }
     b.addBox(v3(-1.36, ARCH_SPRING + ARCH_R + 0.46, 0.02), v3(0.74, rng.signed() * 0.06, 0), v3(rng.signed() * 0.09, 0.44, 0), v3(0, 0, 0.62), ASHLAR);
     b.addCube(v3(-0.62, ARCH_SPRING + ARCH_R + 0.84, -0.03), v3(0.48, 0.36, 0.58), SCORCH);
-    giltBandInto(&b, &rng, -1.36, ARCH_SPRING + ARCH_R + 0.50, 0, 0.76, 0.64, 0.10);
+    art.giltBandInto(&b, &rng, -1.36, ARCH_SPRING + ARCH_R + 0.50, 0, 0.76, 0.64, 0.10, GILT);
 
     for ([_]f32{ -ARCH_HALF, ARCH_HALF }) |x| {
         art.crackInto(&b, v3(x + 0.56, rng.range(0.7, 1.4), rng.signed() * 0.3), v3(rng.signed() * 0.2, 0.98, 0.05), v3(0, 0, 1), rng.range(0.9, 1.7), 0.020, 0.03);
@@ -494,9 +373,9 @@ pub fn muqarnasBlockMesh(shader: rl.Shader) rl.Model {
         .crumbleTop = 0.55,
         .crumble = 0.05,
     });
-    giltBandInto(&b, &rng, 0, 0.72, -0.30, MUQ_W * 0.44, 0.19, 0.13);
-    muqarnasInto(&b, &rng, v3(0, MUQ_WALL - 1.06, -0.13), v3(0, 0, 1), MUQ_W * 0.86, 0.94, 0.78);
-    muqarnasInto(&b, &rng, v3(0, MUQ_WALL - 1.06, -0.47), v3(0, 0, -1), MUQ_W * 0.86, 0.94, 0.72);
+    art.giltBandInto(&b, &rng, 0, 0.72, -0.30, MUQ_W * 0.44, 0.19, 0.13, GILT);
+    art.muqarnasInto(&b, &rng, v3(0, MUQ_WALL - 1.06, -0.13), v3(0, 0, 1), MUQ_W * 0.86, 0.94, 0.78, GILT);
+    art.muqarnasInto(&b, &rng, v3(0, MUQ_WALL - 1.06, -0.47), v3(0, 0, -1), MUQ_W * 0.86, 0.94, 0.72, GILT);
     b.setMat(.stone);
     b.addBox(v3(0.10, MUQ_WALL + 0.16, -0.30), v3(MUQ_W * 0.34, rng.signed() * 0.05, 0.02), v3(rng.signed() * 0.04, 0.16, 0), v3(0, 0, 0.26), SCORCH);
     art.chipsInto(&b, &rng, 0, 0, 1.5, 0.07, 0.21, 8);
@@ -530,7 +409,7 @@ pub fn giltDomeMesh(shader: rl.Shader) rl.Model {
             .crumble = 0.05,
         });
     }
-    giltRingInto(&b, &rng, 0, DOME_DRUM - 0.16, 0, DOME_R * 1.09, 0.16, SIDES);
+    art.giltRingInto(&b, &rng, 0, DOME_DRUM - 0.16, 0, DOME_R * 1.09, 0.16, SIDES, GILT);
 
     const NSEG: i32 = 7;
     var k: i32 = 0;
@@ -596,7 +475,7 @@ pub fn minaretMesh(shader: rl.Shader) rl.Model {
 
     b.setMat(.stone);
     b.addBox(v3(0, 0.26, 0), v3(1.42, rng.signed() * 0.012, 0.02), v3(0, 0.26, 0), v3(0.02, 0, 1.42), ASHLAR_DK);
-    _ = art.courseStack(&b, &rng, 0, 0.50, 0, 2.20, 2.14, 0.44, 4, 0.05);
+    _ = art.courseStack(&b, &rng, 0, 0.50, 0, 2.20, 2.14, 0.44, 4, 0.05, null);
 
     const LEAN: f32 = 0.16; // metres of drift at the break, over 9 m of shaft
     const CH: f32 = 0.52;
@@ -646,7 +525,7 @@ pub fn minaretMesh(shader: rl.Shader) rl.Model {
     var q: i32 = 0;
     while (q < SIDES) : (q += 1) {
         const a = std.math.tau * (@as(f32, @floatFromInt(q)) + 0.5) / @as(f32, SIDES);
-        muqarnasInto(&b, &rng, v3(mathx.cosf(a) * (MIN_R * 0.78) + bx, MIN_BALCONY - 0.72, mathx.sinf(a) * (MIN_R * 0.78)), v3(mathx.cosf(a), 0, mathx.sinf(a)), 0.62, 0.72, 0.60);
+        art.muqarnasInto(&b, &rng, v3(mathx.cosf(a) * (MIN_R * 0.78) + bx, MIN_BALCONY - 0.72, mathx.sinf(a) * (MIN_R * 0.78)), v3(mathx.cosf(a), 0, mathx.sinf(a)), 0.62, 0.72, 0.60, GILT);
     }
     b.setMat(.stone);
     b.addCylinder(v3(bx, MIN_BALCONY - 0.04, 0), v3(bx, MIN_BALCONY + 0.20, 0), MIN_R * 1.95, MIN_R * 1.88, SIDES, ASHLAR_LT);
@@ -777,10 +656,10 @@ pub fn giltColumnMesh(shader: rl.Shader) rl.Model {
         );
     }
     b.addCylinder(v3(0, 0.46, 0), v3(0, COL_H - 0.52, 0), COL_R * 0.90, COL_R * 0.78, 12, ASHLAR_DK);
-    giltRingInto(&b, &rng, 0, 0.62, 0, COL_R * 1.06, 0.11, 12);
-    giltRingInto(&b, &rng, 0, COL_H - 0.66, 0, COL_R * 0.98, 0.14, 12);
+    art.giltRingInto(&b, &rng, 0, 0.62, 0, COL_R * 1.06, 0.11, 12, GILT);
+    art.giltRingInto(&b, &rng, 0, COL_H - 0.66, 0, COL_R * 0.98, 0.14, 12, GILT);
     for ([_][2]f32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } }) |s| {
-        muqarnasInto(
+        art.muqarnasInto(
             &b,
             &rng,
             v3(s[0] * COL_R * 0.42, COL_H - 0.60, s[1] * COL_R * 0.42),
@@ -788,6 +667,7 @@ pub fn giltColumnMesh(shader: rl.Shader) rl.Model {
             0.72,
             0.62,
             0.68,
+            GILT,
         );
     }
     b.setMat(.stone);
@@ -805,8 +685,8 @@ pub fn giltBasinMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x60_1D_A7);
     b.setMat(.stone);
-    starInto(&b, &rng, v3(0, 0.09, 0), BASIN_R, 0.18, ASHLAR_DK);
-    starInto(&b, &rng, v3(0, 0.26, 0), BASIN_R * 0.86, 0.18, ASHLAR);
+    art.starInto(&b, &rng, v3(0, 0.09, 0), BASIN_R, 0.18, ASHLAR_DK, GILT);
+    art.starInto(&b, &rng, v3(0, 0.26, 0), BASIN_R * 0.86, 0.18, ASHLAR, GILT);
     var w: i32 = 0;
     while (w < 16) : (w += 1) {
         const a = std.math.tau * (@as(f32, @floatFromInt(w)) + 0.5) / 16.0;
@@ -897,8 +777,8 @@ pub fn giltFinialMesh(shader: rl.Shader) rl.Model {
 test "the family's forms are the ARABIC ones, and its three layers are three heights" {
     try std.testing.expect(HORSE_EXTRA > 20.0); // a horseshoe, not a Roman arch
     // MEASURED: the top tier hangs `MUQ_STEP * (MUQ_TIERS - 1)` of the rise past the wall, which is 0.45 of it.
-    try std.testing.expect(MUQ_TIERS >= 3);
-    try std.testing.expect(MUQ_STEP > 0.08 and MUQ_STEP * @as(f32, @floatFromInt(MUQ_TIERS - 1)) < 0.6);
+    try std.testing.expect(art.MUQ_TIERS >= 3);
+    try std.testing.expect(art.MUQ_STEP > 0.08 and art.MUQ_STEP * @as(f32, @floatFromInt(art.MUQ_TIERS - 1)) < 0.6);
     try std.testing.expect(JALI_LEAN > 5.0); // propped, not built
     try std.testing.expect(ARCH_TOP > DOME_TOP and MIN_TOP > ARCH_TOP); // three layers, and the tower is the landmark
     try std.testing.expect(FINIAL_TOP < 1.0 and BASIN_TOP < 1.1);

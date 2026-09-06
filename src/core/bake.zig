@@ -22,6 +22,12 @@ pub const Emit = struct {
         _ = self.m.add(o) catch @panic("bake: worldfmt.MAX_OPS exceeded — raise the cap");
     }
 
+    /// Lands a scatter op and hands back its stored block, which is what the callers that tune a gradient or an avoid list want.
+    fn pushScat(self: *Emit, o: Op, s: wf.Scatter) *wf.Scatter {
+        const i = self.m.addScat(o, s) catch @panic("bake: worldfmt.MAX_OPS or MAX_SCATTERS exceeded — raise the cap");
+        return self.m.scatMut(i) catch unreachable;
+    }
+
 
     fn at(self: *Emit, kind: Kind, x: f32, z: f32, yaw: f32, scale: f32) void {
         self.atY(kind, x, 0, z, yaw, scale);
@@ -53,45 +59,46 @@ pub const Emit = struct {
         o.kind = kind;
         o.x = x0;
         o.z = z0;
-        o.x1 = x1;
-        o.z1 = z1;
-        o.n = n;
-        o.sLo = sLo;
-        o.sHi = sHi;
         o.seed = self.nextSeed();
-        self.push(o);
+        var s = wf.scatDefaults(.belt);
+        s.x1 = x1;
+        s.z1 = z1;
+        s.n = n;
+        s.sLo = sLo;
+        s.sHi = sHi;
+        _ = self.pushScat(o, s);
     }
 
-    fn beltMix(self: *Emit, mix: []const Kind, x0: f32, z0: f32, x1: f32, z1: f32, n: i32, sLo: f32, sHi: f32) *Op {
+    fn beltMix(self: *Emit, mix: []const Kind, x0: f32, z0: f32, x1: f32, z1: f32, n: i32, sLo: f32, sHi: f32) *wf.Scatter {
         var o = wf.defaults(.belt);
+        o.kind = mix[0];
         o.x = x0;
         o.z = z0;
-        o.x1 = x1;
-        o.z1 = z1;
-        o.n = n;
-        o.sLo = sLo;
-        o.sHi = sHi;
         o.seed = self.nextSeed();
-        setMix(&o.mix, &o.nmix, mix);
-        o.kind = mix[0];
-        self.push(o);
-        return &self.m.ops[self.m.nops - 1];
+        var s = wf.scatDefaults(.belt);
+        s.x1 = x1;
+        s.z1 = z1;
+        s.n = n;
+        s.sLo = sLo;
+        s.sHi = sHi;
+        setMix(&s.mix, &s.nmix, mix);
+        return self.pushScat(o, s);
     }
 
-    fn disc(self: *Emit, mix: []const Kind, cx: f32, cz: f32, r0: f32, r1: f32, n: i32, sLo: f32, sHi: f32) *Op {
+    fn disc(self: *Emit, mix: []const Kind, cx: f32, cz: f32, r0: f32, r1: f32, n: i32, sLo: f32, sHi: f32) *wf.Scatter {
         var o = wf.defaults(.disc);
         o.kind = mix[0];
         o.x = cx;
         o.z = cz;
-        o.r0 = r0;
         o.r1 = r1;
-        o.n = n;
-        o.sLo = sLo;
-        o.sHi = sHi;
         o.seed = self.nextSeed();
-        if (mix.len > 1) setMix(&o.mix, &o.nmix, mix);
-        self.push(o);
-        return &self.m.ops[self.m.nops - 1];
+        var s = wf.scatDefaults(.disc);
+        s.r0 = r0;
+        s.n = n;
+        s.sLo = sLo;
+        s.sHi = sHi;
+        if (mix.len > 1) setMix(&s.mix, &s.nmix, mix);
+        return self.pushScat(o, s);
     }
 
     fn ring(self: *Emit, kind: Kind, cx: f32, cz: f32, radius: f32, n: i32, skip: i32, sLo: f32, sHi: f32) void {
@@ -99,13 +106,14 @@ pub const Emit = struct {
         o.kind = kind;
         o.x = cx;
         o.z = cz;
-        o.r0 = radius;
-        o.n = n;
-        o.skip = skip;
-        o.sLo = sLo;
-        o.sHi = sHi;
         o.seed = self.nextSeed();
-        self.push(o);
+        var s = wf.scatDefaults(.ring);
+        s.r0 = radius;
+        s.n = n;
+        s.skip = skip;
+        s.sLo = sLo;
+        s.sHi = sHi;
+        _ = self.pushScat(o, s);
     }
 
     fn line(self: *Emit, mix: []const Kind, ax: f32, az: f32, bx: f32, bz: f32, seg: f32, chance: f32, sLo: f32, sHi: f32) void {
@@ -113,15 +121,16 @@ pub const Emit = struct {
         o.kind = mix[0];
         o.x = ax;
         o.z = az;
-        o.x1 = bx;
-        o.z1 = bz;
-        o.r0 = seg;
-        o.chance = chance;
-        o.sLo = sLo;
-        o.sHi = sHi;
         o.seed = self.nextSeed();
-        if (mix.len > 1) setMix(&o.mix, &o.nmix, mix);
-        self.push(o);
+        var s = wf.scatDefaults(.line);
+        s.x1 = bx;
+        s.z1 = bz;
+        s.r0 = seg;
+        s.chance = chance;
+        s.sLo = sLo;
+        s.sHi = sHi;
+        if (mix.len > 1) setMix(&s.mix, &s.nmix, mix);
+        _ = self.pushScat(o, s);
     }
 
     fn ivyOn(self: *Emit, x0: f32, z0: f32, x1: f32, z1: f32) void {
@@ -129,12 +138,13 @@ pub const Emit = struct {
         o.kind = .ivy;
         o.x = x0;
         o.z = z0;
-        o.x1 = x1;
-        o.z1 = z1;
-        o.sLo = 0.85;
-        o.sHi = 1.5;
         o.seed = self.nextSeed();
-        self.push(o);
+        var s = wf.scatDefaults(.ivy);
+        s.x1 = x1;
+        s.z1 = z1;
+        s.sLo = 0.85;
+        s.sHi = 1.5;
+        _ = self.pushScat(o, s);
     }
 
     fn clearing(self: *Emit, x: f32, z: f32, r: f32) void {

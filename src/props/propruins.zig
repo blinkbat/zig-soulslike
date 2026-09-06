@@ -244,7 +244,7 @@ pub fn archMesh(shader: rl.Shader) rl.Model {
     b.setMat(.stone);
     for ([_]f32{ -px, px }) |x| {
         b.addBox(v3(x, 0.22, 0), v3(0.82, rng.signed() * 0.012, 0.02), v3(0, 0.22, 0), v3(0.02, 0, 0.82), STONE_DK);
-        _ = courseStack(&b, &rng, x, 0.42, 0, 1.05, 1.05, 0.44, 6, 0.05);
+        _ = courseStack(&b, &rng, x, 0.42, 0, 1.05, 1.05, 0.44, 6, 0.05, null);
         b.setMat(.marble);
         b.addBox(v3(x, spring - 0.10, 0), v3(0.70, rng.signed() * 0.012, 0), v3(0, 0.13, 0), v3(0, 0, 0.70), MARBLE_LT);
         b.setMat(.stone);
@@ -675,7 +675,7 @@ pub fn gateMesh(shader: rl.Shader) rl.Model {
         b.addCube(v3(x, 1.4 + gt.height * 0.5, 0), v3(4.76, gt.height, 4.76), art.MORTAR);
         const yc = 1.4 + gt.height;
         b.addBox(v3(x, yc + 0.22, 0), v3(2.85, rng.signed() * 0.014, 0), v3(0, 0.22, 0), v3(0, 0, 2.85), STONE_LT);
-        _ = courseStack(&b, &rng, x, yc + 0.44, 0, 4.2, 4.2, 0.78, 2, 0.04);
+        _ = courseStack(&b, &rng, x, yc + 0.44, 0, 4.2, 4.2, 0.78, 2, 0.04, null);
         quoinsInto(&b, &rng, x - 2.4, -2.4, 1.4, 0.92, 14, 0.9, 0.42);
         quoinsInto(&b, &rng, x + 2.4, 2.4, 1.4, 0.92, 14, 0.9, 0.42);
     }
@@ -935,7 +935,7 @@ pub const OBELISK_H: f32 = 8.6;
 pub fn obeliskMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0B11);
-    const baseTop = courseStack(&b, &rng, 0, 0, 0, 2.30, 2.30, 0.34, 3, 0.16);
+    const baseTop = courseStack(&b, &rng, 0, 0, 0, 2.30, 2.30, 0.34, 3, 0.16, null);
     b.setMat(.marble);
     const foot = v3(0, baseTop, 0);
     const shaftH = OBELISK_H - baseTop;
@@ -967,7 +967,7 @@ pub const PLINTH_H: f32 = 1.95;
 pub fn plinthMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0B12);
-    const top = courseStack(&b, &rng, 0, 0, 0, 1.85, 1.55, 0.30, 5, 0.13);
+    const top = courseStack(&b, &rng, 0, 0, 0, 1.85, 1.55, 0.30, 5, 0.13, null);
     b.setMat(.marble);
     b.addCube(v3(0, top + 0.10, 0), v3(1.72, 0.20, 1.44), MARBLE);
     b.addCube(v3(0, top + 0.21, 0), v3(1.52, 0.06, 1.26), MARBLE_LT);
@@ -1007,7 +1007,7 @@ pub fn altarMesh(shader: rl.Shader) rl.Model {
     var rng = mathx.Rng.init(0x0B13);
     b.setMat(.stone);
     for ([_]f32{ -1.0, 1.0 }) |sd| {
-        _ = courseStack(&b, &rng, sd * 0.92, 0, 0, 0.62, 1.10, 0.26, 3, 0.06);
+        _ = courseStack(&b, &rng, sd * 0.92, 0, 0, 0.62, 1.10, 0.26, 3, 0.06, null);
     }
     b.setMat(.marble);
     const y = 0.82;

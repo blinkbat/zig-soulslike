@@ -9,6 +9,7 @@ const rgba = mathx.rgba;
 const v3 = mathx.v3;
 
 pub const Sig = struct {
+    style: foe.ParticleStyle,
     core: rl.Color,
     edge: rl.Color,
     grav: f32,
@@ -23,10 +24,12 @@ pub const Sig = struct {
     cool: ?rl.Color = null,
     drag: f32 = 0,
     stretch: f32 = 0,
+    curl: f32 = 0,
 };
 
 // Fire's speeds are SOLVED WITH ITS DRAG, not raised: v0/k·(1−e^(−k·life)) at 5.5 and 2.6 is 1.57 m, the 1.56 m the old 3.0 covered in a straight line — the blast front-loads and then hangs, same reach.
 const FIRE = Sig{
+    .style = .flame,
     .core = rgba(255, 198, 104, 228),
     .edge = rgba(228, 116, 28, 200),
     .grav = -2.1,
@@ -34,14 +37,15 @@ const FIRE = Sig{
     .speedHi = 5.5,
     .lifeLo = 0.26,
     .lifeHi = 0.52,
-    .r0 = 0.030,
-    .r1 = 0.058,
+    .r0 = 0.075,
+    .r1 = 0.145,
     .ash = rgba(74, 68, 62, 120),
     .cool = rgba(198, 58, 20, 180),
     .drag = 2.6,
 };
 
 const COLD = Sig{
+    .style = .frost,
     .core = rgba(212, 238, 250, 225),
     .edge = rgba(150, 200, 226, 235),
     .grav = 1.5,
@@ -49,13 +53,14 @@ const COLD = Sig{
     .speedHi = 1.7,
     .lifeLo = 0.60,
     .lifeHi = 1.15,
-    .r0 = 0.028,
-    .r1 = 0.010,
+    .r0 = 0.055,
+    .r1 = 0.018,
     .cool = rgba(234, 246, 252, 150),
     .stretch = 0.020,
 };
 
 const LIGHTNING = Sig{
+    .style = .spark,
     .core = rgba(255, 255, 224, 255),
     .edge = rgba(226, 230, 232, 245),
     .grav = 0,
@@ -69,6 +74,7 @@ const LIGHTNING = Sig{
 };
 
 const CHAOS = Sig{
+    .style = .chaos,
     .core = rgba(224, 176, 250, 210),
     .edge = rgba(168, 84, 216, 190),
     .grav = 0,
@@ -76,11 +82,12 @@ const CHAOS = Sig{
     .speedHi = 2.3,
     .lifeLo = 0.20,
     .lifeHi = 0.44,
-    .r0 = 0.023,
-    .r1 = 0.011,
+    .r0 = 0.085,
+    .r1 = 0.024,
     .inward = true,
     .cool = rgba(104, 36, 152, 170),
     .stretch = 0.022,
+    .curl = 3.6,
 };
 
 pub fn sig(e: combat.Elem) Sig {
@@ -113,6 +120,8 @@ pub fn gather(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector
             .col1 = s.cool,
             .grav = s.grav * 0.4,
             .stretch = s.stretch,
+            .style = s.style,
+            .curl = s.curl,
             .add = true,
         });
     }
@@ -154,7 +163,7 @@ pub fn burst(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3
         const sp = rng.range(s.speedLo, s.speedHi) * scale;
         const v = mathx.scaleV(out, if (s.inward) -sp * 0.55 else sp);
         const life = rng.range(s.lifeLo, s.lifeHi);
-        const from = mathx.addV(at, mathx.scaleV(out, s.r0 * scale * 2.0));
+        const from = mathx.addV(at, mathx.scaleV(out, if (s.inward) sp * life * 0.65 else s.r0 * scale * 2.0));
         foe.emitPart(pool, head, .{
             .p = from,
             .v = v,
@@ -166,7 +175,9 @@ pub fn burst(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3
             .grav = s.grav,
             .drag = s.drag,
             .stretch = s.stretch,
-            .add = true,
+            .style = s.style,
+            .add = e != .chaos,
+            .curl = s.curl,
         });
         if (s.ash) |ash| {
             if (i % BURST_EVERY == 1) {
@@ -179,6 +190,7 @@ pub fn burst(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3
                     .col = ash,
                     .grav = s.grav * 0.30,
                     .drag = 2.0,
+                    .style = .smoke,
                 });
             }
         }
@@ -227,17 +239,19 @@ pub fn pour(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, from: rl.Vector
         const life = rng.range(s.lifeLo, s.lifeHi);
         const sp = (reach / mathx.maxF(life, 0.05)) * rng.range(0.55, 1.0);
         const grain = rng.range(POUR_SIZE_LO, POUR_SIZE_HI);
+        const vapour = e == .cold and rng.float() < 0.67;
         foe.emitPart(pool, head, .{
             .p = from,
             .v = mathx.scaleV(out, sp),
             .life = life,
-            .r0 = s.r0 * scale * grain,
-            .r1 = s.r1 * scale * 1.5 * grain,
+            .r0 = (if (vapour) @as(f32, 0.13) else if (e == .chaos) 0.26 else s.r0) * scale * grain,
+            .r1 = (if (vapour) @as(f32, 0.40) else if (e == .chaos) 0.16 else s.r1 * 1.5) * scale * grain,
             .col = if (i % 2 == 0) s.core else s.edge,
             .col1 = s.cool,
             .grav = s.grav * 0.5,
-            .stretch = s.stretch,
-            .add = true,
+            .stretch = if (vapour or e == .chaos) 0 else s.stretch,
+            .style = if (vapour) .smoke else s.style,
+            .add = !vapour and e != .chaos,
         });
         if (i % POUR_ROOT_EVERY == 0) {
             const rr = s.r0 * scale * POUR_ROOT_R;
@@ -250,6 +264,7 @@ pub fn pour(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, from: rl.Vector
                 .r0 = rr * rng.range(0.5, 1.25),
                 .r1 = rr * 0.25,
                 .col = s.core,
+                .style = if (e == .chaos) .glow else s.style,
                 .add = true,
             });
         }
@@ -353,6 +368,22 @@ test "a gather actually converges" {
         const v = mathx.normV(p.v);
         try std.testing.expect(toward.x * v.x + toward.y * v.y + toward.z * v.z > 0.5);
     }
+}
+
+test "single-mote breath calls still mix frost crystals and fog" {
+    var pool = [_]foe.Particle{.{}} ** 512;
+    var head: usize = 0;
+    var rng = mathx.Rng.init(0xC01D);
+    for (0..128) |_| pour(&pool, &head, &rng, mathx.zero3, v3(0, 0, 1), .cold, 1, 0.4, 6, 1);
+    var fog: usize = 0;
+    var ice: usize = 0;
+    for (pool) |p| {
+        if (p.life <= 0) continue;
+        if (p.style == .smoke) fog += 1;
+        if (p.style == .frost) ice += 1;
+    }
+    try std.testing.expect(fog > 40 and ice > 40);
+    try std.testing.expectEqual(pourCount(1) * 128, head);
 }
 
 test "A POURED CONE IS THE SECTOR THAT BITES — no mote lands outside the arc the hitbox uses" {

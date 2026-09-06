@@ -145,6 +145,23 @@ pub const CamRig = struct {
     }
 
     pub fn followClear(c: *CamRig, shoulder: rl.Vector3, ctx: anytype, comptime groundAt: fn (@TypeOf(ctx), f32, f32) f32, dt: f32) void {
+        const Open = struct {
+            fn none(_: @TypeOf(ctx), _: f32, _: f32) ?f32 {
+                return null;
+            }
+        };
+        c.followRoofed(shoulder, ctx, groundAt, Open.none, dt);
+    }
+
+    /// UNDER A ROOF THE EYE IS PINNED BOTH WAYS: the floor it may not sink through is the chamber's, and the ceiling it may not rise through is the rock. `roofAt` answers `null` where a point stands under the sky.
+    pub fn followRoofed(
+        c: *CamRig,
+        shoulder: rl.Vector3,
+        ctx: anytype,
+        comptime groundAt: fn (@TypeOf(ctx), f32, f32) f32,
+        comptime roofAt: fn (@TypeOf(ctx), f32, f32) ?f32,
+        dt: f32,
+    ) void {
         const target = c.targetFor(shoulder);
         const back = c.backDir();
         const shortest = c.boomFloor();
@@ -153,13 +170,18 @@ pub const CamRig = struct {
         while (d > shortest) {
             const p = mathx.addV(target, mathx.scaleV(back, d));
             const g = groundAt(ctx, p.x, p.z);
-            if (p.y >= g + GROUND_CLEAR or g <= g0 + GROUND_RISE) break;
+            const roofed = if (roofAt(ctx, p.x, p.z)) |r| p.y > r - GROUND_CLEAR else false;
+            if (!roofed and (p.y >= g + GROUND_CLEAR or g <= g0 + GROUND_RISE)) break;
             d = mathx.maxF(d - GROUND_PROBE, shortest);
         }
         c.eased = if (c.eased < 0 or d < c.eased) d else mathx.approach(c.eased, d, CLEAR_REGAIN * dt);
         c.place(target, c.eased);
         const floor = groundAt(ctx, c.cam.position.x, c.cam.position.z) + GROUND_CLEAR;
         if (c.cam.position.y < floor) c.cam.position.y = floor;
+        if (roofAt(ctx, c.cam.position.x, c.cam.position.z)) |r| {
+            const lid = r - GROUND_CLEAR;
+            if (c.cam.position.y > lid) c.cam.position.y = mathx.maxF(lid, floor);
+        }
     }
 
     fn place(c: *CamRig, target: rl.Vector3, dist: f32) void {
@@ -272,4 +294,31 @@ pub fn newCamRig(shoulder: rl.Vector3, yaw0: f32) CamRig {
     };
     c.follow(shoulder);
     return c;
+}
+
+test "UNDER A ROOF THE BOOM DOES NOT GO THROUGH IT, and it does not go into the rock either" {
+    // A chamber 3 m tall from -3 to 0, under a hill at 10 m; rock everywhere past 6 m of the middle.
+    const Cave = struct {
+        fn ground(_: void, x: f32, z: f32) f32 {
+            return if (@sqrt(x * x + z * z) > 6.0) 10.0 else -3.0;
+        }
+        fn roof(_: void, x: f32, z: f32) ?f32 {
+            return if (@sqrt(x * x + z * z) > 6.0) null else 0.0;
+        }
+    };
+    var rig = CamRig{ .cam = undefined, .yaw = 0, .pitch = 0.55, .dist = 7.0 };
+    rig.eased = -1;
+    const shoulder = v3(0, -3.0 + 1.4, 0);
+    var i: usize = 0;
+    while (i < 120) : (i += 1) rig.followRoofed(shoulder, {}, Cave.ground, Cave.roof, 1.0 / 60.0);
+
+    const p = rig.cam.position;
+    // Under the ceiling, over the floor, and inside the room rather than buried in the hillside.
+    try std.testing.expect(p.y <= 0.0);
+    try std.testing.expect(p.y >= -3.0);
+    try std.testing.expect(@sqrt(p.x * p.x + p.z * p.z) <= 6.0);
+    std.debug.print(
+        "\ncave boom: eye at {d:.2} m under a 0.00 m ceiling, {d:.2} m out from the man\n",
+        .{ p.y, mathx.distXZ(p, shoulder) },
+    );
 }

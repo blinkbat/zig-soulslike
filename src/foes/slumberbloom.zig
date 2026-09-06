@@ -415,12 +415,13 @@ pub const Bloom = struct {
                 .p = v3(from.x + out.x * rad * 0.12, from.y - self.fxRng.range(0, 0.35) * H * self.scale, from.z + out.z * rad * 0.12),
                 .v = v3(out.x * rad * 0.9, self.fxRng.range(-0.05, 0.55), out.z * rad * 0.9),
                 .life = self.fxRng.range(0.7, VENT_LIFE_HI),
-                .r0 = self.fxRng.range(0.10, 0.24) * self.scale,
-                .r1 = self.fxRng.range(0.16, 0.40) * self.scale,
+                .r0 = self.fxRng.range(0.17, 0.30) * self.scale,
+                .r1 = self.fxRng.range(0.34, 0.62) * self.scale,
                 .col = HAZE,
                 .col1 = HAZE_THIN,
                 .grav = 0.22,
                 .drag = 1.5,
+                .style = .spore,
             });
         }
     }
@@ -445,6 +446,11 @@ pub const Bloom = struct {
     }
 
     pub fn drawFx(self: *const Bloom) void {
+        if (self.vent > 0.01) foe.drawCloud(.{
+            .at = self.pos, .radius = POUR_R * self.scale, .height = H * self.scale * 0.55,
+            .time = self.elapsed, .amount = self.vent * 0.7,
+            .col = mathx.withAlpha(HAZE, 120), .shade = mathx.withAlpha(HAZE_THIN, 105),
+        });
         foe.drawParticles(&self.parts);
     }
 

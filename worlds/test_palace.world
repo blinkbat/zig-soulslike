@@ -1,0 +1,85 @@
+version: 1
+name: Sun Palace Test
+half: 130.0
+runway: -7.00 -52.00 7.00 -40.00
+
+# THE SUN PALACE BENCH: one of every kind in the palace and the desert, laid out as the place they belong to,
+# on a floor painted `sand` end to end. --map worlds/test_palace.world and walk north up the avenue from the
+# bonfire: the gate, the columns, the basin under its kiosk, the two watchers, and the spire behind the terrace.
+# The hall (west) and the vault (east) are the two you walk INTO; the terrace is the one you walk UP, by the
+# ceremonial stair standing off its south face.
+
+zone: desert -400.0 -400.0 400.0 400.0 0.170 sandripples,sandripples,deadbrush,tumbleweed,pricklypear,barrelcactus
+location: sunpalace -130.0 -130.0 130.0 130.0 wet=0.000 fog=0.060 blend=8.00
+
+clear: 0.0 -46.0 9.0
+clear: 0.0 6.0 7.0
+clear: 0.0 59.0 9.0
+
+at: bonfire 0 -46 0 1
+
+# THE APPROACH — the signposts say somebody lived here, the plants say nothing has drunk in a long time.
+at: waystele -5 -38 40 1
+at: waystele 6 -31 -110 1
+at: saguaro -14 -40 0 1
+at: saguaro2 17 -36 0 1
+at: deadsaguaro -25 -43 0 1
+at: ocotillo -21 -30 0 1
+at: agave 13 -45 0 1
+at: yucca -9 -49 0 1
+at: joshua 23 -47 0 1
+at: cholla 8 -41 0 1
+at: sanddune -32 -52 20 1
+at: sanddune 36 -26 -60 1
+at: sanddune -44 12 75 1
+
+# THE GATE, and the curtain wall running out from both piers.
+at: palacegate 0 -22 0 1
+at: palacewall -15.4 -22 180 1
+at: palacewall 15.4 -22 0 1
+at: palacebanner -11 -15 0 1
+at: palacebanner 11 -15 0 1
+
+# THE AVENUE: columns both sides, and the two that came down.
+at: palacecolumn -9 -12 0 1
+at: palacecolumn 9 -12 0 1
+at: palacecolumn -9 -2 0 1
+at: fallencolumn 9 -2 20 1
+at: fallencolumn -9 8 -155 1
+at: palacecolumn 9 8 0 1
+at: sunobelisk -17 -6 0 1
+at: sunobelisk 17 -6 0 1
+
+# The basin, dry, and the kiosk you walk under past it.
+at: starbasin 0 6 0 1
+at: palacekiosk 0 20 0 1
+
+# THE TWO WATCHERS, turned a little in toward the avenue.
+at: watcheridol -18 33 25 1
+at: watcheridol 18 33 -25 1
+
+# The hall (west) and the vault (east) — both walked into, both open at either end.
+at: palacehall -38 24 0 1
+at: emeraldvault 38 22 0 1
+at: emeraldshard 31 41 0 1
+at: emeraldshard -30 3 0 1
+
+# THE TERRACE, its stair, and the spire behind them. `rise=4` is four sections of `palacestair`, 10.4 m of run,
+# so the top tread lands on the terrace's own south face and the parapet's two open bays are the landing.
+at: palacestair 0 44 180 1 rise=4
+at: palaceterrace 0 59 0 1
+at: sunspire 0 82 0 1
+
+# Desert around the outside, so nothing here is ever seen against bare floor.
+at: saguaro -52 44 0 1
+at: saguaro2 -46 66 0 1
+at: joshua 54 58 0 1
+at: ocotillo 48 -8 0 1
+at: agave -55 -14 0 1
+at: yucca 57 34 0 1
+at: deadsaguaro 44 74 0 1
+at: cholla -40 -34 0 1
+at: sanddune 58 82 -25 1
+at: sanddune -60 90 40 1
+
+soil: 11x12544

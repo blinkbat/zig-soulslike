@@ -336,7 +336,6 @@ pub fn emberArchMesh(shader: rl.Shader) rl.Model {
 }
 
 pub const COLS_H: f32 = 3.20;
-pub const COLS_R: f32 = 1.55;
 pub fn basaltColumnsMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xE0B7);

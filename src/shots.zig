@@ -10,6 +10,7 @@ const frogmod = @import("foes/frog.zig");
 const archermod = @import("foes/archer.zig");
 const ogremod = @import("foes/ogre.zig");
 const shroommod = @import("foes/shroom.zig");
+const duomod = @import("foes/fungalduo.zig");
 const knightmod = @import("foes/knight.zig");
 const delvermod = @import("foes/delver.zig");
 const necromod = @import("foes/necro.zig");
@@ -406,6 +407,7 @@ pub fn runMapShots(g: *Game) void {
     g.retro.allOff();
     game.pinHourForShot(g, game.daynight.SHOT_HOUR);
 
+
     var n: usize = 0;
     var shot = [_]bool{false} ** @typeInfo(worldfmt.FoeKind).@"enum".fields.len;
     inline for (game.FOE_GROUPS) |gr| {
@@ -611,6 +613,7 @@ pub fn runShots(g: *Game) void {
     g.retro.allOff();
     // THE HOUR IS PINNED AND THE CLOCK IS STOPPED: every frame below is framed off the sun's bearing (`LIT_YAW`), and the palette was measured against that one light.
     game.pinHourForShot(g, game.daynight.SHOT_HOUR);
+    if (onlyStage.len > 0 and runUnitStudies(g, true)) return;
 
     g.hero.pos = mathx.ground(0, 26);
     var i: i32 = 0;
@@ -1265,6 +1268,9 @@ pub fn runShots(g: *Game) void {
         shootPortrait(g, "shots/20zy_torch_left.png", g.hero.torchFlameWorld(), LIT_YAW + 150, 0.10, 2.6);
         game.pinHourForShot(g, 23.4);
         shootPortrait(g, "shots/20zz_torch_night.png", g.hero.shoulderPoint(), LIT_YAW + 150, 0.10, 4.4);
+        offTo(g, .shield);
+        standSettled(g, 0, 4, mathx.headingXZ(LIT_BACK));
+        shootPortrait(g, "shots/20zz_bodylight_night.png", g.hero.shoulderPoint(), LIT_YAW + 150, 0.10, 4.4);
         game.pinHourForShot(g, game.daynight.SHOT_HOUR);
 
         g.hero.fp.reset();
@@ -1480,9 +1486,18 @@ pub fn runShots(g: *Game) void {
         shootFoe(g, a, "shots/40_archer_aim_side.png", 90, 0.06, 4.8);
         shootFoe(g, a, "shots/41_archer_aim_front.png", 6, 0.12, 4.4);
         shootFoe(g, a, "shots/42_archer_aim_3q.png", 48, 0.10, 4.8);
-        g.arrows[0] = archermod.launchArrow(a.nockWorld(), mathx.ground(0, 15));
+        var loose: i32 = 0;
+        while (loose < 120) : (loose += 1) {
+            if (a.update(dt, mathx.ground(0, 15), game.PLAY_HALF, .{})) {
+                g.arrows[0] = archermod.launchArrow(a.nockWorld(), mathx.ground(0, 15));
+                break;
+            }
+        }
         var m: i32 = 0;
-        while (m < 8) : (m += 1) archermod.stepArrow(&g.arrows[0], mathx.ground(0, 15), HERO_CENTER_Y, g.env.groundAt(g.arrows[0].pos.x, g.arrows[0].pos.z), false, arrowCover(g, &g.arrows[0], dt), dt);
+        while (m < 8) : (m += 1) {
+            _ = a.update(dt, mathx.ground(0, 15), game.PLAY_HALF, .{});
+            archermod.stepArrow(&g.arrows[0], mathx.ground(0, 15), HERO_CENTER_Y, g.env.groundAt(g.arrows[0].pos.x, g.arrows[0].pos.z), false, arrowCover(g, &g.arrows[0], dt), dt);
+        }
         shootFoe(g, a, "shots/44_archer_loose.png", 90, 0.05, 5.2);
         g.arrows[0] = .{};
         a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
@@ -2072,12 +2087,15 @@ pub fn runShots(g: *Game) void {
     shoot(g, "shots/14_retro_default.png");
     g.retro.allOff();
 
+    _ = runUnitStudies(g, false);
     if (stageOn("brood")) broodShots(g);
     if (stageOn("warrior")) warriorShots(g);
     if (stageOn("shade")) shadeShots(g);
     if (stageOn("leech")) leechShots(g);
     if (stageOn("rooted")) rootedShots(g);
     if (stageOn("shroom")) shroomShots(g);
+    if (stageOn("duo")) duoShots(g);
+    if (stageOn("roots")) rootShots(g);
     if (stageOn("delver")) delverShots(g);
     if (stageOn("necro")) necroShots(g);
     if (stageOn("pickup")) pickupShots(g);
@@ -2093,6 +2111,858 @@ pub fn runShots(g: *Game) void {
     if (stageOn("day")) dayShots(g);
     if (stageOn("editor")) editorShots(g);
     if (stageOn("editorgap")) editorGapShots(g);
+}
+
+fn runUnitStudies(g: *Game, directOnly: bool) bool {
+    game.pinHourForShot(g, game.daynight.SHOT_HOUR);
+    const studies = [_]struct { tag: []const u8, run: *const fn (*Game) void }{
+        .{ .tag = "frog_study", .run = frogStudyShots },
+        .{ .tag = "archer_study", .run = archerStudyShots },
+        .{ .tag = "shield_study", .run = shieldStudyShots },
+        .{ .tag = "greatsword_study", .run = greatswordStudyShots },
+        .{ .tag = "ogre_study", .run = ogreStudyShots },
+        .{ .tag = "zerk_study", .run = zerkStudyShots },
+        .{ .tag = "priest_study", .run = priestStudyShots },
+        .{ .tag = "slinger_study", .run = slingerStudyShots },
+        .{ .tag = "brood_study", .run = broodStudyShots },
+        .{ .tag = "broodling_study", .run = broodlingStudyShots },
+        .{ .tag = "sac_study", .run = sacStudyShots },
+        .{ .tag = "knight_study", .run = knightStudyShots },
+        .{ .tag = "shade_study", .run = shadeStudyShots },
+        .{ .tag = "mourner_study", .run = mournerStudyShots },
+        .{ .tag = "leech_study", .run = leechStudyShots },
+        .{ .tag = "rooted_study", .run = rootedStudyShots },
+        .{ .tag = "shroom_study", .run = shroomStudyShots },
+        .{ .tag = "delver_study", .run = delverStudyShots },
+        .{ .tag = "necro_study", .run = necroStudyShots },
+    };
+    var ran = false;
+    for (studies) |study| {
+        if (!std.mem.startsWith(u8, onlyStage, study.tag) and (directOnly or !stageOn(study.tag))) continue;
+        study.run(g);
+        ran = true;
+    }
+    return ran;
+}
+const StudyView = struct { offset: rl.Vector3, dist: f32 };
+
+fn unitStudyFrame(g: *Game, rt: rl.RenderTexture2D, body: anytype, model: anytype, tag: []const u8, height: f32, focusY: f32) void {
+    unitStudyViewFrame(g, rt, body, model, tag, .{
+        .offset = v3(0, focusY, 0),
+        .dist = height / (2 * @tan(mathx.radians(camera.FOVY) * 0.5) * 0.82) + 0.4,
+    });
+}
+
+fn unitStudyViewFrame(g: *Game, rt: rl.RenderTexture2D, body: anytype, model: anytype, tag: []const u8, view: StudyView) void {
+    var name: [128]u8 = undefined;
+    const path = std.fmt.bufPrintZ(&name, "shots/{s}.png", .{tag}) catch unreachable;
+    if (!stageOn(path)) return;
+    const Plate = struct {
+        body: @TypeOf(body),
+        model: @TypeOf(model),
+        scene: *gfx.Scene,
+        fn draw(ctx: *const anyopaque) void {
+            const p: *const @This() = @ptrCast(@alignCast(ctx));
+            rl.drawGrid(32, 0.25);
+            if (p.body.alive()) {
+                const thin = if (@hasField(@TypeOf(p.body.*), "fade")) 1 - p.body.fade else 1;
+                if (thin < 0.999) p.scene.beginFade(thin);
+                p.body.draw(p.model);
+                if (thin < 0.999) p.scene.endFade();
+            }
+            if (@TypeOf(p.body.*) == rootedmod.Rooted or @TypeOf(p.body.*) == delvermod.Delver) p.body.drawFx();
+        }
+    };
+    const p = Plate{ .body = body, .model = model, .scene = &g.scene };
+    hudmod.renderIntoTarget(rt, .{
+        .scene = &g.scene,
+        .focus = mathx.addV(body.pos, view.offset),
+        .yaw = mathx.radians(LIT_YAW),
+        .pitch = 0.10,
+        .dist = view.dist,
+        .fov = camera.FOVY,
+        .ctx = &p,
+        .drawFn = Plate.draw,
+    });
+    rl.beginDrawing();
+    rl.clearBackground(rl.Color.black);
+    rl.drawTextureRec(rt.texture, .{ .x = 0, .y = 0, .width = game.SCREEN_W, .height = -game.SCREEN_H }, .{ .x = 0, .y = 0 }, rl.Color.white);
+    var label: [160]u8 = undefined;
+    const state = if (@hasField(@TypeOf(body.*), "state")) @tagName(body.state) else if (body.dying()) "burst" else "growing";
+    hudmod.text(std.fmt.bufPrintZ(&label, "{s}   {s}   {d:.3}s", .{ tag, state, body.t }) catch unreachable, 24, 24, hudmod.BODY, rl.Color.white);
+    snap(path);
+}
+
+fn knightStudyView(initial: knightmod.Knight, bounds: *const [19]rl.BoundingBox, quarry: rl.Vector3, until: f32) StudyView {
+    const yaw = mathx.radians(LIT_YAW);
+    const right = v3(@cos(yaw), 0, -@sin(yaw));
+    const back = v3(@sin(yaw) * @cos(@as(f32, 0.10)), @sin(@as(f32, 0.10)), @cos(yaw) * @cos(@as(f32, 0.10)));
+    const up = mathx.crossV(back, right);
+    var lo = v3(1e9, 1e9, 1e9);
+    var hi = v3(-1e9, -1e9, -1e9);
+    var body = initial;
+    var clock: f32 = 0;
+    while (clock < until + SHOT_DT) : (clock += SHOT_DT) {
+        for (bounds, 0..) |box, i| {
+            const xf = if (i < body.xf.len) body.xf[i] else body.shXf;
+            for ([_]f32{ box.min.x, box.max.x }) |x| {
+                for ([_]f32{ box.min.y, box.max.y }) |y| {
+                    for ([_]f32{ box.min.z, box.max.z }) |z| {
+                        const p = mathx.subV(rl.math.vector3Transform(v3(x, y, z), xf), body.pos);
+                        const q = v3(mathx.dotV(p, right), mathx.dotV(p, up), mathx.dotV(p, back));
+                        lo = v3(@min(lo.x, q.x), @min(lo.y, q.y), @min(lo.z, q.z));
+                        hi = v3(@max(hi.x, q.x), @max(hi.y, q.y), @max(hi.z, q.z));
+                    }
+                }
+            }
+        }
+        _ = body.update(SHOT_DT, quarry, game.PLAY_HALF, .{});
+    }
+    const middle = mathx.scaleV(mathx.addV(lo, hi), 0.5);
+    const half = mathx.scaleV(mathx.subV(hi, lo), 0.5);
+    const tan = @tan(mathx.radians(camera.FOVY) * 0.5) * 0.82;
+    const aspect = @as(f32, game.SCREEN_W) / @as(f32, game.SCREEN_H);
+    return .{
+        .offset = mathx.addV(mathx.addV(mathx.scaleV(right, middle.x), mathx.scaleV(up, middle.y)), mathx.scaleV(back, middle.z)),
+        .dist = half.z + @max(half.y / tan, half.x / (tan * aspect)) + 0.1,
+    };
+}
+fn knightStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("knight plate target");
+    defer rl.unloadRenderTexture(rt);
+    var bounds: [19]rl.BoundingBox = undefined;
+    for (&bounds, 0..) |*box, i| box.* = rl.getMeshBoundingBox(if (i < 18) g.vigil.model.bone[i] else g.vigil.model.shield);
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        for (0..14) |mode| {
+            const action = if (mode >= 10) ([_]usize{ 3, 6, 4, 8 })[mode - 10] else mode;
+            var body = knightmod.Knight.spawn(mathx.zero3, yaw, if (mode >= 10) 1.8 else 1, 0.37);
+            switch (action) {
+                1 => body.stagger(true),
+                8 => body.debugSwat(false),
+                9 => body.debugSwat(true),
+                3 => body.debugSweep(),
+                4 => body.debugOverhead(),
+                5 => body.debugBash(),
+                6 => body.debugThrust(),
+                7 => body.debugKill(),
+                else => {},
+            }
+            body.opener = knightmod.OVER_I;
+            const quarry = mathx.scaleV(mathx.headingDir(yaw), if (action == 2) @as(f32, 20) else if (action >= 3 and action != 7) 4.2 else 90);
+            var move = knightmod.moveClock(switch (action) {
+                4 => knightmod.OVER_I,
+                5 => knightmod.BASH_I,
+                6 => knightmod.THRUST_I,
+                8, 9 => knightmod.SWAT_I,
+                else => knightmod.SWEEP_I,
+            });
+            move.wind = body.windDur();
+            if (action == 2) {
+                for (&body.cds) |*cd| cd.* = 100;
+                body.chargeCd = 100;
+                body.leapCd = 100;
+                body.hopCd = 100;
+            }
+            const stamps = switch (action) {
+                1 => [_]f32{ 0, 0.12, 0.32, 0.75, 1.30, 1.90, 2.20, 2.65 },
+                3...6, 8, 9 => [_]f32{ move.wind * 0.3, move.wind * 0.85, move.wind, move.wind + move.strike * 0.25, move.wind + move.strike * 0.55, move.wind + move.strike * 0.85, move.wind + move.strike + 0.2, move.wind + move.strike + move.recover },
+                7 => [_]f32{ 0, 0.1, 0.3, 0.5, 0.8, 1.0, 1.4, 1.9 },
+                else => [_]f32{ 0.10, 0.30, 0.50, 0.70, 0.90, 1.10, 1.30, 1.50 },
+            };
+            const view = knightStudyView(body, &bounds, quarry, stamps[stamps.len - 1]);
+            var clock: f32 = 0;
+            for (stamps, 0..) |at, frame| {
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = body.update(dt, quarry, game.PLAY_HALF, .{});
+                    clock += dt;
+                }
+                var tag: [80]u8 = undefined;
+                unitStudyViewFrame(g, rt, &body, &g.vigil.model, std.fmt.bufPrint(&tag, "knight_study_{d}_{d}_{d}", .{ side, mode, frame }) catch unreachable, view);
+            }
+            if (action == 2) std.debug.assert(mathx.distXZ(body.pos, mathx.zero3) > 0.3);
+        }
+    }
+}
+fn shadeStudyShots(g: *Game) void {
+    hauntStudyShots(g, .shade, "shade_study");
+}
+fn mournerStudyShots(g: *Game) void {
+    hauntStudyShots(g, .mourner, "mourner_study");
+}
+fn hauntStudyShots(g: *Game, role: shademod.Role, prefix: []const u8) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("shade plate target");
+    defer rl.unloadRenderTexture(rt);
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        for (0..7) |mode| {
+            var body = shademod.Shade.spawnAs(role, mathx.zero3, yaw, 1, 0.3);
+            body.blinkCd = 100;
+            switch (mode) {
+                0 => body.debugMove(shademod.GRASP),
+                1 => body.debugMove(shademod.WISP),
+                2 => body.stagger(true),
+                5 => body.debugKill(),
+                6 => body.debugBlink(mathx.scaleV(mathx.headingDir(yaw), 1.5)),
+                else => {},
+            }
+            const quarry = mathx.scaleV(mathx.headingDir(yaw), if (mode == 4) @as(f32, 15) else 90);
+            var move = shademod.moveClock(if (mode == 1) shademod.WISP else shademod.GRASP);
+            const slow = shademod.spec(role).slow;
+            move.wind *= slow;
+            move.strike *= slow;
+            move.recover *= slow;
+            var stamps = if (mode <= 1)
+                [_]f32{ 0, move.wind * 0.5, move.wind * 0.9, move.wind, move.wind + move.strike * 0.4, move.wind + move.strike * 0.8, move.wind + move.strike + 0.16, move.wind + move.strike + move.recover }
+            else [_]f32{ 0, 0.08, 0.18, 0.36, 0.65, 1.0, 1.8, 2.7 };
+            if (mode >= 2 and mode != 4) for (&stamps) |*at| { at.* *= slow; };
+            var clock: f32 = 0;
+            for (stamps, 0..) |at, frame| {
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = body.update(dt, if (mode == 4 and clock > 0.65) mathx.scaleV(mathx.headingDir(yaw), 90) else quarry, game.PLAY_HALF, .{});
+                    clock += dt;
+                }
+                var tag: [80]u8 = undefined;
+                unitStudyFrame(g, rt, &body, &g.haunt.model, std.fmt.bufPrint(&tag, "{s}_{d}_{d}_{d}", .{ prefix, side, mode, frame }) catch unreachable, 2.8 * body.scale, 1.05 * body.scale);
+            }
+            if (mode == 4) std.debug.assert(mathx.distXZ(body.pos, mathx.zero3) > 0.3);
+        }
+    }
+}
+fn leechStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("leech plate target");
+    defer rl.unloadRenderTexture(rt);
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        for (0..7) |mode| {
+            var body = leechmod.Leechfly.spawn(mathx.zero3, yaw, 1, 0.3);
+            body.climbCd = 100;
+            switch (mode) {
+                0 => body.debugFeedFrom(0),
+                1 => body.debugFeedFrom(1),
+                2 => body.stagger(true),
+                4 => body.debugClimb(),
+                5 => body.debugKill(),
+                else => {},
+            }
+            const quarry = mathx.scaleV(mathx.headingDir(yaw), if (mode == 0 or mode == 1) @as(f32, 0.8) else if (mode == 6) 14 else 90);
+            const stamps = switch (mode) {
+                0 => [_]f32{ 0, 0.12, 0.30, 0.34, 0.42, 0.48, 0.65, 1.3 },
+                4 => [_]f32{ 0, 0.2, 0.4, 0.8, 1.4, 2.0, 2.5, 3.0 },
+                else => [_]f32{ 0, 0.08, 0.18, 0.36, 0.65, 1.0, 1.8, 2.7 },
+            };
+            var clock: f32 = 0;
+            for (stamps, 0..) |at, frame| {
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = body.update(dt, quarry, game.PLAY_HALF, .{});
+                    clock += dt;
+                }
+                var tag: [80]u8 = undefined;
+                unitStudyFrame(g, rt, &body, &g.swarm.model, std.fmt.bufPrint(&tag, "leech_study_{d}_{d}_{d}", .{ side, mode, frame }) catch unreachable, 2.4, body.centerWorld().y - body.pos.y);
+            }
+            if (mode == 6) std.debug.assert(mathx.distXZ(body.pos, mathx.zero3) > 0.3);
+        }
+    }
+}
+fn rootedStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("rooted plate target");
+    defer rl.unloadRenderTexture(rt);
+    for ([_]f32{ 1, 2 }) |size| {
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        for (0..7) |mode| {
+            var body = rootedmod.Rooted.spawn(mathx.zero3, yaw, size, 0.3);
+            switch (mode) {
+                0...2 => body.debugMove(mode),
+                3 => body.stagger(true),
+                4 => body.debugWake(),
+                6 => {
+                    body.debugMove(1);
+                    body.debugKill();
+                },
+                else => {},
+            }
+            const quarry = mathx.scaleV(mathx.headingDir(yaw), if (mode < 3) ([_]f32{ 2.1, 3.5, 4.05 })[mode] * size else if (mode == 4) 4.0 else 90);
+            const move = rootedmod.moveClock(@min(mode, 2));
+            const stamps = if (mode < 3)
+                [_]f32{ 0, move.wind * 0.5, move.wind * 0.9, move.wind, move.wind + move.strike * 0.4, move.wind + move.strike * 0.8, move.wind + move.strike + 0.2, move.wind + move.strike + move.recover }
+            else [_]f32{ 0, 0.10, 0.28, 0.60, 1.0, 1.6, 2.2, 3.3 };
+            var clock: f32 = 0;
+            for (stamps, 0..) |at, frame| {
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = body.update(dt, quarry, game.PLAY_HALF, .{});
+                    clock += dt;
+                }
+                var tag: [80]u8 = undefined;
+                unitStudyFrame(g, rt, &body, &g.grove.model, std.fmt.bufPrint(&tag, "rooted_study_{s}{d}_{d}_{d}", .{ if (size > 1) @as([]const u8, "big_") else "", side, mode, frame }) catch unreachable, 10.2 * size, 3.4 * size);
+            }
+        }
+    }
+    }
+}
+fn shroomStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("shroom plate target");
+    defer rl.unloadRenderTexture(rt);
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        for (0..7) |mode| {
+            var body = shroommod.Shroom.spawn(mathx.zero3, yaw, 1, 0.3);
+            const quarry = mathx.scaleV(mathx.headingDir(yaw), if (mode == 1) @as(f32, 8) else if (mode == 0 or mode == 2 or mode == 6) 4.3 else 90);
+            switch (mode) {
+                0, 6 => body.debugFling(quarry),
+                1 => body.flingCd = 100,
+                2 => body.debugTrip(quarry),
+                3 => body.stagger(true),
+                5 => body.debugKill(),
+                else => {},
+            }
+            const stamps = switch (mode) {
+                0, 6 => [_]f32{ 0, 0.18, 0.4, 0.62, 0.8, 1, 1.18, 1.4, 1.9, 2.4 },
+                1 => [_]f32{ 0, 0.14, 0.2, 0.35, 0.5, 0.64, 0.75, 0.95, 1.2, 1.4 },
+                2 => [_]f32{ 0, 0.3, 0.61, 0.73, 0.87, 1.1, 1.8, 2.1, 2.5, 3 },
+                else => [_]f32{ 0, 0.05, 0.12, 0.2, 0.4, 0.7, 1, 1.3, 1.8, 2.4 },
+            };
+            var clock: f32 = 0;
+            var cut = false;
+            for (stamps, 0..) |at, frame| {
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = body.update(dt, quarry, game.PLAY_HALF, .{});
+                    clock += dt;
+                    if (mode == 6 and clock >= 0.9 and !cut) {
+                        body.stagger(true);
+                        cut = true;
+                    }
+                }
+                var tag: [80]u8 = undefined;
+                unitStudyFrame(g, rt, &body, &g.cluster.model, std.fmt.bufPrint(&tag, "shroom_study_{d}_{d}_{d}", .{ side, mode, frame }) catch unreachable, 1.75, 0.45 + body.lift);
+            }
+        }
+    }
+}
+fn delverStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("delver plate target");
+    defer rl.unloadRenderTexture(rt);
+    for ([_]f32{ 1, 2 }) |size| {
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        for (0..10) |mode| {
+            var body = delvermod.Delver.spawn(mathx.zero3, yaw, size, 0.3);
+            body.diveCd = 100;
+            body.rockCd = 100;
+            const quarry = mathx.scaleV(mathx.headingDir(yaw), if (mode < 2) @as(f32, 1.4) else if (mode == 2 or mode == 6) 10 else if (mode == 3 or mode == 9) 1 else if (mode == 4) 5 else 90);
+            switch (mode) {
+                0 => { body.debugClaw(); body.raked = true; },
+                1 => body.debugRake(),
+                2 => body.state = .dig,
+                3 => body.debugDive(),
+                4 => body.debugPlough(),
+                5 => body.stagger(true),
+                8 => body.debugKill(),
+                9 => { body.debugPlough(); body.state = .surge; },
+                else => {},
+            }
+            const stamps = switch (mode) {
+                0, 1 => [_]f32{ 0, 0.18, 0.38, 0.48, 0.56, 0.66, 0.75, 1, 1.5, 2 },
+                2 => [_]f32{ 0, 0.3, 0.6, 0.95, 1.18, 1.36, 1.48, 1.6, 2, 2.6 },
+                3 => [_]f32{ 0, 0.3, 0.62, 0.85, 1.1, 2.5, 3.65, 4, 4.6, 5.2 },
+                4 => [_]f32{ 0, 0.2, 0.5, 0.6, 0.9, 1.35, 1.5, 1.8, 2.2, 2.8 },
+                9 => [_]f32{ 0, 0.4, 0.9, 1.14, 1.2, 1.3, 1.43, 1.7, 2.1, 2.6 },
+                else => [_]f32{ 0, 0.06, 0.15, 0.3, 0.5, 0.8, 1.2, 1.6, 2, 2.7 },
+            };
+            var clock: f32 = 0;
+            for (stamps, 0..) |at, frame| {
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = body.update(dt, quarry, game.PLAY_HALF, .{});
+                    clock += dt;
+                }
+                var tag: [80]u8 = undefined;
+                unitStudyFrame(g, rt, &body, &g.warrens.model, std.fmt.bufPrint(&tag, "delver_study_{s}{d}_{d}_{d}", .{ if (size > 1) "big_" else "", side, mode, frame }) catch unreachable, 3.2 * size, 0.85 * size);
+            }
+        }
+    }
+    }
+}
+fn necroStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("necro plate target");
+    defer rl.unloadRenderTexture(rt);
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        const forward = mathx.headingDir(yaw);
+        for (0..7) |mode| {
+            var body = necromod.Necro.spawn(mathx.zero3, yaw, 1, 0.3);
+            body.raiseCd = 100;
+            body.frostCd = 100;
+            body.leapCd = 100;
+            const quarry = mathx.scaleV(forward, if (mode == 1 or mode == 2 or mode == 5) @as(f32, 10) else 90);
+            switch (mode) {
+                1 => body.debugRaise(mathx.scaleV(forward, 5)),
+                2 => body.debugFrost(),
+                3 => { body.state = .leap; body.moveDir = mathx.scaleV(forward, -1); },
+                4 => body.stagger(true),
+                5 => { body.state = .drift; body.moveDir = mathx.headingDir(yaw + std.math.pi * 0.5); },
+                6 => body.debugKill(),
+                else => {},
+            }
+            const stamps = switch (mode) {
+                1 => [_]f32{ 0, 0.3, 0.8, 1.3, 1.8, 1.95, 2.15, 2.35, 2.8, 3.6 },
+                2 => [_]f32{ 0, 0.16, 0.4, 0.65, 0.74, 0.85, 1.04, 1.25, 1.5, 1.9 },
+                3 => [_]f32{ 0, 0.04, 0.10, 0.17, 0.23, 0.30, 0.34, 0.40, 0.5, 0.8 },
+                else => [_]f32{ 0, 0.05, 0.13, 0.3, 0.5, 0.8, 1.2, 1.7, 2.2, 3.2 },
+            };
+            var clock: f32 = 0;
+            for (stamps, 0..) |at, frame| {
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = body.update(dt, quarry, game.PLAY_HALF, .{});
+                    clock += dt;
+                }
+                var tag: [80]u8 = undefined;
+                unitStudyFrame(g, rt, &body, &g.rite.model, std.fmt.bufPrint(&tag, "necro_study_{d}_{d}_{d}", .{ side, mode, frame }) catch unreachable, 4.5, 1.65 + body.hop);
+            }
+        }
+    }
+}
+fn sacStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("sac plate target");
+    defer rl.unloadRenderTexture(rt);
+    for (0..3) |mode| {
+        var body = broodmod.Sac.lay(mathx.zero3, 0.3, 1);
+        if (mode > 0) {
+            body.t = 3;
+            const at = body.centerWorld();
+            body.tryHit(.{ .active = true, .a = at, .b = at, .r = 0.03, .hit = .{ .dmg = if (mode == 1) 1 else 100, .poise = 12 } });
+        }
+        const stamps = if (mode == 0) [_]f32{ 0.01, 3, 6, 9, 11.35, 11.49, 11.56, 11.80 } else [_]f32{ 0, 0.02, 0.05, 0.09, 0.15, 0.23, 0.36, 0.54 };
+        var clock: f32 = 0;
+        for (stamps, 0..) |at, frame| {
+            while (clock + 0.0001 < at) {
+                const dt = @min(SHOT_DT, at - clock);
+                _ = body.update(dt, .{});
+                clock += dt;
+            }
+            var tag: [80]u8 = undefined;
+            unitStudyFrame(g, rt, &body, &g.brood.model, std.fmt.bufPrint(&tag, "sac_study_{d}_{d}", .{ mode, frame }) catch unreachable, 1.35, 0.4);
+        }
+    }
+}
+fn broodlingStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("broodling plate target");
+    defer rl.unloadRenderTexture(rt);
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        for (0..7) |mode| {
+            var body = broodmod.Spider.spawnAs(.broodling, mathx.zero3, yaw, 1, 0.3);
+            body.spitCd = 10;
+            body.biteCd = 10;
+            body.layCd = 10;
+            body.idleWait = 10;
+            if (mode == 0) {
+                body.state = .windup;
+            } else if (mode == 1 or mode == 6) {
+                body.state = .leap;
+                body.leapFrom = body.pos;
+                body.leapTo = mathx.scaleV(mathx.headingDir(yaw), 3.0);
+            } else if (mode == 3) body.stagger(true) else if (mode == 5) body.debugKill();
+            const quarry = mathx.scaleV(mathx.headingDir(yaw), if (mode == 4) @as(f32, 12) else 90);
+            const stamps = switch (mode) {
+                0 => [_]f32{ 0.01, 0.10, 0.23, 0.33, 0.37, 0.41, 0.49, 0.76 },
+                1 => [_]f32{ 0.01, 0.16, 0.29, 0.34, 0.45, 0.56, 0.62, 0.80 },
+                6 => [_]f32{ 0.32, 0.42, 0.43, 0.46, 0.50, 0.55, 0.65, 0.90 },
+                else => [_]f32{ 0.01, 0.15, 0.35, 0.60, 1.00, 1.55, 2.10, 2.35 },
+            };
+            var clock: f32 = 0;
+            for (stamps, 0..) |at, frame| {
+                while (clock + 0.0001 < at) {
+                    if (mode == 6 and clock >= 0.43 and body.state == .leap) body.stagger(true);
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = body.update(dt, quarry, 200, .{});
+                    clock += dt;
+                }
+                var tag: [80]u8 = undefined;
+                unitStudyFrame(g, rt, &body, &g.brood.model, std.fmt.bufPrint(&tag, "broodling_study_{d}_{d}_{d}", .{ mode, side, frame }) catch unreachable, 3.0, 0.80);
+            }
+            if (mode == 4) std.debug.assert(mathx.distXZ(body.pos, mathx.zero3) > 0.3);
+        }
+    }
+}
+
+fn broodStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("brood plate target");
+    defer rl.unloadRenderTexture(rt);
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        for (0..6) |mode| {
+            var body = broodmod.Spider.spawnAs(.mother, mathx.zero3, yaw, 1, 0.3);
+            body.spitCd = 10;
+            body.biteCd = 10;
+            body.layCd = 10;
+            body.idleWait = 10;
+            if (mode < 2) {
+                body.throwing = mode == 1;
+                body.state = .windup;
+            } else if (mode == 2) body.state = .lay else if (mode == 3) body.stagger(true) else if (mode == 5) body.debugKill();
+            const quarry = mathx.scaleV(mathx.headingDir(yaw), if (mode == 4) @as(f32, 4) else 90);
+            const stamps = switch (mode) {
+                0 => [_]f32{ 0.01, 0.15, 0.36, 0.50, 0.57, 0.64, 0.85, 1.25 },
+                1 => [_]f32{ 0.01, 0.25, 0.60, 0.94, 1.08, 1.18, 1.38, 1.85 },
+                else => [_]f32{ 0.01, 0.15, 0.35, 0.60, 1.00, 1.55, 2.10, 2.35 },
+            };
+            var clock: f32 = 0;
+            for (stamps, 0..) |at, frame| {
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = body.update(dt, quarry, 200, .{});
+                    clock += dt;
+                }
+                var tag: [80]u8 = undefined;
+                unitStudyFrame(g, rt, &body, &g.brood.model, std.fmt.bufPrint(&tag, "brood_study_{d}_{d}_{d}", .{ mode, side, frame }) catch unreachable, 3.8, 0.90);
+            }
+            if (mode == 4) std.debug.assert(mathx.distXZ(body.pos, mathx.zero3) > 0.3);
+        }
+    }
+}
+
+fn slingerStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("slinger plate target");
+    defer rl.unloadRenderTexture(rt);
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        for (0..5) |mode| {
+            var k = koboldmod.Kobold.spawnAs(.slinger, mathx.zero3, yaw, 1, 0.55);
+            var tag: [80]u8 = undefined;
+            k.slingCd = 10;
+            if (mode == 0) k.state = .whirl else if (mode == 1) k.state = .bite else if (mode < 4) k.stagger(mode == 3);
+            const quarry = mathx.scaleV(mathx.headingDir(yaw), if (mode == 4) @as(f32, 12) else 90);
+            var clock: f32 = 0;
+            const stamps = switch (mode) {
+                0 => [_]f32{ 0.01, 0.12, 0.25, 0.40, 0.55, 0.68, 0.74, 0.90 },
+                1 => [_]f32{ 0.01, 0.10, 0.23, 0.34, 0.40, 0.48, 0.61, 0.78 },
+                2 => [_]f32{ 0.01, 0.05, 0.12, 0.25, 0.40, 0.52, 0.60, 0.70 },
+                else => [_]f32{ 0.01, 0.15, 0.35, 0.60, 1.00, 1.55, 2.10, 2.35 },
+            };
+            for (stamps, 0..) |at, frame| {
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = k.update(dt, quarry, 200, .{});
+                    clock += dt;
+                }
+                unitStudyFrame(g, rt, &k, &g.band.model, std.fmt.bufPrint(&tag, "slinger_study_{d}_{d}_{d}", .{ mode, side, frame }) catch unreachable, 4.0, 1.55);
+            }
+        }
+    }
+}
+
+fn priestStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("priest plate target");
+    defer rl.unloadRenderTexture(rt);
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        for (0..4) |mode| {
+            var k = koboldmod.Kobold.spawnAs(.priest, mathx.zero3, yaw, 1, 0.55);
+            var tag: [80]u8 = undefined;
+            k.castCd = 10;
+            if (mode == 0) k.state = .cast else if (mode < 3) k.stagger(mode == 2);
+            const quarry = mathx.scaleV(mathx.headingDir(yaw), if (mode == 3) @as(f32, 16) else 90);
+            var clock: f32 = 0;
+            const stamps = switch (mode) {
+                0 => [_]f32{ 0.01, 0.20, 0.45, 0.75, 1.10, 1.24, 1.32, 1.55 },
+                1 => [_]f32{ 0.01, 0.05, 0.12, 0.25, 0.40, 0.52, 0.60, 0.70 },
+                else => [_]f32{ 0.01, 0.15, 0.35, 0.60, 1.00, 1.55, 2.10, 2.35 },
+            };
+            for (stamps, 0..) |at, frame| {
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = k.update(dt, quarry, 200, .{});
+                    clock += dt;
+                }
+                unitStudyFrame(g, rt, &k, &g.band.model, std.fmt.bufPrint(&tag, "priest_study_{d}_{d}_{d}", .{ mode, side, frame }) catch unreachable, 4.0, 1.55);
+            }
+            if (mode == 3) std.debug.assert(mathx.distXZ(k.pos, mathx.zero3) > 0.3);
+        }
+    }
+}
+
+fn zerkStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("berserker plate target");
+    defer rl.unloadRenderTexture(rt);
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        for (0..6) |mode| {
+            var k = koboldmod.Kobold.spawnAs(.berserker, mathx.zero3, yaw, 1, 0.15);
+            var tag: [80]u8 = undefined;
+            const quarry = mathx.scaleV(mathx.headingDir(yaw), switch (mode) { 3 => @as(f32, 5), 4 => 90, 5 => 12, else => 1.7 });
+            if (mode < 3 or mode == 3) {
+                for (0..240) |_| {
+                    _ = k.update(SHOT_DT, quarry, 200, .{});
+                    if ((mode < 3 and k.state == .chop) or (mode == 3 and k.state == .dash)) break;
+                }
+                if (mode < 3) {
+                    k.chopLeftHand = mode == 1;
+                    k.chopsLeft = if (mode == 2) 3 else 0;
+                }
+            } else if (mode == 4) k.stagger(true) else k.dashCd = 10;
+            var clock: f32 = 0;
+            const stamps: [8]f32 = switch (mode) {
+                0, 1 => .{ 0.01, 0.14, 0.27, 0.34, 0.42, 0.55, 0.85, 2.25 },
+                2 => .{ 0.12, 0.42, 0.68, 1.00, 1.26, 1.57, 1.88, 2.15 },
+                3 => .{ 0.01, 0.11, 0.18, 0.26, 0.36, 0.45, 0.55, 0.65 },
+                4 => .{ 0.01, 0.15, 0.35, 0.60, 1.00, 1.55, 2.10, 2.35 },
+                else => .{ 0.10, 0.35, 0.55, 0.75, 0.95, 1.15, 1.35, 1.55 },
+            };
+            for (stamps, 0..) |at, frame| {
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = k.update(dt, quarry, 200, .{});
+                    clock += dt;
+                }
+                unitStudyFrame(g, rt, &k, &g.band.model, std.fmt.bufPrint(&tag, "zerk_study_{d}_{d}_{d}", .{ mode, side, frame }) catch unreachable, 3.7, 1.3);
+            }
+        }
+    }
+}
+
+fn ogreStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("ogre plate target");
+    defer rl.unloadRenderTexture(rt);
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        var tag: [80]u8 = undefined;
+        for (0..6) |mode| {
+            var o = ogremod.Ogre.spawn(mathx.zero3, yaw, 1, 0.4);
+            const wind: f32 = switch (mode) { 0 => 1.35, 1 => 0.52, 2 => 0.44, 3 => 0.72, else => 0 };
+            const swing: f32 = switch (mode) { 0 => 0.22, 1 => 0.20, 2 => 0.24, 3 => 0.62, else => 0 };
+            const recovery: f32 = switch (mode) { 0 => 1.2, 1, 2 => 0.52, 3 => 0.95, 4 => combat.FOE_HEAVY_STUN_DUR, else => 2 };
+            const quarry = mathx.scaleV(mathx.headingDir(yaw), switch (mode) { 0 => @as(f32, 2), 1, 2 => 4, 3 => 6, 4 => 90, else => 12 });
+            switch (mode) { 0 => o.debugSlam(), 1 => o.debugSwipe(), 2 => o.debugBackswipe(), 3 => o.debugDrive(), 4 => o.stagger(true), else => { o.slamCd = 10; o.swipeCd = 10; o.driveCd = 10; } }
+            var clock: f32 = 0;
+            const stamps = if (mode < 4) [_]f32{ wind * 0.45, wind * 0.94, wind + swing * 0.28, wind + swing * 0.60, wind + swing * 0.92, wind + swing + recovery * 0.40, wind + swing + recovery * 0.93 }
+                else [_]f32{ 0.02, 0.10, 0.25, 0.45, 0.66, 0.85, 0.98 };
+            for (stamps, 0..) |stamp, frame| {
+                const at = if (mode < 4) stamp else stamp * recovery;
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = o.update(dt, quarry, 200, .{});
+                    clock += dt;
+                }
+                unitStudyFrame(g, rt, &o, &g.grief.model, std.fmt.bufPrint(&tag, "ogre_study_{d}_{d}_{d}", .{ mode, side, frame }) catch unreachable, 8.0, 2.9);
+            }
+        }
+    }
+}
+
+fn greatswordStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("greatsword plate target");
+    defer rl.unloadRenderTexture(rt);
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        const quarry = mathx.scaleV(mathx.headingDir(yaw), 2.0);
+        for (0..3) |move| {
+            var w = warriormod.Warrior.spawnAs(.greatsword, mathx.zero3, yaw, 1, 0.37);
+            var tag: [80]u8 = undefined;
+            const cl = warriormod.moveClock(.greatsword, move);
+            if (move == 0) unitStudyFrame(g, rt, &w, &g.muster.model, std.fmt.bufPrint(&tag, "greatsword_study_carry_{d}", .{side}) catch unreachable, 4.5, 1.65);
+            w.debugSwing(move);
+            var clock: f32 = 0;
+            for ([_]f32{ cl.wind * 0.40, cl.wind * 0.90, cl.wind + cl.swing * 0.25, cl.wind + cl.swing * 0.55, cl.wind + cl.swing * 0.90, cl.wind + cl.swing + cl.recover * 0.30, cl.wind + cl.swing + cl.recover * 0.88 }, 0..) |at, frame| {
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = w.update(dt, quarry, 200, .{});
+                    clock += dt;
+                }
+                unitStudyFrame(g, rt, &w, &g.muster.model, std.fmt.bufPrint(&tag, "greatsword_study_{d}_{d}_{d}", .{ move, side, frame }) catch unreachable, 4.5, 1.65);
+            }
+        }
+        if (side > 1) continue;
+        for (0..2) |mode| {
+            var w = warriormod.Warrior.spawnAs(.greatsword, mathx.zero3, yaw, 1, 0.37);
+            var tag: [80]u8 = undefined;
+            for (&w.cds) |*cd| cd.* = 10;
+            if (mode == 0) w.stagger(true);
+            var clock: f32 = 0;
+            for ([_]f32{ 0.08, 0.20, 0.40, 0.65, 0.85, 0.97 }, 0..) |stamp, frame| {
+                const at = stamp * (if (mode == 1) @as(f32, 1.5) else combat.FOE_HEAVY_STUN_DUR);
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = w.update(dt, mathx.scaleV(mathx.headingDir(yaw), if (mode == 1) 12 else 90), 200, .{});
+                    clock += dt;
+                }
+                unitStudyFrame(g, rt, &w, &g.muster.model, std.fmt.bufPrint(&tag, "greatsword_study_motion_{s}_{d}_{d}", .{ if (mode == 0) @as([]const u8, "stun") else "walk", side, frame }) catch unreachable, 4.5, 1.65);
+            }
+        }
+    }
+}
+
+fn shieldStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("shield plate target");
+    defer rl.unloadRenderTexture(rt);
+    const cl = warriormod.moveClock(.shieldman, 0);
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        const quarry = mathx.scaleV(mathx.headingDir(yaw), 1.5);
+        var w = warriormod.Warrior.spawnAs(.shieldman, mathx.zero3, yaw, 1, 0.37);
+        var tag: [80]u8 = undefined;
+        for (&w.cds) |*cd| cd.* = 10;
+        for (0..45) |_| _ = w.update(SHOT_DT, quarry, 200, .{});
+        unitStudyFrame(g, rt, &w, &g.muster.model, std.fmt.bufPrint(&tag, "shield_study_guard_{d}", .{side}) catch unreachable, 3.7, 1.45);
+        w.debugSwing(0);
+        var clock: f32 = 0;
+        for ([_]f32{ cl.wind * 0.24, cl.wind * 0.88, cl.wind + cl.swing * 0.30, cl.wind + cl.swing * 0.60, cl.wind + cl.swing * 0.95, cl.wind + cl.swing + cl.recover * 0.45, cl.wind + cl.swing + cl.recover * 0.92 }, 0..) |at, frame| {
+            while (clock + 0.0001 < at) {
+                const dt = @min(SHOT_DT, at - clock);
+                _ = w.update(dt, quarry, 200, .{});
+                clock += dt;
+            }
+            unitStudyFrame(g, rt, &w, &g.muster.model, std.fmt.bufPrint(&tag, "shield_study_mace_{d}_{d}", .{ side, frame }) catch unreachable, 3.7, 1.45);
+        }
+        if (side > 1) continue;
+        for (0..3) |mode| {
+            w = warriormod.Warrior.spawnAs(.shieldman, mathx.zero3, yaw, 1, 0.37);
+            for (&w.cds) |*cd| cd.* = 10;
+            if (mode == 0) w.debugBreak() else if (mode == 1) w.stagger(true);
+            clock = 0;
+            for ([_]f32{ 0.08, 0.20, 0.40, 0.65, 0.85, 0.97 }, 0..) |stamp, frame| {
+                const at = stamp * (if (mode == 2) @as(f32, 1.5) else combat.FOE_HEAVY_STUN_DUR);
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = w.update(dt, mathx.scaleV(mathx.headingDir(yaw), if (mode == 2) 12 else 90), 200, .{});
+                    clock += dt;
+                }
+                const kind: []const u8 = switch (mode) { 0 => "break", 1 => "stun", else => "walk" };
+                unitStudyFrame(g, rt, &w, &g.muster.model, std.fmt.bufPrint(&tag, "shield_study_{s}_{d}_{d}", .{ kind, side, frame }) catch unreachable, 3.7, 1.45);
+            }
+        }
+    }
+}
+
+fn archerStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("archer plate target");
+    defer rl.unloadRenderTexture(rt);
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        const quarry = mathx.scaleV(mathx.headingDir(yaw), 12);
+        var a = archermod.Archer.spawn(mathx.zero3, yaw, 1, 0.37);
+        var tag: [80]u8 = undefined;
+        unitStudyFrame(g, rt, &a, &g.line.model, std.fmt.bufPrint(&tag, "archer_study_idle_{d}", .{side}) catch unreachable, 3.2, 1.15);
+        a.reloadCd = 0;
+        _ = a.update(SHOT_DT, quarry, 200, .{});
+        var clock: f32 = 0;
+        for ([_]f32{ 0.40, 0.78, 1.10, 1.32, 1.38, 1.62 }, 0..) |at, frame| {
+            while (clock + 0.0001 < at) {
+                const dt = @min(SHOT_DT, at - clock);
+                _ = a.update(dt, quarry, 200, .{});
+                clock += dt;
+            }
+            unitStudyFrame(g, rt, &a, &g.line.model, std.fmt.bufPrint(&tag, "archer_study_shoot_{d}_{d}", .{ side, frame }) catch unreachable, 3.2, 1.15);
+        }
+        a = archermod.Archer.spawn(mathx.zero3, yaw, 1, 0.37);
+        a.backstepCd = 10;
+        clock = 0;
+        for ([_]f32{ 0.15, 0.35, 0.42, 0.49, 0.58, 0.78 }, 0..) |at, frame| {
+            while (clock + 0.0001 < at) {
+                const dt = @min(SHOT_DT, at - clock);
+                _ = a.update(dt, mathx.scaleV(mathx.headingDir(yaw), 1.2), 200, .{});
+                clock += dt;
+            }
+            unitStudyFrame(g, rt, &a, &g.line.model, std.fmt.bufPrint(&tag, "archer_study_jab_{d}_{d}", .{ side, frame }) catch unreachable, 3.2, 1.15);
+        }
+        if (side > 1) continue;
+        for (0..3) |mode| {
+            a = archermod.Archer.spawn(mathx.zero3, yaw, 1, 0.37);
+            a.reloadCd = 10;
+            if (mode == 2) a.stagger(true);
+            clock = 0;
+            const times = switch (mode) {
+                0 => [_]f32{ 0.10, 0.18, 0.34, 0.54, 0.63, 0.84 },
+                1 => [_]f32{ 0.18, 0.35, 0.52, 0.69, 0.86, 1.03 },
+                else => [_]f32{ 0.05, 0.14, 0.55, 0.72, 0.86, 0.98 },
+            };
+            for (times, 0..) |stamp, frame| {
+                const at = stamp * (if (mode == 2) combat.FOE_HEAVY_STUN_DUR else @as(f32, 1));
+                while (clock + 0.0001 < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = a.update(dt, mathx.scaleV(mathx.headingDir(yaw), if (mode == 0) 2.2 else 6.5), 200, .{});
+                    clock += dt;
+                }
+                const kind: []const u8 = switch (mode) { 0 => "leap", 1 => "walk", else => "stun" };
+                unitStudyFrame(g, rt, &a, &g.line.model, std.fmt.bufPrint(&tag, "archer_study_{s}_{d}_{d}", .{ kind, side, frame }) catch unreachable, 3.2, 1.15);
+            }
+        }
+    }
+}
+
+fn frogStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("toad plate target");
+    defer rl.unloadRenderTexture(rt);
+    const Plate = struct {
+        body: *const frogmod.Frog,
+        model: *const frogmod.Model,
+        fn draw(ctx: *const anyopaque) void {
+            const p: *const @This() = @ptrCast(@alignCast(ctx));
+            if (p.body.alive()) p.body.draw(p.model);
+            if (@TypeOf(p.body.*) == rootedmod.Rooted) p.body.drawFx();
+        }
+        fn shot(p: *const @This(), gg: *Game, target: rl.RenderTexture2D, tag: []const u8, tall: bool) void {
+            var name: [128]u8 = undefined;
+            const path = std.fmt.bufPrintZ(&name, "shots/frog_study_{s}.png", .{tag}) catch unreachable;
+            if (!stageOn(path)) return;
+            const height: f32 = if (tall) 2.65 else 1.30;
+            const dist = height / (2 * @tan(mathx.radians(camera.FOVY) * 0.5) * 0.78) + 0.50;
+            hudmod.renderIntoTarget(target, .{
+                .scene = &gg.scene,
+                .focus = v3(p.body.pos.x, if (tall) 1.2 else 0.53, p.body.pos.z),
+                .yaw = mathx.radians(LIT_YAW),
+                .pitch = 0.12,
+                .dist = dist,
+                .fov = camera.FOVY,
+                .ctx = p,
+                .drawFn = draw,
+            });
+            rl.beginDrawing();
+            rl.clearBackground(rl.Color.black);
+            rl.drawTextureRec(target.texture, .{ .x = 0, .y = 0, .width = game.SCREEN_W, .height = -game.SCREEN_H }, .{ .x = 0, .y = 0 }, rl.Color.white);
+            var label: [128]u8 = undefined;
+            hudmod.text(std.fmt.bufPrintZ(&label, "{s}   {d:.3}s   jaw {d:.1}", .{ tag, p.body.t, p.body.jaw }) catch unreachable, 24, 24, hudmod.BODY, rl.Color.white);
+            snap(path);
+        }
+    };
+    const cl = frogmod.chompClock();
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        const quarry = mathx.scaleV(mathx.headingDir(yaw), 1.2);
+        var f = frogmod.Frog.spawn(mathx.zero3, yaw, 1, 0.37);
+        const p = Plate{ .body = &f, .model = &g.warren.model };
+        var tag: [80]u8 = undefined;
+        p.shot(g, rt, std.fmt.bufPrint(&tag, "idle_{d}", .{side}) catch unreachable, false);
+        f.startChomp();
+        for ([_]f32{ cl.wind * 0.85, cl.wind + cl.strike * 0.28, cl.wind + cl.strike * 0.72, cl.wind + cl.strike + cl.recover * 0.1, cl.wind + cl.strike + cl.recover * 0.38, cl.wind + cl.strike + cl.recover * 0.8 }, 0..) |at, frame| {
+            while (f.t + 0.0001 < at) _ = f.update(@min(SHOT_DT, at - f.t), quarry, 200, .{});
+            p.shot(g, rt, std.fmt.bufPrint(&tag, "bite_{d}_{d}", .{ side, frame }) catch unreachable, false);
+        }
+    }
+    for ([_]bool{ false, true }) |lunge| {
+        const yaw = mathx.radians(LIT_YAW + 90);
+        const quarry = mathx.scaleV(mathx.headingDir(yaw), 2.0);
+        var f = frogmod.Frog.spawn(mathx.zero3, yaw, 1, 0.37);
+        f.startHop(quarry, 200, lunge);
+        const clh = f.hopClock();
+        const p = Plate{ .body = &f, .model = &g.warren.model };
+        var clock: f32 = 0;
+        for ([_]f32{ clh.wind * 0.85, clh.wind + clh.strike * 0.1, clh.wind + clh.strike * 0.5, clh.wind + clh.strike * 0.9, clh.wind + clh.strike + clh.recover * 0.45, clh.wind + clh.strike + clh.recover * 0.92 }, 0..) |at, frame| {
+            while (clock + 0.0001 < at) {
+                const dt = @min(SHOT_DT, at - clock);
+                _ = f.update(dt, quarry, 200, .{});
+                clock += dt;
+            }
+            var tag: [80]u8 = undefined;
+            p.shot(g, rt, std.fmt.bufPrint(&tag, "{s}_{d}", .{ if (lunge) @as([]const u8, "lunge") else "hop", frame }) catch unreachable, true);
+        }
+    }
 }
 
 fn statsShots(g: *Game) void {
@@ -2415,6 +3285,79 @@ fn rootedShots(g: *Game) void {
     t.debugKill();
     stepFoe(t, 70, far);
     shootAt(g, "shots/118j_rooted_death.png", v3(sc.x, sc.y + 2.2, sc.z), LIT_YAW + 24, 0.12, 12.0);
+    game.clearFoesForShot(g);
+}
+
+/// THE ROOTS ARE JUDGED AT THE FOOT, not from the whole-prop frame: at 14 m a gnarled root and a stub are the same four pixels.
+fn rootShots(g: *Game) void {
+    game.clearFoesForShot(g);
+    const rows = [_]struct { kind: props.Kind, up: f32, dist: f32 }{
+        .{ .kind = .tree, .up = 0.45, .dist = 3.0 },
+        .{ .kind = .bigtree, .up = 1.10, .dist = 6.4 },
+        .{ .kind = .willow, .up = 0.80, .dist = 4.6 },
+        .{ .kind = .conifer, .up = 0.70, .dist = 4.2 },
+        .{ .kind = .birch, .up = 0.55, .dist = 3.4 },
+        .{ .kind = .snag, .up = 0.70, .dist = 4.2 },
+        .{ .kind = .stump, .up = 0.45, .dist = 3.2 },
+    };
+    for (rows, 0..) |row, i| {
+        g.env.stageOne(row.kind);
+        standHero(g, -(row.dist + 1.2), 1.2, mathx.radians(115));
+        var buf: [96]u8 = undefined;
+        const name = std.fmt.bufPrintZ(&buf, "shots/157{c}_roots_{s}.png", .{ @as(u8, 'a' + @as(u8, @intCast(i))), @tagName(row.kind) }) catch unreachable;
+        shootAt(g, name, v3(0, row.up, 0), 35, 0.16, row.dist);
+    }
+    game.clearFoesForShot(g);
+}
+
+fn duoShots(g: *Game) void {
+    game.clearFoesForShot(g);
+    const sc = mathx.ground(-24.0, 34.0);
+    const far = along(sc, LIT_BACK, 90.0);
+    const faceCam = mathx.headingXZ(LIT_BACK);
+    // The bunch stands on the shroom stage's own patch of clear ground; the magus is put behind it, out of the frame.
+    const mark = sc;
+    g.conclave.n = 1;
+    const m = &g.conclave.magi[0];
+    m.* = duomod.Magus.spawn(along(sc, LIT_BACK, -6.5), faceCam, 1.0, 0.3);
+    standHero(g, sc.x + 2.4, sc.z - 2.4, mathx.radians(-140));
+
+    // THE BUNCH, at the three moments that matter: coming up, stood, and lit right before it goes.
+    const moments = [_]struct { at: f32, name: [:0]const u8 }{
+        .{ .at = duomod.CAP_GROW * 0.30, .name = "shots/119f_duo_caps_rising.png" },
+        .{ .at = duomod.CAP_GROW, .name = "shots/119g_duo_caps_stood.png" },
+        .{ .at = duomod.CAP_GROW + duomod.CAP_GLOW * 0.90, .name = "shots/119h_duo_caps_lit.png" },
+    };
+    for (moments) |mo| {
+        g.conclave.clearGroundForShot();
+        g.conclave.sow(mark);
+        var k: i32 = 0;
+        const frames: i32 = @intFromFloat(mo.at / SHOT_DT);
+        while (k < frames) : (k += 1) _ = g.conclave.update(SHOT_DT, far, game.PLAY_HALF, .{});
+        shootAt(g, mo.name, v3(mark.x, mark.y + 0.55, mark.z), LIT_YAW, 0.20, 6.0);
+    }
+    // …and one close enough to read a single cap as a mushroom rather than a blob.
+    g.conclave.clearGroundForShot();
+    g.conclave.sow(mark);
+    var k: i32 = 0;
+    while (k < @as(i32, @intFromFloat(duomod.CAP_GROW / SHOT_DT))) : (k += 1) _ = g.conclave.update(SHOT_DT, far, game.PLAY_HALF, .{});
+    shootAt(g, "shots/119i_duo_cap_close.png", v3(mark.x, mark.y + 0.60, mark.z), LIT_YAW, 0.14, 3.0);
+
+    // THE DUST: the breath, and the cloud it leaves standing.
+    // IN PROFILE, so the sun is on him and the cloud is beside him rather than behind him: he stands off the mark and breathes across it.
+    const side = mathx.perpXZ(LIT_BACK);
+    g.conclave.clearGroundForShot();
+    m.* = duomod.Magus.spawn(along(sc, side, duomod.MG_PUFF_OUT), faceCam, 1.0, 0.3);
+    m.debugPuff();
+    const toBlow: i32 = @intFromFloat((duomod.MG_PUFF_WIND + duomod.MG_PUFF_DUR * duomod.MG_PUFF_BLOW_K) / SHOT_DT);
+    k = 0;
+    while (k < toBlow) : (k += 1) _ = g.conclave.update(SHOT_DT, mark, game.PLAY_HALF, .{});
+    shootAt(g, "shots/119j_duo_dust_breath.png", v3(sc.x, sc.y + 0.90, sc.z), LIT_YAW, 0.20, 6.0);
+
+    k = 0;
+    while (k < @as(i32, @intFromFloat(duomod.DUST_BLOOM * 1.8 / SHOT_DT))) : (k += 1) _ = g.conclave.update(SHOT_DT, mark, game.PLAY_HALF, .{});
+    shootAt(g, "shots/119k_duo_dust_cloud.png", v3(sc.x, sc.y + 0.90, sc.z), LIT_YAW, 0.20, 6.0);
+
     game.clearFoesForShot(g);
 }
 

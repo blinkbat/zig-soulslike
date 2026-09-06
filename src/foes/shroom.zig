@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const gfx = @import("../gfx/gfx.zig");
 const mathx = @import("../core/mathx.zig");
+const anim = @import("../core/anim.zig");
 const combat = @import("../play/combat.zig");
 const foe = @import("foe.zig");
 const wf = @import("../world/worldfmt.zig");
@@ -41,7 +42,6 @@ const HOME_R: f32 = 2.0;
 const BODY_R: f32 = 0.40;
 const HURT_R: f32 = 0.55;
 const CENTER_F: f32 = 0.42;
-const TOP_F: f32 = 1.05;
 
 const HP_MAX: f32 = 34.0;
 const POISE_MAX: f32 = 12.0;
@@ -67,7 +67,6 @@ const FLING_APEX: f32 = 1.7;
 const FLING_LAND: f32 = 0.16;
 const FLING_CD: f32 = 4.6;
 const RECOVER_DUR: f32 = 0.95;
-const SPLAT_R: f32 = 0.85;
 
 const TRIP_CHANCE: f32 = 0.28;
 const TRIP_FALL: f32 = 0.24;
@@ -116,6 +115,11 @@ const REST = [N]rl.Vector3{
     v3(-0.24, 0.36 * H, 0.03),
 };
 
+const Hull = struct { bone: usize, center: rl.Vector3, radii: rl.Vector3 };
+const HULLS = [_]Hull{
+    .{ .bone = BODY, .center = v3(0, 0.26 * H, 0), .radii = v3(0.27, 0.24 * H, 0.25) },
+    .{ .bone = CAP, .center = v3(0.02, 0.055, 0), .radii = v3(0.46, 0.225, 0.43) },
+};
 const State = enum { idle, hop, gather, fling, trip, recover, stunlight, stunheavy, dead };
 
 const Choice = enum { rest, wait, hop, fling };
@@ -181,7 +185,13 @@ pub const Shroom = struct {
     armUp: f32 = 0,
     kick: f32 = 0,
     capLagX: f32 = 0,
-    capLagY: f32 = 0,
+    posed: [4]f32 = .{ 1, 0, 0, 0 },
+    springs: anim.SpringBank(4) = .{},
+    capSpring: anim.Spring = .{},
+    footSpring: anim.Spring = .{},
+    footPitch: f32 = 0,
+    falling: bool = false,
+    liftVel: f32 = 0,
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
     hits: u32 = 0,
@@ -209,18 +219,19 @@ pub const Shroom = struct {
         s.fxRng = foe.fxStream(seed, 60013.0, 0x5B00);
         s.aiRng = foe.fxStream(seed, 35317.0, 3);
         s.idleWait = 0.2 + seed * 0.5;
+        s.springs.seat(s.posed);
         s.pose();
         return s;
     }
 
     pub fn centerWorld(self: *const Shroom) rl.Vector3 {
-        return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, self.lift);
+        return foe.markOn(self.xf[BODY], v3(0, CENTER_F * H, 0));
     }
     pub fn lockPoint(self: *const Shroom) rl.Vector3 {
         return foe.markOn(self.xf[CAP], v3(0, 0.04, 0));
     }
     pub fn topWorld(self: *const Shroom) rl.Vector3 {
-        return foe.bodyPoint(self.pos, TOP_F * H, self.scale, self.lift);
+        return foe.markOn(self.xf[CAP], v3(0.02, 0.28, 0));
     }
     pub fn hurtRadius(self: *const Shroom) f32 {
         return HURT_R * self.scale;
@@ -281,13 +292,13 @@ pub const Shroom = struct {
 
         switch (self.state) {
             .idle => self.updateIdle(dt, hero, bounds),
-            .hop => self.updateArc(dt, hero, bounds, HOP_COIL, self.hopDur, HOP_LAND, false),
+            .hop => self.updateArc(dt, bounds, HOP_COIL, self.hopDur, HOP_LAND, false),
             .gather => {
                 self.faceToward(self.hopAim, dt);
-                const k = mathx.smoothstep(0, GATHER_DUR, self.t);
+                const k = anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.65, .v = 1, .ease = .decel }, .{ .t = 1, .v = 1, .ease = .hold } }, self.t / GATHER_DUR);
                 self.squash = lerpF(1.0, 0.62, k);
                 self.pitch = lerpF(0, -14.0, k);
-                self.armUp = lerpF(self.armUp, 0.25, k);
+                self.armUp = 0.25 * k;
                 self.kick = 0;
                 if (self.t >= GATHER_DUR * 0.7) self.emitTremble(dt);
                 if (self.t >= GATHER_DUR) {
@@ -301,11 +312,11 @@ pub const Shroom = struct {
                     }
                 }
             },
-            .fling => self.updateArc(dt, hero, bounds, 0, FLING_FLIGHT, FLING_LAND, true),
+            .fling => self.updateArc(dt, bounds, 0, FLING_FLIGHT, FLING_LAND, true),
             .trip => {
                 const fall = mathx.smoothstep(0, TRIP_FALL, self.t);
                 const rise = mathx.smoothstep(TRIP_FALL + TRIP_SPRAWL, TRIP_FALL + TRIP_SPRAWL + TRIP_RISE, self.t);
-                self.pitch = lerpF(-14.0, 78.0, fall) - 78.0 * rise;
+                self.pitch = anim.keyAt(&.{ .{ .t = 0, .v = -14 }, .{ .t = 0.72, .v = 88, .ease = .accel }, .{ .t = 1, .v = 78, .ease = .decel } }, self.t / TRIP_FALL) - 78 * rise;
                 self.squash = lerpF(0.62, 0.86, fall) + 0.14 * rise;
                 self.armUp = fall * (1.0 - rise);
                 self.kick = mathx.sinf(self.elapsed * 16.0) * fall * (1.0 - rise);
@@ -319,32 +330,54 @@ pub const Shroom = struct {
                 }
             },
             .recover => {
-                const k = mathx.smoothstep(0, RECOVER_DUR, self.t);
-                self.pitch = lerpF(34.0, 0, k) + 6.0 * mathx.sinf(self.t * 18.0) * (1.0 - k);
-                self.squash = lerpF(0.74, 1.0, k);
+                self.pitch = anim.keyAt(&.{ .{ .t = 0, .v = 34 }, .{ .t = 0.65, .v = -6, .ease = .decel }, .{ .t = 1, .v = 0 } }, self.t / RECOVER_DUR);
+                self.squash = anim.keyAt(&.{ .{ .t = 0, .v = 0.74 }, .{ .t = 0.62, .v = 1.07, .ease = .decel }, .{ .t = 1, .v = 1 } }, self.t / RECOVER_DUR);
                 self.armUp = mathx.approach(self.armUp, 0, dt * 3.0);
                 self.kick = mathx.approach(self.kick, 0, dt * 6.0);
                 if (self.t >= RECOVER_DUR) self.enterIdle(0.15);
             },
             .stunlight, .stunheavy => {
-                self.squash = mathx.approach(self.squash, 1.0, dt * 4.0);
-                self.pitch = mathx.approach(self.pitch, -22.0, dt * 160.0);
-                self.armUp = mathx.approach(self.armUp, 0.8, dt * 6.0);
+                const heavy = self.state == .stunheavy;
+                const recoil = anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.16, .v = 1, .ease = .decel }, .{ .t = 0.68, .v = -0.22, .ease = .decel }, .{ .t = 1, .v = 0 } }, self.t / combat.foeStunDur(heavy)) * (if (heavy) @as(f32, 1) else 0.62);
+                self.squash = 1 - 0.16 * recoil;
+                self.pitch = -38 * recoil;
+                self.armUp = 1.1 * recoil;
+                self.kick = 0;
                 if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enterIdle(0.1);
             },
             .dead => {
                 self.pitch = mathx.approach(self.pitch, 84.0, dt * 140.0);
                 self.squash = mathx.approach(self.squash, 0.7, dt * 2.0);
-                self.lift = mathx.approach(self.lift, 0, dt * 4.0);
                 foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE);
             },
         }
 
-        self.capLagX = mathx.approach(self.capLagX, self.pitch * 0.5, dt * 260.0);
-        self.capLagY = mathx.approach(self.capLagY, mathx.degrees(self.facing), dt * 400.0);
+        if (self.falling) {
+            const gravity = 8 * self.hopApex * self.scale / (self.hopDur * self.hopDur);
+            self.lift = @max(0, self.lift + self.liftVel * dt - 0.5 * gravity * dt * dt);
+            self.liftVel -= gravity * dt;
+            if (self.lift <= 0) {
+                self.falling = false;
+                self.liftVel = 0;
+            }
+        }
+        self.posed = .{ self.squash, self.pitch, self.armUp, self.kick };
+        self.springs.chase(&self.posed, 1900, 0.70, 0.78, dt);
+        self.capLagX = self.capSpring.step(self.posed[1] * 0.5, 210, 0.54, dt);
+        self.footPitch = self.footSpring.step(if (self.lift > 0.001 or @abs(self.posed[1]) > 48) self.posed[1] else 0, 1400, 0.8, dt);
         self.pose();
         self.tryHit(blade);
-        if (self.burstAt) |at| return .{ .burst = .{ .at = at, .hit = self.heroHit } };
+        if (self.staggered()) {
+            self.burstAt = null;
+            return .none;
+        }
+        if (self.burstAt) |at| {
+            if (self.hullTouches(v3(hero.x, hero.y + foe.HERO_LOW, hero.z), v3(hero.x, hero.y + foe.HERO_HIGH, hero.z), foe.HERO_R)) {
+                self.heroHit = FLING_HIT;
+                self.leash.noteCombat();
+            }
+            return .{ .burst = .{ .at = at, .hit = self.heroHit } };
+        }
         return .none;
     }
 
@@ -409,14 +442,17 @@ pub const Shroom = struct {
         self.enter(.gather);
     }
 
-    fn updateArc(self: *Shroom, dt: f32, hero: rl.Vector3, bounds: f32, coil: f32, flight: f32, land: f32, fling: bool) void {
+    fn updateArc(self: *Shroom, dt: f32, bounds: f32, coil: f32, flight: f32, land: f32, fling: bool) void {
         const total = coil + flight + land;
+        const travelDt = @max(0, @min(self.t, coil + flight) - @max(self.t - dt, coil));
+        if (travelDt > 0) foe.hopStep(self, travelDt, bounds, self.fdir(), flight);
         if (self.t < coil) {
             self.faceToward(self.hopAim, dt);
             const k = mathx.smoothstep(0, coil, self.t);
             self.squash = lerpF(1.0, 0.78, k);
         } else if (self.t < coil + flight) {
-            const s = foe.hopStep(self, dt, bounds, self.fdir(), coil, flight);
+            const s = (self.t - coil) / flight;
+            self.liftVel = self.hopApex * self.scale * std.math.pi * @cos(std.math.pi * s) / flight;
             self.lift = self.hopApex * mathx.sinf(std.math.pi * mathx.clampF(s, 0, 1)) * self.scale;
             self.squash = 1.0 + @as(f32, if (fling) 0.18 else 0.10) * mathx.sinf(std.math.pi * s);
             self.pitch = if (fling) lerpF(-14.0, 42.0, s) else lerpF(-6.0, 18.0, s);
@@ -425,6 +461,7 @@ pub const Shroom = struct {
             if (fling) self.emitTrail(dt);
         } else {
             self.lift = 0;
+            self.liftVel = 0;
             const k = mathx.smoothstep(0, land, self.t - coil - flight);
             self.squash = lerpF(0.55, 0.74, k);
             self.pitch = if (fling) 34.0 else lerpF(18.0, 0, k);
@@ -435,10 +472,6 @@ pub const Shroom = struct {
                     self.emitPuff(self.pos, FLING_PUFF);
                     sfx.world(.shroom_puff, self.pos);
                     self.burstAt = self.pos;
-                    if (mathx.distXZ(self.pos, hero) <= foe.hurtReach(SPLAT_R, self.scale)) {
-                        self.heroHit = FLING_HIT;
-                        self.leash.noteCombat();
-                    }
                 } else {
                     self.dustBurst(self.pos, 4, 1.2, 0.10);
                 }
@@ -465,14 +498,15 @@ pub const Shroom = struct {
         self.state = .idle;
         self.t = 0;
         self.idleWait = wait;
-        self.lift = 0;
+        if (!self.falling) self.lift = 0;
     }
     fn enterStun(self: *Shroom, s: State) void {
         self.enter(s);
-        self.lift = 0;
+        self.falling = self.lift > 0;
         self.tripping = false;
     }
     fn enterDeath(self: *Shroom) void {
+        self.falling = self.lift > 0;
         self.state = .dead;
         self.t = 0;
         self.justDied = true;
@@ -495,6 +529,7 @@ pub const Shroom = struct {
 
     pub fn tryHit(self: *Shroom, blade: foe.Blade) void {
         if (self.state == .dead) return;
+        if (blade.active and !self.hullTouches(blade.a, blade.b, blade.r) and !self.hullTouches(blade.a0, blade.b0, blade.r)) return;
         const s = foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, .{ .light = 0.9, .heavy = 1.4 });
         self.emitPuff(s.contact, foe.hitParts(if (heavy) HIT_PUFF_HEAVY else HIT_PUFF_LIGHT));
@@ -585,28 +620,62 @@ pub const Shroom = struct {
         model.draw(self);
     }
 
+    fn hullTouches(self: *const Shroom, a: rl.Vector3, b: rl.Vector3, radius: f32) bool {
+        for (HULLS) |hull| {
+            if (foe.hullTouches(self.xf[hull.bone], hull.center, hull.radii, a, b, radius)) return true;
+        }
+        return false;
+    }
+
+    fn lowest(self: *const Shroom) f32 {
+        var low: f32 = 1e9;
+        for (HULLS) |hull| {
+            const xf = self.xf[hull.bone];
+            const c = foe.markOn(xf, hull.center);
+            const r = hull.radii;
+            low = @min(low, c.y - @sqrt(r.x * r.x * xf.m1 * xf.m1 + r.y * r.y * xf.m5 * xf.m5 + r.z * r.z * xf.m9 * xf.m9));
+        }
+        for ([_]usize{ ARML, ARMR, FOOTL, FOOTR }) |bone| {
+            const xf = self.xf[bone];
+            const foot = bone == FOOTL or bone == FOOTR;
+            const side: f32 = if (bone == ARML or bone == FOOTL) 1 else -1;
+            const tip = if (foot) v3(side * 0.02, -0.01, 0.10) else v3(side * 0.12, -0.055, 0.02);
+            low = @min(low, @min(foe.markOn(xf, mathx.zero3).y, foe.markOn(xf, tip).y) - 0.05 * foe.rigScale(self.scale, self.fade));
+        }
+        return low;
+    }
     pub fn pose(self: *Shroom) void {
         const fs = foe.rigScale(self.scale, self.fade);
-        const sy = self.squash;
+        const sy = self.posed[0];
         const sxz = 1.0 / @sqrt(mathx.maxF(0.5, sy));
         const root = mul3(
-            mul(scaleM(sxz * fs, sy * fs, sxz * fs), rx(self.pitch)),
+            mul(scaleM(sxz * fs, sy * fs, sxz * fs), rx(self.posed[1])),
             ry(mathx.degrees(self.facing)),
             tr(self.pos.x, self.pos.y + self.lift, self.pos.z),
         );
         self.xf[BODY] = root;
-        const capTip = self.capLagX - self.pitch * 0.5;
+        const capTip = self.capLagX - self.posed[1] * 0.5;
         const wob = 2.4 * mathx.sinf(self.elapsed * (2.1 + 0.5 * self.seed) + self.seed * 12.0);
         self.xf[CAP] = mul(mul3(rz(wob), rx(capTip), tr(REST[CAP].x, REST[CAP].y, REST[CAP].z)), root);
-        const kickA = 34.0 * self.kick;
-        self.xf[FOOTL] = mul(mul(rx(kickA), tr(REST[FOOTL].x, REST[FOOTL].y, REST[FOOTL].z)), root);
-        self.xf[FOOTR] = mul(mul(rx(-kickA), tr(REST[FOOTR].x, REST[FOOTR].y, REST[FOOTR].z)), root);
-        const spread = lerpF(12.0, 84.0, mathx.clampF(self.armUp, 0, 1));
-        self.xf[ARML] = mul(mul(rz(-spread), tr(REST[ARML].x, REST[ARML].y, REST[ARML].z)), root);
-        self.xf[ARMR] = mul(mul(rz(spread), tr(REST[ARMR].x, REST[ARMR].y, REST[ARMR].z)), root);
+        const free: f32 = if (self.lift > 0.001) 1 else mathx.smoothstep(30, 70, @abs(self.footPitch));
+        const kickA = 34 * self.posed[3] * free;
+        const feet = mul3(mul(scaleM(fs, fs, fs), rx(self.footPitch)), ry(mathx.degrees(self.facing)), tr(self.pos.x, self.pos.y + self.lift, self.pos.z));
+        self.xf[FOOTL] = mul(mul(rx(kickA), tr(REST[FOOTL].x, REST[FOOTL].y, REST[FOOTL].z)), feet);
+        self.xf[FOOTR] = mul(mul(rx(-kickA), tr(REST[FOOTR].x, REST[FOOTR].y, REST[FOOTR].z)), feet);
+        const spread = lerpF(12.0, 84.0, mathx.clampF(self.posed[2], 0, 1));
+        self.xf[ARML] = mul(mul(rz(spread), tr(REST[ARML].x, REST[ARML].y, REST[ARML].z)), root);
+        self.xf[ARMR] = mul(mul(rz(-spread), tr(REST[ARMR].x, REST[ARMR].y, REST[ARMR].z)), root);
+        const raise = @max(0, self.pos.y + self.lift - self.lowest());
+        for (&self.xf, 0..) |*xf, i| {
+            if (i == FOOTL or i == FOOTR) {
+                xf.m13 += raise * free;
+                const side: f32 = if (i == FOOTL) 1 else -1;
+                const low = @min(foe.markOn(xf.*, mathx.zero3).y, foe.markOn(xf.*, v3(side * 0.02, -0.01, 0.10)).y) - 0.05 * fs;
+                xf.m13 += @max(0, self.pos.y + self.lift - low);
+            } else xf.m13 += raise;
+        }
     }
 };
-
 
 const CLOUD_RATE: f32 = 38.0;
 const CLOUD_RATE_FRESH: f32 = 26.0;
@@ -635,7 +704,7 @@ pub const Cloud = struct {
         return CLOUD_R * grow * (0.55 + 0.45 * fade);
     }
     pub fn covers(self: *const Cloud, p: rl.Vector3) bool {
-        return self.live and self.t < CLOUD_LIFE and mathx.distXZ(self.pos, p) <= self.radius();
+        return self.live and self.t < CLOUD_LIFE and p.y <= self.pos.y + 1.75 and p.y + foe.HERO_HIGH >= self.pos.y and mathx.distXZ(self.pos, p) <= self.radius();
     }
     pub fn update(self: *Cloud, dt: f32) void {
         foe.tickParticles(&self.parts, dt, self.pos.y);
@@ -669,7 +738,6 @@ pub const Cloud = struct {
         foe.drawParticles(&self.parts);
     }
 };
-
 
 const CAP_N = wf.MAX_PER_KIND;
 
@@ -763,7 +831,6 @@ pub const Cluster = struct {
     }
 };
 
-
 fn buildMeshes() [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
     mesh[BODY] = bodyMesh();
@@ -778,9 +845,9 @@ fn buildMeshes() [N]rl.Mesh {
 fn bodyMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addBlob(v3(0, 0.26 * H, 0), v3(0.27, 0.24 * H, 0.25), 8, 13, STALK);
-    b.addBlob(v3(0, 0.12 * H, 0.04), v3(0.24, 0.13 * H, 0.22), 7, 12, STALK);
-    b.addBlob(v3(0, 0.50 * H, 0), v3(0.22, 0.05 * H, 0.20), 5, 10, STALK_DK);
+    b.addBlob(HULLS[0].center, HULLS[0].radii, 12, 20, STALK);
+    b.addBlob(v3(0, 0.12 * H, 0.04), v3(0.23, 0.12 * H, 0.21), 9, 16, STALK);
+    b.addCapsule(v3(0, 0.29 * H, 0), v3(0.01, 0.54 * H, 0), 0.21, 0.16, 14, STALK);
     b.setMat(.plain);
     b.addBlob(v3(0.01, 0.25 * H, 0.222), v3(0.105, 0.062, 0.032), 6, 11, MOUTH);
     return b.toMesh();
@@ -790,23 +857,30 @@ fn capMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5B0C);
     b.setMat(.skin);
-    b.addBlob(v3(0, 0.05, 0.01), v3(0.46, 0.20, 0.44), 8, 14, CAP_COL);
-    b.addBlob(v3(0.03, 0.16, -0.02), v3(0.26, 0.12, 0.25), 6, 12, CAP_COL);
-    b.addBlob(v3(0, 0.0, 0.01), v3(0.42, 0.045, 0.40), 5, 12, CAP_DK);
+    b.addBlob(HULLS[1].center, HULLS[1].radii, 14, 26, CAP_COL);
+    b.addBlob(v3(0.02, -0.066, 0), v3(0.405, 0.035, 0.377), 7, 22, STALK_DK);
+    for (0..19) |i| {
+        const a = std.math.tau * @as(f32, @floatFromInt(i)) / 19 + rng.signed() * 0.07;
+        const inner = rng.range(0.18, 0.24);
+        const outer = rng.range(0.34, 0.39);
+        const start = v3(0.02 + @cos(a) * inner, 0.051 - 0.225 * @sqrt(1 - (inner / 0.46) * (inner / 0.46)), @sin(a) * inner * 0.93);
+        const end = v3(0.02 + @cos(a + 0.03) * outer, 0.051 - 0.225 * @sqrt(1 - (outer / 0.46) * (outer / 0.46)), @sin(a + 0.03) * outer * 0.93);
+        b.addCapsule(start, end, 0.007, 0.004, 6, STALK);
+    }
     var w: i32 = 0;
     while (w < 9) : (w += 1) {
         const a = rng.angle();
         const rr = rng.range(0.14, 0.40);
-        const sz = rng.range(0.035, 0.075);
+        const sz = rng.range(0.026, 0.063);
         b.addBlob(
-            v3(mathx.cosf(a) * rr, 0.065 + 0.14 * (1.0 - rr / 0.46), mathx.sinf(a) * rr * 0.92),
-            v3(sz, sz * 0.45, sz),
+            v3(0.02 + mathx.cosf(a) * rr, 0.055 + 0.225 * @sqrt(1 - (rr / 0.46) * (rr / 0.46)) - sz * 0.15, mathx.sinf(a) * rr * (0.43 / 0.46)),
+            v3(sz, sz * 0.23, sz * rng.range(0.65, 1.2)),
             4,
             8,
             WART,
         );
     }
-    b.addBlob(v3(0.33, 0.045, -0.24), v3(0.09, 0.05, 0.08), 4, 8, CAP_DK);
+    b.addBlob(v3(0.34, 0.055, -0.22), v3(0.06, 0.023, 0.055), 5, 10, CAP_DK);
     return b.toMesh();
 }
 
@@ -824,7 +898,6 @@ fn armMesh(side: f32) rl.Mesh {
     b.addBlob(v3(side * 0.12, -0.055, 0.02), v3(0.045, 0.04, 0.04), 4, 8, STALK_DK);
     return b.toMesh();
 }
-
 
 test "the fling is only chosen where it can land, and rooted it can only tremble" {
     try std.testing.expectEqual(Choice.fling, classify(FLING_MAX - 0.5, true, false));
@@ -898,7 +971,7 @@ test "THE CLOUD POISONS, IT DOES NOT BURN: linger and the meter fills, step out 
         _ = psn.tick(P, 1.0 / 60.0, 70);
         if (psn.active()) broke = true;
     }
-        std.debug.print("  sporeling cloud: {d:.0}/s over {d:.1} s of cloud -> poison {s}\n", .{ SPORE_BUILD, CLOUD_LIFE, if (broke) "BROKE" else "held" });
+    std.debug.print("  sporeling cloud: {d:.0}/s over {d:.1} s of cloud -> poison {s}\n", .{ SPORE_BUILD, CLOUD_LIFE, if (broke) "BROKE" else "held" });
     try std.testing.expect(broke);
     try std.testing.expectApproxEqAbs(@as(f32, 0), c.spores(1.0 / 60.0, outside), 1e-6);
     var k: u32 = 0;
@@ -967,4 +1040,125 @@ test "hurt in the CLOUD's own coin: chaos barely touches it, fire is the answer"
     var shots: u32 = 0;
     while (!v2.dead and shots < 9) : (shots += 1) _ = v2.hit(fire);
     try std.testing.expect(v2.dead);
+}
+
+test "sporeling lands exactly at its committed point at every scale and frame rate" {
+    for ([_]f32{ 0.5, 1, 2 }) |size| {
+        for ([_]f32{ 30, 60, 144 }) |fps| {
+            for ([_]f32{ 1, 3.2, FLING_MAX - 0.01 }) |distance| {
+                const target = v3(0, 2, distance);
+                var body = Shroom.spawn(v3(0, 2, 0), 0, size, 0.3);
+                body.debugFling(target);
+                var bursts: usize = 0;
+                for (0..@as(usize, @intFromFloat(fps * 2))) |_| {
+                    const act = body.update(1 / fps, target, 400, .{});
+                    if (act == .burst) {
+                        bursts += 1;
+                        try std.testing.expectApproxEqAbs(distance, body.pos.z, 0.0001);
+                        try std.testing.expectApproxEqAbs(@as(f32, 2), body.pos.y, 0.0001);
+                        try std.testing.expect(act.burst.hit != null);
+                    }
+                }
+                try std.testing.expectEqual(@as(usize, 1), bursts);
+            }
+        }
+    }
+}
+
+test "sporeling contact and poison respect height and an escaped landing" {
+    for ([_]f32{ 0, 4 }) |height| {
+        var body = Shroom.spawn(mathx.zero3, 0, 1, 0.3);
+        const aimed = v3(0, 0, 4);
+        body.debugFling(aimed);
+        var burst = false;
+        for (0..100) |frame| {
+            const hero = if (frame < 40) aimed else v3(if (height == 0) @as(f32, 3) else 0, height, 4);
+            const act = body.update(1.0 / 60.0, hero, 400, .{});
+            if (act == .burst) {
+                burst = true;
+                try std.testing.expectApproxEqAbs(@as(f32, 4), body.pos.z, 0.0001);
+                try std.testing.expectApproxEqAbs(@as(f32, 0), body.pos.x, 0.0001);
+                try std.testing.expect(act.burst.hit == null);
+            }
+        }
+        try std.testing.expect(burst);
+    }
+    var cloud = Cloud{ .live = true, .t = 0.8 };
+    try std.testing.expect(cloud.covers(mathx.zero3));
+    try std.testing.expect(!cloud.covers(v3(0, 4, 0)));
+    try std.testing.expect(!cloud.covers(v3(0, -4, 0)));
+}
+
+test "sporeling midair interruption preserves height and falls without a landing attack" {
+    for ([_]f32{ 30, 60, 144 }) |fps| {
+        var body = Shroom.spawn(mathx.zero3, 0, 1, 0.3);
+        const target = v3(0, 0, 4);
+        body.debugFling(target);
+        while (body.state != .fling or body.t < 0.20) _ = body.update(1 / fps, target, 400, .{});
+        const lift = body.lift;
+        const center = body.centerWorld();
+        body.stagger(true);
+        body.pose();
+        try std.testing.expectApproxEqAbs(lift, body.lift, 0.0001);
+        try std.testing.expect(mathx.lenV(mathx.subV(center, body.centerWorld())) < 0.0001);
+        _ = body.update(1 / fps, target, 400, .{});
+        try std.testing.expect(body.lift > lift - 0.25);
+        var fallen = false;
+        for (0..@as(usize, @intFromFloat(fps))) |_| {
+            try std.testing.expect(body.update(1 / fps, target, 400, .{}) == .none);
+            if (body.lift <= 0) {
+                fallen = true;
+                break;
+            }
+        }
+        try std.testing.expect(fallen);
+    }
+}
+
+test "sporeling recoil rebounds and its posed body clears the floor through trip and death" {
+    for ([_]f32{ 0.5, 1, 2 }) |size| {
+        for (0..3) |mode| {
+            var body = Shroom.spawn(mathx.zero3, 0, size, 0.3);
+            switch (mode) {
+                0 => body.debugTrip(v3(0, 0, 3)),
+                1 => body.stagger(true),
+                else => body.debugKill(),
+            }
+            var back: f32 = 0;
+            var rebound: f32 = 0;
+            for (0..180) |_| {
+                _ = body.update(1.0 / 60.0, v3(0, 0, 90), 400, .{});
+                if (body.fade > 0.01) break;
+                const low = body.lowest() - body.pos.y - body.lift;
+                if (low < -0.011) std.debug.print("\n sporeling floor: mode {d}, x{d:.1}, {s} {d:.3}s, low {d:.4}\n", .{ mode, size, @tagName(body.state), body.t, low });
+                try std.testing.expect(low >= -0.011);
+                if (mode == 1) {
+                    back = @min(back, body.posed[1]);
+                    rebound = @max(rebound, body.posed[1]);
+                }
+            }
+            if (mode == 1) {
+                try std.testing.expect(back < -25);
+                try std.testing.expect(rebound > 3);
+            }
+        }
+    }
+}
+
+test "sporeling interrupted landing cancels both blow and fresh cloud" {
+    var body = Shroom.spawn(mathx.zero3, 0, 1, 0.3);
+    const target = v3(0, 0, 3);
+    body.debugFling(target);
+    for (0..120) |_| {
+        var probe = body;
+        if (probe.update(1.0 / 60.0, target, 400, .{}) == .burst) {
+            const at = probe.centerWorld();
+            const act = body.update(1.0 / 60.0, target, 400, foe.shaftThrough(at, .{ .dmg = 1, .stance = 100 }));
+            try std.testing.expect(body.staggered());
+            try std.testing.expect(act == .none);
+            return;
+        }
+        body = probe;
+    }
+    return error.TestUnexpectedResult;
 }

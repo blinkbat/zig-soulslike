@@ -719,21 +719,25 @@ pub fn setFx(m: Submix, i: usize, v: f32) void {
     const want = mathx.clampF(v, 0, 1);
     const slot = &fxVals[@intFromEnum(m)][i];
     if (slot.* == want) return;
+    awaitBake();
     slot.* = want;
     markFxDirty(m);
 }
 
 pub fn allFxOff(m: Submix) void {
+    awaitBake();
     fxVals[@intFromEnum(m)] = [_]f32{0} ** AFX_COUNT;
     markFxDirty(m);
 }
 
 pub fn resetFx(m: Submix) void {
+    awaitBake();
     fxVals[@intFromEnum(m)] = AFX_DEFAULTS;
     markFxDirty(m);
 }
 
 pub fn applyFxPreset(m: Submix, preset: []const FxPreset) void {
+    awaitBake();
     fxVals[@intFromEnum(m)] = [_]f32{0} ** AFX_COUNT;
     for (preset) |p| {
         if (p.idx < AFX_COUNT) fxVals[@intFromEnum(m)][p.idx] = mathx.clampF(p.val, 0, 1);
@@ -779,6 +783,14 @@ pub fn tickFx(dt: f32) void {
     if (fxSettle <= 0) return;
     fxSettle -= dt;
     if (fxSettle > 0) return;
+    // A REBAKE MAY NOT JOIN THE BOOT WORKER. `awaitBake` blocks until the WHOLE bank is rendered, so one
+    // filtered `voice.*` row in settings.cfg puts the entire 2.7 s bake back into a single frame, 0.22 s in —
+    // exactly what moving it off-thread bought. The dirty flags stand and the row is rebaked on the first
+    // tick after the worker is done.
+    if (worker != null) {
+        fxSettle = FX_SETTLE;
+        return;
+    }
     fxSettle = 0;
     for (&fxDirty, 0..) |*d, mi| {
         if (!d.*) continue;
@@ -789,6 +801,7 @@ pub fn tickFx(dt: f32) void {
     for (&voiceDirty, 0..) |*d, idx| {
         if (!d.*) continue;
         d.* = false;
+        awaitBake();
         dropRow(idx);
         bakeTake(BANK[idx].id, idx);
     }
@@ -3083,9 +3096,16 @@ fn rearDuck(front: f32) f32 {
 }
 
 fn bakeTake(id: Id, idx: usize) void {
-    const row = BANK[idx];
     const v = slots[idx].varsReady;
-    if (v >= row.vars) return;
+    if (v >= BANK[idx].vars) return;
+    const n = renderTake(id, idx, v);
+    for (work[0..n], 0..) |s, i| pcm[i] = pcm16(s);
+    uploadTake(idx, v, pcm[0..n]);
+}
+
+/// Synthesis only, into `work`. No raylib in here: this is what the worker runs.
+fn renderTake(id: Id, idx: usize, v: u8) usize {
+    const row = BANK[idx];
     var r = Rack.init(0x9E3779B9 *% (idx + 1) +% v, seconds(id));
     row.make(&r);
     if (row.mix == .combat) r.warm(COMBAT_TREBLE);
@@ -3096,7 +3116,20 @@ fn bakeTake(id: Id, idx: usize) void {
             break;
         }
     }
-    slots[idx].snd[v][0] = bake(&r);
+    return r.n;
+}
+
+/// MAIN THREAD ONLY: raylib's audio buffer list is touched from one thread, and `varsReady` publishes the take to the play paths.
+fn uploadTake(idx: usize, v: u8, data: []const i16) void {
+    const row = BANK[idx];
+    const wave = rl.Wave{
+        .frameCount = @intCast(data.len),
+        .sampleRate = @intCast(SR),
+        .sampleSize = 16,
+        .channels = 1,
+        .data = @ptrCast(@constCast(data.ptr)),
+    };
+    slots[idx].snd[v][0] = rl.loadSoundFromWave(wave);
     slots[idx].owned[v] = slots[idx].snd[v][0];
     var p: u8 = 1;
     while (p < row.poly) : (p += 1) slots[idx].snd[v][p] = rl.loadSoundAlias(slots[idx].owned[v]);
@@ -3104,11 +3137,68 @@ fn bakeTake(id: Id, idx: usize) void {
     slots[idx].next = 0;
 }
 
+/// A rendered take waiting for the main thread to upload it. One producer, one consumer, never wraps: the worker renders every take once, and the table holds them all.
+const Take = struct { idx: u16, v: u8, data: []i16 };
+var queue: [NV * MAX_VARS]Take = undefined;
+var produced = std.atomic.Value(usize).init(0);
+var consumed: usize = 0;
+var worker: ?std.Thread = null;
+var workerDone = std.atomic.Value(bool).init(false);
+
+/// The whole bank, first one take of every voice so everything is audible early, then the rest. `work`, `tape` and `pcm` are the worker's alone until `awaitBake` joins it.
+fn bakeAll() void {
+    var v: [NV]u8 = [_]u8{0} ** NV;
+    var more = true;
+    while (more) {
+        more = false;
+        for (0..NV) |idx| {
+            if (v[idx] >= BANK[idx].vars) continue;
+            const n = renderTake(BANK[idx].id, idx, v[idx]);
+            const data = std.heap.c_allocator.alloc(i16, n) catch @panic("audio: out of memory rendering the bank");
+            for (work[0..n], 0..) |s, i| data[i] = pcm16(s);
+            const at = produced.load(.monotonic);
+            queue[at] = .{ .idx = @intCast(idx), .v = v[idx], .data = data };
+            produced.store(at + 1, .release);
+            v[idx] += 1;
+            more = true;
+        }
+    }
+    workerDone.store(true, .release);
+}
+
+/// Uploads finished takes until the budget is spent. Returns true while anything is still owed.
+fn drainUploads(budgetNs: u64) bool {
+    var t = std.time.Timer.start() catch return true;
+    while (consumed < produced.load(.acquire)) {
+        const take = queue[consumed];
+        consumed += 1;
+        uploadTake(take.idx, take.v, take.data);
+        std.heap.c_allocator.free(take.data);
+        if (t.read() >= budgetNs) break;
+    }
+    return consumed < produced.load(.acquire) or !workerDone.load(.acquire);
+}
+
+/// Every main-thread path that synthesises a row, frees one, or WRITES WHAT THE WORKER SYNTHESISES FROM (`fxVals`, `voiceFx`) goes through here first, or it shares the DSP buffers with the worker, frees a row it is about to fill, or races the table it is reading.
+fn awaitBake() void {
+    const th = worker orelse return;
+    th.join();
+    worker = null;
+    _ = drainUploads(std.math.maxInt(u64));
+    pumpDone = true;
+}
+
 /// Seconds of AUDIO, the cheap proxy for cost. A TAKE IS INDIVISIBLE, so the budget bounds only what we START: one 8 s bed take is a ~300 ms hole in the frame that picks it up, hence `longOk`.
 const LONG_TAKE: f32 = 1.4;
 
 pub fn pump(budgetNs: u64, longOk: bool) bool {
-    if (!ready or pumpDone) return false;
+    if (!ready) return false;
+    if (worker != null) {
+        if (drainUploads(budgetNs)) return true;
+        awaitBake();
+        return false;
+    }
+    if (pumpDone) return false;
     var t = std.time.Timer.start() catch return false;
     var left: usize = NV;
     var deferred = false;
@@ -3159,6 +3249,7 @@ fn dropRow(idx: usize) void {
 
 fn rebakeMix(m: Submix) void {
     if (!ready) return;
+    awaitBake();
     inline for (@typeInfo(Id).@"enum".fields, 0..) |f, idx| {
         if (BANK[idx].mix == m) {
             dropRow(idx);
@@ -3190,10 +3281,18 @@ pub fn init() void {
     rl.initAudioDevice();
     if (!rl.isAudioDeviceReady()) return;
     rl.setMasterVolume(MASTER_VOL);
-    inline for (@typeInfo(Id).@"enum".fields, 0..) |f, idx| bakeTake(@enumFromInt(f.value), idx);
     loadStream(&restFire, dressedFire());
     loadStream(&introMusic, dressedIntro());
     ready = true;
+    workerDone.store(false, .monotonic);
+    produced.store(0, .monotonic);
+    consumed = 0;
+    worker = std.Thread.spawn(.{}, bakeAll, .{}) catch null;
+    if (worker == null) {
+        bakeAll();
+        _ = drainUploads(std.math.maxInt(u64));
+        pumpDone = true;
+    }
 }
 
 const CAMPFIRE_WAV = @embedFile("campfire_wav");
@@ -3409,22 +3508,9 @@ fn pcm16(s: f32) i16 {
     return @intFromFloat(mathx.clampF(s, -1, 1) * 32000.0);
 }
 
-fn bake(r: *Rack) rl.Sound {
-    for (work[0..r.n], 0..) |s, i| {
-        pcm[i] = pcm16(s);
-    }
-    const wave = rl.Wave{
-        .frameCount = @intCast(r.n),
-        .sampleRate = @intCast(SR),
-        .sampleSize = 16,
-        .channels = 1,
-        .data = @ptrCast(&pcm),
-    };
-    return rl.loadSoundFromWave(wave);
-}
-
 pub fn deinit() void {
     if (!ready) return;
+    awaitBake();
     if (restFire) |m| rl.stopMusicStream(m);
     if (introMusic) |m| rl.stopMusicStream(m);
     for (0..NV) |idx| stopRow(idx);
@@ -3513,6 +3599,7 @@ pub fn setVoiceFx(id: Id, i: usize, v: f32) void {
     const idx: usize = @intFromEnum(id);
     const k = mathx.clampF(v, 0, 1);
     if (voiceFx[idx][i] == k) return;
+    awaitBake();
     voiceFx[idx][i] = k;
     voiceDirty[idx] = true;
     fxSettle = FX_SETTLE;
@@ -3554,6 +3641,7 @@ pub fn revertVoice(id: Id) void {
         break :blk false;
     };
     live[idx] = BANK[idx];
+    if (hadFx) awaitBake();
     voiceFx[idx] = [_]f32{0} ** AFX_COUNT;
     if (hadFx) {
         voiceDirty[idx] = true;

@@ -719,6 +719,15 @@ pub fn moveClock(row: anytype) Clock {
     return .{ .wind = row.windDur, .strike = row.strikeDur, .recover = row.recoverDur };
 }
 
+pub fn hullTouches(xf: rl.Matrix, center: rl.Vector3, radii: rl.Vector3, a: rl.Vector3, b: rl.Vector3, radius: f32) bool {
+    const inverse = rl.math.matrixInvert(xf);
+    const axis = v3(@sqrt(xf.m0 * xf.m0 + xf.m1 * xf.m1 + xf.m2 * xf.m2), @sqrt(xf.m4 * xf.m4 + xf.m5 * xf.m5 + xf.m6 * xf.m6), @sqrt(xf.m8 * xf.m8 + xf.m9 * xf.m9 + xf.m10 * xf.m10));
+    const r = mathx.addV(radii, v3(radius / axis.x, radius / axis.y, radius / axis.z));
+    const la = mathx.subV(markOn(inverse, a), center);
+    const lb = mathx.subV(markOn(inverse, b), center);
+    const p = mathx.closestOnSegV(mathx.zero3, v3(la.x / r.x, la.y / r.y, la.z / r.z), v3(lb.x / r.x, lb.y / r.y, lb.z / r.z));
+    return mathx.dotV(p, p) <= 1;
+}
 pub fn reached(self: anytype, blade: Blade) ?Strike {
     return reachedPart(self, &self.vit, blade, .{ .center = self.centerWorld(), .r = self.hurtRadius() });
 }
@@ -901,7 +910,8 @@ test "A CREATURE THAT NEVER SEES WATER IS DRY BY CONSTRUCTION, and a wading one 
     try std.testing.expect(!onDryGround(&w));
 }
 
-pub fn hopStep(self: anytype, dt: f32, bounds: f32, dir: rl.Vector3, coil: f32, flight: f32) f32 {
+/// `dt` is the slice of THIS frame that fell inside the flight window, so the arc lands on `hopTo` exactly at every frame rate.
+pub fn hopStep(self: anytype, dt: f32, bounds: f32, dir: rl.Vector3, flight: f32) void {
     if (!self.launched) {
         self.launched = true;
         self.hopFrom = self.pos;
@@ -910,7 +920,6 @@ pub fn hopStep(self: anytype, dt: f32, bounds: f32, dir: rl.Vector3, coil: f32, 
     const inv = 1.0 / flight;
     self.pos.x += (self.hopTo.x - self.hopFrom.x) * inv * dt;
     self.pos.z += (self.hopTo.z - self.hopFrom.z) * inv * dt;
-    return (self.t - coil) / flight;
 }
 
 pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32, dt: f32) void {
@@ -2074,6 +2083,17 @@ pub fn aliveCount(foes: anytype) u32 {
     return n;
 }
 
+pub fn sweptWeaponReaches(was: [2]rl.Vector3, now: [2]rl.Vector3, hero: rl.Vector3, r: f32) bool {
+    const lo = v3(hero.x, hero.y + HERO_LOW, hero.z);
+    const hi = v3(hero.x, hero.y + HERO_HIGH, hero.z);
+    const travel = @max(mathx.lenV(mathx.subV(now[0], was[0])), mathx.lenV(mathx.subV(now[1], was[1])));
+    const steps: usize = @intFromFloat(@max(1, @ceil(travel / (HERO_R * 0.25))));
+    for (0..steps + 1) |i| {
+        const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(steps));
+        if (mathx.segmentGapV(mathx.lerpV(was[0], now[0], t), mathx.lerpV(was[1], now[1], t), lo, hi) <= r) return true;
+    }
+    return false;
+}
 pub fn weaponReaches(was: [2]rl.Vector3, now: [2]rl.Vector3, hero: rl.Vector3, r: f32) bool {
     const lo = v3(hero.x, hero.y + HERO_LOW, hero.z);
     const hi = v3(hero.x, hero.y + HERO_HIGH, hero.z);

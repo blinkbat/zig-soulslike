@@ -7,6 +7,7 @@ const foe = @import("foe.zig");
 const wf = @import("../world/worldfmt.zig");
 const sfx = @import("../core/audio.zig");
 const heromod = @import("../play/hero.zig");
+const anim = @import("../core/anim.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -194,7 +195,8 @@ pub const SAC_SOULS: u32 = 8;
 
 const SAC_HP = 18.0;
 const SAC_R = 0.44;
-const SAC_HURT_R = 0.62;
+const SAC_CENTER = v3(0, SAC_R * 0.94, 0);
+const SAC_RADII = v3(SAC_R, SAC_R * 0.92, SAC_R * 0.94);
 pub const SAC_HATCH = 11.5;
 const SAC_BURST_DUR = 0.55;
 const SAC_PULSE_HZ = 1.6;
@@ -414,29 +416,51 @@ fn furOver(b: *Builder, rng: *mathx.Rng, c: rl.Vector3, r: rl.Vector3, n: u32, l
     }
 }
 
+const M_HEAD_CENTER = v3(0, BODY_Y + 0.10, 0.46);
+const M_HEAD_RADII = v3(0.44, 0.42, 0.42);
+
+/// A pure function of `MOTHER_SKIN.seed`, so it is solved ONCE: `pose` walked it per frame per mother, rebuilding a PRNG and 12 draws to get the same table back.
+const MOTHER_FANGS: [2][6]rl.Vector3 = motherFangs();
+
+fn motherFangs() [2][6]rl.Vector3 {
+    var rng = mathx.Rng.init(MOTHER_SKIN.seed);
+    var points: [2][6]rl.Vector3 = undefined;
+    for ([_]f32{ -1, 1 }, 0..) |side, hand| {
+        points[hand][0] = v3(side * 0.20, BODY_Y - 0.16, 0.62);
+        for (1..5) |i| {
+            points[hand][i] = mathx.addV(points[hand][i - 1], v3(side * rng.range(0.005, 0.014), -rng.range(0.015, 0.025), rng.range(0.024, 0.038)));
+        }
+        points[hand][5] = mathx.addV(points[hand][4], v3(side * 0.020, 0.015, 0.040));
+    }
+    return points;
+}
+
+fn shellBottom(xf: rl.Matrix, center: rl.Vector3, radii: rl.Vector3) f32 {
+    const at = foe.markOn(xf, center);
+    const x = radii.x * xf.m1;
+    const y = radii.y * xf.m5;
+    const z = radii.z * xf.m9;
+    return at.y - @sqrt(x * x + y * y + z * z);
+}
 fn cephaloMesh(sk: Skin) rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
     var rng = mathx.Rng.init(sk.seed);
     if (sk.matron) {
         const hz = 0.46;
-        b.addBlob(v3(0, BODY_Y + 0.10, hz), v3(0.44, 0.42, 0.42), 11, 15, sk.chitin);
+        b.addBlob(M_HEAD_CENTER, M_HEAD_RADII, 11, 18, sk.chitin);
         b.addBlob(v3(0, BODY_Y - 0.02, hz - 0.30), v3(0.34, 0.28, 0.28), 8, 11, sk.dark);
         b.addBlob(v3(0, BODY_Y - 0.06, 0.02), v3(0.34, 0.24, 0.34), 8, 11, sk.dark);
-        for ([_]f32{ -1, 1 }) |sgn| {
-            var p = v3(sgn * 0.20, BODY_Y - 0.16, hz + 0.16);
-            var seg: u32 = 0;
-            while (seg < 4) : (seg += 1) {
-                const nx = v3(p.x + sgn * rng.range(0.01, 0.06), p.y - rng.range(0.10, 0.15), p.z + rng.range(-0.04, 0.03));
-                const rr = 0.075 - @as(f32, @floatFromInt(seg)) * 0.012;
-                b.addCapsule(p, nx, rr, rr * 0.86, 8, if (seg % 2 == 0) sk.chitin else sk.light);
-                p = nx;
+        for (MOTHER_FANGS) |points| {
+            for (0..4) |i| {
+                const radius = 0.075 - @as(f32, @floatFromInt(i)) * 0.012;
+                b.addCapsule(points[i], points[i + 1], radius, radius * 0.86, 10, sk.chitin);
             }
-            b.addCapsule(p, v3(p.x + sgn * 0.05, p.y - 0.12, p.z + 0.05), 0.036, 0.008, 6, FANG);
+            b.addCapsule(points[4], points[5], 0.030, 0.009, 8, FANG);
         }
         if (sk.fur) {
-            furOver(&b, &rng, v3(0, BODY_Y + 0.10, hz), v3(0.44, 0.42, 0.42), 22, 0.13, sk.dark);
-            furOver(&b, &rng, v3(0, BODY_Y - 0.06, 0.02), v3(0.34, 0.24, 0.34), 14, 0.12, sk.dark);
+            furOver(&b, &rng, v3(0, BODY_Y + 0.10, hz), v3(0.44, 0.42, 0.42), 22, 0.026, sk.dark);
+            furOver(&b, &rng, v3(0, BODY_Y - 0.06, 0.02), v3(0.34, 0.24, 0.34), 14, 0.024, sk.dark);
         }
         return b.toMesh();
     }
@@ -460,7 +484,7 @@ fn cephaloMesh(sk: Skin) rl.Mesh {
     for ([_]f32{ -1, 1 }) |sgn| {
         b.addCapsule(v3(sgn * 0.10, BODY_Y - 0.18, 0.50), v3(sgn * 0.13, BODY_Y - 0.36, 0.40), 0.048, 0.012, 7, FANG);
     }
-    if (sk.fur) furOver(&b, &rng, v3(0, BODY_Y + 0.02, 0.02), v3(0.44, 0.26, 0.50), 12, 0.09, sk.dark);
+    if (sk.fur) furOver(&b, &rng, v3(0, BODY_Y + 0.02, 0.02), v3(0.44, 0.26, 0.50), 12, 0.022, sk.dark);
     return b.toMesh();
 }
 
@@ -478,7 +502,10 @@ fn eyeMesh(sk: Skin, col: rl.Color) rl.Mesh {
             const y = mathx.sinf(a) * rr * 0.36;
             const z = @sqrt(mathx.maxF(0.02, 1.0 - rr * rr)) * 0.41;
             const s = rng.range(0.026, 0.062);
-            b.addBlob(v3(x, BODY_Y + 0.12 + y, 0.46 + z), v3(s, s, s * 0.8), 5, 8, col);
+            b.setMat(.hide);
+            b.addBlob(v3(x, BODY_Y + 0.12 + y, 0.45 + z), v3(s * 1.18, s * 1.15, s * 0.65), 6, 10, sk.dark);
+            b.setMat(.plain);
+            b.addBlob(v3(x, BODY_Y + 0.12 + y, 0.46 + z), v3(s * 0.90, s * 0.94, s * 0.74), 6, 10, col);
         }
         return b.toMesh();
     }
@@ -503,7 +530,7 @@ fn abdomenMesh(sk: Skin) rl.Mesh {
     b.addBlob(v3(0, dy, -r * 0.72), ax, 12, 16, sk.abdo);
     if (sk.fur) {
         var frng = mathx.Rng.init(sk.seed +% 5501);
-        furOver(&b, &frng, v3(0, dy, -r * 0.72), ax, if (sk.matron) 46 else 16, r * 0.20, sk.dark);
+        furOver(&b, &frng, v3(0, dy, -r * 0.72), ax, if (sk.matron) 46 else 16, r * 0.04, sk.dark);
     }
     b.addBlob(v3(0, dy * 0.5, -r * 0.18), v3(r * 0.42, r * 0.44, r * 0.40), 7, 10, sk.dark);
     if (sk.marks) {
@@ -546,85 +573,85 @@ fn armMesh(sk: Skin, sgn: f32) rl.Mesh {
     return b.toMesh();
 }
 
-fn bladeSeg(b: *Builder, p0: rl.Vector3, p1: rl.Vector3, h: f32, t: f32, col: rl.Color) void {
-    const d = mathx.subV(p1, p0);
-    const len = mathx.lenV(d);
-    if (len < 1e-4) return;
-    const dir = mathx.scaleV(d, 1.0 / len);
-    var side = v3(-dir.z, 0, dir.x);
-    const sl = mathx.lenV(side);
-    side = if (sl < 1e-4) v3(1, 0, 0) else mathx.scaleV(side, 1.0 / sl);
-    b.addBox(
-        mathx.lerpV(p0, p1, 0.5),
-        mathx.scaleV(side, t * 0.5),
-        v3(0, h * 0.5, 0),
-        mathx.scaleV(dir, len * 0.5),
-        col,
-    );
+fn clawProfile(sk: Skin, side: f32) [5]rl.Vector3 {
+    const len = sk.clawLen;
+    return .{
+        v3(0, 0, 0), v3(-side * 0.02 * len, 0.02 * len, 0.26 * len),
+        v3(-side * 0.10 * len, 0.03 * len, 0.50 * len),
+        v3(-side * 0.24 * len, 0, 0.68 * len), v3(-side * 0.40 * len, -0.05 * len, 0.78 * len),
+    };
 }
 
-fn bladeMesh(sk: Skin, sgn: f32) rl.Mesh {
+fn bladeMesh(sk: Skin, side: f32) rl.Mesh {
+
     var b = Builder.init();
     b.setMat(.hide);
-    const L = sk.clawLen;
-    const p = [_]rl.Vector3{
-        v3(0, 0, 0),
-        v3(sgn * -0.02 * L, 0.02 * L, 0.26 * L),
-        v3(sgn * -0.10 * L, 0.03 * L, 0.50 * L),
-        v3(sgn * -0.24 * L, 0.00 * L, 0.68 * L),
-        v3(sgn * -0.40 * L, -0.05 * L, 0.78 * L),
-    };
-    const depth = [_]f32{ 0.17, 0.16, 0.12, 0.07 };
-    for (0..4) |i| {
-        bladeSeg(&b, p[i], p[i + 1], depth[i] * L, 0.055 * L, CLAW_H);
+    const points = clawProfile(sk, side);
+    const depths = [_]f32{ 0.085, 0.080, 0.060, 0.035, 0.010 };
+    var rings: [5][8]rl.Vector3 = undefined;
+    for (points, 0..) |p, i| {
+        const d = mathx.normV(mathx.subV(points[@min(i + 1, 4)], points[if (i == 0) 0 else i - 1]));
+        const across = mathx.normV(v3(-d.z, 0, d.x));
+        for (0..8) |j| {
+            const angle = std.math.tau * @as(f32, @floatFromInt(j)) / 8;
+            rings[i][j] = mathx.addV(p, mathx.addV(mathx.scaleV(across, 0.0275 * sk.clawLen * mathx.cosf(angle)), v3(0, depths[i] * sk.clawLen * mathx.sinf(angle), 0)));
+        }
     }
-    b.addBlob(v3(0, 0, 0), v3(0.09 * L, 0.085 * L, 0.09 * L), 6, 9, sk.light);
-    b.setMat(.steel);
     for (0..4) |i| {
-        const e0 = v3(p[i].x, p[i].y - depth[i] * 0.42 * L, p[i].z);
-        const e1 = v3(p[i + 1].x, p[i + 1].y - depth[i] * 0.42 * L, p[i + 1].z);
-        b.addCapsule(e0, e1, 0.022 * L, 0.016 * L, 5, CLAW_EDGE);
+        for (0..8) |j| {
+            const next = (j + 1) % 8;
+            const a = rings[i][j];
+            const bb = rings[i + 1][j];
+            const c = rings[i + 1][next];
+            const normal = mathx.normV(mathx.crossV(mathx.subV(bb, a), mathx.subV(c, a)));
+            b.quad(a, bb, c, rings[i][next], normal, if (j >= 4) CLAW_EDGE else CLAW_H);
+        }
     }
-    b.setMat(.hide);
+    b.addBlob(points[0], mathx.scaleV(v3(0.09, 0.085, 0.09), sk.clawLen), 6, 10, sk.light);
+    b.addBlob(points[4], v3(0.023, 0.011, 0.012), 4, 8, CLAW_EDGE);
     var rng = mathx.Rng.init(sk.seed +% 4441);
-    var i: u32 = 0;
-    while (i < 6) : (i += 1) {
-        const u = 0.16 + @as(f32, @floatFromInt(i)) * 0.13 + rng.range(-0.02, 0.02);
-        const at = mathx.lerpV(p[0], p[4], u);
-        const len = rng.range(0.04, 0.075) * L * (if (rng.float() < 0.18) @as(f32, 0.4) else @as(f32, 1.0));
-        b.addCapsule(
-            v3(at.x, at.y - 0.055 * L, at.z),
-            v3(at.x + sgn * -0.2 * len, at.y - (0.055 * L + len), at.z + 0.35 * len),
-            0.018 * L,
-            0.005,
-            5,
-            CLAW_EDGE,
-        );
+    for (0..6) |i| {
+        const u = 0.16 + @as(f32, @floatFromInt(i)) * 0.13 + rng.range(-0.015, 0.015);
+        const segment: usize = @min(3, @as(usize, @intFromFloat(u * 4)));
+        const f = u * 4 - @as(f32, @floatFromInt(segment));
+        var at = mathx.lerpV(points[segment], points[segment + 1], f);
+        at.y -= mathx.lerpF(depths[segment], depths[segment + 1], f) * sk.clawLen;
+        const len = rng.range(0.030, 0.055) * sk.clawLen;
+        b.addCapsule(at, mathx.addV(at, v3(-side * 0.2 * len, -len, 0.35 * len)), 0.010 * sk.clawLen, 0.004, 5, CLAW_EDGE);
     }
     return b.toMesh();
 }
+const LegShape = struct { knee: rl.Vector3, mid: rl.Vector3, foot: rl.Vector3 };
 
+fn legShape(sk: Skin, side: f32, i: usize) LegShape {
+    var upper = mathx.Rng.init(sk.seed +% @as(u64, @intCast(i)) *% 131 +% (if (side > 0) @as(u64, 7) else 19));
+    var lower = mathx.Rng.init(sk.seed +% @as(u64, @intCast(i)) *% 271 +% (if (side > 0) @as(u64, 23) else 41));
+    const out = TIBIA_OUT * sk.legScale * lower.range(0.90, 1.10);
+    const down = TIBIA_DOWN * sk.legScale * lower.range(0.94, 1.06);
+    return .{
+        .knee = v3(side * FEMUR_OUT * sk.legScale * upper.range(0.93, 1.08), FEMUR_UP * sk.legScale * upper.range(0.90, 1.12), upper.range(-0.05, 0.05)),
+        .mid = v3(side * out * 0.5, -down * 0.45, lower.range(-0.04, 0.04)),
+        .foot = v3(side * out, -down, lower.range(-0.05, 0.05)),
+    };
+}
 fn femurMesh(sk: Skin, sgn: f32, i: usize) rl.Mesh {
-    var rng = mathx.Rng.init(sk.seed +% @as(u64, @intCast(i)) *% 131 +% (if (sgn > 0) @as(u64, 7) else 19));
+    const shape = legShape(sk, sgn, i);
     var b = Builder.init();
     b.setMat(.hide);
-    const out = FEMUR_OUT * sk.legScale * rng.range(0.93, 1.08);
-    const up = FEMUR_UP * sk.legScale * rng.range(0.90, 1.12);
-    b.addCapsule(v3(0, 0, 0), v3(sgn * out, up, rng.range(-0.05, 0.05)), sk.legR * 1.15, sk.legR * 0.82, 8, sk.chitin);
+    b.addCapsule(v3(0, 0, 0), shape.knee, sk.legR * 1.15, sk.legR * 0.82, 8, sk.chitin);
     b.addBlob(v3(0, 0, 0), v3(sk.legR * 1.5, sk.legR * 1.4, sk.legR * 1.5), 5, 8, sk.dark);
-    b.addBlob(v3(sgn * out, up, 0), v3(sk.legR * 1.3, sk.legR * 1.3, sk.legR * 1.3), 5, 8, sk.light);
+    b.addBlob(shape.knee, v3(sk.legR * 1.3, sk.legR * 1.3, sk.legR * 1.3), 5, 8, sk.light);
     return b.toMesh();
 }
 
 fn tibiaMesh(sk: Skin, sgn: f32, i: usize) rl.Mesh {
     var rng = mathx.Rng.init(sk.seed +% @as(u64, @intCast(i)) *% 271 +% (if (sgn > 0) @as(u64, 23) else 41));
+    const shape = legShape(sk, sgn, i);
     var b = Builder.init();
     b.setMat(.hide);
-    const out = TIBIA_OUT * sk.legScale * rng.range(0.90, 1.10);
-    const down = TIBIA_DOWN * sk.legScale * rng.range(0.94, 1.06);
     const knee = v3(0, 0, 0);
-    const mid = v3(sgn * out * 0.5, -down * 0.45, rng.range(-0.04, 0.04));
-    const foot = v3(sgn * out, -down, rng.range(-0.05, 0.05));
+    const mid = shape.mid;
+    const foot = shape.foot;
     b.addCapsule(knee, mid, sk.legR * 0.82, sk.legR * 0.60, 8, sk.chitin);
     b.addCapsule(mid, foot, sk.legR * 0.60, 0.008, 8, sk.dark);
     var k: u32 = 0;
@@ -636,6 +663,13 @@ fn tibiaMesh(sk: Skin, sgn: f32, i: usize) rl.Mesh {
     return b.toMesh();
 }
 
+fn sacSurface(a: f32, polar: f32, inset: f32) rl.Vector3 {
+    return mathx.addV(SAC_CENTER, v3(
+        SAC_RADII.x * mathx.cosf(a) * mathx.sinf(polar) * inset,
+        SAC_RADII.y * mathx.cosf(polar) * inset,
+        SAC_RADII.z * mathx.sinf(a) * mathx.sinf(polar) * inset,
+    ));
+}
 fn sacMesh(wrecked: bool) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
@@ -650,19 +684,42 @@ fn sacMesh(wrecked: bool) rl.Mesh {
         }
         return b.toMesh();
     }
-    b.addBlob(v3(0, SAC_R * 0.86, 0), v3(SAC_R, SAC_R * 0.92, SAC_R * 0.94), 10, 14, SAC_MEM);
-    var i: u32 = 0;
-    while (i < 9) : (i += 1) {
+    b.addBlob(SAC_CENTER, SAC_RADII, 16, 24, SAC_MEM);
+    for (0..9) |_| {
         const a = rng.angle();
-        const rr = rng.range(0.45, 0.80) * SAC_R;
-        const y = SAC_R * rng.range(0.42, 1.28);
-        b.addBlob(v3(mathx.cosf(a) * rr, y, mathx.sinf(a) * rr), v3(rng.range(0.09, 0.15), rng.range(0.09, 0.14), rng.range(0.09, 0.15)), 6, 9, SAC_EGG);
+        const polar = rng.range(0.45, 2.35);
+        const r = rng.range(0.09, 0.13);
+        const p = sacSurface(a, polar, 0.80);
+        b.addBlob(p, v3(r, r * rng.range(0.86, 1.1), r), 8, 12, SAC_EGG);
     }
-    var k: u32 = 0;
-    while (k < 5) : (k += 1) {
-        const a = rng.angle();
-        b.addCapsule(v3(mathx.cosf(a) * SAC_R * 0.7, SAC_R * 1.1, mathx.sinf(a) * SAC_R * 0.7), v3(mathx.cosf(a) * SAC_R * 1.7, 0.01, mathx.sinf(a) * SAC_R * 1.7), 0.012, 0.005, 4, SAC_MEM);
-        b.addCapsule(v3(mathx.cosf(a) * SAC_R * 0.5, SAC_R * 1.6, mathx.sinf(a) * SAC_R * 0.5), v3(mathx.cosf(a) * SAC_R * 0.95, SAC_R * 0.3, mathx.sinf(a) * SAC_R * 0.95), 0.018, 0.008, 5, SAC_VEIN);
+    for (0..6) |i| {
+        const a = @as(f32, @floatFromInt(i)) * std.math.tau / 6.0 + rng.range(-0.25, 0.25);
+        const bend = rng.range(-0.45, 0.45);
+        const top = rng.range(0.38, 0.75);
+        const bottom = rng.range(2.08, 2.48);
+        var prev = sacSurface(a, top, 1.002);
+        for (1..10) |j| {
+            const u = @as(f32, @floatFromInt(j)) / 9.0;
+            const polar = mathx.lerpF(top, bottom, u);
+            const angle = a + bend * mathx.sinf(u * std.math.pi);
+            const p = sacSurface(angle, polar, 1.002);
+            b.addCapsule(prev, p, 0.006, 0.005, 6, SAC_VEIN);
+            if (j == 4 or j == 7) {
+                const side = if (j == 4) @as(f32, 1) else -1;
+                const fork = sacSurface(angle + side * 0.15, polar + 0.16, 1.002);
+                const tip = sacSurface(angle + side * 0.28, polar + 0.34, 1.002);
+                b.addCapsule(p, fork, 0.004, 0.0035, 5, SAC_VEIN);
+                b.addCapsule(fork, tip, 0.0035, 0.0025, 5, SAC_VEIN);
+            }
+            prev = p;
+        }
+        const root = sacSurface(a, 2.10, 0.98);
+        const spread = SAC_R * rng.range(1.35, 1.85);
+        const tip = v3(mathx.cosf(a + bend) * spread, 0.008, mathx.sinf(a + bend) * spread);
+        const elbow = mathx.lerpV(root, tip, 0.55);
+        const mid = v3(elbow.x, elbow.y * 0.35, elbow.z);
+        b.addCapsule(root, mid, 0.012, 0.009, 6, SAC_MEM);
+        b.addCapsule(mid, tip, 0.009, 0.005, 6, SAC_MEM);
     }
     return b.toMesh();
 }
@@ -764,6 +821,8 @@ pub const Sac = struct {
     scale: f32 = 1,
     vit: combat.Vitals = combat.Vitals.initFoe(SAC_HP, SAC_UNFLINCHING, SAC_UNFLINCHING).withRes(SAC_RESISTS),
     t: f32 = 0,
+    recoil: anim.Spring = .{},
+    burstScale: rl.Vector3 = v3(1, 1, 1),
     hits: u32 = 0,
     hitLatch: bool = false,
     flash: f32 = 0,
@@ -791,10 +850,11 @@ pub const Sac = struct {
         return !self.gone and !self.killed and !self.hatched;
     }
     pub fn centerWorld(self: *const Sac) rl.Vector3 {
-        return foe.bodyPoint(self.pos, SAC_R * 0.9, self.scale, 0);
+        return rl.math.vector3Transform(SAC_CENTER, self.xform());
     }
     pub fn hurtRadius(self: *const Sac) f32 {
-        return SAC_HURT_R * self.scale;
+        const r = self.shellRadii();
+        return @max(r.x, @max(r.y, r.z));
     }
     pub fn dying(self: *const Sac) bool {
         return self.killed or self.hatched;
@@ -806,7 +866,7 @@ pub const Sac = struct {
         return self.centerWorld();
     }
     pub fn topWorld(self: *const Sac) rl.Vector3 {
-        return foe.bodyPoint(self.pos, SAC_R * 1.9, self.scale, 0);
+        return rl.math.vector3Transform(v3(0, SAC_CENTER.y + SAC_RADII.y, 0), self.xform());
     }
     pub fn bodyR(self: *const Sac) f32 {
         return SAC_R * self.scale;
@@ -831,6 +891,7 @@ pub const Sac = struct {
         // A SAC IS A TARGET, so its vitals run like every other target's: `sinceHurt` gates the floating HP bar, and left frozen at 0 the bar never goes away again.
         self.vit.tick(dt);
         self.t += dt;
+        _ = self.recoil.step(0, 1600, 0.34, dt);
         foe.tickParticles(&self.parts, dt, self.pos.y);
         if (self.killed or self.hatched) {
             if (self.t >= SAC_BURST_DUR) self.gone = true;
@@ -839,6 +900,7 @@ pub const Sac = struct {
         self.tryHit(blade);
         if (self.killed or self.gone) return false;
         if (self.t >= SAC_HATCH) {
+            self.burstScale = self.liveScale();
             self.hatched = true;
             self.t = 0;
             self.burstFx(MOTE, 16, 2.1);
@@ -850,17 +912,20 @@ pub const Sac = struct {
 
     pub fn tryHit(self: *Sac, blade: foe.Blade) void {
         if (self.killed or self.hatched or self.gone) return;
+        if (blade.active and !self.shellTouches(blade)) return;
         const s = foe.strike(&self.vit, &self.hitLatch, self.centerWorld(), self.hurtRadius(), blade) orelse return;
         self.hits += 1;
         self.flash = FLASH_DUR;
         self.burstFx(VENOM, 7, 1.5);
         if (s.reaction == .death) {
+            self.burstScale = self.liveScale();
             self.killed = true;
             self.t = 0;
             self.burstFx(GORE, 14, 2.4);
             self.burstFx(VENOM, 10, 2.0);
             sfx.world(.sac_burst, self.pos);
         } else {
+            self.recoil.vel = @min(self.recoil.vel + 24, 28);
             sfx.world(.sac_hit, self.pos);
         }
     }
@@ -890,25 +955,73 @@ pub const Sac = struct {
     }
 
     pub fn draw(self: *const Sac, model: *const Model) void {
-        rl.drawMesh(if (self.killed or self.hatched) model.wreck else model.sac, model.mat, self.xform());
+        if (self.gone) return;
+        if (!self.dying() or self.t < SAC_BURST_DUR * 0.65)
+            rl.drawMesh(model.sac, model.mat, self.xform());
+        if (self.dying()) {
+            const u = mathx.clampF(self.t / SAC_BURST_DUR, 0, 1);
+            const spread = anim.keyAt(&.{
+                .{ .t = 0, .v = 0 },
+                .{ .t = 0.20, .v = 1.10, .ease = .decel },
+                .{ .t = 0.36, .v = 0.97 },
+                .{ .t = 0.50, .v = 1 },
+                .{ .t = 1, .v = 0 },
+            }, u);
+            const b = self.burstScale;
+            rl.drawMesh(model.wreck, model.mat, mul(scaleM(b.x * spread, b.y * spread, b.z * spread), tr(self.pos.x, self.pos.y, self.pos.z)));
+        }
+    }
+
+    fn liveScale(self: *const Sac) rl.Vector3 {
+        const k = self.swell();
+        const pulse = 0.055 * k * mathx.sinf(self.t * SAC_PULSE_HZ * std.math.tau);
+        const squash = mathx.clampF(self.recoil.v, -0.20, 0.48);
+        const grow = self.scale * (0.72 + 0.28 * k);
+        return v3(grow * (1 - pulse * 0.5 + squash * 0.42), grow * (1 + pulse - squash), grow * (1 - pulse * 0.5 + squash * 0.42));
+    }
+
+    fn shellRadii(self: *const Sac) rl.Vector3 {
+        const m = self.xform();
+        return v3(SAC_RADII.x * m.m0, SAC_RADII.y * m.m5, SAC_RADII.z * m.m10);
+    }
+
+    fn shellTouches(self: *const Sac, blade: foe.Blade) bool {
+        const center = self.centerWorld();
+        const radii = self.shellRadii();
+        const r = mathx.addV(radii, v3(blade.r, blade.r, blade.r));
+        const points = [_]rl.Vector3{ blade.a, blade.b, blade.a0, blade.b0 };
+        var local: [4]rl.Vector3 = undefined;
+        for (&local, points) |*p, q| {
+            const d = mathx.subV(q, center);
+            p.* = v3(d.x / r.x, d.y / r.y, d.z / r.z);
+        }
+        return mathx.lenV(mathx.closestOnSegV(mathx.zero3, local[0], local[1])) <= 1 or
+            mathx.lenV(mathx.closestOnSegV(mathx.zero3, local[2], local[3])) <= 1;
     }
 
     pub fn xform(self: *const Sac) rl.Matrix {
-        const k = self.swell();
-        if (self.killed or self.hatched) {
+        var size = self.liveScale();
+        if (self.dying()) {
             const u = mathx.clampF(self.t / SAC_BURST_DUR, 0, 1);
-            const s = self.scale * (1.0 - 0.55 * u);
-            return mul(scaleM(s, s * (1.0 - 0.3 * u), s), tr(self.pos.x, self.pos.y, self.pos.z));
+            const wide = anim.keyAt(&.{
+                .{ .t = 0, .v = 1 },
+                .{ .t = 0.20, .v = 1.23, .ease = .decel },
+                .{ .t = 0.34, .v = 1.10 },
+                .{ .t = 0.50, .v = 1.14 },
+                .{ .t = 1, .v = 0 },
+            }, u);
+            const flat = anim.keyAt(&.{
+                .{ .t = 0, .v = 1 },
+                .{ .t = 0.20, .v = 0.12, .ease = .accel },
+                .{ .t = 0.34, .v = 0.21 },
+                .{ .t = 0.50, .v = 0.08 },
+                .{ .t = 0.65, .v = 0 },
+            }, u);
+            size = v3(self.burstScale.x * wide, self.burstScale.y * flat, self.burstScale.z * wide);
         }
-        const pulse = 0.055 * k * mathx.sinf(self.t * SAC_PULSE_HZ * std.math.tau);
-        const grow = self.scale * (0.72 + 0.28 * k);
-        return mul(
-            scaleM(grow * (1.0 - pulse * 0.5), grow * (1.0 + pulse), grow * (1.0 - pulse * 0.5)),
-            tr(self.pos.x, self.pos.y, self.pos.z),
-        );
+        return mul(scaleM(size.x, size.y, size.z), tr(self.pos.x, self.pos.y, self.pos.z));
     }
 };
-
 
 pub const Spider = struct {
     role: Role = .mother,
@@ -941,7 +1054,18 @@ pub const Spider = struct {
     leapTo: rl.Vector3 = mathx.zero3,
 
     gait: f32 = 0,
+    poseStep: f32 = 0,
+    poseSeated: bool = false,
+    poseSpring: anim.SpringBank(8) = .{},
+    walkBlend: anim.Spring = .{},
+    gaitMoving: bool = false,
+    clawWas: [2][5]rl.Vector3 = undefined,
+    clawIs: ?[2][5]rl.Vector3 = null,
     lift: f32 = 0,
+    fallLift: f32 = 0,
+    fallVelocity: f32 = 0,
+    bodyWas: [2]rl.Vector3 = undefined,
+    bodyIs: ?[2]rl.Vector3 = null,
     crouch: f32 = 0,
     rear: f32 = 0,
     pitch: f32 = 0,
@@ -991,7 +1115,7 @@ pub const Spider = struct {
         s.fxRng = foe.fxStream(seed, 92821.0, @as(u64, @intFromEnum(role)) + 3);
         s.idleWait = 0.4 + seed * 1.4;
         s.layCd = 1.2;
-        s.resolveIdle(1.0 / 60.0);
+        s.resolveIdle();
         s.pose();
         return s;
     }
@@ -1052,6 +1176,7 @@ pub const Spider = struct {
         foe.faceToward(self.pos, &self.facing, target, spec(self.role).turn, dt);
     }
     pub fn mouthWorld(self: *const Spider) rl.Vector3 {
+        if (self.role == .mother) return foe.markOn(self.xf[CEPHALO], v3(0, BODY_Y - 0.14, 0.82));
         const d = self.fdir();
         return v3(
             self.pos.x + d.x * 0.52 * self.scale,
@@ -1068,6 +1193,11 @@ pub const Spider = struct {
     }
 
     fn enter(self: *Spider, s: State) void {
+        if (self.state == .leap and s != .leap and self.lift > 0) {
+            const u = mathx.clampF((self.t - B_LEAP_COIL) / B_LEAP_FLIGHT, 0, 1);
+            self.fallLift = self.lift;
+            self.fallVelocity = B_LEAP_APEX * self.scale * 4 * (1 - 2 * u) / B_LEAP_FLIGHT;
+        }
         self.state = s;
         self.t = 0;
         self.fired = false;
@@ -1100,6 +1230,7 @@ pub const Spider = struct {
             foe.tickParticles(&self.parts, dt, self.pos.y);
             return .none;
         }
+        const gaitWas = self.gait;
         self.heroHit = null;
         self.justDied = false;
         self.parried = false;
@@ -1125,8 +1256,27 @@ pub const Spider = struct {
             .mother => act = self.updateMother(dt, hero, bounds, d),
             .broodling => self.updateBroodling(dt, hero, bounds, d),
         }
+        if (self.state != .leap and self.fallLift > 0) {
+            const gravity = 8 * B_LEAP_APEX * self.scale / (B_LEAP_FLIGHT * B_LEAP_FLIGHT);
+            self.fallLift = @max(0, self.fallLift + self.fallVelocity * dt - 0.5 * gravity * dt * dt);
+            self.fallVelocity -= gravity * dt;
+            self.lift = self.fallLift;
+        }
+        self.gaitMoving = self.gait != gaitWas;
+        self.poseStep = dt;
         self.pose();
+        const snap: f32 = if (self.role == .mother) BITE_SNAP else B_BITE_SNAP;
+        if (self.state == .strike and !self.throwing and self.t >= snap * 0.18) self.tryReach(hero, if (self.role == .mother) M_BITE_OWN else B_BITE_OWN, if (self.role == .mother) M_BITE_HIT else B_BITE_HIT);
+        if (self.role == .broodling and self.state == .leap and self.t >= B_LEAP_COIL) self.tryImpact(hero, B_LEAP_HIT);
         self.tryHit(blade);
+        if (self.role == .mother) {
+            switch (act) {
+                .spit => act = if (self.staggered()) .none else .{ .spit = self.mouthWorld() },
+                else => {},
+            }
+
+        }
+        if (self.staggered()) self.heroHit = null;
         return act;
     }
 
@@ -1142,7 +1292,7 @@ pub const Spider = struct {
                     self.facing = mathx.approachAngle(self.facing, w, TURN_RATE * dt);
                     self.emitDrag(dt);
                     self.resolveWalk();
-                } else self.resolveIdle(dt);
+                } else self.resolveIdle();
                 const wait = if (d <= M_AGGRO) mathx.minF(self.idleWait, 0.14) else self.idleWait;
                 if (self.t >= wait) self.decideMother(d, bounds);
             },
@@ -1176,7 +1326,7 @@ pub const Spider = struct {
                         self.fired = true;
                         sfx.world(.spider_bite, self.pos);
                     }
-                    self.tryReach(hero, M_BITE_OWN, M_BITE_HIT);
+
                     if (self.t >= BITE_SNAP) self.enter(.recover);
                 }
             },
@@ -1256,7 +1406,7 @@ pub const Spider = struct {
         switch (self.state) {
             .idle => {
                 if (d <= B_AGGRO) self.faceToward(hero, dt);
-                self.resolveIdle(dt);
+                self.resolveIdle();
                 const wait = if (d <= B_AGGRO) mathx.minF(self.idleWait, 0.08) else self.idleWait;
                 if (self.t >= wait) self.decideBroodling(d, hero);
             },
@@ -1284,7 +1434,7 @@ pub const Spider = struct {
                     self.fired = true;
                     sfx.world(.brood_bite, self.pos);
                 }
-                self.tryReach(hero, B_BITE_OWN, B_BITE_HIT);
+
                 if (self.t >= B_BITE_SNAP) self.enter(.recover);
             },
             .recover => {
@@ -1370,9 +1520,12 @@ pub const Spider = struct {
             self.fangs = 1.0;
             self.pitch = -14.0;
             self.resolveFlung(u);
-            self.tryImpact(hero, B_LEAP_HIT);
+
             return;
         }
+        const landing = mathx.clampXZ(self.leapTo, bounds);
+        self.pos.x = landing.x;
+        self.pos.z = landing.z;
         const u = mathx.clampF((self.t - B_LEAP_COIL - B_LEAP_FLIGHT) / B_LEAP_LAND, 0, 1);
         self.lift = 0;
         self.crouch = 0.5 * (1.0 - u);
@@ -1422,6 +1575,7 @@ pub const Spider = struct {
     fn tryReach(self: *Spider, hero: rl.Vector3, range: f32, h: combat.Hit) void {
         if (self.heroLatch) return;
         if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(range, self.scale), BITE_FRONT_DOT)) return;
+        if (!self.clawsTouch(hero)) return;
         self.heroHit = h;
         self.heroLatch = true;
         self.leash.noteCombat();
@@ -1430,6 +1584,7 @@ pub const Spider = struct {
     fn tryImpact(self: *Spider, hero: rl.Vector3, h: combat.Hit) void {
         if (self.heroLatch) return;
         if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(B_LEAP_IMPACT_OWN, self.scale), B_LEAP_FRONT_DOT)) return;
+        if (!self.clawsTouch(hero) and !foe.weaponReaches(self.bodyWas, self.bodyIs orelse return, hero, foe.HERO_R + 0.26 * self.scale)) return;
         self.heroHit = h;
         self.heroLatch = true;
         self.leash.noteCombat();
@@ -1537,18 +1692,17 @@ pub const Spider = struct {
     }
 
 
-    /// `dt`, NOT a baked 1/60: every `approach` here is a rate per SECOND, so a fixed step settles twice as fast on a 120 Hz machine as on a 60 Hz one.
-    fn resolveIdle(self: *Spider, dt: f32) void {
+    fn resolveIdle(self: *Spider) void {
         const breathe = mathx.sinf(self.elapsed * 1.3 + self.seed * 6.0);
         self.crouch = -IDLE_BOB * breathe;
         self.rear = 0;
         self.pitch = 0;
         self.lift = 0;
-        self.armSpread = mathx.approach(self.armSpread, 20.0 + 4.0 * breathe, 60.0 * dt);
-        self.armDrive = mathx.approach(self.armDrive, 0, 3.0 * dt);
-        self.bladeOpen = mathx.approach(self.bladeOpen, 0.12, 2.0 * dt);
-        self.abdoPump = mathx.approach(self.abdoPump, 0.04 * breathe, 2.0 * dt);
-        self.fangs = mathx.approach(self.fangs, 0, 3.0 * dt);
+        self.armSpread = 20.0 + 4.0 * breathe;
+        self.armDrive = 0;
+        self.bladeOpen = 0.12;
+        self.abdoPump = 0.04 * breathe;
+        self.fangs = 0;
     }
     fn resolveWalk(self: *Spider) void {
         self.crouch = 0.03 * mathx.sinf(self.gait * std.math.tau * 2.0);
@@ -1562,7 +1716,7 @@ pub const Spider = struct {
         self.fangs = 0;
     }
     fn resolveSpitWind(self: *Spider, dt: f32) void {
-        const u = mathx.smoothstep(0, 1, mathx.clampF(self.t / SPIT_WINDUP, 0, 1));
+        const u = anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.68, .v = 1 }, .{ .t = 1, .v = 1, .ease = .hold } }, self.t / SPIT_WINDUP);
         self.rear = u;
         self.crouch = -0.10 * u;
         self.pitch = -16.0 * u;
@@ -1586,7 +1740,7 @@ pub const Spider = struct {
     }
     fn resolveBiteWind(self: *Spider, dt: f32) void {
         const dur: f32 = if (self.role == .mother) BITE_WINDUP else B_BITE_WINDUP;
-        const u = mathx.smoothstep(0, 1, mathx.clampF(self.t / dur, 0, 1));
+        const u = anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.68, .v = 1 }, .{ .t = 1, .v = 1, .ease = .hold } }, self.t / dur);
         self.rear = 0.45 * u;
         self.crouch = -0.06 * u;
         self.pitch = -8.0 * u;
@@ -1599,7 +1753,7 @@ pub const Spider = struct {
     }
     fn resolveBiteSnap(self: *Spider) void {
         const dur: f32 = if (self.role == .mother) BITE_SNAP else B_BITE_SNAP;
-        const u = mathx.clampF(self.t / dur, 0, 1);
+        const u = anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.18, .v = 0, .ease = .hold }, .{ .t = 0.76, .v = 1, .ease = .accel }, .{ .t = 1, .v = 1.10, .ease = .decel } }, self.t / dur);
         self.rear = 0.45 * (1.0 - u);
         self.crouch = 0.14 * u;
         self.pitch = -8.0 + 22.0 * u;
@@ -1611,11 +1765,11 @@ pub const Spider = struct {
     }
     fn resolveRecover(self: *Spider) void {
         const dur = self.recoverDur();
-        const u = mathx.clampF(self.t / dur, 0, 1);
+        const u = anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.16, .v = -0.10 }, .{ .t = 0.73, .v = 1.10 }, .{ .t = 1, .v = 1 } }, self.t / dur);
         self.rear = 0;
         self.crouch = 0.14 * (1.0 - u);
         self.pitch = 14.0 * (1.0 - u);
-        self.armSpread = 8.0 + 10.0 * (1.0 - u);
+        self.armSpread = 8.0 + 12.0 * u;
         self.armDrive = 1.0 * (1.0 - u);
         self.bladeOpen = 0.05 + 0.2 * u;
         self.fangs = 1.0 - u;
@@ -1636,7 +1790,7 @@ pub const Spider = struct {
     }
     fn resolveStun(self: *Spider, heavy: bool) void {
         const u = mathx.clampF(self.t / combat.foeStunDur(heavy), 0, 1);
-        const k = (1.0 - u) * (1.0 - u);
+        const k = anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.12, .v = 1, .ease = .decel }, .{ .t = 0.45, .v = 0.92 }, .{ .t = 0.82, .v = -0.10 }, .{ .t = 1, .v = 0 } }, u);
         const shake = mathx.sinf(self.t * (if (heavy) @as(f32, 26.0) else 34.0));
         self.crouch = (if (heavy) @as(f32, 0.62) else 0.34) * k;
         self.rear = 0;
@@ -1683,13 +1837,59 @@ pub const Spider = struct {
     }
 
 
+    fn clawPoints(self: *const Spider, left: bool) [5]rl.Vector3 {
+        var points = clawProfile(skinOf(self.role), if (left) 1 else -1);
+        for (&points) |*point| point.* = foe.markOn(self.xf[if (left) BLADE_L else BLADE_R], point.*);
+        return points;
+    }
+
+    fn clawsTouch(self: *const Spider, hero: rl.Vector3) bool {
+        const now = self.clawIs orelse return false;
+        for (0..2) |hand| {
+            for (0..4) |i| {
+                if (foe.weaponReaches(.{ self.clawWas[hand][i], self.clawWas[hand][i + 1] }, .{ now[hand][i], now[hand][i + 1] }, hero, foe.HERO_R + 0.085 * skinOf(self.role).clawLen * self.scale)) return true;
+            }
+        }
+        return false;
+    }
+
+    fn plantedLeg(self: *const Spider, wx: *[NP]rl.Matrix, frame: rl.Matrix, hip: rl.Vector3, side: f32, i: usize, base: usize, fs: f32) void {
+        const sk = skinOf(self.role);
+        const shape = legShape(sk, side, i);
+        const phase = @mod(self.gait + LEG_PHASE[i] + (if (side < 0) @as(f32, 0.5) else 0), 1);
+        const swing = if (phase < 0.5) @as(f32, 0) else mathx.sinf((phase - 0.5) * std.math.tau);
+        const stride = if (phase < 0.5) 0.25 - phase else -0.25 + 0.5 * mathx.smoothstep(0.5, 1, phase);
+        const fan = mathx.radians(34.0 - @as(f32, @floatFromInt(i)) * 22.0);
+        const tuck = if (self.role == .broodling) mathx.clampF(self.lift / (B_LEAP_APEX * self.scale), 0, 1) else 0;
+        const out = @abs(shape.knee.x + shape.foot.x) * (0.90 - 0.20 * tuck);
+        const foot = v3(side * (HIP_X + out * mathx.cosf(fan)), 0.010 + self.lift / @max(fs, 0.001) + 0.18 * sk.legScale * tuck + 0.16 * sk.legScale * swing * self.walkBlend.v, hip.z + out * mathx.sinf(fan) + sk.stride * stride * self.walkBlend.v);
+        const ground = mul3(scaleM(fs, fs, fs), ry(mathx.degrees(self.facing)), tr(self.pos.x, self.pos.y, self.pos.z));
+        const root = foe.markOn(frame, hip);
+        const target = foe.markOn(ground, foot);
+        const hint = mathx.normV(foe.markOn(ry(mathx.degrees(self.facing)), v3(side, 2, 0)));
+        const solved = mathx.twoBone(root, target, mathx.lenV(shape.knee) * fs, mathx.lenV(shape.foot) * fs, hint);
+        const upper = rl.math.quaternionToMatrix(rl.math.quaternionFromVector3ToVector3(mathx.normV(shape.knee), mathx.normV(mathx.subV(solved.joint, root))));
+        const lower = rl.math.quaternionToMatrix(rl.math.quaternionFromVector3ToVector3(mathx.normV(shape.foot), mathx.normV(mathx.subV(solved.end, solved.joint))));
+        wx[FEMUR_0 + base + i] = mul3(scaleM(fs, fs, fs), upper, tr(root.x, root.y, root.z));
+        wx[TIBIA_0 + base + i] = mul3(scaleM(fs, fs, fs), lower, tr(solved.joint.x, solved.joint.y, solved.joint.z));
+    }
     pub fn pose(self: *Spider) void {
+        defer self.poseStep = 0;
+        {
+            var target = [8]f32{ self.crouch, self.rear, self.pitch, self.abdoPump, self.armSpread, self.armDrive, self.bladeOpen, self.fangs };
+            if (!self.poseSeated) self.poseSpring.seat(target);
+            self.poseSpring.chase(&target, if (self.role == .mother) 12000 else 16000, 0.74, 0.94, self.poseStep);
+            self.crouch = target[0]; self.rear = target[1]; self.pitch = target[2]; self.abdoPump = target[3];
+            self.armSpread = target[4]; self.armDrive = target[5]; self.bladeOpen = target[6]; self.fangs = target[7];
+            _ = self.walkBlend.step(if (self.gaitMoving) 1 else 0, 2500, 1, self.poseStep);
+            self.poseSeated = true;
+        }
         const fs = foe.rigScale(self.scale, self.fade);
         const sink = foe.rigSink(0.24, self.scale, self.fade);
         const bodyDrop = -self.crouch * 0.30;
         const ride = self.pos.y + self.lift + sink + self.settle - rideDrop(self.role) * fs;
         const keel = mul3(tr(0, -BODY_Y, 0), rz(self.roll), tr(0, BODY_Y, 0));
-        const frame = mul(
+        var frame = mul(
             mul(keel, scaleM(fs, fs, fs)),
             mul3(
                 rx(self.pitch - self.rear * 22.0),
@@ -1697,6 +1897,17 @@ pub const Spider = struct {
                 tr(self.pos.x, ride, self.pos.z),
             ),
         );
+        if (self.role == .mother and self.state != .dead) {
+            const head = mul(tr(0, bodyDrop, 0), frame);
+            var bottom = shellBottom(head, M_HEAD_CENTER, M_HEAD_RADII);
+            for (MOTHER_FANGS) |points| {
+                for (points, 0..) |point, i| {
+                    const radius = if (i < 5) @max(0.030, 0.075 - @as(f32, @floatFromInt(i)) * 0.012) else 0.009;
+                    bottom = @min(bottom, foe.markOn(head, point).y - radius * fs);
+                }
+            }
+            frame.m13 += @max(0, self.pos.y + 0.012 * fs - bottom);
+        }
         const legFrame = mul(
             mul(keel, scaleM(fs, fs, fs)),
             mul3(ry(mathx.degrees(self.facing)), tr(0, 0, 0), tr(self.pos.x, ride, self.pos.z)),
@@ -1707,14 +1918,19 @@ pub const Spider = struct {
         wx[CEPHALO] = mul(tr(0, bodyDrop, 0), frame);
         const pump = 1.0 + self.abdoPump;
         wx[ABDOMEN] = place(v3(P_PEDICEL.x, P_PEDICEL.y + bodyDrop, P_PEDICEL.z), mul(scaleM(pump, pump, pump), rx(-10.0 - 14.0 * self.abdoPump)), frame);
+        if (self.state != .dead) {
+            const bottom = shellBottom(wx[ABDOMEN], v3(0, abdoCentreY(sk), -sk.abdoR * 0.72), v3(sk.abdoR * 0.98, abdoHalfY(sk), sk.abdoR * 0.98));
+            wx[ABDOMEN].m13 += @max(0, self.pos.y + DRAG_CLEAR * fs - bottom);
+        }
 
         for ([_]f32{ 1, -1 }, [_]usize{ ARM_L, ARM_R }, [_]usize{ BLADE_L, BLADE_R }) |sgn, ai, bi| {
             const sh = v3(sgn * P_SHOULDER.x, P_SHOULDER.y + bodyDrop, P_SHOULDER.z);
             const ph = self.elapsed * FLAIL_HZ + (if (sgn > 0) @as(f32, 0.0) else 1.9) + self.seed * 5.0;
             const wave = mathx.sinf(ph);
             const wave2 = mathx.sinf(ph * 1.37 + 0.7);
-            const spread = self.armSpread + FLAIL_SPREAD * wave;
-            const lift = sk.armLift + 0.55 * spread - 34.0 * self.armDrive + FLAIL_LIFT * wave2;
+            const motion: f32 = 0.15;
+            const spread = self.armSpread + FLAIL_SPREAD * wave * motion;
+            const lift = sk.armLift + 0.55 * spread - 34.0 * self.armDrive + FLAIL_LIFT * wave2 * motion;
             wx[ai] = place(sh, mul3(rz(sgn * lift), ry(-sgn * spread * 0.7), rx(-14.0 * self.armDrive)), frame);
             wx[bi] = place(v3(sgn * P_WRIST.x, P_WRIST.y, P_WRIST.z), ry(sgn * (-8.0 + 46.0 * self.bladeOpen)), wx[ai]);
         }
@@ -1726,15 +1942,30 @@ pub const Spider = struct {
                 const s = mathx.sinf(ph * std.math.tau);
                 const lift = mathx.maxF(0, s);
                 const hip = v3(sgn * HIP_X, P_SHOULDER.y - 0.02 + bodyDrop, HIP_Z0 - @as(f32, @floatFromInt(i)) * HIP_DZ);
+                if (self.state != .dead) {
+                    self.plantedLeg(&wx, frame, hip, sgn, i, base, fs);
+                    continue;
+                }
                 const fan = 34.0 - @as(f32, @floatFromInt(i)) * 22.0;
                 const swing = fan + c * STEP_SWING;
                 const knee = KNEE_REST - 26.0 * lift - 16.0 * self.crouch;
                 wx[FEMUR_0 + base + i] = place(hip, mul(ry(-sgn * swing), rz(-sgn * (STEP_LIFT * lift - 26.0 * self.crouch + CURL_FEMUR * self.legCurl))), legFrame);
-                const kneeOff = v3(sgn * FEMUR_OUT * sk.legScale, FEMUR_UP * sk.legScale, 0);
+                const kneeOff = legShape(sk, sgn, i).knee;
                 wx[TIBIA_0 + base + i] = place(kneeOff, rz(sgn * (knee * 0.42 + CURL_KNEE * self.legCurl)), wx[FEMUR_0 + base + i]);
             }
         }
         self.xf = wx;
+        {
+            const points = [2][5]rl.Vector3{ self.clawPoints(true), self.clawPoints(false) };
+            self.clawWas = self.clawIs orelse points;
+            self.clawIs = points;
+            const body = [2]rl.Vector3{
+                foe.markOn(self.xf[CEPHALO], v3(0, BODY_Y + 0.02, -0.12)),
+                foe.markOn(self.xf[CEPHALO], v3(0, BODY_Y + 0.02, 0.50)),
+            };
+            self.bodyWas = self.bodyIs orelse body;
+            self.bodyIs = body;
+        }
     }
 
     pub fn draw(self: *const Spider, model: *const Model) void {
@@ -2141,7 +2372,7 @@ test "A SAC IS A TARGET, and answers everything a target has to answer" {
     try std.testing.expect(s.lockPoint().y > s.pos.y);
     try std.testing.expect(s.topWorld().y > s.lockPoint().y);
     try std.testing.expect(s.bodyR() > 0);
-    try std.testing.expect(s.hurtRadius() > SAC_R);
+    try std.testing.expectApproxEqAbs(@as(f32, SAC_R * 0.72), s.hurtRadius(), 1e-5);
     s.killed = true;
     try std.testing.expect(s.dying());
 }
@@ -2364,4 +2595,214 @@ test "NEITHER OF THEM WALKS INTO A FLAME: she answers at range, the young just b
     try std.testing.expectEqual(BChoice.shirk, classifyBroodling((B_LEAP_MIN + B_LEAP_MAX) * 0.5, B_SCALE, true, true, true));
     try std.testing.expectEqual(BChoice.bite, classifyBroodling(B_BITE_R - 0.1, B_SCALE, true, true, true));
     try std.testing.expect(foe.SHY_SHARE < 1.0);
+}
+
+test "mother scythes make actual contact at the chosen bite range" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+            var m = Spider.spawnAs(.mother, mathx.zero3, 0, size, 0.3);
+            m.throwing = false;
+            m.enter(.windup);
+            const hero = v3(0, 0, foe.triggerBand(M_BITE_R, M_SCALE, m.scale) - 0.04);
+            var hit = false;
+            for (0..240) |_| {
+                _ = m.update(1 / hz, hero, 200, .{});
+                if (m.heroHit != null) hit = true;
+                try std.testing.expect(!m.clawsTouch(v3(0, 8, hero.z)));
+                try std.testing.expect(!m.clawsTouch(v3(0, 0, -5 * size)));
+                if (m.state == .recover) break;
+            }
+            if (!hit) std.debug.print("mother bite miss Hz {d} size {d} range {d:.3}\n", .{ hz, size, hero.z });
+            try std.testing.expect(hit);
+        }
+    }
+}
+
+test "mother leg joints meet and grounded feet survive attacks and stagger" {
+    for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+        for ([_]State{ .idle, .windup, .strike, .lay, .stunheavy }) |state| {
+            var m = Spider.spawnAs(.mother, v3(0, 2, 0), 0.4, size, 0.3);
+            m.enter(state);
+            m.throwing = true;
+            m.spitCd = 10;
+            m.biteCd = 10;
+            for (0..70) |_| {
+                _ = m.update(1.0 / 60.0, v3(0, 2, 90), 200, .{});
+                try std.testing.expect(shellBottom(m.xf[CEPHALO], M_HEAD_CENTER, M_HEAD_RADII) >= m.pos.y - 0.001);
+                for ([_]f32{ 1, -1 }, [_]usize{ 0, NLEG }) |side, base| {
+                    for (0..NLEG) |i| {
+                        const shape = legShape(MOTHER_SKIN, side, i);
+                        const knee = foe.markOn(m.xf[FEMUR_0 + base + i], shape.knee);
+                        const lower = foe.markOn(m.xf[TIBIA_0 + base + i], mathx.zero3);
+                        try std.testing.expect(mathx.lenV(mathx.subV(knee, lower)) < 0.001);
+                        const toe = foe.markOn(m.xf[TIBIA_0 + base + i], shape.foot);
+                        if (toe.y < m.pos.y - 0.005) std.debug.print("mother foot state {s} size {d} below {d:.3}\n", .{ @tagName(m.state), size, m.pos.y - toe.y });
+                        try std.testing.expect(toe.y >= m.pos.y - 0.005);
+                    }
+                }
+                if (m.state != state) break;
+            }
+        }
+    }
+}
+
+test "mother interruption preserves the scythe positions" {
+    var m = Spider.spawnAs(.mother, mathx.zero3, 0, 1, 0.3);
+    m.enter(.windup);
+    for (0..25) |_| _ = m.update(1.0 / 60.0, v3(0, 0, 90), 200, .{});
+    const before = m.clawIs.?;
+    m.stagger(true);
+    _ = m.update(0, v3(0, 0, 90), 200, .{});
+    for (before, m.clawIs.?) |a, b| {
+        for (a, b) |p0, p1| try std.testing.expect(mathx.lenV(mathx.subV(p0, p1)) < 0.001);
+    }
+}
+test "broodling pounce lands at its committed destination at every frame rate" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+            var b = Spider.spawnAs(.broodling, mathx.zero3, 0, size, 0.55);
+            const hero = v3(0, 0, 4.2);
+            b.startLeap(hero);
+            const landing = b.leapTo;
+            var hit = false;
+            for (0..240) |_| {
+                _ = b.update(1 / hz, hero, 200, .{});
+                if (b.heroHit != null) {
+                    try std.testing.expect(b.t >= B_LEAP_COIL);
+                    hit = true;
+                }
+                if (b.state != .leap) break;
+            }
+            try std.testing.expect(hit);
+            try std.testing.expect(mathx.distXZ(b.pos, landing) < 0.0001);
+            try std.testing.expectApproxEqAbs(@as(f32, 0), b.lift, 0.0001);
+        }
+    }
+}
+
+test "broodling melee follows its scythes and pounce cannot hit through height" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+            var b = Spider.spawnAs(.broodling, mathx.zero3, 0, size, 0.55);
+            b.enter(.windup);
+            const hero = v3(0, 0, foe.triggerBand(B_BITE_R, B_SCALE, b.scale) - 0.035);
+            var hit = false;
+            for (0..160) |_| {
+                _ = b.update(1 / hz, hero, 200, .{});
+                if (b.heroHit != null) hit = true;
+                if (b.state == .recover) break;
+            }
+            if (!hit) std.debug.print("broodling bite miss Hz {d} size {d} range {d:.3}\n", .{ hz, size, hero.z });
+            try std.testing.expect(hit);
+            b = Spider.spawnAs(.broodling, mathx.zero3, 0, size, 0.55);
+            b.startLeap(v3(0, 0, 4.2));
+            for (0..240) |_| {
+                _ = b.update(1 / hz, v3(0, 8, 4.2), 200, .{});
+                try std.testing.expect(b.heroHit == null);
+                if (b.state != .leap) break;
+            }
+        }
+    }
+}
+
+test "broodling hit in flight falls continuously and keeps its leg joints connected" {
+    for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+        var b = Spider.spawnAs(.broodling, mathx.zero3, 0, size, 0.55);
+        b.startLeap(v3(0, 0, 4.2));
+        for (0..26) |_| _ = b.update(1.0 / 60.0, v3(0, 0, 4.2), 200, .{});
+        const before = b.clawIs.?;
+        const height = b.lift;
+        try std.testing.expect(height > 0.1);
+        b.stagger(true);
+        _ = b.update(0, v3(0, 0, 4.2), 200, .{});
+        try std.testing.expectApproxEqAbs(height, b.lift, 0.0001);
+        for (before, b.clawIs.?) |a, c| {
+            for (a, c) |p0, p1| try std.testing.expect(mathx.lenV(mathx.subV(p0, p1)) < 0.001);
+        }
+        for (0..120) |_| {
+            _ = b.update(1.0 / 60.0, v3(0, 0, 90), 200, .{});
+            for ([_]f32{ 1, -1 }, [_]usize{ 0, NLEG }) |side, base| {
+                for (0..NLEG) |i| {
+                    const shape = legShape(BROOD_SKIN, side, i);
+                    try std.testing.expect(mathx.lenV(mathx.subV(foe.markOn(b.xf[FEMUR_0 + base + i], shape.knee), foe.markOn(b.xf[TIBIA_0 + base + i], mathx.zero3))) < 0.001);
+                    try std.testing.expect(foe.markOn(b.xf[TIBIA_0 + base + i], shape.foot).y >= -0.005);
+                }
+            }
+        }
+        try std.testing.expectApproxEqAbs(@as(f32, 0), b.lift, 0.0001);
+    }
+}
+test "brood sac hit volume follows growth and squashed shell across sizes" {
+    for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+        for ([_]f32{ 0, 5, 11.4 }) |age| {
+            for ([_]f32{ -0.12, 0, 0.38 }) |squash| {
+                var sac = Sac.lay(v3(3, 2, -4), 0.3, size);
+                sac.t = age;
+                sac.recoil.v = squash;
+                const c = sac.centerWorld();
+                const r = sac.shellRadii();
+                try std.testing.expect(c.y - r.y >= sac.pos.y);
+                const axes = [_]rl.Vector3{ v3(r.x, 0, 0), v3(0, r.y, 0), v3(0, 0, r.z) };
+                for (axes) |axis| {
+                    const inside = mathx.addV(c, mathx.scaleV(axis, 0.97));
+                    const outside = mathx.addV(c, mathx.scaleV(axis, 1.15));
+                    const blade = foe.Blade{ .active = true, .pierce = true, .r = 0.002, .a = inside, .b = inside, .a0 = inside, .b0 = inside, .hit = .{ .dmg = 1 } };
+                    try std.testing.expect(sac.shellTouches(blade));
+                    var miss = blade;
+                    miss.a = outside;
+                    miss.b = outside;
+                    miss.a0 = outside;
+                    miss.b0 = outside;
+                    sac.tryHit(miss);
+                    try std.testing.expectEqual(@as(u32, 0), sac.hits);
+                }
+                sac.tryHit(foe.shaftThrough(c, .{ .dmg = 1 }));
+                try std.testing.expectEqual(@as(u32, 1), sac.hits);
+            }
+        }
+    }
+}
+
+test "brood sac hits compress then overshoot without a pose jump or a stagger" {
+    for ([_]f32{ 30, 60, 144 }) |fps| {
+        var sac = Sac.lay(mathx.zero3, 0.3, 1);
+        sac.t = 3;
+        const before = sac.xform();
+        sac.tryHit(foe.shaftThrough(sac.centerWorld(), .{ .dmg = 1 }));
+        try std.testing.expectApproxEqAbs(before.m5, sac.xform().m5, 1e-6);
+        var low: f32 = 0;
+        var high: f32 = 0;
+        for (0..@as(usize, @intFromFloat(fps))) |_| {
+            _ = sac.update(1 / fps, .{});
+            low = @min(low, sac.recoil.v);
+            high = @max(high, sac.recoil.v);
+            try std.testing.expect(!sac.staggered() and sac.standing());
+        }
+        try std.testing.expect(high > 0.28 and high < 0.48);
+        try std.testing.expect(low < -0.06);
+        try std.testing.expect(@abs(sac.recoil.v) < 0.002);
+    }
+}
+
+test "brood sac rupture retains the struck size and settles to nothing before removal" {
+    for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+        for ([_]f32{ 0, 5, 11.4 }) |age| {
+            var sac = Sac.lay(v3(3, 2, -4), 0.3, size);
+            sac.t = age;
+            sac.recoil.v = 0.24;
+            const before = sac.xform();
+            sac.tryHit(foe.shaftThrough(sac.centerWorld(), .{ .dmg = 100 }));
+            const after = sac.xform();
+            try std.testing.expectApproxEqAbs(before.m0, after.m0, 1e-6);
+            try std.testing.expectApproxEqAbs(before.m5, after.m5, 1e-6);
+            sac.t = SAC_BURST_DUR * 0.20;
+            const crushed = sac.xform().m5;
+            sac.t = SAC_BURST_DUR * 0.34;
+            try std.testing.expect(sac.xform().m5 > crushed);
+            sac.t = SAC_BURST_DUR * 0.999;
+            try std.testing.expect(sac.xform().m0 < size * 0.0001);
+            _ = sac.update(1.0 / 60.0, .{});
+            try std.testing.expect(sac.gone and !sac.hatched);
+        }
+    }
 }

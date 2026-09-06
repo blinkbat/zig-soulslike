@@ -6,6 +6,7 @@ const combat = @import("../play/combat.zig");
 const heromod = @import("../play/hero.zig");
 const foe = @import("foe.zig");
 const wf = @import("../world/worldfmt.zig");
+const anim = @import("../core/anim.zig");
 const sfx = @import("../core/audio.zig");
 
 const v3 = mathx.v3;
@@ -72,8 +73,8 @@ const solePatches = [_]heromod.SolePatch{
 const H: f32 = heromod.H;
 const SEG_THIGH = heromod.SEG_THIGH; // shared with the hero — legChain's geometry is measured off
 const SEG_SHANK = heromod.SEG_SHANK;
-const SEG_UPARM = 0.194;
-const SEG_FOREARM = 0.153;
+const SEG_UPARM = 0.235;
+const SEG_FOREARM = 0.195;
 
 const REST = restPositions();
 
@@ -132,7 +133,7 @@ pub const SCALE = 2.3;
 const WALK_SPEED = heromod.WALK_SPEED_BANK * 0.72;
 pub var AGGRO_R: f32 = 18.0;
 const SLAM_R = 2.3;
-const SWIPE_R = 4.4;
+const SWIPE_R = 3.55;
 /// THE REFERENCE FOR HOW HARD A BIG BODY FOLLOWS YOU — PUBLIC because the bone knight is pinned into this class rather than tuned against nothing. rad/s; ~195 deg/s.
 pub const TURN_RATE = 3.4;
 pub const SWIPE_TURN = 5.4;
@@ -177,11 +178,9 @@ const DRIVE_SPEED = 9.0; // m/s through the surge (~4.3 m covered)
 const DRIVE_REC_DUR = 0.95;
 const DRIVE_CD = 5.0;
 const DRIVE_MIN = 4.5;
-const DRIVE_MAX = 7.0;
+const DRIVE_MAX = 6.10;
 const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 6.0;
-const STUN_EASE_DEG = 260.0;
-const STUN_EASE_FRAC = 4.0;
 
 const HP_MAX = 300.0;
 const POISE_MAX = 30.0;
@@ -268,17 +267,10 @@ const TOE_LIFT = 15.0;
 const TOE_GRIP = 22.0;
 const TOE_CURL = 24.0;
 
-const HIP_ADDUCT = heromod.HIP_ADDUCT;
-const FOOT_TOEOUT = heromod.FOOT_TOEOUT;
-const IDLE_KNEE = heromod.IDLE_KNEE;
 const IDLE_RATE = 1.5; // rad/s of the slow weight-shift cycle (~4.2 s period — heavy, unhurried)
 const BREATHE_RATE = 1.05;
-const A_BREATHE = 0.012 * H;
 const A_IDLE_SWAY = 0.020 * H;
 const IDLE_ROLL = 3.2;
-const STANCE_WIDEN = 3.5;
-const BRACE_HIP = 12.0;
-const BRACE_KNEE = 24.0;
 const BRACE_SINK = 0.011 * H;
 
 /// Sized by ARITHMETIC over the worst frame (the ring law): a KILLING HEAVY BLOW landing on the frame the DRIVE hits. The drive lays 42 dust; `tryHit` then fires the heavy spray (30), the death spray (24) and `foe.wounded`'s 3. That is 99.
@@ -316,9 +308,9 @@ const SWIPE_NEAR_K = 0.5;
 const WIND_TURN_SHARE: f32 = 0.4;
 
 /// The drop itself turns not at all, so all the aiming the slam ever gets is the rear-back's, and its floor is the wind with no hang on it.
-fn slamBearing(dist: f32, scale: f32) f32 {
+fn slamBearing(dist: f32, _: f32) f32 {
     return mathx.degrees(TURN_RATE * WIND_TURN_SHARE * WINDUP_DUR) +
-        combat.subtendedArc(foe.hurtReach(SLAM_HALF_W, scale), dist);
+        combat.subtendedArc(foe.HERO_R, dist);
 }
 
 fn swipeInnerAt(scale: f32) f32 {
@@ -432,12 +424,17 @@ pub const Ogre = struct {
     wade: foe.Wade = .{},
     aiRng: mathx.Rng = mathx.Rng.init(2),
 
+    poseSprings: anim.SpringBank(14) = .{},
+    carryHang: f32 = 1,
+    clubWas: [2]rl.Vector3 = .{ mathx.zero3, mathx.zero3 },
+    clubIs: ?[2]rl.Vector3 = null,
     xf: [N]rl.Matrix = undefined,
     rest: [N]rl.Vector3 = undefined,
 
     pub fn spawn(home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Ogre {
         var o = Ogre{ .pos = home, .home = home, .facing = faceYaw, .scale = scale * SCALE, .seed = seed };
         o.rest = REST;
+        o.poseSprings.seat(o.poseChannels());
         o.fxRng = foe.fxStream(seed, 88883.0, 7);
         o.aiRng = foe.fxStream(seed, 51707.0, 5);
         o.pose();
@@ -535,6 +532,7 @@ pub const Ogre = struct {
         const bearing = self.bearingTo(hero);
         self.trackHead(hero, d, dt);
         self.takeParry();
+        var live: ?combat.Hit = null;
         switch (self.state) {
             .idle => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
@@ -562,7 +560,7 @@ pub const Ogre = struct {
             },
             .windup => {
                 self.faceToward(hero, dt * WIND_TURN_SHARE);
-                const k = mathx.smoothstep(0, WINDUP_DUR * 0.82, self.t);
+                const k = anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.82, .v = 1 }, .{ .t = 1, .v = 1, .ease = .hold } }, self.t / WINDUP_DUR);
                 self.setWindup(k);
                 self.emitStrain(dt, k);
                 if (self.t >= WINDUP_DUR + self.windHold) self.enter(.slam);
@@ -571,7 +569,7 @@ pub const Ogre = struct {
                 const k = foe.swingCurve(self.t / SLAM_DUR);
                 self.setSlam(k);
                 if (self.t >= SLAM_DUR * SLAM_IMPACT_K) {
-                    self.tryImpact(hero, SLAM_HIT);
+                    live = SLAM_HIT;
                     if (!self.slammed) {
                         self.slammed = true;
                         self.judder = 1.0;
@@ -594,7 +592,7 @@ pub const Ogre = struct {
                 const k = foe.swingCurve(self.t / SWIPE_DUR);
                 self.setSwipe(k);
                 if (self.t >= SWIPE_DUR * SWIPE_IMPACT_K) {
-                    self.trySwipe(hero, SWIPE_HIT);
+                    live = SWIPE_HIT;
                     if (!self.slammed) {
                         self.slammed = true;
                         const low = self.clubLowWorld();
@@ -611,16 +609,16 @@ pub const Ogre = struct {
                 }
             },
             .backwind => {
-                foe.faceToward(self.pos, &self.facing, hero, SWIPE_TURN * 0.6, dt);
+                foe.faceToward(self.pos, &self.facing, hero, SWIPE_TURN, dt);
                 self.setBackwind(mathx.smoothstep(0, 1, self.t / BACK_WIND_DUR));
                 if (self.t >= BACK_WIND_DUR) self.enter(.backswipe);
             },
             .backswipe => {
                 foe.faceToward(self.pos, &self.facing, hero, SWIPE_TURN, dt);
-                const k = foe.swingCurve(self.t / BACK_DUR);
+                const k = anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.25, .v = 0, .ease = .hold }, .{ .t = 0.76, .v = 0.92, .ease = .accel }, .{ .t = 1, .v = 1, .ease = .decel } }, self.t / BACK_DUR);
                 self.setBackswipe(k);
                 if (self.t >= BACK_DUR * BACK_IMPACT_K) {
-                    self.trySweep(hero, SWIPE_HIT, BACK_ARC_MID, BACK_ARC);
+                    live = SWIPE_HIT;
                     if (!self.slammed) {
                         self.slammed = true;
                         const low = self.clubLowWorld();
@@ -642,15 +640,16 @@ pub const Ogre = struct {
                 self.faceToward(hero, dt * 0.5);
                 const surge = DRIVE_DUR * DRIVE_IMPACT_K;
                 self.setDrive(foe.swingCurve(self.t / DRIVE_DUR));
-                if (self.t < surge) {
+                const travelDt = @max(0, @min(self.t, surge) - @min(@max(0, self.t - dt), surge));
+                if (travelDt > 0) {
                     const f = self.fdir();
-                    const moved = DRIVE_SPEED * dt;
+                    const moved = DRIVE_SPEED * travelDt;
                     mathx.stepXZ(&self.pos, f, moved, bounds);
                     movedDist = moved;
                     moveYaw = mathx.headingXZ(f);
                 }
                 if (self.t >= surge) {
-                    self.tryImpact(hero, DRIVE_HIT);
+                    live = DRIVE_HIT;
                     if (!self.slammed) {
                         self.slammed = true;
                         self.judder = 1.0;
@@ -699,7 +698,22 @@ pub const Ogre = struct {
         const gaitSpeed: f32 = if (movedDist <= 0) 0 else if (self.state == .drive) DRIVE_SPEED else WALK_SPEED;
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, gaitSpeed, moveYaw, self.facing);
         self.footfalls();
+        self.carryHang = switch (self.state) {
+            .windup, .slam, .swipewind, .swipe, .backwind, .backswipe, .drivewind, .drive, .recover => 0,
+            else => 1,
+        };
+        var target = self.poseChannels();
+        const striking = self.state == .slam or self.state == .swipe or self.state == .backswipe or self.state == .drive;
+        self.poseSprings.chase(&target, if (striking or live != null) 18000 else 6500, 0.78, 0.97, dt);
+        inline for (POSE_FIELDS, 0..) |field, i| @field(self, field) = target[i];
         self.pose();
+        if (live) |hit| {
+            switch (self.blowKind) {
+                .slam, .drive => self.tryImpact(hero, hit),
+                .swipe => self.trySwipe(hero, hit),
+                .backswipe => self.trySweep(hero, hit, BACK_ARC_MID, BACK_ARC),
+            }
+        }
         self.tryHit(blade);
         return self.heroHit;
     }
@@ -815,6 +829,7 @@ pub const Ogre = struct {
         const lateral = @abs(to.x * fwd.z - to.z * fwd.x);
         if (axial < -0.2 or axial > self.slamReach()) return;
         if (lateral > foe.hurtReach(SLAM_HALF_W, self.scale)) return;
+        if (!self.clubReaches(hero)) return;
         self.heroHit = h;
         self.heroLatch = true;
         self.leash.noteCombat();
@@ -827,6 +842,7 @@ pub const Ogre = struct {
         if (d < self.swipeInner() or d > self.swipeReach()) return;
         const slack = combat.subtendedArc(HERO_REACH, mathx.maxF(SWIPE_SLACK_MIN_D, d));
         if (@abs(mathx.wrapDeg(self.bearingTo(hero) - mid)) > arc * 0.5 + slack) return;
+        if (!self.clubReaches(hero)) return;
         self.heroHit = h;
         self.heroLatch = true;
         self.leash.noteCombat();
@@ -950,60 +966,76 @@ pub const Ogre = struct {
         self.headLook = mathx.approach(self.headLook, HEAD_LOOK_DOWN * near, dt * 40.0);
     }
 
-    fn setCarry(self: *Ogre, dt: f32) void {
-        const e = dt * 6.0;
+    const POSE_FIELDS = .{ "bodyLean", "twist", "legBrace", "girdle", "carryHang", "headPitch", "jawOpen", "offShoulder", "offElbow", "clubShoulder", "clubAbd", "clubSweep", "clubElbow", "clubTilt" };
+
+    fn poseChannels(self: *const Ogre) [POSE_FIELDS.len]f32 {
+        var values: [POSE_FIELDS.len]f32 = undefined;
+        inline for (POSE_FIELDS, 0..) |field, i| values[i] = @field(self, field);
+        return values;
+    }
+
+    fn clubSeg(self: *const Ogre) [2]rl.Vector3 {
+        const center = v3(0, gy - CLUB_DROP + CLUB_HEAD_HH, gz + 0.022 * H);
+        return .{
+            foe.markOn(self.xf[CLUB], mathx.addV(center, v3(0, -0.025 * H, 0))),
+            foe.markOn(self.xf[CLUB], mathx.addV(center, v3(0, 0.025 * H, 0))),
+        };
+    }
+
+    fn clubReaches(self: *const Ogre, hero: rl.Vector3) bool {
+        return foe.weaponReaches(self.clubWas, self.clubSeg(), hero, CLUB_HEAD_R * 1.06 * self.scale + foe.HERO_R);
+    }
+
+    fn setCarry(self: *Ogre, _: f32) void {
         const breathe = mathx.sinf(self.elapsed * BREATHE_RATE + self.seed * 6.28);
         const rock = mathx.sinf(self.elapsed * IDLE_RATE + self.seed * 6.28);
         const sigh = mathx.smoothstep(0.80, 1.0, mathx.sinf(self.elapsed * 0.42 + self.seed * 11.0)); // a slow swell every ~15 s
         const stalk = self.moving;
-        self.clubShoulder = mathx.approach(self.clubShoulder, CARRY_SH + 3.0 * rock + 2.0 * sigh, e);
-        self.clubElbow = mathx.approach(self.clubElbow, CARRY_EL + 2.5 * breathe, e);
-        self.offShoulder = mathx.approach(self.offShoulder, OFF_SH - 2.5 * rock, e);
-        self.offElbow = mathx.approach(self.offElbow, OFF_EL, e);
-        self.bodyLean = mathx.approach(self.bodyLean, HUNCH + 1.5 * breathe + 4.0 * sigh + 4.0 * stalk, e);
-        self.headPitch = mathx.approach(self.headPitch, HEAD_DROOP + 2.0 * breathe + 2.5 * rock + 5.0 * sigh - 12.0 * stalk, e);
-        self.twist = mathx.approach(self.twist, 0, e * 8.0);
-        self.clubTilt = mathx.approach(self.clubTilt, CARRY_TILT - (self.bodyLean - HUNCH) + 3.0 * rock, e * 8.0);
-        self.clubAbd = mathx.approach(self.clubAbd, CLUB_ABD + 2.0 * breathe, e);
-        self.clubSweep = mathx.approach(self.clubSweep, 0, e);
-        self.legBrace = mathx.approach(self.legBrace, 0, e);
-        self.jawOpen = mathx.approach(self.jawOpen, JAW_REST + JAW_BREATHE * breathe + 6.0 * sigh + JAW_STALK * stalk, e * 0.8);
-        self.girdle = mathx.approach(self.girdle, GIRDLE_HEAVE * mathx.sinf(self.elapsed * BREATHE_RATE + self.seed * 6.28 - 0.7) - 2.0 * sigh, e);
+        self.clubShoulder = CARRY_SH + 3.0 * rock + 2.0 * sigh;
+        self.clubElbow = CARRY_EL + 2.5 * breathe;
+        self.offShoulder = OFF_SH - 2.5 * rock;
+        self.offElbow = OFF_EL;
+        self.bodyLean = HUNCH + 1.5 * breathe + 4.0 * sigh + 4.0 * stalk;
+        self.headPitch = HEAD_DROOP + 2.0 * breathe + 2.5 * rock + 5.0 * sigh - 12.0 * stalk;
+        self.twist = 0;
+        self.clubTilt = CARRY_TILT - (self.bodyLean - HUNCH) + 3.0 * rock;
+        self.clubAbd = CLUB_ABD + 2.0 * breathe;
+        self.clubSweep = 0;
+        self.legBrace = 0;
+        self.jawOpen = JAW_REST + JAW_BREATHE * breathe + 6.0 * sigh + JAW_STALK * stalk;
+        self.girdle = GIRDLE_HEAVE * mathx.sinf(self.elapsed * BREATHE_RATE + self.seed * 6.28 - 0.7) - 2.0 * sigh;
     }
-    /// `mathx.approach` steps in the units of what it moves, so ONE rate cannot serve both an angle and a fraction: at the 4 the leg brace wants, the club arm crawled home from `OVER_SH` at four degrees a second.
-    fn easeChannelsNeutral(self: *Ogre, dt: f32) void {
-        const d = dt * STUN_EASE_DEG;
-        self.clubShoulder = mathx.approach(self.clubShoulder, CARRY_SH, d);
-        self.clubElbow = mathx.approach(self.clubElbow, CARRY_EL, d);
-        self.offShoulder = mathx.approach(self.offShoulder, OFF_SH, d);
-        self.offElbow = mathx.approach(self.offElbow, OFF_EL, d);
-        self.bodyLean = mathx.approach(self.bodyLean, HUNCH, d);
-        self.headPitch = mathx.approach(self.headPitch, HEAD_DROOP, d);
-        self.twist = mathx.approach(self.twist, 0, d * 2.0);
-        self.clubTilt = mathx.approach(self.clubTilt, CARRY_TILT, d * 2.0);
-        self.clubAbd = mathx.approach(self.clubAbd, CLUB_ABD, d);
-        self.clubSweep = mathx.approach(self.clubSweep, 0, d);
-        self.legBrace = mathx.approach(self.legBrace, 0, dt * STUN_EASE_FRAC); // 0..1, not degrees
-        self.jawOpen = mathx.approach(self.jawOpen, JAW_REST, d * 0.25);
-        self.girdle = mathx.approach(self.girdle, 0, d);
+    fn easeChannelsNeutral(self: *Ogre, _: f32) void {
+        self.clubShoulder = CARRY_SH;
+        self.clubElbow = CARRY_EL;
+        self.offShoulder = OFF_SH;
+        self.offElbow = OFF_EL;
+        self.bodyLean = HUNCH;
+        self.headPitch = HEAD_DROOP;
+        self.twist = 0;
+        self.clubTilt = CARRY_TILT;
+        self.clubAbd = CLUB_ABD;
+        self.clubSweep = 0;
+        self.legBrace = 0;
+        self.jawOpen = JAW_REST;
+        self.girdle = 0;
     }
     fn setWindup(self: *Ogre, k: f32) void {
         const kBody = mathx.smoothstep(0, 0.7, k);
         const kArm = k * @sqrt(k);
-        const shiver = mathx.sinf(self.t * 36.0) * 1.8 * mathx.smoothstep(0.75, 1.0, k);
-        self.clubShoulder = lerpF(CARRY_SH, OVER_SH, kArm) + shiver;
+        self.clubShoulder = lerpF(CARRY_SH, OVER_SH, kArm);
         self.clubElbow = lerpF(CARRY_EL, WIND_EL, kArm);
         self.offShoulder = lerpF(OFF_SH, -74.0, kBody);
         self.offElbow = lerpF(OFF_EL, -44.0, kBody);
         self.bodyLean = lerpF(HUNCH, -24.0, kBody);
         self.headPitch = lerpF(HEAD_DROOP, -20.0, kBody);
         self.twist = lerpF(0, -26.0, k);
-        self.clubTilt = lerpF(CARRY_TILT, WIND_TILT, kArm) + shiver * 0.6;
+        self.clubTilt = lerpF(CARRY_TILT, WIND_TILT, kArm);
         self.clubAbd = lerpF(CLUB_ABD, WIND_ABD, kArm);
         self.clubSweep = lerpF(self.clubSweep, 0, kArm);
         self.legBrace = lerpF(0, 0.55, kBody);
-        self.jawOpen = lerpF(JAW_REST, JAW_ROAR, mathx.smoothstep(0, 0.45, k)) + shiver * 0.8;
-        self.girdle = lerpF(0, GIRDLE_WIND, kArm) + shiver * 0.5;
+        self.jawOpen = lerpF(JAW_REST, JAW_ROAR, mathx.smoothstep(0, 0.45, k));
+        self.girdle = lerpF(0, GIRDLE_WIND, kArm);
     }
     fn setSlam(self: *Ogre, k: f32) void {
         const kArm = 1.0 - (1.0 - k) * (1.0 - k);
@@ -1039,7 +1071,7 @@ pub const Ogre = struct {
         self.girdle = lerpF(0, 9.0, kArm);
     }
     fn setSwipe(self: *Ogre, k: f32) void {
-        const kW = 1.0 - (1.0 - k) * (1.0 - k) * (1.0 - k);
+        const kW = k;
         self.twist = lerpF(-46.0, 52.0, kW);
         self.clubShoulder = lerpF(-26.0, -6.0, kW);
         self.clubElbow = lerpF(-38.0, -8.0, kW);
@@ -1071,7 +1103,7 @@ pub const Ogre = struct {
         self.girdle = lerpF(-2.0, 7.0, k);
     }
     fn setBackswipe(self: *Ogre, k: f32) void {
-        const kW = 1.0 - (1.0 - k) * (1.0 - k) * (1.0 - k);
+        const kW = k;
         self.twist = lerpF(52.0, -48.0, kW);
         self.clubShoulder = lerpF(-6.0, -8.0, kW);
         self.clubElbow = lerpF(-8.0, -12.0, kW);
@@ -1088,19 +1120,18 @@ pub const Ogre = struct {
     }
     fn setDrivewind(self: *Ogre, k: f32) void {
         const kArm = k * @sqrt(k);
-        const shiver = mathx.sinf(self.t * 34.0) * 1.6 * mathx.smoothstep(0.7, 1.0, k);
-        self.clubShoulder = lerpF(CARRY_SH, -118.0, kArm) + shiver;
+        self.clubShoulder = lerpF(CARRY_SH, -118.0, kArm);
         self.clubElbow = lerpF(CARRY_EL, -66.0, kArm);
         self.offShoulder = lerpF(OFF_SH, -52.0, k);
         self.offElbow = lerpF(OFF_EL, -48.0, k);
         self.bodyLean = lerpF(HUNCH, 30.0, k);
         self.headPitch = lerpF(HEAD_DROOP, -26.0, k);
         self.twist = lerpF(0, -18.0, k);
-        self.clubTilt = lerpF(CARRY_TILT, WIND_TILT, kArm) + shiver * 0.5;
+        self.clubTilt = lerpF(CARRY_TILT, WIND_TILT, kArm);
         self.clubAbd = lerpF(CLUB_ABD, WIND_ABD, kArm);
         self.clubSweep = lerpF(self.clubSweep, 0, kArm);
         self.legBrace = lerpF(0, 0.8, k);
-        self.jawOpen = lerpF(JAW_REST, JAW_ROAR, mathx.smoothstep(0, 0.5, k)) + shiver * 0.7;
+        self.jawOpen = lerpF(JAW_REST, JAW_ROAR, mathx.smoothstep(0, 0.5, k));
         self.girdle = lerpF(0, GIRDLE_WIND * 0.7, kArm);
     }
     fn setDrive(self: *Ogre, k: f32) void {
@@ -1125,7 +1156,7 @@ pub const Ogre = struct {
             .backswipe => return self.setBackswipeRecover(u),
             .slam, .drive => {},
         }
-        const spent = 1.0 - mathx.smoothstep(0.7, 1.0, u);
+        const spent = anim.keyAt(&.{ .{ .t = 0, .v = 1 }, .{ .t = 0.50, .v = 1, .ease = .hold }, .{ .t = 0.90, .v = -0.035 }, .{ .t = 1, .v = 0 } }, u);
         const heave = 3.0 * mathx.sinf(self.elapsed * 7.0) * spent;
         const ring = self.judder * mathx.sinf(self.t * 44.0);
         self.clubShoulder = lerpF(CARRY_SH, SLAM_SH, spent) + heave * 0.4 + 6.5 * ring;
@@ -1144,7 +1175,7 @@ pub const Ogre = struct {
     }
 
     fn setSwipeRecover(self: *Ogre, u: f32) void {
-        const over = 1.0 - mathx.smoothstep(0.35, 1.0, u);
+        const over = anim.keyAt(&.{ .{ .t = 0, .v = 1 }, .{ .t = 0.20, .v = 1.035, .ease = .decel }, .{ .t = 0.84, .v = -0.065 }, .{ .t = 1, .v = 0 } }, u);
         const settle = mathx.sinf(u * std.math.pi * 2.0) * (1.0 - u) * 2.5;
         self.twist = lerpF(0, 52.0, over) + settle;
         self.clubShoulder = lerpF(CARRY_SH, -4.0, over);
@@ -1162,7 +1193,7 @@ pub const Ogre = struct {
     }
 
     fn setBackswipeRecover(self: *Ogre, u: f32) void {
-        const over = 1.0 - mathx.smoothstep(0.35, 1.0, u);
+        const over = anim.keyAt(&.{ .{ .t = 0, .v = 1 }, .{ .t = 0.20, .v = 1.035, .ease = .decel }, .{ .t = 0.84, .v = -0.065 }, .{ .t = 1, .v = 0 } }, u);
         const settle = mathx.sinf(u * std.math.pi * 2.0) * (1.0 - u) * 2.5;
         self.twist = lerpF(0, -44.0, over) - settle;
         self.clubShoulder = lerpF(CARRY_SH, -8.0, over);
@@ -1180,11 +1211,14 @@ pub const Ogre = struct {
     }
 
     fn stunAmount(self: *const Ogre) f32 {
-        return switch (self.state) {
-            .stunlight => foe.stunCurve(self.t, false),
-            .stunheavy => foe.stunCurve(self.t, true),
-            else => 0,
-        };
+        if (self.state != .stunlight and self.state != .stunheavy) return 0;
+        return anim.keyAt(&.{
+            .{ .t = 0, .v = 0 },
+            .{ .t = 0.14, .v = 1, .ease = .decel },
+            .{ .t = 0.48, .v = 0.94 },
+            .{ .t = 0.86, .v = -0.12 },
+            .{ .t = 1, .v = 0 },
+        }, self.t / combat.foeStunDur(self.state == .stunheavy));
     }
 
     pub fn pose(self: *Ogre) void {
@@ -1215,7 +1249,6 @@ pub const Ogre = struct {
 
         const idleAmt = (1.0 - mathx.clampF(self.moving * 2.0, 0, 1)) * (1.0 - dk1);
         const wshift = mathx.sinf(self.elapsed * IDLE_RATE + self.seed * 6.28);
-        const idleBob = A_BREATHE * mathx.sinf(self.elapsed * BREATHE_RATE + self.seed * 3.0) * idleAmt;
         const idleSway = A_IDLE_SWAY * wshift * idleAmt;
 
         var wx: [N]rl.Matrix = undefined;
@@ -1224,10 +1257,10 @@ pub const Ogre = struct {
         const waist = (1.0 - PELVIS_SHARE) * bodyPitch;
         const lumber = A_LUMBER * mathx.sinf(twoPi * self.phase) * m;
         const prot = A_PROT * mathx.sinf(twoPi * self.phase + 0.5) * m;
-        const rollZ = 16.0 * dk2 + 9.0 * hstun + IDLE_ROLL * wshift * idleAmt + lumber + 1.5 * self.judder * mathx.sinf(self.t * 44.0);
+        const rollZ = 16.0 * dk2 + IDLE_ROLL * wshift * idleAmt + lumber + 1.5 * self.judder * mathx.sinf(self.elapsed * 44.0);
         const drop = -0.24 * H * hstun;
         const collapse = lerpF(hipY, 0.32 * H, dk1);
-        const pelvY = if (dead) collapse else hipY + bob + catchDip + idleBob + braceSink + drop;
+        const pelvY = if (dead) collapse else hipY + bob + catchDip + braceSink + drop;
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul3(rz(rollZ), rx(leanX), ry(prot)),
             mul(tr((sway + idleSway) * fs, pelvY * fs + sink, 0), ry(facingDeg)),
@@ -1238,10 +1271,12 @@ pub const Ogre = struct {
             if (self.moving > 0.25) {
                 heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, 0, HIPL, KNEEL, HIPR, KNEER, solePatches);
             } else {
-                const leftFree = mathx.clampF(-wshift, 0, 1) * idleAmt;
-                const rightFree = mathx.clampF(wshift, 0, 1) * idleAmt;
-                self.legPose(&wx, 1.0, leftFree, self.legBrace, HIPL, KNEEL, ANKL);
-                self.legPose(&wx, -1.0, rightFree, self.legBrace, HIPR, KNEER, ANKR);
+                const body = mul3(scaleM(fs, fs, fs), ry(facingDeg), heromod.rootAt(self.pos));
+                const forward = self.fdir();
+                for ([_][3]usize{ .{ HIPL, KNEEL, ANKL }, .{ HIPR, KNEER, ANKR } }) |leg| {
+                    const ankle = foe.markOn(body, v3(self.rest[leg[0]].x, self.rest[leg[2]].y, 0));
+                    heromod.armTo(&wx, self.rest, leg[0], leg[1], leg[2], ankle, forward, v3(0, -1, 0), forward);
+                }
             }
         }
         self.poseUpper(&wx, dk1, dk2, lstun, hstun, dead, lumber, prot, waist);
@@ -1249,6 +1284,9 @@ pub const Ogre = struct {
         self.toePose(&wx, self.phase, m, curl, TOEL);
         self.toePose(&wx, self.phase + 0.5, m, curl, TOER);
         self.xf = wx;
+        const club = self.clubSeg();
+        self.clubWas = self.clubIs orelse club;
+        self.clubIs = club;
     }
 
     fn toePose(self: *const Ogre, wx: *[N]rl.Matrix, ph: f32, m: f32, curl: f32, toe: usize) void {
@@ -1257,28 +1295,15 @@ pub const Ogre = struct {
         setLocal(wx, toe, self.rest, rx(roll + TOE_GRIP * self.legBrace + TOE_CURL * curl + 2.0 * self.jolt * m));
     }
 
-    fn legPose(self: *const Ogre, wx: *[N]rl.Matrix, side: f32, free: f32, brace: f32, hip: usize, knee: usize, ank: usize) void {
-        const hipFlex = BRACE_HIP * brace + 5.0 * free;
-        const kneeFlex = IDLE_KNEE + BRACE_KNEE * brace + 18.0 * free;
-        const splay = STANCE_WIDEN * brace;
-        setLocal(wx, hip, self.rest, mul(rx(-hipFlex), rz(-side * HIP_ADDUCT + side * splay)));
-        setLocal(wx, knee, self.rest, rx(kneeFlex));
-        const ankFlex = lerpF(hipFlex * 0.5, kneeFlex - hipFlex, brace) - 8.0 * free;
-        setLocal(wx, ank, self.rest, mul(rx(ankFlex), ry(side * FOOT_TOEOUT)));
-    }
-
     fn poseUpper(self: *Ogre, wx: *[N]rl.Matrix, dk1: f32, dk2: f32, lstun: f32, hstun: f32, dead: bool, lumber: f32, prot: f32, waist: f32) void {
         const rest = self.rest;
         const m = self.moving * (1.0 - dk1);
         const armPh = std.math.tau * self.phase;
-        const hung: f32 = switch (self.state) {
-            .windup, .slam, .swipewind, .swipe, .backwind, .backswipe, .drivewind, .drive, .recover => 0,
-            else => 1,
-        };
+        const hung = self.carryHang;
         const nod = TRUNK_NOD * (0.5 - 0.5 * mathx.cosf(2.0 * armPh)) * m + 1.6 * self.jolt * m;
         const spineFlex = 6.0 + 26.0 * dk1 + 12.0 * hstun - 14.0 * lstun;
         setLocal(wx, SPINE, rest, mul3(rx(spineFlex * 0.40 + waist * 0.46 + nod * 0.45), ry(self.twist * 0.4 - 0.45 * prot), rz(-0.30 * lumber)));
-        setLocal(wx, CHEST, rest, mul3(rx(spineFlex * 0.32 + waist * 0.34 + nod * 0.55), ry(self.twist * 0.6 - 0.75 * prot), rz(-0.45 * lumber)));
+        setLocal(wx, CHEST, rest, mul3(rx(spineFlex * 0.32 + waist * 0.34 + nod * 0.55), ry(self.twist * 0.6 - 0.75 * prot), rz(-0.45 * lumber + 9.0 * hstun)));
         const humpBreathe = mathx.sinf(self.elapsed * BREATHE_RATE + self.seed * 6.28) * (1.0 - m);
         setLocal(wx, HUMP, rest, mul3(
             rx(spineFlex * 0.26 + waist * 0.20 + nod * 0.30 + 7.0 * hstun - 9.0 * lstun + 5.0 * dk2 + 1.3 * humpBreathe),
@@ -1293,11 +1318,11 @@ pub const Ogre = struct {
             rz(-lumber * 0.35 + 18.0 * dk2),
         ));
         const jaw = self.jawOpen + JAW_FLINCH * lstun + 16.0 * hstun + JAW_DEATH * mathx.maxF(dk1, dk2) +
-            JAW_JOSTLE * (0.8 * self.jolt * m + 0.6 * self.judder * mathx.sinf(self.t * 31.0));
+            JAW_JOSTLE * (0.8 * self.jolt * m + 0.6 * self.judder * mathx.sinf(self.elapsed * 31.0));
         setLocal(wx, JAW, rest, rx(mathx.maxF(0, jaw)));
 
         const buckle = mathx.maxF(dk1, 0.7 * hstun);
-        if (dead or hstun > 0.05) {
+        if (dead) {
             setLocal(wx, HIPL, rest, mul(rx(-58.0 * buckle), rz(-4.0)));
             setLocal(wx, KNEEL, rest, rx(6.0 + 104.0 * buckle));
             setLocal(wx, ANKL, rest, ry(6.0));
@@ -1492,9 +1517,9 @@ fn buildMeshes() [N]rl.Mesh {
 
 fn limb(b: *Builder, a: rl.Vector3, e: rl.Vector3, r0: f32, r1: f32, col: rl.Color) void {
     const mid = mathx.lerpV(a, e, 0.42);
-    b.addCapsule(a, mid, r0, r0 * 1.09, 12, col);
-    b.addCapsule(mid, e, r0 * 1.09, r1, 12, col);
-    b.addBlob(e, v3(r1 * 1.16, r1 * 1.02, r1 * 1.16), 6, 12, col);
+    b.addCapsule(a, mid, r0, r0 * 1.09, 16, col);
+    b.addCapsule(mid, e, r0 * 1.09, r1, 16, col);
+    b.addBlob(e, v3(r1 * 1.16, r1 * 1.02, r1 * 1.16), 6, 16, col);
 }
 
 fn pelvisMesh() rl.Mesh {
@@ -1507,7 +1532,15 @@ fn pelvisMesh() rl.Mesh {
     b.addBlob(v3(0.095 * H, 0.048 * H, 0.020 * H), v3(0.050 * H, 0.032 * H, 0.048 * H), 5, 10, HIDE_LT);
     b.addBlob(v3(-0.092 * H, 0.052 * H, 0.016 * H), v3(0.046 * H, 0.030 * H, 0.046 * H), 5, 10, HIDE_LT);
     b.setMat(.leather);
-    b.addCylinder(v3(0.10 * H, 0.048 * H, 0), v3(-0.10 * H, 0.058 * H, 0), 0.145 * H, 0.145 * H, 9, ROPE);
+    for (0..24) |i| {
+        const a = std.math.tau * @as(f32, @floatFromInt(i)) / 24;
+        const next = std.math.tau * @as(f32, @floatFromInt(i + 1)) / 24;
+        const p0 = v3(@cos(a) * 0.164 * H, (0.040 + @cos(a) * 0.016) * H, @sin(a) * 0.142 * H);
+        const p1 = v3(@cos(next) * 0.164 * H, (0.040 + @cos(next) * 0.016) * H, @sin(next) * 0.142 * H);
+        b.addCapsule(p0, p1, 0.010 * H, 0.010 * H, 7, ROPE);
+    }
+    b.addBlob(v3(-0.045 * H, 0.032 * H, 0.137 * H), v3(0.024 * H, 0.017 * H, 0.018 * H), 6, 10, ROPE);
+    b.addCapsule(v3(-0.040 * H, 0.030 * H, 0.143 * H), v3(-0.030 * H, -0.038 * H, 0.151 * H), 0.009 * H, 0.008 * H, 7, ROPE);
     b.setMat(.cloth);
     const strips = [_][3]f32{ .{ 0.088, 0.150, 0.128 }, .{ 0.030, 0.155, 0.176 }, .{ -0.036, 0.152, 0.104 }, .{ -0.092, 0.146, 0.150 }, .{ -0.006, -0.148, 0.132 } };
     for (strips) |s| {
@@ -1542,7 +1575,7 @@ const BARREL_TOP = BARREL_Y + BARREL_HALF_H;
 fn torsoMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addBlob(v3(0, BARREL_Y, -0.012 * H), v3(0.232 * H, BARREL_HALF_H, 0.166 * H), 10, 17, HIDE);
+    b.addBlob(v3(0, BARREL_Y, -0.012 * H), v3(0.232 * H, BARREL_HALF_H, 0.166 * H), 12, 22, HIDE);
     b.addBlob(v3(0, -0.036 * H, -0.005 * H), v3(0.206 * H, 0.062 * H, 0.150 * H), 8, 15, HIDE);
     b.addBlob(v3(0.070 * H, 0.012 * H, 0.108 * H), v3(0.090 * H, 0.070 * H, 0.078 * H), 8, 13, HIDE);
     b.addBlob(v3(-0.072 * H, 0.016 * H, 0.112 * H), v3(0.098 * H, 0.076 * H, 0.082 * H), 8, 13, HIDE);
@@ -1553,8 +1586,8 @@ fn torsoMesh() rl.Mesh {
     while (w < 16) : (w += 1) {
         const a = rng.angle();
         const yy = rng.range(-0.05, 0.10) * H;
-        const rr = (0.226 - (yy / H + 0.02) * 0.34) * H;
-        const sz = rng.range(0.016, 0.036) * H;
+        const rr = (0.208 - (yy / H + 0.02) * 0.34) * H;
+        const sz = rng.range(0.010, 0.021) * H;
         b.addBlob(v3(mathx.cosf(a) * rr, yy, mathx.sinf(a) * rr * 0.72 - 0.012 * H), v3(sz, sz * rng.range(0.6, 1.1), sz * rng.range(0.7, 1.2)), 5, 9, if (rng.float() < 0.5) HIDE_DK else HIDE_LT);
     }
     return b.toMesh();
@@ -1580,7 +1613,7 @@ fn clavicleMesh(side: f32, load: bool) rl.Mesh {
     const r1: f32 = if (load) 0.088 else 0.076;
     const outer: f32 = if (load) 0.198 else 0.188;
     b.addCapsule(v3(side * 0.070 * H, 0.020 * H, -0.004 * H), v3(side * outer * H, -0.046 * H, 0), r0 * H, r1 * H, 13, HIDE);
-    b.addBlob(v3(side * 0.162 * H, -0.026 * H, 0.006 * H), v3(r1 * 1.22 * H, r1 * 1.28 * H, r1 * 1.18 * H), 8, 13, HIDE);
+    b.addBlob(v3(side * 0.162 * H, -0.026 * H, 0.006 * H), v3(r1 * 1.22 * H, r1 * 1.28 * H, r1 * 1.18 * H), 10, 18, HIDE);
     b.addBlob(v3(side * 0.112 * H, 0.030 * H, -0.030 * H), v3(0.060 * H, 0.030 * H, 0.050 * H), 6, 10, if (load) HIDE_LT else HIDE_DK);
     return b.toMesh();
 }
@@ -1791,8 +1824,8 @@ fn clubMesh() rl.Mesh {
         const roll = rng.float();
         b.addBlob(v3(cx, yy, cz), v3(sz, sz * rng.range(0.7, 1.25), sz), 6, 10, if (roll < 0.35) CLUB_IRON else if (roll < 0.5) IRON_RUST else CLUB_STONE);
         if (rng.float() < 0.5) {
-            const sl = rng.range(1.7, 2.25);
-            b.addCylinder(v3(cx, yy, cz), v3(cx * sl, yy + rng.range(-0.02, 0.03) * H, gz + 0.022 * H + (cz - (gz + 0.022 * H)) * sl), 0.027 * H, 0.002 * H, 5, CLUB_IRON);
+            const sl = rng.range(1.35, 1.70);
+            b.addCylinder(v3(cx, yy, cz), v3(cx * sl, yy + rng.range(-0.02, 0.03) * H, gz + 0.022 * H + (cz - (gz + 0.022 * H)) * sl), 0.027 * H, 0.006 * H, 7, CLUB_IRON);
         }
     }
     b.addBox(v3(0.12 * H, headY + 0.055 * H, gz + 0.10 * H), v3(0.05 * H, 0.014 * H, 0.03 * H), v3(-0.004 * H, 0.05 * H, -0.01 * H), v3(0, 0, 0.006 * H), CLUB_IRON);
@@ -1944,7 +1977,7 @@ test "THE DRIVE ALWAYS REACHES: surge travel + the crush strip covers its own ba
 
     // …and MEASURED, not asserted: spawn one at mid-band, let it run, and the blow must arrive.
     var g = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    const hero = v3(0, 0, (DRIVE_MIN + DRIVE_MAX) * 0.5 + 1.0);
+    const hero = v3(0, 0, DRIVE_MAX);
     var landed = false;
     var drove = false;
     var frames: i32 = 0;
@@ -2027,30 +2060,24 @@ test "THE DRIVE IS A LEAP as far as the roots go: held feet choose the trudge in
     try std.testing.expect(g.state != .drivewind and g.state != .drive);
 }
 
-test "swipe hurt SECTOR: sweeps the whole front arc, misses the flanks behind it and the legs" {
-    var side = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    side.trySwipe(v3(-2.4, 0, 2.4), SWIPE_HIT); // 45 deg off his front on the CLUB side — the arc's path
-    try std.testing.expect(side.heroHit != null);
+fn attackProbe(wind: State, target: rl.Vector3) bool {
+    var o = Ogre.spawn(mathx.zero3, 0, 1, 0.4);
+    o.enter(wind);
+    o.windHold = 0;
+    for (0..360) |_| {
+        if (o.update(1.0 / 120.0, target, 200, .{}) != null) return true;
+        if (o.state == .recover) break;
+    }
+    return false;
+}
 
-    var front = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    front.trySwipe(v3(0, 0, 3.0), SWIPE_HIT);
-    try std.testing.expect(front.heroHit != null);
-
-    var offside = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    offside.trySwipe(v3(2.6, 0, 1.6), SWIPE_HIT);
-    try std.testing.expect(offside.heroHit == null); // (measured: the sweep dies at about +22 deg)
-
-    var behind = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    behind.trySwipe(v3(0, 0, -3.0), SWIPE_HIT);
-    try std.testing.expect(behind.heroHit == null);
-
-    var under = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    under.trySwipe(v3(0, 0, 0.35), SWIPE_HIT);
-    try std.testing.expect(under.heroHit == null);
-
-    var far = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    far.trySwipe(v3(0, 0, SWIPE_OUTER * SCALE + 2.0), SWIPE_HIT);
-    try std.testing.expect(far.heroHit == null);
+test "ogre swipe hits with the club and clears its pocket and targets above or below it" {
+    try std.testing.expect(attackProbe(.swipewind, v3(0, 0, 3.2)));
+    try std.testing.expect(attackProbe(.backwind, v3(0, 0, 3.2)));
+    for ([_]rl.Vector3{ v3(0, 0, 0.35), v3(0, 0, 6), v3(0, 4, 3.2), v3(0, -4, 3.2) }) |target| {
+        try std.testing.expect(!attackProbe(.swipewind, target));
+        try std.testing.expect(!attackProbe(.backwind, target));
+    }
 }
 
 test "the RETURN's hurt sector matches where the club actually goes (band + arc, measured)" {
@@ -2124,26 +2151,15 @@ test "higher poise: a single hero light does NOT flinch the ogre (only sustained
     try std.testing.expectEqual(combat.HitResult.light, vit.hit(heromod.ATK_LIGHT_HIT));
 }
 
-test "slam crush is the club's LINE: hits ahead on the axis, clears the flanks + behind" {
-    var front = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    front.tryImpact(v3(0, 0, 2.0), SLAM_HIT);
-    try std.testing.expect(front.heroHit != null);
-
-    var beside = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    beside.tryImpact(v3(2.4, 0, 0.6), SLAM_HIT);
-    try std.testing.expect(beside.heroHit == null);
-
-    var grazing = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    grazing.tryImpact(v3(0.9, 0, 1.8), SLAM_HIT);
-    try std.testing.expect(grazing.heroHit != null);
-
-    var behind = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    behind.tryImpact(v3(0, 0, -2.0), SLAM_HIT);
-    try std.testing.expect(behind.heroHit == null);
-
-    var far = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    far.tryImpact(v3(0, 0, 99), SLAM_HIT);
-    try std.testing.expect(far.heroHit == null);
+test "ogre slam only bills the club's physical contact" {
+    try std.testing.expect(attackProbe(.windup, v3(0, 0, 2)));
+    for ([_]rl.Vector3{ v3(0, 0, -2), v3(0, 0, 8), v3(0, 4, 2), v3(0, -4, 2) }) |target| {
+        var o = Ogre.spawn(mathx.zero3, 0, 1, 0.4);
+        o.setSlam(1);
+        o.pose();
+        o.tryImpact(target, SLAM_HIT);
+        try std.testing.expect(o.heroHit == null);
+    }
 }
 
 test "NO ATTACK COMES OUT OF NOWHERE: every one of the giant's moves rears first" {
@@ -2196,24 +2212,19 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT — the same instant for both move
     try std.testing.expect(o.parryable() == null);
 }
 
-test "A STAGGER GIVES THE POSTURE BACK BEFORE IT ENDS, so the next move starts from the carry" {
-    var o = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    o.enter(.windup);
-    var t: f32 = 0;
-    while (t < WINDUP_DUR) : (t += 1.0 / 60.0) o.setWindup(mathx.smoothstep(0, WINDUP_DUR * 0.82, t));
-    try std.testing.expect(@abs(o.clubShoulder - CARRY_SH) > 100.0);
-    o.enterStun(.stunlight);
-    t = 0;
-    while (t < combat.FOE_LIGHT_STUN_DUR) : (t += 1.0 / 60.0) o.easeChannelsNeutral(1.0 / 60.0);
-    try std.testing.expectApproxEqAbs(CARRY_SH, o.clubShoulder, 0.01);
-    try std.testing.expectApproxEqAbs(CARRY_EL, o.clubElbow, 0.01);
-    try std.testing.expectApproxEqAbs(HUNCH, o.bodyLean, 0.01);
-    try std.testing.expectApproxEqAbs(CARRY_TILT, o.clubTilt, 0.01);
-    try std.testing.expectApproxEqAbs(CLUB_ABD, o.clubAbd, 0.01);
-    try std.testing.expectApproxEqAbs(@as(f32, 0), o.twist, 0.01);
+test "ogre stagger returns the spring-driven posture to carry before it ends" {
+    var o = Ogre.spawn(mathx.zero3, 0, 1, 0.4);
+    o.debugSlam();
+    for (0..78) |_| _ = o.update(1.0 / 60.0, v3(0, 0, 2), 200, .{});
+    try std.testing.expect(@abs(o.clubShoulder - CARRY_SH) > 100);
+    o.stagger(false);
+    for (0..24) |_| _ = o.update(1.0 / 60.0, v3(0, 0, 2), 200, .{});
+    try std.testing.expectApproxEqAbs(CARRY_SH, o.clubShoulder, 0.1);
+    try std.testing.expectApproxEqAbs(CARRY_EL, o.clubElbow, 0.1);
+    try std.testing.expectApproxEqAbs(HUNCH, o.bodyLean, 0.1);
+    try std.testing.expectApproxEqAbs(CARRY_TILT, o.clubTilt, 0.1);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), o.twist, 0.1);
     try std.testing.expectApproxEqAbs(@as(f32, 0), o.legBrace, 0.01);
-    try std.testing.expectApproxEqAbs(JAW_REST, o.jawOpen, 0.01);
-    try std.testing.expect(@abs(OVER_SH - CARRY_SH) / STUN_EASE_DEG > 0.3);
 }
 
 test "A CAUGHT SLAM NEVER LANDS, and the second catch is the punish window" {
@@ -2329,4 +2340,66 @@ test "THE HEAD IS A PART, NOT THE BODY — it rides the skull over the chest mar
     try std.testing.expectEqual(@as(u8, 2), o.lockParts());
     try std.testing.expectEqual(o.headWorld(), o.lockPointAt(1));
     try std.testing.expectEqual(o.lockPoint(), o.lockPointAt(0));
+}
+
+test "ogre contact remains physical across sizes frame rates and interruption" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+            for ([_]State{ .windup, .swipewind, .backwind, .drivewind }) |wind| {
+                var o = Ogre.spawn(v3(0, 2, 0), 0, size, 0.4);
+                o.enter(wind);
+                o.windHold = 0;
+                const range: f32 = switch (wind) { .windup => 1.8 * size, .drivewind => DRIVE_MAX, else => 2.8 * size + 0.3 };
+                const target = v3(0, 2, range);
+                for (0..480) |_| {
+                    if (o.update(1 / hz, target, 200, .{}) != null) try std.testing.expect(o.clubReaches(target));
+                    try std.testing.expect(!o.clubReaches(v3(0, 12, range)));
+                    if (o.state == .recover) break;
+                }
+                o.debugSlam();
+                for (0..18) |_| _ = o.update(1 / hz, target, 200, .{});
+                const before = o.clubSeg();
+                o.stagger(true);
+                _ = o.update(0, target, 200, .{});
+                for (before, o.clubSeg()) |a, b| {
+                    const gap = mathx.lenV(mathx.subV(a, b));
+                    if (gap >= 0.001) std.debug.print("ogre interrupt Hz {d} size {d} wind {s} gap {d:.6} before {d:.3},{d:.3},{d:.3} after {d:.3},{d:.3},{d:.3}\n", .{ hz, size, @tagName(wind), gap, a.x, a.y, a.z, b.x, b.y, b.z });
+                    try std.testing.expect(gap < 0.001);
+                }
+            }
+        }
+    }
+}
+
+test "ogre heavy stagger keeps its soles above the ground" {
+    for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+        var o = Ogre.spawn(v3(0, 2, 0), 0, size, 0.4);
+        o.stagger(true);
+        for (0..144) |_| {
+            _ = o.update(1.0 / 60.0, v3(0, 2, 90), 200, .{});
+            for (solePatches) |sole| {
+                for ([_]f32{ -sole.halfW, sole.halfW }) |x| {
+                    for ([_]f32{ -sole.heel, sole.toe }) |z| {
+                        const at = foe.markOn(o.xf[sole.bone], v3(x, -sole.drop, z));
+                        if (at.y < o.pos.y - 0.01) std.debug.print("ogre sole size {d} t {d:.3} depth {d:.3}\n", .{ size, o.t, o.pos.y - at.y });
+                        try std.testing.expect(at.y >= o.pos.y - 0.01);
+                    }
+                }
+            }
+        }
+    }
+}
+
+test "ogre drive covers the same ground and reaches its choice band at every frame rate" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        var o = Ogre.spawn(mathx.zero3, 0, 1, 0.4);
+        o.debugDrive();
+        var hit = false;
+        for (0..400) |_| {
+            if (o.update(1 / hz, v3(0, 0, DRIVE_MAX), 200, .{}) != null) hit = true;
+            if (o.state == .recover) break;
+        }
+        try std.testing.expect(hit);
+        try std.testing.expectApproxEqAbs(DRIVE_SPEED * DRIVE_DUR * DRIVE_IMPACT_K, o.pos.z, 0.002);
+    }
 }

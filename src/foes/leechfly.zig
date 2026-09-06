@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const gfx = @import("../gfx/gfx.zig");
 const mathx = @import("../core/mathx.zig");
 const combat = @import("../play/combat.zig");
+const anim = @import("../core/anim.zig");
 const foe = @import("foe.zig");
 const wf = @import("../world/worldfmt.zig");
 const sfx = @import("../core/audio.zig");
@@ -70,14 +71,13 @@ const DISS_DUR: f32 = 0.8;
 const DISSOLVE = foe.Dissolve{ .rate = 30.0, .spread = 0.45, .rise = 0.30, .flake = CHIP };
 const SHOVE_DECAY: f32 = 8.0;
 
-
 pub var STAB_HIT = combat.Hit{ .dmg = 6, .poise = 9 };
 pub const DRINK_DPS: f32 = 10.0;
 const LEECH_SHARE: f32 = 0.55;
 const DRINK_DUR: f32 = 1.45;
 const DRINK_EVERY: f32 = 0.80;
 const FEED_CD: f32 = 3.4;
-const STAB_R: f32 = 1.30;
+const STAB_R: f32 = 0.90;
 const FEED_ARC: f32 = 62.0;
 const FEED_CEIL: f32 = HOVER_LOW + 0.8;
 
@@ -85,7 +85,6 @@ const WIND_DUR: f32 = 0.34; // the rear-back. Clears `foe.TELL_MIN` (0.30) — n
 const STAB_DUR: f32 = 0.16;
 const STAB_IMPACT_K: f32 = 0.45;
 const RECOVER_DUR: f32 = 0.45;
-
 
 const THREAT_R: f32 = 2.0;
 const CLIMB_CD: f32 = 3.8;
@@ -155,12 +154,44 @@ pub fn feedClock() struct { wind: f32, stab: f32, drink: f32 } {
     return .{ .wind = WIND_DUR, .stab = STAB_DUR, .drink = DRINK_DUR };
 }
 
+const Posture = struct {
+    pitch: f32 = 0,
+    bank: f32 = 0,
+    recoil: f32 = 0,
+    lunge: f32 = 0,
+    wing: f32 = 1,
+    pub fn chan(p: Posture) [5]f32 {
+        return .{ p.pitch, p.bank, p.recoil, p.lunge, p.wing };
+    }
+};
+const Pose = anim.Pose(Posture);
+const LOAD = Posture{ .pitch = -14, .lunge = -0.45 };
+const STRUCK = Posture{ .pitch = 16, .lunge = 1 };
+const WIND_KEYS = [_]Pose.PoseKey{
+    .{ .t = 0, .p = .{} },
+    .{ .t = 0.66, .p = LOAD, .ease = .decel },
+    .{ .t = 1, .p = LOAD, .ease = .hold },
+};
+const STAB_KEYS = [_]Pose.PoseKey{
+    .{ .t = 0, .p = LOAD },
+    .{ .t = 0.50, .p = .{ .pitch = 19, .lunge = 1.15 }, .ease = .accel },
+    .{ .t = 1, .p = STRUCK, .ease = .decel },
+};
+const RECOVER_KEYS = [_]Pose.PoseKey{
+    .{ .t = 0, .p = STRUCK },
+    .{ .t = 0.22, .p = .{ .pitch = 18, .lunge = 1.02 }, .ease = .decel },
+    .{ .t = 0.73, .p = .{ .pitch = -5, .lunge = -0.14 } },
+    .{ .t = 1, .p = .{}, .ease = .decel },
+};
 const State = enum { idle, stalk, circle, wind, stab, drink, recover, climb, perch, dive, stunlight, stunheavy, dead };
 
 const Choice = enum { hold, close, circle, feed };
+fn feedReach(scale: f32) f32 {
+    return (STAB_R - foe.HERO_R) * scale + foe.HERO_R;
+}
 fn classify(dist: f32, scale: f32, feedReady: bool) Choice {
     if (dist > AGGRO_R) return .hold;
-    const stab = foe.triggerBand(STAB_R, 1.0, scale);
+    const stab = feedReach(scale);
     if (dist <= stab) return if (feedReady) .feed else .circle;
     if (dist > stab + 1.4) return .close;
     return .circle;
@@ -226,6 +257,9 @@ pub const Leechfly = struct {
     hover: f32 = HOVER_IDLE,
     hoverTo: f32 = HOVER_IDLE,
 
+    springs: anim.SpringBank(5) = .{},
+    recoil: f32 = 0,
+    wing: f32 = 1,
     wingPhase: f32 = 0,
     bank: f32 = 0,
     pitch: f32 = 0,
@@ -259,6 +293,7 @@ pub const Leechfly = struct {
         f.whineT = seed * (HUSH_MIN + HUSH_MAX) * 0.5;
         f.phraseLeft = seed * PHRASE_MAX;
         f.feedCd = seed * FEED_CD;
+        f.springs.seat((Posture{}).chan());
         f.pose();
         return f;
     }
@@ -325,6 +360,10 @@ pub const Leechfly = struct {
         foe.tickParticles(&self.parts, dt, self.pos.y);
 
         var act: Act = .none;
+        var stabbing = false;
+        var drinking = false;
+        const beakWas = self.beakSeg();
+        self.bank = 0;
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
 
         switch (self.state) {
@@ -359,37 +398,24 @@ pub const Leechfly = struct {
             .wind => {
                 self.hoverTo = HOVER_LOW + 0.30;
                 self.faceToward(hero, dt);
-                self.lunge = mathx.approach(self.lunge, -0.45, dt * 6.0);
-                self.pitch = mathx.approach(self.pitch, -14.0, dt * 90.0);
                 if (self.t >= WIND_DUR) self.enter(.stab);
             },
             .stab => {
                 self.hoverTo = HOVER_LOW;
                 const u = mathx.clampF(self.t / STAB_DUR, 0, 1);
-                self.lunge = lerpF(-0.45, 1.0, foe.swingCurve(u));
-                self.pitch = mathx.approach(self.pitch, 16.0, dt * 140.0);
-                if (!self.dealt and u >= STAB_IMPACT_K and self.holds(hero)) {
-                    self.dealt = true;
-                    self.leash.noteCombat();
-                    sfx.world(.leech_stab, self.beakWorld());
-                    act = .{ .stab = STAB_HIT };
-                }
-                if (self.t >= STAB_DUR) self.enter(if (self.dealt) .drink else .recover);
+                stabbing = !self.dealt and u >= STAB_IMPACT_K;
             },
             .drink => {
                 self.hoverTo = HOVER_LOW;
-                self.lunge = mathx.approach(self.lunge, 0.86, dt * 8.0);
-                self.pitch = mathx.approach(self.pitch, 20.0, dt * 60.0);
+                self.lunge = 0.86;
+                self.pitch = 20.0;
                 self.glow = mathx.approach(self.glow, 1.0, dt * 5.0);
                 if (!self.holds(hero) or self.t >= DRINK_DUR) {
                     self.enter(.recover);
                 } else {
                     self.faceToward(hero, dt);
                     self.clingTo(hero, dt, bounds);
-                    if (@floor(self.t / DRINK_EVERY) != @floor((self.t - dt) / DRINK_EVERY)) {
-                        sfx.world(.leech_drink, self.beakWorld());
-                    }
-                    act = .{ .drink = self.sip(dt) };
+                    drinking = true;
                 }
             },
             .recover => {
@@ -402,7 +428,7 @@ pub const Leechfly = struct {
                 self.hoverTo = HOVER_HIGH;
                 self.easeRest(dt);
                 self.faceToward(hero, dt);
-                self.pitch = mathx.approach(self.pitch, -30.0, dt * 120.0);
+                self.pitch = -30.0;
                 if (self.hover >= HOVER_HIGH - 0.15) self.enter(.perch);
             },
             .perch => {
@@ -416,7 +442,7 @@ pub const Leechfly = struct {
             .dive => {
                 self.hoverTo = HOVER_LOW;
                 self.faceToward(hero, dt);
-                self.pitch = mathx.approach(self.pitch, PITCH_MAX, dt * 120.0);
+                self.pitch = PITCH_MAX;
                 self.driftDir = mathx.dirXZ(self.pos, hero);
                 self.flyXZ(self.driftDir, STALK_SPEED, dt, bounds);
                 if (self.hover <= HOVER_LOW + 0.20) self.decide(d, hero);
@@ -433,20 +459,34 @@ pub const Leechfly = struct {
             },
             .dead => {
                 self.hoverTo = 0;
-                self.lunge = mathx.approach(self.lunge, -0.2, dt * 2.0);
-                self.pitch = mathx.approach(self.pitch, 62.0, dt * 90.0);
-                self.bank = mathx.approach(self.bank, 74.0, dt * 80.0);
+                self.lunge = -0.2;
+                self.pitch = 62.0;
+                self.bank = 74.0;
                 foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE);
             },
         }
 
-        if (wantsClimb(d, self.climbCd, self.spookLeft > 0, self.state, !foe.canLeap(&self.root))) self.enterClimb();
+        if (!stabbing and !drinking and wantsClimb(d, self.climbCd, self.spookLeft > 0, self.state, !foe.canLeap(&self.root))) self.enterClimb();
 
         self.flyTo(dt);
         self.beatWings(dt);
+        self.poseStep(dt);
         self.pose();
-        if (self.takeParry()) act = .none;
+        const stopped = self.takeParry();
         self.tryHit(blade);
+        if (stopped or self.staggered()) return .none;
+        if (stabbing and self.inFeedArc(hero) and self.beakTouches(beakWas, hero)) {
+            self.dealt = true;
+            self.leash.noteCombat();
+            sfx.world(.leech_stab, self.beakWorld());
+            act = .{ .stab = STAB_HIT };
+        } else if (drinking) {
+            if (self.holds(hero)) {
+                if (@floor(self.t / DRINK_EVERY) != @floor((self.t - dt) / DRINK_EVERY)) sfx.world(.leech_drink, self.beakWorld());
+                act = .{ .drink = self.sip(dt) };
+            } else self.enter(.recover);
+        }
+        if (self.state == .stab and self.t >= STAB_DUR) self.enter(if (self.dealt) .drink else .recover);
         return act;
     }
 
@@ -486,10 +526,10 @@ pub const Leechfly = struct {
     }
 
     pub fn stabReach(self: *const Leechfly) f32 {
-        return foe.hurtReach(STAB_R, self.scale);
+        return feedReach(self.scale);
     }
 
-    pub fn holds(self: *const Leechfly, hero: rl.Vector3) bool {
+    fn inFeedArc(self: *const Leechfly, hero: rl.Vector3) bool {
         if (self.hover > FEED_CEIL) return false;
         if (mathx.distXZ(self.pos, hero) > self.stabReach()) return false;
         const to = mathx.dirXZ(self.pos, hero);
@@ -497,6 +537,39 @@ pub const Leechfly = struct {
         return combat.withinArc(mathx.headingXZ(to), self.facing, FEED_ARC);
     }
 
+    fn beakSeg(self: *const Leechfly) [2]rl.Vector3 {
+        return .{ foe.markOn(self.xf[PROB], mathx.zero3), self.beakWorld() };
+    }
+    fn beakTouches(self: *const Leechfly, was: [2]rl.Vector3, hero: rl.Vector3) bool {
+        return foe.sweptWeaponReaches(was, self.beakSeg(), hero, foe.HERO_R + 0.0125 * H * self.scale);
+    }    pub fn holds(self: *const Leechfly, hero: rl.Vector3) bool {
+        return self.inFeedArc(hero) and self.beakTouches(self.beakSeg(), hero);
+    }
+
+    fn poseStep(self: *Leechfly, dt: f32) void {
+        var target = switch (self.state) {
+            .wind => Pose.sample(&WIND_KEYS, self.t / WIND_DUR),
+            .stab => Pose.sample(&STAB_KEYS, self.t / STAB_DUR),
+            .recover => Pose.sample(&RECOVER_KEYS, self.t / RECOVER_DUR),
+            .stunlight, .stunheavy => blk: {
+                const heavy = self.state == .stunheavy;
+                const u = self.t / combat.foeStunDur(heavy);
+                const recoil = anim.keyAt(&.{
+                    .{ .t = 0, .v = 0 },                 .{ .t = 0.12, .v = 1, .ease = .decel },
+                    .{ .t = 0.60, .v = 0.85 },           .{ .t = 0.85, .v = -0.16 },
+                    .{ .t = 1, .v = 0, .ease = .decel },
+                }, u) * (if (heavy) @as(f32, 1) else 0.65);
+                break :blk (Posture{ .pitch = -20 * recoil, .bank = 36 * recoil * self.orbitSign, .recoil = recoil, .lunge = -0.25 * recoil, .wing = 1 - 0.60 * recoil }).chan();
+            },
+            else => (Posture{ .pitch = self.pitch, .bank = self.bank, .lunge = self.lunge, .wing = if (self.state == .dead) 0.15 else 1 }).chan(),
+        };
+        self.springs.chase(&target, 3500, 0.68, 0.94, dt);
+        self.pitch = target[0];
+        self.bank = target[1];
+        self.recoil = target[2];
+        self.lunge = target[3];
+        self.wing = target[4];
+    }
     fn flyTo(self: *Leechfly, dt: f32) void {
         const gap = self.hoverTo - self.hover;
         const rate = if (gap > 0) CLIMB_RATE else DIVE_RATE;
@@ -507,7 +580,7 @@ pub const Leechfly = struct {
     fn flyXZ(self: *Leechfly, dir: rl.Vector3, speed: f32, dt: f32, bounds: f32) void {
         mathx.stepXZ(&self.pos, dir, speed * dt, bounds);
         const off = mathx.wrapPi(mathx.headingXZ(dir) - self.facing);
-        self.bank = mathx.approach(self.bank, mathx.clampF(mathx.degrees(off) * 0.5, -BANK_MAX, BANK_MAX), dt * 180.0);
+        self.bank = mathx.clampF(mathx.degrees(off) * 0.5, -BANK_MAX, BANK_MAX);
     }
 
     fn clingTo(self: *Leechfly, hero: rl.Vector3, dt: f32, bounds: f32) void {
@@ -541,8 +614,8 @@ pub const Leechfly = struct {
     }
 
     fn easeRest(self: *Leechfly, dt: f32) void {
-        self.lunge = mathx.approach(self.lunge, 0, dt * 5.0);
-        self.pitch = mathx.approach(self.pitch, 0, dt * 90.0);
+        self.lunge = 0;
+        self.pitch = 0;
         self.glow = mathx.approach(self.glow, 0, dt * 2.2);
     }
 
@@ -642,7 +715,6 @@ pub const Leechfly = struct {
         }
     }
 
-
     fn splatter(self: *Leechfly, at: rl.Vector3, dir: rl.Vector3, n: i32) void {
         const parts = foe.hitParts(n);
         var i: i32 = 0;
@@ -713,22 +785,24 @@ pub const Leechfly = struct {
 
         const droop = -(15.0 - 11.0 * self.gorge) + self.pitch * 0.45;
         const swing = mathx.sinf((self.elapsed * 1.7 + self.seed) * std.math.tau) * 4.0;
-        self.xf[ABDO] = mul(mul(rx(droop), place(REST[ABDO])), self.xf[ROOT]);
+        self.xf[ABDO] = mul(mul3(scaleM(1 + 0.28 * self.gorge, 1 + 0.22 * self.gorge, 1 + 0.05 * self.gorge), rx(droop), place(REST[ABDO])), self.xf[ROOT]);
         self.xf[ABDO2] = mul(mul(rx(9.0 + swing), place(REST[ABDO2])), self.xf[ABDO]);
 
-        const headPitch = 8.0 + 26.0 * self.lunge;
+        const headPitch = 8.0 - 16.0 * self.lunge - 18 * self.recoil;
         self.xf[HEAD] = mul(mul(rx(headPitch), place(REST[HEAD])), self.xf[ROOT]);
-        const probPitch = 46.0 - 34.0 * self.lunge;
+        const probPitch = 46.0 - 40.0 * self.lunge;
         self.xf[PROB] = mul(mul(rx(probPitch), place(REST[PROB])), self.xf[HEAD]);
         self.xf[EYEL] = mul(place(REST[EYEL]), self.xf[HEAD]);
         self.xf[EYER] = mul(place(REST[EYER]), self.xf[HEAD]);
 
         const beat = mathx.sinf(self.wingPhase * std.math.tau);
         const feather = mathx.cosf(self.wingPhase * std.math.tau);
-        const amp = if (self.state == .dead) WING_SWEEP * 0.15 else WING_SWEEP;
+        const clearance = mathx.smoothstep(0.42, 0.90, self.hover);
+        const power = @min(mathx.clampF(self.wing, 0.1, 1.15), 0.28 + 0.87 * clearance);
+        const amp = WING_SWEEP * power;
         for ([_]usize{ WINGL, WINGR }, [_]f32{ 1, -1 }) |b, side| {
             const flap = beat * amp * side;
-            const twist = feather * 34.0 * side;
+            const twist = (feather * 34.0 * power + 75 * @max(self.recoil, 1 - clearance)) * side;
             self.xf[b] = mul(mul3(ry(twist), rz(flap), place(REST[b])), self.xf[ROOT]);
         }
 
@@ -739,7 +813,7 @@ pub const Leechfly = struct {
             const kick = mathx.sinf(ph) * 7.0;
             const reach = 34.0 - 30.0 * @as(f32, @floatFromInt(pair));
             const splay = (14.0 + 8.0 * @as(f32, @floatFromInt(pair))) * side;
-            self.xf[LEG_0 + i] = mul(mul3(rz(splay), rx(reach + kick), place(REST[LEG_0 + i])), self.xf[ROOT]);
+            self.xf[LEG_0 + i] = mul(mul3(rz(splay), rx(reach + kick + 42 * self.recoil), place(REST[LEG_0 + i])), self.xf[ROOT]);
         }
     }
 };
@@ -747,7 +821,6 @@ pub const Leechfly = struct {
 fn place(p: rl.Vector3) rl.Matrix {
     return tr(p.x, p.y, p.z);
 }
-
 
 /// How long the proboscis is, in stature. Read by `beakWorld` as well as by the builder, so the point the feed is measured from IS the point the mesh draws (the ogre's `clubLowWorld` law).
 const PROB_LEN: f32 = 0.30;
@@ -778,8 +851,9 @@ fn thoraxMesh() rl.Mesh {
     var i: u32 = 0;
     while (i < 5) : (i += 1) {
         const t = -0.06 + 0.032 * @as(f32, @floatFromInt(i));
-        const w = rng.range(0.85, 1.2);
-        b.addBlob(v3(rng.signed() * 0.006 * H, 0.088 * H * w, t * H), v3(0.010 * H, 0.014 * H * w, 0.012 * H), 4, 7, CHITIN_DK);
+        const w = rng.range(0.90, 1.1);
+        const surface = 0.098 * @sqrt(1 - (t / 0.132) * (t / 0.132));
+        b.addBlob(v3(rng.signed() * 0.006 * H, (surface - 0.008) * H, t * H), v3(0.010 * H, 0.010 * H * w, 0.012 * H), 4, 7, CHITIN_DK);
     }
     return b.toMesh();
 }
@@ -803,7 +877,7 @@ fn abdomenMesh(seg: usize) rl.Mesh {
         const w = rng.range(0.9, 1.08);
         b.addBlob(
             v3(0, -0.010 * H * t, -len * H * 2.0 * t),
-            v3(0.050 * H * fat * (1.0 - 0.26 * t) * w, 0.046 * H * fat * (1.0 - 0.26 * t), 0.010 * H),
+            v3(0.046 * H * fat * (1.0 - 0.26 * t) * w, 0.043 * H * fat * (1.0 - 0.26 * t), 0.008 * H),
             5,
             11,
             SAC_DK,
@@ -858,45 +932,39 @@ fn wingChord(t: f32) f32 {
     return 0.135 * H * @sqrt(mathx.clampF(1.0 - t * t * t * 0.98, 0, 1)) * (0.42 + 0.58 * @min(1.0, t * 4.0));
 }
 
+fn wingPoint(side: f32, t: f32, chord: f32) rl.Vector3 {
+    const span = 0.52 * H * (if (side > 0) @as(f32, 1.015) else 0.985);
+    return v3(side * span * t, 0.008 * H * @sin(std.math.pi * t) * @sin(std.math.pi * chord), -span * 0.26 * t * t - wingChord(t) * chord);
+}
+
 fn wingMesh(side: f32) rl.Mesh {
     var b = Builder.init();
-    const span = 0.52 * H;
-    const SEG = 10;
-    var prevF = v3(0, 0, 0);
-    var prevB = v3(0, 0, 0);
-    var i: u32 = 0;
-    while (i <= SEG) : (i += 1) {
-        const t = @as(f32, @floatFromInt(i)) / SEG;
-        const chord = wingChord(t);
-        const rake = -span * 0.26 * t * t;
-        const f = v3(side * span * t, 0, rake);
-        const bk = v3(side * span * t, -0.0015 * H * t, rake - chord);
-        if (i > 0) {
-            b.quad(prevF, f, bk, prevB, v3(0, 1, 0), WING);
-            b.quad(prevB, bk, f, prevF, v3(0, -1, 0), WING);
+    const segs = 20;
+    for (0..segs) |i| {
+        const t0 = @as(f32, @floatFromInt(i)) / segs;
+        const t1 = @as(f32, @floatFromInt(i + 1)) / segs;
+        for (0..3) |j| {
+            const c0 = @as(f32, @floatFromInt(j)) / 3;
+            const c1 = @as(f32, @floatFromInt(j + 1)) / 3;
+            const p = [4]rl.Vector3{ wingPoint(side, t0, c0), wingPoint(side, t1, c0), wingPoint(side, t1, c1), wingPoint(side, t0, c1) };
+            const n = mathx.normV(mathx.crossV(mathx.subV(p[1], p[0]), mathx.subV(p[2], p[0])));
+            b.quad(p[0], p[1], p[2], p[3], n, WING);
+            b.quad(p[3], p[2], p[1], p[0], mathx.scaleV(n, -1), WING);
         }
-        prevF = f;
-        prevB = bk;
+        b.addCapsule(wingPoint(side, t0, 0), wingPoint(side, t1, 0), lerpF(0.0060, 0.0020, t0) * H, lerpF(0.0060, 0.0020, t1) * H, 6, WING_RIB);
     }
-    b.addCapsule(v3(0, 0, 0), v3(side * span, 0, -span * 0.26), 0.0095 * H, 0.0030 * H, 6, WING_RIB);
-    var rng = mathx.Rng.init(0x711E6);
-    var k: u32 = 0;
-    while (k < 4) : (k += 1) {
-        const t = 0.16 + 0.22 * @as(f32, @floatFromInt(k)) * rng.range(0.92, 1.08);
-        const chord = wingChord(t);
-        const rake = -span * 0.26 * t * t;
-        b.addCapsule(
-            v3(side * span * t, 0, rake),
-            v3(side * span * (t + 0.26), -0.0010 * H, rake - chord * 0.92),
-            0.0032 * H,
-            0.0014 * H,
-            5,
-            WING_RIB,
-        );
+    var rng = mathx.Rng.init(if (side > 0) 0x711E6 else 0x711E7);
+    for (0..4) |i| {
+        const start = 0.14 + 0.20 * @as(f32, @floatFromInt(i)) + rng.range(-0.012, 0.012);
+        const end = @min(0.97, start + rng.range(0.13, 0.20));
+        for (0..5) |j| {
+            const k0 = @as(f32, @floatFromInt(j)) / 5;
+            const k1 = @as(f32, @floatFromInt(j + 1)) / 5;
+            b.addCapsule(wingPoint(side, lerpF(start, end, k0), 0.92 * k0), wingPoint(side, lerpF(start, end, k1), 0.92 * k1), lerpF(0.0025, 0.0012, k0) * H, lerpF(0.0025, 0.0012, k1) * H, 5, WING_RIB);
+        }
     }
     return b.toMesh();
 }
-
 fn legMesh(i: usize) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x1E60 + @as(u64, i));
@@ -911,7 +979,6 @@ fn legMesh(i: usize) rl.Mesh {
     b.addBlob(foot, v3(0.006 * H, 0.006 * H, 0.006 * H), 4, 7, CHITIN_DK);
     return b.toMesh();
 }
-
 
 const CAP = wf.MAX_PER_KIND;
 
@@ -984,7 +1051,6 @@ pub const Swarm = struct {
         return foe.aliveCount(self.liveConst());
     }
 };
-
 
 test "IT CLIMBS OUT OF SWORD REACH AND NOT OUT OF THE WORLD" {
     try std.testing.expect(HOVER_HIGH > 3.4); // clear of a swing off a 1.8 m man's shoulder
@@ -1094,4 +1160,98 @@ test "THE WHINE IS PHRASED, and the silence is most of it" {
     const b = Leechfly.spawn(mathx.zero3, 0, 1.0, 0.80);
     try std.testing.expect(@abs(a.whineT - b.whineT) > 0.5);
     try std.testing.expect(a.whineT > 0 and b.whineT > 0);
+}
+
+test "leechfly stab reaches its physical band at different sizes and frame rates" {
+    var misses: usize = 0;
+    for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+        for ([_]f32{ 30, 60, 144 }) |fps| {
+            for ([_]f32{ 0, 0.5, 1 }) |u| {
+                var f = Leechfly.spawn(mathx.zero3, 0, size, 0.3);
+                f.debugFeedFrom(0);
+                const near = foe.closestApproach(f.bodyR()) + 0.025;
+                const far = feedReach(size) * 0.97;
+                const hero = v3(0, 0, lerpF(near, far, u));
+                var hit: usize = 0;
+                var gap: f32 = 999;
+                for (0..@as(usize, @intFromFloat(fps * 0.8))) |_| {
+                    const was = f;
+                    const act = f.update(1 / fps, hero, 400, .{});
+                    if (f.state == .stab) {
+                        const beak = f.beakSeg();
+                        gap = @min(gap, mathx.segmentGapV(beak[0], beak[1], v3(0, foe.HERO_LOW, hero.z), v3(0, foe.HERO_HIGH, hero.z)));
+                    }
+                    if (act == .stab) {
+                        hit += 1;
+                        try std.testing.expect(f.beakTouches(was.beakSeg(), hero));
+                        try std.testing.expect(!f.beakTouches(was.beakSeg(), v3(0, 6, hero.z)));
+                        var cut = was;
+                        try std.testing.expect(cut.update(1 / fps, hero, 400, foe.shaftThrough(was.centerWorld(), .{ .dmg = 10000 })) == .none);
+                        try std.testing.expect(cut.dying());
+                    }
+                }
+                if (hit != 1) {
+                    misses += 1;
+                    std.debug.print("\n  leechfly x{d:.1} {d:.0} Hz at {d:.2} m: {d} contacts, gap {d:.2}\n", .{ size, fps, hero.z, hit, gap });
+                }
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 0), misses);
+}
+
+test "leechfly drink stops healing as soon as the beak loses contact" {
+    for ([_]f32{ 30, 60, 144 }) |fps| {
+        var f = Leechfly.spawn(mathx.zero3, 0, 1, 0.3);
+        f.debugFeedFrom(0);
+        f.vit.hp = 10;
+        const hero = v3(0, 0, 0.70);
+        var fed = false;
+        for (0..@as(usize, @intFromFloat(fps))) |_| {
+            if (f.update(1 / fps, hero, 400, .{}) == .drink) {
+                fed = true;
+                break;
+            }
+        }
+        try std.testing.expect(fed);
+        const hp = f.vit.hp;
+        const full = f.gorge;
+        const escaped = v3(2, 0, 0.70);
+        try std.testing.expect(f.update(1 / fps, escaped, 400, .{}) == .none);
+        try std.testing.expectApproxEqAbs(hp, f.vit.hp, 1e-5);
+        try std.testing.expectApproxEqAbs(full, f.gorge, 1e-5);
+        try std.testing.expect(f.state == .recover);
+    }
+}
+
+test "leechfly swat reaction stays continuous and rebounds before settling" {
+    for ([_]f32{ 30, 60, 144 }) |fps| {
+        var f = Leechfly.spawn(mathx.zero3, 0, 1, 0.3);
+        f.debugFeedFrom(0);
+        for (0..@as(usize, @intFromFloat(fps * 0.4))) |_| _ = f.update(1 / fps, v3(0, 0, 90), 400, .{});
+        const before = f.beakWorld();
+        f.stagger(true);
+        f.pose();
+        try std.testing.expect(mathx.lenV(mathx.subV(before, f.beakWorld())) < 1e-5);
+        var peak: f32 = 0;
+        var rebound: f32 = 0;
+        for (0..@as(usize, @intFromFloat(fps * 2.7))) |_| {
+            _ = f.update(1 / fps, v3(0, 0, 90), 400, .{});
+            peak = @max(peak, f.recoil);
+            rebound = @min(rebound, f.recoil);
+            for ([_]usize{ WINGL, WINGR }, [_]f32{ 1, -1 }) |bone, side| {
+                for (0..11) |i| {
+                    const t = @as(f32, @floatFromInt(i)) / 10;
+                    for ([_]f32{ 0, 0.5, 1 }) |chord| {
+                        const point = rl.math.vector3Transform(wingPoint(side, t, chord), f.xf[bone]);
+                        if (point.y < f.pos.y - 0.005) std.debug.print("\n  low wing {d:.3}m, t {d:.3}, recoil {d:.2}, pitch {d:.1}, bank {d:.1}, hover {d:.2}, Hz {d:.0}\n", .{ point.y, f.t, f.recoil, f.pitch, f.bank, f.hover, fps });
+                        try std.testing.expect(point.y >= f.pos.y - 0.005);
+                    }
+                }
+            }
+        }
+        try std.testing.expect(peak > 0.9);
+        try std.testing.expect(rebound < -0.08);
+        try std.testing.expect(@abs(f.recoil) < 0.01);
+    }
 }

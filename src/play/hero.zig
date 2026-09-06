@@ -673,6 +673,8 @@ const WAND_LIT_CHARGED_R = 7.0;
 const WAND_LIT_FLARE = 2.30;
 const WAND_LIT_FLARE_R = 12.0;
 
+const BODY_LIT = v3(0.078, 0.072, 0.060);
+const BODY_LIT_R = 3.0;
 const TORCH_LIT = v3(0.78, 0.42, 0.16);
 const TORCH_LIT_R = 8.0;
 const TORCH_FLICKER = 0.16;
@@ -2888,6 +2890,14 @@ pub const Hero = struct {
         };
     }
 
+    pub fn bodyLight(self: *const Hero) gfx.Light {
+        return .{
+            .pos = foemod.markOn(self.xf[CHEST], mathx.zero3),
+            .col = BODY_LIT,
+            .radius = BODY_LIT_R,
+        };
+    }
+
     pub fn torchLight(self: *const Hero) ?gfx.Light {
         if (!self.torchLit()) return null;
         const k = mathx.maxF(1.0 + TORCH_FLICKER * mathx.gutter(@floatCast(rl.getTime()), 0.7), 0.05);
@@ -4475,15 +4485,20 @@ pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, groundY: f32, ph: f32
     const cosK = mathx.clampF((span - thigh * mathx.cosf(mathx.radians(totalHip))) / shank, -1.0, 1.0);
     const latKnee = totalHip + mathx.degrees(std.math.acos(cosK));
     const kneeW = mathx.smoothstep(0.10, 0.55, latW);
-    const kneeFlex = mathx.lerpF(mathx.lerpF(IDLE_KNEE, kneeWR, sagW), mathx.maxF(0, latKnee), kneeW);
+    const standHeight = mathx.clampF((hipW.y - groundY) / rootS - rest[ank].y, 0.1 * legLen, legLen);
+    const stand = mathx.legAngles(thigh, shank, standHeight);
+    const standHip = stand.hip;
+    const standKnee = stand.knee;
+    const still = 1 - mathx.clampF(m, 0, 1);
+    const kneeFlex = mathx.lerpF(mathx.lerpF(mathx.maxF(IDLE_KNEE, standKnee), kneeWR, sagW), mathx.maxF(0, latKnee), kneeW);
     const held = if (inSwing) 1.0 - arc else 1.0;
     const flat = (latHip - kneeFlex) * held * latW;
     const frontal = mathx.lerpF(-side * HIP_ADDUCT, abd, latW);
     const roll = -frontal * held;
-    setJoint(wx, rest, hip, ROOT, mul(rx(-hipFlex - latHip), rz(frontal)));
+    setJoint(wx, rest, hip, ROOT, mul(rx(-hipFlex - latHip - standHip * still), rz(frontal)));
     setJoint(wx, rest, knee, hip, rx(kneeFlex));
     const wscale = mathx.maxF(1e-4, @sqrt(wx[knee].m0 * wx[knee].m0 + wx[knee].m1 * wx[knee].m1 + wx[knee].m2 * wx[knee].m2));
-    var pitch = -ankDorsi + flat;
+    var pitch = -ankDorsi + flat + (standHip - standKnee) * still;
     var pass: u8 = 0;
     while (pass < 5) : (pass += 1) {
         setJoint(wx, rest, ank, knee, mul3(rx(pitch), ry(side * FOOT_TOEOUT), rz(roll)));
@@ -4761,42 +4776,32 @@ fn axesM(x: rl.Vector3, y: rl.Vector3, z: rl.Vector3) rl.Matrix {
 }
 
 /// TWO-BONE ARM SOLVE, in the world. The wrist is put AT `target` (or as near as the arm reaches), the elbow is bent toward `elbowHint`, and the hand is turned so its own down runs along `handDown` with its palm toward `palm`. The bones' lengths are the rest chain's, so nothing stretches.
-fn armTo(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, sh: usize, el: usize, wr: usize, target: rl.Vector3, elbowHint: rl.Vector3, handDown: rl.Vector3, palm: rl.Vector3) void {
+pub fn armTo(wx: anytype, rest: anytype, sh: usize, el: usize, wr: usize, target: rl.Vector3, elbowHint: rl.Vector3, handDown: rl.Vector3, palm: rl.Vector3) void {
     const parent: usize = @intCast(PARENT[sh]);
     const shoulder = rl.math.vector3Transform(mathx.subV(rest[sh], rest[parent]), wx[parent]);
-    const upper = mathx.lenV(mathx.subV(rest[el], rest[sh]));
-    const fore = mathx.lenV(mathx.subV(rest[wr], rest[el]));
-    var to = mathx.subV(target, shoulder);
-    var d = mathx.lenV(to);
-    if (d < 1e-4) {
-        to = v3(0, -1, 0);
-        d = 1e-4;
-    }
-    const reach = mathx.clampF(d, @abs(upper - fore) + 1e-3, upper + fore - 1e-3);
-    const u = mathx.scaleV(to, 1.0 / d);
-    // The bend plane holds the shoulder-to-wrist line and the elbow hint; the upper arm leaves the line by the law-of-cosines angle, toward the hint.
-    var side = mathx.subV(elbowHint, mathx.scaleV(u, mathx.dotV(elbowHint, u)));
-    if (mathx.lenV(side) < 1e-4) side = v3(0, -1, 0);
-    side = mathx.normV(side);
-    const cosB = mathx.clampF((upper * upper + reach * reach - fore * fore) / (2.0 * upper * reach), -1, 1);
-    const b = std.math.acos(cosB);
-    const a = mathx.normV(mathx.addV(mathx.scaleV(u, mathx.cosf(b)), mathx.scaleV(side, mathx.sinf(b))));
-    const elbow = mathx.addV(shoulder, mathx.scaleV(a, upper));
-    const wrist = mathx.addV(shoulder, mathx.scaleV(u, reach));
+    const root = wx[parent];
+    const fs = mathx.lenV(v3(root.m0, root.m1, root.m2));
+    const size = scaleM(fs, fs, fs);
+    const upper = mathx.lenV(mathx.subV(rest[el], rest[sh])) * fs;
+    const fore = mathx.lenV(mathx.subV(rest[wr], rest[el])) * fs;
+    const solved = mathx.twoBone(shoulder, target, upper, fore, elbowHint);
+    const elbow = solved.joint;
+    const wrist = solved.end;
+    const a = mathx.normV(mathx.subV(elbow, shoulder));
     const f = mathx.normV(mathx.subV(wrist, elbow));
     // Each bone hangs down its own -Y; its X is the bend normal, so the forearm folds in the plane the elbow chose.
     const bend = mathx.normV(mathx.crossV(a, f));
     const upperY = mathx.scaleV(a, -1.0);
-    wx[sh] = mul(axesM(bend, upperY, mathx.crossV(bend, upperY)), tr(shoulder.x, shoulder.y, shoulder.z));
+    wx[sh] = mul3(size, axesM(bend, upperY, mathx.crossV(bend, upperY)), tr(shoulder.x, shoulder.y, shoulder.z));
     const foreY = mathx.scaleV(f, -1.0);
-    wx[el] = mul(axesM(bend, foreY, mathx.crossV(bend, foreY)), tr(elbow.x, elbow.y, elbow.z));
+    wx[el] = mul3(size, axesM(bend, foreY, mathx.crossV(bend, foreY)), tr(elbow.x, elbow.y, elbow.z));
     // The hand: down along the strings' line, palm to the instrument.
     const hy = mathx.scaleV(mathx.normV(handDown), -1.0);
     var hz = mathx.subV(palm, mathx.scaleV(hy, mathx.dotV(palm, hy)));
     if (mathx.lenV(hz) < 1e-4) hz = mathx.crossV(bend, hy);
     hz = mathx.normV(hz);
     const hx = mathx.crossV(hy, hz);
-    wx[wr] = mul(axesM(hx, hy, hz), tr(wrist.x, wrist.y, wrist.z));
+    wx[wr] = mul3(size, axesM(hx, hy, hz), tr(wrist.x, wrist.y, wrist.z));
 }
 
 pub fn boltMesh(shader: rl.Shader) rl.Model {

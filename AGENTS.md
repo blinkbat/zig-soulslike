@@ -32,6 +32,11 @@ implement what's asked and nothing extra. Don't commit, push, or create branches
 - **NOTHING DEAD IS STRAIGHT, AND NOTHING ENDS IN A POINT.** A dead limb leaves the bole on its axis, rises to
   an elbow, DROOPS off the line to a blunt snap of pale heartwood; twigs root on that outer half.
   `propwood.deadLimbInto` is the one both leafless trees call.
+- **A ROOT IS DEEP, NOT WIDE, AND IT IS NEVER STRAIGHT** (`propwood.rootsInto`, the one every tree calls). Out of
+  a FLARE at the bole, over an arch with daylight under it, down to a toe still fat where it meets the surface,
+  and on DOWN under the tree — `deep` is the larger number, `reach` barely clears the bole, every joint kinks off
+  the bearing so a set never reads as spokes, and each bend carries a knuckle because a bare joint between two
+  tapers reads as cut pipe. Thin cones splayed out at ground level, which is what they were, read as fins.
 - **RELIEF IS SUBTLE.** A few PERCENT of the mass's radius, not a tenth. Sink the proud primitive most of the
   way in. Prefer more SIDES on the mass over more relief on top. Judge against the ASSEMBLED thing. Cut
   AMPLITUDE, never irregularity.
@@ -164,9 +169,9 @@ contents change together is fine. Splits go where concerns genuinely part compan
 | `foes/salthusk.zig` | salt husk + `Pan` — the weakest thing on the field and the only one whose KILL is the dangerous part |
 | `foes/fishman.zig` | fishmen + `Shoal` — the SECOND warband, held together by a NET; netter, spearman, shaman are one move in three |
 | `foes/blinkbat.zig` | blinkbat + `Roost` — a flyer that never travels: it BLINKS onto your flank, bites once, blinks out. Hangs inverted and wrapped through the day, and striking one hanging puts the whole roost on the wing |
-| `foes/fungalduo.zig` | THE FUNGAL DUO + `Vanguard`/`Conclave` — swordsman and magus, one encounter, two bars |
+| `foes/fungalduo.zig` | THE FUNGAL DUO + `Vanguard`/`Conclave` — swordsman and magus, one encounter, two bars; the magus breathes spore dust at anyone in his face |
 | `foes/owlbear.zig` | owlbear + `Perch` — THE FIRST CONSTRUCT, 3.15 m of it (owner: bigger and tougher — 300 HP, poise over two heavies), and a carving until DARK and you walk inside `WAKE_R`: the eyes lead the stone by half the wake, dawn walks it back onto its own plinth, and the answer to being crowded is a hop back that fans stone quills down the bearing it left on |
-| `foes/druidess.zig` | THE CORRUPTED DRUIDESS + `Coven` — third boss, a keepaway caster under a tangle of robes: vines that SNARE where you stood and vines that WHIP (field objects, no HP), a leap that hangs and lands gently, a sidestep that answers a RUSH. At half health she calls a wave off the roster and jumps off to HEAL until hit |
+| `foes/druidess.zig` | THE CORRUPTED DRUIDESS + `Coven` — third boss, a keepaway caster under a tangle of robes: vines that SNARE where you stood and vines that WHIP (field objects, no HP), a leap that hangs and lands gently, a sidestep that answers a RUSH, and a RAKE for a man in her face. At 50, 25 and 10 percent she calls a wave off the roster and jumps off to HEAL until hit |
 | `foes/mimic.zig` | bone mimic + `Hoard` — a CHEST until you press Y on it or hit it (the seam glows blue where a real one glows gold), then a bone stalk on four short legs with the chest for a head: a lunging BITE worth a knight's overhead, and a full-circle head SWING for whoever is on its flank. Its own 17-bone rig |
 | `foes/mastodon.zig` | mastodon + `Drove` — the quadruped rig's biggest user at 2.35 m withers, walked and AMBLED (elephant gaits, never a trot): headbutt, bite, a CHARGE from range down a line it can barely bend, a jump-lunge with a 2.2 s recovery, and a TAIL SWIPE for whoever is behind it that turns it round. The bite LUNGES the whole beast and shoves; the tail loads against itself, whips past the mark and settles back, and takes him off his feet |
 | `play/combat.zig` | `Vitals`, `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`, spirits. THE place to retune feel |
@@ -1027,8 +1032,24 @@ under it stayed the old build's width.
   the whole cooldown, so pressure through the fade is the answer rather than a race. It leaves SLUMBER MIST
   where it stood, billed as a soak on the bloom's own meter — and the mist does not bill on the frame it
   appears, because the magus leaves it behind as it goes and that would be a blow with no tell.
+- **A MAN IN HIS FACE GETS THE DUST, NOT THE BACK OF HIS ROBE** (`MG_PUFF_R`, inside `MG_FLEE_R`): a lungful of
+  spore blown into a frontal cone off a `MG_PUFF_WIND` tell — his one blow, reported as `heroHit` and read by the
+  Conclave the frame it appears. It outranks BOTH the retreat and the blink in `mgClassify`, and he only vanishes
+  once the breath is spent, so pressing him now costs something. It is still no stroke and carries no parry
+  window; it is a cone you walk out of, like the priest's breath.
+- **AND THE CLOUD STAYS WHERE IT WAS BLOWN** (`Dust`, `Coven.holdDose`'s pattern): it blooms over `DUST_BLOOM`,
+  HANGS, and thins out, biting a small chaos pulse with no poise every `DUST_EVERY` to anyone still standing in
+  it. The chaos is `venom`, so the dust is on the same clock the rest of the fight runs on.
+- **THE BUNCH IS A MUSHROOM, NOT A BALL ON A STICK** (`capMesh`, `drawCap`). It is a real mesh drawn per cap —
+  a foot swelling out of the ground, a stem that narrows at the waist and flares back under the cap, a skirt,
+  LIT GILLS, a domed head with warts, and spore beads hung off the rim — built at a cap radius of ONE so the
+  world size is the single number `CAP_SIZE * Cap.r`, and it stands about as tall as its cap is wide. It comes
+  up PAST its rest and settles back onto it (`capRise`, the overshoot law) while the cap opens out after it
+  (`capSpread`), and it GLOWS from the moment it is up: the halo sits UNDER the cap where it lights the gills
+  rather than round it, and the heat only makes the halo and the ground pool burn harder.
 - **NEITHER CAST HAS A BAND INSIDE THE RING IT WALKS OUT OF** (`MG_ORB_MIN`, `MG_SPROUT_MIN`, both derived off
-  `MG_FLEE_R`). `.back` is answered before either, so a lower minimum is a number nothing can ever reach.
+  `MG_FLEE_R`). `.back` is answered before either, so a lower minimum is a number nothing can ever reach — the
+  DUST is the one thing that answers inside that ring.
 - **AND THE ARENA IS A ROOM NOW, NOT A DOORWAY IN OPEN GROUND** — `mycelian_hall` on the bench and
   `fungal_hollow` in the shipped map, the second traced off the rock that was already round the pair (one corner
   per 30 deg, each on the nearest cliff's own collision radius, the fog gate standing as the corner at due west).
@@ -1046,13 +1067,22 @@ right hand. Bench her in `worlds/test_druidess.world`, never the shipped map.
   `tryHit` — a whip stands `WHIP_GROW + WHIP_LIFE` and withers, a snare ring `SNARE_SHOW`.
 - **A CAST IS COMMITTED WHERE HE STOOD WHEN THE GATHER BEGAN** (`castAt`, the necromancer's frost rule), and the
   buds drawn through the wind stand exactly where the vines will (`whipSpots` are rolled at the gather). Walk, and
-  the ring comes up behind you. The snare is `hero.snareFor(SNARE_HOLD)` through `Coven.takeSnare`, the shoal's
-  net path, and `SNARE_HOLD` is under two whip periods so a snare is one lash taken and one rolled.
+  the ring comes up behind you — a RUN carries him clear of the ring in the gather and a walk no longer does, both
+  bracketed by comptime asserts against his own speeds. The snare is `hero.snareFor(SNARE_HOLD)` through
+  `Coven.takeSnare`, the shoal's net path, and `SNARE_HOLD` is under two whip periods so a snare is one lash
+  taken and one rolled.
 - **THE WHIP TURNS ONTO THE MAN WHILE IT REARS AND HOLDS ITS LINE THROUGH THE STRIKE** (`WHIP_TELL` over
   `TELL_MIN` and under the roll's i-frames) — the tell is where it points.
 - **THE SIDESTEP READS CLOSING SPEED, NEVER THE PRESS.** She cannot see a swing (the LAW), so a rush is his
   position over the last frame (`closing`) inside `STEP_R`, on `STEP_CD`. A man standing still in her face is not a
   rush and draws the drift instead.
+- **THE RAKE IS THE ANSWER TO A MAN IN HER FACE** (`SLASH_R`, inside the sidestep's ring and the leap's, and it
+  does not read closing at all — standing there is enough). The free hand comes across the chest, the trunk winds
+  open behind it, and the whole arm is ripped back out through him: `SLASH_WIND` over `TELL_MIN`, billed at
+  `SLASH_IMPACT_K` of the strike into a frontal cone, once, on a short `SLASH_CD` armed at the COMMIT so a
+  stagger through the wind spends it. It is her ONE stroke and therefore her one parry window (`parryable`,
+  `takeParry` — she is off `game.NO_PARRY` because of it), and the one blow she reports herself: `heroHit`, read
+  by the coven the frame it appears, where every vine of hers is the group's.
 - **THE SPEAR IS THE ANSWER TO CLOSING** (`SPEAR_R`, `SPEAR_CLOSE`, `SPEAR_CD`) — the same read, further out. A
   third of a second of cock (the ground heaving along the line she is bringing round IS the tell, and it turns with
   her), then a shaft runs `SPEAR_LEN` down her facing in `SPEAR_STRIKE`, billed once as the TIP PASSES HIM
@@ -1062,11 +1092,15 @@ right hand. Bench her in `worlds/test_druidess.world`, never the shipped map.
   sine, held at `up`, down on `1 - smoothstep`, the ground covered on a half-cosine so the speed is nothing at
   touchdown. `airborne()` while `hop` stands, so collision and steering leave her alone; it is a JUMP, so the roots
   refuse it (`foe.canLeap`). A stagger mid-air drops her at 6 m/s rather than snapping her down.
-- **PHASE TWO IS ONE CALL AND ONE CHANNEL** (`phase2`, `healed`), latched the frame she commits so a stagger through
-  the gather cannot buy a second wave. `summoned` is a one-frame report and `game.summonWave` does the spawning
-  (`foe.summonInto`, into the groups those kinds already live in, on the ground under `summonSpot`, roused by
-  `Leash.call`). Then the retreat arc and `passive`: `HEAL_RATE` of max HP a second, the channel drawn as a column
-  from the orb to the ground. **ANY BLOW THAT LANDS ENDS IT FOR GOOD** — that is the whole of "go and stop her".
+- **THERE ARE THREE HEALING BREAKS** (`BREAK_HP` — 50, 25 and 10 percent; `breaks` counts what is spent), each ONE
+  call and ONE channel, counted the frame she commits so a stagger through the gather cannot buy a second wave off
+  the same share. `summoned` is a one-frame report and `game.summonWave` does the spawning (`foe.summonInto`, into
+  the groups those kinds already live in, on the ground under `summonSpot`, roused by `Leash.call`). Then the
+  retreat arc and `passive`: `HEAL_RATE` of max HP a second, the channel drawn as a column from the orb to the
+  ground. **ANY BLOW THAT LANDS ENDS THE CHANNEL SHE IS IN, and that share is spent for good** — that is the whole
+  of "go and stop her". **AND A CHANNEL NEVER CLIMBS BACK PAST THE SHARE SHE ALREADY BROKE AT** (`mendCeiling`):
+  the first mends her whole, the second only back to half, the third only back to a quarter — so the breaks come
+  in order, each is worth less than the last, and the fight has a ceiling instead of three full heals.
 - **THE TANGLE IS THREE SPRINGS ON HER HEADING** (`trailYaw`, `tickTrails`): each tail chases her facing through its
   own stiffness and rings past it, so a turn swings the robes round after her and they settle in three beats. The
   drag lean is the necromancer's hem, and the flare in the air is the leap's `hop`.
@@ -1087,7 +1121,8 @@ right hand. Bench her in `worlds/test_druidess.world`, never the shipped map.
   takes off, landing in a fan on the side she left, SWELLING through `POD_FUSE` with a heartbeat that quickens, then
   POPPING into splinters (`POD_HIT` inside `POD_R`). The ground she vacates is the ground you chase her across.
 - **ALL OF HER DAMAGE IS PHYSICAL BUT THE WHIPS**, which cut with chaos that is corruption and not venom (no
-  `Hit.venom`). The whips and the spear BUILD BLEED (`WHIP_BLEED`, `SPEAR_BLEED`, the blinkbat's dose pattern); a
+  `Hit.venom`). The whips, the spear and the rake BUILD BLEED (`WHIP_BLEED`, `SPEAR_BLEED`, `SLASH_BLEED`, the
+  blinkbat's dose pattern); a
   snare BITES WHILE IT HOLDS — `Coven.holdDose`, a physical pulse every `SNARE_PULSE_EVERY` with no poise, on the
   knight's gas pattern, read by the game after the snare itself.
 - **THE VINES ARE ALIVE, NOT POSTS.** A sprout overshoots and settles (`sproutCurve`), a whip writhes and sways
@@ -1338,7 +1373,7 @@ refused while a fight is on and the panel says where to go instead.
   IN THE POOL on the crimson side, EMPTY until the next fire, and he re-allots it there like any other. ER's
   Sacred Flask tops out at 14 and so does `FLASK_CAP`. The pool rides the save's `ready:` row as a fourth
   number, so an older file keeps the default three. There are no golden seeds: `golden_seed` is a
-  `RETIRED_TAG`, skipped by the bag loader instead of refusing the file.
+  `RETIRED_TAGS` row, skipped by the bag loader instead of refusing the file.
 - **EACH BAR ENTRY IS ITS OWN SOCKET ON THE PAGE** — two rows of five, Confirm puts a kind in THAT socket
   (`combat.Quick.put`, which MOVES a kind already on the bar rather than copying). Rows are FILTERED to what
   he carries (`quickOffered`) and carry an empty row, so a kind's ordinal is not its row and `pickIndexOf`
@@ -3094,6 +3129,12 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   freeing any of it. **IT LIVES IN THE EDITOR, beside the JUKEBOX** (`editor.rackPanel`, the `.jukebox` modal):
   it is an authoring tool rather than a setting. Its eleven dials end in the EQ pair (`AF_BASS`,
   `AF_PRESENCE`), applied LAST. The RETRO rack stays in the menu; that one is a LOOK the player picks.
+- **THE BANK RENDERS ON A WORKER THREAD, AND ONLY RENDERS** (`sfx.bakeAll`): boot loads the two streams and
+  spawns it, so `sfx.init` is ~250 ms instead of 2.7 s in Debug. The worker owns `work`, `tape` and `pcm` and
+  pushes PCM onto `queue`; `pump` uploads finished takes on the MAIN thread (`uploadTake`), because raylib's
+  audio buffer list is touched from one thread only. A voice is silent until its first take is uploaded. Every
+  main-thread path that synthesises or frees a row (`rebakeMix`, the voice-dirty pass, `deinit`) calls
+  `awaitBake` first, which joins the worker and drains the queue.
 - **AND THE BENCH EDITS ONE VOICE, NOT JUST A FAMILY.** `BANK` is the ORIGINAL and never moves; `live` is the
   copy every play path reads and the only thing the editor writes, so **revert is free and cannot be lost**.
   `settings.cfg` carries the DIFFERENCE only, one `voice.<name>` line per edited voice. Five dials (`Dial`: vol,

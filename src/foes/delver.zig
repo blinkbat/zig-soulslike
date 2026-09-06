@@ -2,6 +2,7 @@ const std = @import("std");
 const rl = @import("raylib");
 const gfx = @import("../gfx/gfx.zig");
 const mathx = @import("../core/mathx.zig");
+const anim = @import("../core/anim.zig");
 const combat = @import("../play/combat.zig");
 const foe = @import("foe.zig");
 const wf = @import("../world/worldfmt.zig");
@@ -63,7 +64,7 @@ const WALK_SPEED: f32 = 2.2;
 const CHASE_SPEED: f32 = 3.9;
 const TURN_RATE: f32 = 4.2;
 /// MEASURED, NOT ARGUED — a test walks the stroke frame by frame and brackets it from both sides, which caught the first pass declaring 2.9 m off a limb that arrived at 1.19.
-const CLAW_REACH: f32 = 1.75;
+const CLAW_REACH: f32 = 2.02;
 const CLAW_SWEEP_R: f32 = 0.34;
 /// WHAT A BAND PROMISES IS THAT THE ARC CROSSES HIM, NOT HOW FAR THE TIP GETS: `CLAW_REACH + CLAW_SWEEP_R` is the tip's RADIAL reach, achieved out to the SIDE, so at 2.09 the outer fifth of the trigger band could not land by construction.
 const CLAW_BAND: f32 = 1.65;
@@ -178,7 +179,7 @@ const DISSOLVE = foe.Dissolve{ .rate = 58.0, .spread = 0.9, .rise = 0.75, .flake
 /// ARITHMETIC over the worst frame (the ring law), and it is the PLOUGH'S LAST frame: the furrow can land its blow as the run ends, so the 12-clod hit burst and `burstDirt`'s 40 go in together, on the ~22 `emitWake` and `emitSpray` leave resident at 0.3-0.7 s lives.
 const PARTS = 96;
 
-const N = 11;
+const N = 16;
 const BODY = 0;
 const HEAD = 1;
 const ARML = 2;
@@ -191,7 +192,24 @@ const TAIL = 8;
 const MOUND = 9;
 /// The held stone: posed between the claw tips, drawn only while `rockHeld`.
 const ROCK = 10;
+const CHEST = 11;
+const KNEEL = 12;
+const KNEER = 13;
+const FOOTL = 14;
+const FOOTR = 15;
+const WAIST = v3(0, 0.34, -0.04);
+const HIND_UPPER = v3(0, -0.19, -0.015);
+const HIND_LOWER = v3(0, -0.17, 0.04);
 
+const Hull = struct { bone: usize, center: rl.Vector3, radii: rl.Vector3 };
+const HULLS = [_]Hull{
+    .{ .bone = BODY, .center = v3(0, 0.26 * H, -0.28), .radii = v3(0.42, 0.17 * H, 0.59) },
+    .{ .bone = CHEST, .center = mathx.subV(v3(0, 0.30 * H, 0.28), WAIST), .radii = v3(0.40, 0.15 * H, 0.42) },
+    .{ .bone = BODY, .center = WAIST, .radii = v3(0.36, 0.23, 0.32) },
+    .{ .bone = HEAD, .center = v3(0, 0, 0.04), .radii = v3(0.22, 0.16, 0.26) },
+    .{ .bone = HEAD, .center = v3(0, -0.04, 0.29), .radii = v3(0.14, 0.10, 0.20) },
+    .{ .bone = BODY, .center = v3(0, 0.22 * H, -0.66), .radii = v3(0.30, 0.13 * H, 0.28) },
+};
 const REST = [N]rl.Vector3{
     v3(0, 0, 0),
     v3(0, 0.30 * H, 0.66),
@@ -204,10 +222,24 @@ const REST = [N]rl.Vector3{
     v3(0, 0.26 * H, -0.82),
     v3(0, 0, 0),
     v3(0, 0, 0),
+    WAIST,
+    HIND_UPPER,
+    HIND_UPPER,
+    HIND_LOWER,
+    HIND_LOWER,
 };
 
 /// The far end of the middle digging claw, in the claw bone's own frame — what the stroke actually swings, and what `parryable` hands over as its reach. MEASURED off the mesh, never argued (the ogre's club law).
-const CLAW_TIP = v3(0, -0.16, 0.78);
+const NAILS = [_][8]f32{
+    .{ 0.11, -0.12, 0.50, 0.13, -0.30, 0.92, 0.056, 0.020 },
+    .{ 0.00, -0.13, 0.51, 0.00, -0.33, 1.02, 0.062, 0.022 },
+    .{ -0.09, -0.12, 0.49, -0.12, -0.28, 0.87, 0.050, 0.019 },
+};
+const CLAW_TIP = v3(NAILS[1][3], NAILS[1][4], NAILS[1][5]);
+fn nailLine(side: f32, i: usize) [3]rl.Vector3 {
+    const c = NAILS[i];
+    return .{ v3(side * c[0], c[1], c[2]), v3(side * (c[0] + c[3]) * 0.5, (c[1] + c[4]) * 0.5 + 0.035, (c[2] + c[5]) * 0.5), v3(side * c[3], c[4], c[5]) };
+}
 
 /// DEGREES at the shoulder — the lateral half of `swing`. The shoulder sits 0.34 m off the axis and the claw rides ~1.2 m out, so this is SOLVED against the crossing: the tip must pass THROUGH the body's own forward line inside the strike window.
 const SWING_YAW: f32 = 46.0;
@@ -295,6 +327,11 @@ pub const Delver = struct {
     crouch: f32 = 0,
     gait: f32 = 0,
     shudder: f32 = 0,
+    posed: [7]f32 = [_]f32{0} ** 7,
+    springs: anim.SpringBank(7) = .{},
+    recoverFrom: f32 = 0,
+    gaitLast: f32 = 0,
+    strideWeight: f32 = 0,
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
     hits: u32 = 0,
@@ -308,7 +345,7 @@ pub const Delver = struct {
     fade: f32 = 0,
     gone: bool = false,
 
-    clawWas: [2]rl.Vector3 = [_]rl.Vector3{mathx.zero3} ** 2,
+    clawWas: [4][3]rl.Vector3 = undefined,
 
     parts: [PARTS]foe.Particle = [_]foe.Particle{.{}} ** PARTS,
     fxHead: usize = 0,
@@ -324,8 +361,9 @@ pub const Delver = struct {
         d.aiRng = foe.fxStream(seed, 29399.0, 7);
         d.idleWait = 0.2 + seed * 0.5;
         d.diveCd = DIVE_CD * (0.25 + seed * 0.5);
+        d.springs.seat(d.posed);
         d.pose();
-        d.clawWas = d.clawSeg();
+        d.clawWas = d.clawContacts();
         return d;
     }
 
@@ -333,16 +371,26 @@ pub const Delver = struct {
         return -self.depth * self.scale;
     }
     pub fn centerWorld(self: *const Delver) rl.Vector3 {
-        return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, self.ride());
+        return mathx.lerpV(foe.markOn(self.xf[BODY], HULLS[0].center), foe.markOn(self.xf[CHEST], HULLS[1].center), 0.5);
     }
     pub fn lockPoint(self: *const Delver) rl.Vector3 {
         return foe.markOn(self.xf[HEAD], v3(0, 0.06, 0.10));
     }
     pub fn topWorld(self: *const Delver) rl.Vector3 {
-        return foe.bodyPoint(self.pos, TOP_F * H, self.scale, self.ride());
+        var top = self.centerWorld();
+        for (HULLS) |hull| {
+            const xf = self.xf[hull.bone];
+            const c = foe.markOn(xf, hull.center);
+            const r = hull.radii;
+            top.y = @max(top.y, c.y + @sqrt(r.x * r.x * xf.m1 * xf.m1 + r.y * r.y * xf.m5 * xf.m5 + r.z * r.z * xf.m9 * xf.m9));
+        }
+        return top;
     }
     pub fn hurtRadius(self: *const Delver) f32 {
-        return HURT_R * self.scale;
+        const center = self.centerWorld();
+        var radius: f32 = 0;
+        for (HULLS) |hull| radius = @max(radius, mathx.lenV(mathx.subV(foe.markOn(self.xf[hull.bone], hull.center), center)) + @max(hull.radii.x, @max(hull.radii.y, hull.radii.z)) * self.scale);
+        return radius;
     }
     pub fn bodyR(self: *const Delver) f32 {
         return BODY_R * self.scale;
@@ -377,6 +425,26 @@ pub const Delver = struct {
     }
     fn clawSeg(self: *const Delver) [2]rl.Vector3 {
         return .{ foe.markOn(self.xf[CLAWR], mathx.zero3), foe.markOn(self.xf[CLAWR], CLAW_TIP) };
+    }
+    fn clawContacts(self: *const Delver) [4][3]rl.Vector3 {
+        var points: [4][3]rl.Vector3 = undefined;
+        points[0] = .{ mathx.zero3, v3(-0.05, -0.09, 0.40), v3(0, -0.13, 0.51) };
+        for (0..3) |i| points[i + 1] = nailLine(-1, i);
+        for (&points) |*row| for (row) |*point| {
+            point.* = foe.markOn(self.xf[CLAWR], point.*);
+        };
+        return points;
+    }
+
+    fn clawTouches(self: *const Delver, was: [4][3]rl.Vector3, hero: rl.Vector3) bool {
+        const now = self.clawContacts();
+        for (was, now, 0..) |old, row, i| {
+            for (0..2) |piece| {
+                const radius = if (i == 0) @as(f32, 0.125) else NAILS[i - 1][6] * (if (piece == 0) @as(f32, 1) else 0.72);
+                if (foe.sweptWeaponReaches(.{ old[piece], old[piece + 1] }, .{ row[piece], row[piece + 1] }, hero, foe.HERO_R + radius * self.scale)) return true;
+            }
+        }
+        return false;
     }
     pub fn navWant(self: *const Delver, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .walk and self.state != .idle) return null;
@@ -425,7 +493,7 @@ pub const Delver = struct {
             .claw => self.updateClaw(dt, hero),
             .rake => self.updateRake(dt, hero),
             .recover => {
-                self.swing = mathx.approach(self.swing, 0, dt * 3.2);
+                self.swing = self.recoverFrom * anim.keyAt(&.{ .{ .t = 0, .v = 1 }, .{ .t = 0.78, .v = -0.10, .ease = .decel }, .{ .t = 1, .v = 0 } }, self.t / CLAW_RECOVER);
                 self.crouch = mathx.approach(self.crouch, 0.05, dt * 1.4);
                 self.rear = mathx.approach(self.rear, 0, dt * 2.2);
                 if (self.t >= CLAW_RECOVER) self.enterIdle(0.12);
@@ -447,7 +515,8 @@ pub const Delver = struct {
             .plough => self.updatePlough(dt, hero, bounds),
             .burst => self.updateBurst(dt, hero),
             .stunlight, .stunheavy => {
-                self.rear = mathx.approach(self.rear, 0.34 * foe.stunCurve(self.t, self.state == .stunheavy), dt * 6.0);
+                const heavy = self.state == .stunheavy;
+                self.rear = anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.16, .v = 1.1, .ease = .decel }, .{ .t = 0.7, .v = -0.22, .ease = .decel }, .{ .t = 1, .v = 0 } }, self.t / combat.foeStunDur(heavy)) * (if (heavy) @as(f32, 1) else 0.55);
                 self.crouch = mathx.approach(self.crouch, 0.16, dt * 5.0);
                 self.swing = mathx.approach(self.swing, 0, dt * 4.0);
                 self.depth = mathx.approach(self.depth, 0, dt * 5.0);
@@ -456,30 +525,38 @@ pub const Delver = struct {
             .dead => {
                 self.rear = mathx.approach(self.rear, 0, dt * 3.0);
                 self.crouch = mathx.approach(self.crouch, 0.62, dt * 1.6);
-                self.drill = mathx.approach(self.drill, 12.0, dt * 40.0);
+                self.drill = mathx.approach(self.drill, 0, dt * 40.0);
                 self.depth = mathx.approach(self.depth, 0, dt * 3.4);
                 foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE);
             },
         }
 
         self.settleMound(dt);
+        self.poseStep(dt);
         self.pose();
-        const now = self.clawSeg();
+        const now = self.clawContacts();
         const swung: ?combat.Hit = switch (self.state) {
             .claw => if (self.t >= CLAW_WIND and self.t < CLAW_WIND + CLAW_STRIKE) CLAW_HIT else null,
             .rake => if (self.t >= RAKE_WIND and self.t < RAKE_WIND + RAKE_STRIKE) RAKE_HIT else null,
             else => null,
         };
         if (swung) |h| {
-            if (!self.heroLatch and foe.weaponReaches(self.clawWas, now, hero, CLAW_SWEEP_R * self.scale)) {
+            if (!self.heroLatch and self.clawTouches(self.clawWas, hero)) {
                 self.heroLatch = true;
                 self.heroHit = h;
                 self.leash.noteCombat();
             }
         }
+        self.takeParry(swung != null and self.parry.live and self.clawTouches(self.clawWas, self.parry.at));
         self.clawWas = now;
-        self.takeParry();
         self.tryHit(blade);
+        if (self.staggered()) {
+            self.heroHit = null;
+            self.threw = false;
+        } else if (self.threw) {
+            self.throwFrom = self.rockWorld();
+            self.rockHeld = false;
+        }
         return self.heroHit;
     }
 
@@ -522,13 +599,13 @@ pub const Delver = struct {
     fn updateClaw(self: *Delver, dt: f32, hero: rl.Vector3) void {
         if (self.t < CLAW_WIND) {
             self.faceToward(hero, TURN_RATE * 0.6, dt);
-            const u = mathx.smoothstep(0, CLAW_WIND, self.t);
+            const u = anim.keyAt(&LOAD_KEYS, self.t / CLAW_WIND);
             self.swing = lerpF(0, -1.0, u);
             self.rear = lerpF(0, 0.72, u);
             self.crouch = lerpF(0.05, -0.10, u);
         } else if (self.t < CLAW_WIND + CLAW_STRIKE) {
             const u = (self.t - CLAW_WIND) / CLAW_STRIKE;
-            self.swing = lerpF(-1.0, 1.0, foe.swingCurve(u));
+            self.swing = anim.keyAt(&STROKE_KEYS, u);
             self.rear = lerpF(0.72, 0.24, u);
             self.crouch = lerpF(-0.10, 0.16, u);
         } else if (self.wantsRake(hero)) {
@@ -574,9 +651,7 @@ pub const Delver = struct {
             self.crouch = lerpF(-0.06, 0.22, k);
             self.arms = lerpF(1.0, -0.2, k);
             if (u >= THROW_RELEASE and self.rockHeld) {
-                self.rockHeld = false;
                 self.threw = true;
-                self.throwFrom = self.rockWorld();
                 self.rockCd = ROCK_CD * self.aiRng.range(0.9, 1.2);
             }
         } else {
@@ -621,13 +696,13 @@ pub const Delver = struct {
     fn updateRake(self: *Delver, dt: f32, hero: rl.Vector3) void {
         if (self.t < RAKE_WIND) {
             self.faceToward(hero, TURN_RATE * 0.9, dt);
-            const u = mathx.smoothstep(0, RAKE_WIND, self.t);
-            self.swing = lerpF(1.0, 0.88, u);
+            const u = anim.keyAt(&LOAD_KEYS, self.t / RAKE_WIND);
+            self.swing = lerpF(1.08, 1.16, u);
             self.rear = lerpF(0.24, 0.54, u);
             self.crouch = lerpF(0.16, -0.04, u);
         } else if (self.t < RAKE_WIND + RAKE_STRIKE) {
             const u = (self.t - RAKE_WIND) / RAKE_STRIKE;
-            self.swing = lerpF(0.88, -1.0, foe.swingCurve(u));
+            self.swing = -anim.keyAt(&STROKE_KEYS, u);
             self.rear = lerpF(0.54, 0.18, u);
             self.crouch = lerpF(-0.04, 0.14, u);
         } else {
@@ -648,9 +723,13 @@ pub const Delver = struct {
 
     fn updatePlough(self: *Delver, dt: f32, hero: rl.Vector3, bounds: f32) void {
         self.depth = UNDER_DEPTH;
+        const before = @max(0, self.t - dt);
+        const windStep = @max(0, @min(self.t, PLOUGH_WIND) - @min(before, PLOUGH_WIND)) * UNDER_SPEED * 0.45 * self.scale;
+        mathx.stepXZ(&self.pos, self.fdir(), windStep, bounds);
+        self.gait += windStep / (STRIDE * self.scale);
         if (self.t < PLOUGH_WIND) {
             const u = mathx.smoothstep(0, PLOUGH_WIND, self.t);
-            mathx.stepXZ(&self.pos, self.fdir(), UNDER_SPEED * 0.45 * self.scale * dt, bounds);
+
             self.moundR = lerpF(MOUND_TRAVEL_R, MOUND_PLOUGH_R, u);
             self.moundH = lerpF(MOUND_TRAVEL_H, MOUND_PLOUGH_H, u);
             self.moundLong = lerpF(1.0, MOUND_PLOUGH_LONG, u);
@@ -660,11 +739,11 @@ pub const Delver = struct {
             return;
         }
         const u = mathx.clampF((self.t - PLOUGH_WIND) / PLOUGH_DUR, 0, 1);
-        const speed = PLOUGH_SPEED * lerpF(0.55, 1.0, mathx.smoothstep(0, 0.30, u)) *
-            (1.0 - 0.5 * mathx.smoothstep(0.75, 1.0, u));
+        const prior = mathx.clampF((before - PLOUGH_WIND) / PLOUGH_DUR, 0, 1);
+        const moved = PLOUGH_SPEED * PLOUGH_DUR * (ploughIntegral(u) - ploughIntegral(prior)) * self.scale;
         const was = self.pos;
-        mathx.stepXZ(&self.pos, self.fdir(), speed * self.scale * dt, bounds);
-        self.gait += speed * dt / (STRIDE * self.scale);
+        mathx.stepXZ(&self.pos, self.fdir(), moved, bounds);
+        self.gait += moved / (STRIDE * self.scale);
         self.emitWake(dt);
         self.emitSpray(dt, 24.0);
         // **THE FURROW IS A SWEPT SEGMENT.** At nine metres a second it covers fifteen centimetres a frame, and a point test against a body 0.36 m across steps straight over him about half the time.
@@ -683,6 +762,7 @@ pub const Delver = struct {
     }
 
     fn furrowed(self: *const Delver, was: rl.Vector3, hero: rl.Vector3) bool {
+        if (hero.y + foe.HERO_HIGH < self.pos.y or hero.y + foe.HERO_LOW > self.pos.y + MOUND_PLOUGH_H * self.scale) return false;
         const q = mathx.closestOnSegXZ(hero, was, self.pos);
         return mathx.distXZ(hero, q) <= PLOUGH_R * self.scale + foe.HERO_R;
     }
@@ -717,7 +797,7 @@ pub const Delver = struct {
         self.depth = UNDER_DEPTH;
         self.faceToward(to, UNDER_TURN, dt);
         mathx.stepXZ(&self.pos, self.fdir(), UNDER_SPEED * self.scale * dt, bounds);
-        self.gait += UNDER_SPEED * dt / (STRIDE * self.scale);
+        self.gait += UNDER_SPEED * dt / STRIDE;
         self.drill = 0;
         self.emitWake(dt);
         self.churn += dt;
@@ -772,7 +852,7 @@ pub const Delver = struct {
         self.moundH = lerpF(MOUND_SWELL_H, 0, u * u);
         if ((self.t - dt) <= 0 and self.t > 0) {
             self.burstDirt();
-            if (mathx.distXZ(self.pos, hero) <= BURST_R * self.scale + foe.HERO_R) {
+            if (hero.y + foe.HERO_HIGH >= self.pos.y and hero.y + foe.HERO_LOW <= self.pos.y + BURST_R * self.scale and mathx.distXZ(self.pos, hero) <= BURST_R * self.scale + foe.HERO_R) {
                 self.heroHit = BURST_HIT;
                 self.leash.noteCombat();
             }
@@ -844,6 +924,7 @@ pub const Delver = struct {
     }
 
     fn enter(self: *Delver, s: State) void {
+        if (s == .recover) self.recoverFrom = self.swing;
         self.state = s;
         self.t = 0;
     }
@@ -909,8 +990,8 @@ pub const Delver = struct {
         return foe.hurtReach(CLAW_BAND, self.scale);
     }
 
-    fn takeParry(self: *Delver) void {
-        const reach = self.parryable() orelse return;
+    fn takeParry(self: *Delver, touching: bool) void {
+        const reach = self.parryable() orelse if (touching) foe.hurtReach(CLAW_BAND, self.scale) else return;
         if (!self.parry.catches(self.pos, reach)) return;
         self.parried = true;
         self.flash = foe.FLASH_DUR;
@@ -925,8 +1006,15 @@ pub const Delver = struct {
         }
     }
 
+    fn hullTouches(self: *const Delver, a: rl.Vector3, b: rl.Vector3, radius: f32) bool {
+        for (HULLS) |hull| {
+            if (foe.hullTouches(self.xf[hull.bone], hull.center, hull.radii, a, b, radius)) return true;
+        }
+        return false;
+    }
     pub fn tryHit(self: *Delver, blade: foe.Blade) void {
         if (self.state == .dead) return;
+        if (blade.active and !self.hullTouches(blade.a, blade.b, blade.r) and !self.hullTouches(blade.a0, blade.b0, blade.r)) return;
         const s = foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, .{ .light = 0.7, .heavy = 1.15 });
         self.dirtBurst(s.contact, foe.hitParts(if (heavy) 9 else 5), 2.0, 0.13);
@@ -1070,48 +1158,121 @@ pub const Delver = struct {
         model.draw(self);
     }
 
+    fn poseStep(self: *Delver, dt: f32) void {
+        const moving = @abs(self.gait - self.gaitLast) > dt * 0.05;
+        self.gaitLast = self.gait;
+        self.strideWeight = mathx.approach(self.strideWeight, if (moving) 1 else 0, dt * 12);
+        const holding = self.state == .dig or self.state == .throw;
+        self.posed = .{ self.drill, self.rear, self.crouch, self.swing, if (holding) self.arms else 0, if (holding) 1 else 0, if (self.state == .claw or self.state == .rake or self.state == .recover) @max(0, 1 - 1 / self.scale) * 30 else 0 };
+        self.springs.chase(&self.posed, 2400, 0.72, 0.86, dt);
+    }
+
+    fn rockTarget(self: *const Delver) rl.Vector3 {
+        const lift = mathx.clampF((self.posed[4] + 0.6) / 1.6, 0, 1);
+        return foe.markOn(self.xf[BODY], v3(0, lerpF(0.20, 1.45, lift), lerpF(1.15, 0.65, lift)));
+    }
+
+    fn stride(self: *const Delver, side: f32, front: bool) rl.Vector3 {
+        const phase = @mod(self.gait + (if (side < 0) @as(f32, 0.5) else 0) + (if (front) @as(f32, 0.5) else 0), 1);
+        const stance: f32 = 0.56;
+        const swing = mathx.clampF((phase - stance) / (1 - stance), 0, 1);
+        const z = if (phase < stance) (stance * 0.5 - phase) * STRIDE else lerpF(-stance * STRIDE * 0.5, stance * STRIDE * 0.5, mathx.smoothstep(0, 1, swing));
+        return v3(0, mathx.sinf(swing * std.math.pi) * 0.09 * self.strideWeight, z * self.strideWeight);
+    }
+
+    fn placeArm(self: *Delver, ai: usize, ci: usize, side: f32, root: rl.Matrix, fs: f32, target: rl.Vector3, grip: rl.Vector3, blend: f32) void {
+        if (blend <= 0.0001) return;
+        const shoulder = foe.markOn(self.xf[ai], mathx.zero3);
+        const hint = mathx.normV(mathx.subV(foe.markOn(root, v3(side, 0.4, -0.2)), foe.markOn(root, mathx.zero3)));
+        const solved = mathx.twoBone(shoulder, target, mathx.lenV(REST[ci]) * fs, mathx.lenV(grip) * fs, hint);
+        const upperAim = alongBone(root, REST[ci], mathx.subV(solved.joint, shoulder), shoulder);
+        self.xf[ai] = blendBone(self.xf[ai], upperAim, blend, shoulder, fs);
+        const elbow = foe.markOn(self.xf[ai], REST[ci]);
+        const clawAim = alongBone(root, grip, mathx.subV(solved.end, solved.joint), elbow);
+        self.xf[ci] = blendBone(self.xf[ci], clawAim, blend, elbow, fs);
+    }
+
+    fn clearClaw(self: *Delver, ci: usize, side: f32, fs: f32) void {
+        const at = foe.markOn(self.xf[ci], mathx.zero3);
+        for (0..6) |_| {
+            var lowest: f32 = 1e9;
+            for (NAILS, 0..) |c, i| {
+                const line = nailLine(side, i);
+                for (line, 0..) |p, j| lowest = @min(lowest, foe.markOn(self.xf[ci], p).y - (if (j == 2) c[7] else c[6]) * fs);
+            }
+            const deficit = self.pos.y + 0.006 * fs - lowest;
+            if (deficit <= 0.0001) break;
+            var tip = mathx.subV(foe.markOn(self.xf[ci], CLAW_TIP), at);
+            tip.y += deficit * 1.15;
+            self.xf[ci] = alongBone(self.xf[ci], CLAW_TIP, tip, at);
+        }
+    }
+    fn holdRock(self: *Delver, ai: usize, ci: usize, side: f32, root: rl.Matrix, fs: f32) void {
+        const blend = mathx.clampF(self.posed[5], 0, 1);
+        if (blend <= 0.0001) return;
+        const center = self.rockTarget();
+        const right = mathx.normV(mathx.subV(foe.markOn(root, v3(1, 0, 0)), foe.markOn(root, mathx.zero3)));
+        const target = mathx.addV(center, mathx.addV(mathx.scaleV(right, side * ROCK_R * 0.86 * fs), v3(0, -ROCK_R * 0.50 * fs, 0)));
+        self.placeArm(ai, ci, side, root, fs, target, nailLine(side, 1)[1], blend);
+    }
     pub fn pose(self: *Delver) void {
         const fs = foe.rigScale(self.scale, self.fade);
-        const sink = mathx.sinf(mathx.radians(@abs(self.drill))) * BODY_HALF;
+        const sink = mathx.sinf(mathx.radians(@abs(self.posed[0]))) * BODY_HALF;
         const clear = sink * (1.0 - mathx.clampF(self.depth / UNDER_DEPTH, 0, 1)) * fs;
         const root = mul3(
-            mul(scaleM(fs, fs, fs), rx(self.drill)),
+            mul(scaleM(fs, fs, fs), rx(self.posed[0])),
             ry(mathx.degrees(self.facing)),
-            tr(self.pos.x, self.pos.y + self.ride() + clear, self.pos.z),
+            tr(self.pos.x, self.pos.y + self.ride() + clear - 0.08 * self.posed[2] * fs, self.pos.z),
         );
         self.xf[BODY] = root;
+        const chestPitch = -36 * self.posed[1] + 14 * self.posed[2];
+        self.xf[CHEST] = mul(mul(rx(chestPitch), tr(WAIST.x, WAIST.y, WAIST.z)), root);
+        const headAt = mathx.subV(REST[HEAD], WAIST);
 
-        const headPitch = -22.0 * self.rear + 16.0 * self.crouch + 10.0 * self.swing;
-        const headYaw = 12.0 * self.swing;
-        self.xf[HEAD] = mul(mul3(ry(headYaw), rx(headPitch), tr(REST[HEAD].x, REST[HEAD].y + 0.10 * self.rear, REST[HEAD].z)), root);
+        const headPitch = -22.0 * self.posed[1] + 16.0 * self.posed[2] + 10.0 * self.posed[3];
+        const headYaw = 12.0 * self.posed[3];
+        self.xf[HEAD] = mul(mul3(ry(headYaw), rx(headPitch), tr(headAt.x, headAt.y + 0.04 * self.posed[1], headAt.z)), self.xf[CHEST]);
 
         for ([_]usize{ ARML, ARMR }, [_]usize{ CLAWL, CLAWR }, [_]f32{ 1, -1 }) |ai, ci, sgn| {
-            const own = if (sgn < 0) self.swing else self.swing * 0.45;
-            const up = mathx.maxF(0, self.arms);
-            const shoulder = -74.0 * self.rear - 34.0 * own - 96.0 * up + 40.0 * mathx.maxF(0, -self.arms);
-            const abd = 16.0 + 26.0 * self.rear + 10.0 * @abs(own) - 9.0 * up;
-            const hip = v3(REST[ai].x, REST[ai].y - 0.12 * self.crouch, REST[ai].z);
+            const own = if (sgn < 0) self.posed[3] else self.posed[3] * 0.45;
+            const up = mathx.maxF(0, self.posed[4]);
+            const shoulder = self.posed[6] - 74.0 * self.posed[1] - 34.0 * own - 96.0 * up + 40.0 * mathx.maxF(0, -self.posed[4]);
+            const abd = 16.0 + 26.0 * self.posed[1] + 10.0 * @abs(own) - 9.0 * up;
+            const hip = foe.markOn(self.xf[CHEST], mathx.subV(REST[ai], WAIST));
             // THE STROKE NEEDS A LATERAL CHANNEL. Spent entirely on `rx` — a SAGITTAL rake — with `abd` on `@abs(own)`, the claw ran x −0.51 to −1.07 and back and never crossed the body's own axis, which RADIAL reach tests satisfy perfectly.
             const cross = SWING_YAW * own * -sgn;
-            self.xf[ai] = mul(mul(mul3(rz(sgn * abd), rx(shoulder), ry(cross)), tr(hip.x, hip.y, hip.z)), root);
-            const elbow = 40.0 - 46.0 * own - 26.0 * self.rear - 30.0 * up;
+            var armRoot = root;
+            armRoot.m12 = 0;
+            armRoot.m13 = 0;
+            armRoot.m14 = 0;
+            self.xf[ai] = mul3(mul3(rz(sgn * abd), rx(shoulder), ry(cross)), armRoot, tr(hip.x, hip.y, hip.z));
+            const elbow = 40.0 - 46.0 * own - 26.0 * self.posed[1] - 30.0 * up;
             self.xf[ci] = mul(mul(rx(elbow), tr(REST[ci].x, REST[ci].y, REST[ci].z)), self.xf[ai]);
+            const free = mathx.clampF(@abs(self.posed[1]) * 2.0 + @abs(self.posed[3]) * 1.2 + @abs(self.posed[0]) / 18 + self.depth, 0, 1);
+            const walk = self.stride(sgn, true);
+            const footAt = foe.markOn(mul(scaleM(fs, fs, fs), mul(ry(mathx.degrees(self.facing)), tr(self.pos.x, self.pos.y, self.pos.z))), mathx.addV(v3(sgn * 0.62, 0.038, 1.20), walk));
+            self.placeArm(ai, ci, sgn, root, fs, footAt, CLAW_TIP, (1 - free) * (1 - mathx.clampF(self.posed[5], 0, 1)));
+            self.holdRock(ai, ci, sgn, root, fs);
+            if (self.depth <= 0 and self.posed[5] < 0.02) self.clearClaw(ci, sgn, fs);
         }
-        // The stone rides between the claw tips while it is held.
-        const tipL = foe.markOn(self.xf[CLAWL], CLAW_TIP);
-        const tipR = foe.markOn(self.xf[CLAWR], CLAW_TIP);
-        const held = mathx.scaleV(mathx.addV(tipL, tipR), 0.5);
-        self.xf[ROCK] = mul3(scaleM(fs, fs, fs), ry(mathx.degrees(self.facing) + 37.0 * self.arms), tr(held.x, held.y + ROCK_R * 0.7 * fs, held.z));
-
-        const step = mathx.sinf(self.gait * std.math.tau);
-        for ([_]usize{ HINDL, HINDR }, [_]f32{ 1, -1 }) |bi, sgn| {
-            const ph = step * sgn;
-            const hipA = 18.0 * self.rear + 26.0 * ph - 20.0 * self.crouch;
-            self.xf[bi] = mul(mul3(rz(sgn * 10.0), rx(hipA), tr(REST[bi].x, REST[bi].y - 0.14 * self.crouch, REST[bi].z)), root);
+        const held = self.rockTarget();
+        self.xf[ROCK] = mul3(scaleM(fs, fs, fs), ry(mathx.degrees(self.facing) + 37 * self.posed[4]), tr(held.x, held.y, held.z));
+        const groundFrame = mul3(scaleM(fs, fs, fs), ry(mathx.degrees(self.facing)), tr(self.pos.x, self.pos.y, self.pos.z));
+        for ([_]usize{ HINDL, HINDR }, [_]usize{ KNEEL, KNEER }, [_]usize{ FOOTL, FOOTR }, [_]f32{ 1, -1 }) |bi, ki, fi, sgn| {
+            const hip = foe.markOn(root, REST[bi]);
+            const step = self.stride(sgn, false);
+            const floorAt = foe.markOn(groundFrame, mathx.addV(v3(sgn * 0.36, 0.071, -0.43), step));
+            const free = mathx.clampF(@abs(self.posed[0]) / 22 + self.depth / 0.5, 0, 1);
+            const swimAt = foe.markOn(root, mathx.addV(REST[bi], v3(sgn * 0.04, -0.23, step.z)));
+            const at = mathx.lerpV(floorAt, swimAt, free);
+            const hint = mathx.normV(mathx.subV(foe.markOn(root, v3(sgn * 0.3, 0, -1)), foe.markOn(root, mathx.zero3)));
+            const solved = mathx.twoBone(hip, at, mathx.lenV(HIND_UPPER) * fs, mathx.lenV(HIND_LOWER) * fs, hint);
+            self.xf[bi] = alongBone(root, HIND_UPPER, mathx.subV(solved.joint, hip), hip);
+            self.xf[ki] = alongBone(root, HIND_LOWER, mathx.subV(solved.end, solved.joint), solved.joint);
+            self.xf[fi] = mul3(scaleM(fs, fs, fs), ry(mathx.degrees(self.facing) + sgn * 8), tr(solved.end.x, solved.end.y, solved.end.z));
         }
-
-        const tailA = 34.0 * self.rear - 20.0 * self.swing;
-        self.xf[TAIL] = mul(mul3(ry(-14.0 * self.swing), rx(tailA), tr(REST[TAIL].x, REST[TAIL].y, REST[TAIL].z)), root);
+        const tailA = 34.0 * self.posed[1] - 20.0 * self.posed[3];
+        self.xf[TAIL] = mul(mul3(ry(-14.0 * self.posed[3]), rx(tailA), tr(REST[TAIL].x, REST[TAIL].y, REST[TAIL].z)), root);
 
         const sh = self.shudder;
         const throb = 1.0 + 0.06 * sh * mathx.sinf(self.elapsed * 26.0);
@@ -1125,6 +1286,43 @@ pub const Delver = struct {
     }
 };
 
+fn smoothIntegral(x: f32) f32 {
+    if (x <= 0) return 0;
+    if (x >= 1) return x - 0.5;
+    return x * x * x * (1 - 0.5 * x);
+}
+
+fn ploughIntegral(u: f32) f32 {
+    return 0.55 * u + 0.45 * 0.30 * smoothIntegral(u / 0.30) - 0.50 * 0.25 * smoothIntegral((u - 0.75) / 0.25);
+}
+const LOAD_KEYS = [_]anim.Key{
+    .{ .t = 0, .v = 0 },
+    .{ .t = 0.66, .v = 1, .ease = .decel },
+    .{ .t = 1, .v = 1, .ease = .hold },
+};
+const STROKE_KEYS = [_]anim.Key{
+    .{ .t = 0, .v = -1 },
+    .{ .t = 0.78, .v = 1, .ease = .accel },
+    .{ .t = 1, .v = 1.08, .ease = .decel },
+};
+
+fn alongBone(base: rl.Matrix, local: rl.Vector3, direction: rl.Vector3, at: rl.Vector3) rl.Matrix {
+    const from = mathx.normV(mathx.subV(foe.markOn(base, local), foe.markOn(base, mathx.zero3)));
+    const turn = rl.math.quaternionToMatrix(rl.math.quaternionFromVector3ToVector3(from, mathx.normV(direction)));
+    var orient = base;
+    orient.m12 = 0;
+    orient.m13 = 0;
+    orient.m14 = 0;
+    return mul3(orient, turn, tr(at.x, at.y, at.z));
+}
+
+fn blendBone(from: rl.Matrix, to: rl.Matrix, blend: f32, at: rl.Vector3, fs: f32) rl.Matrix {
+    const inv = scaleM(1 / fs, 1 / fs, 1 / fs);
+    const a = rl.math.quaternionFromMatrix(mul(from, inv));
+    const b = rl.math.quaternionFromMatrix(mul(to, inv));
+    const rot = rl.math.quaternionToMatrix(rl.math.quaternionSlerp(a, b, blend));
+    return mul3(scaleM(fs, fs, fs), rot, tr(at.x, at.y, at.z));
+}
 const CAP_N = wf.MAX_PER_KIND;
 
 pub const Warrens = struct {
@@ -1187,14 +1385,19 @@ pub const Warrens = struct {
 
 fn buildMeshes() [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
-    mesh[BODY] = bodyMesh();
+    mesh[BODY] = bodyMesh(false);
     mesh[HEAD] = headMesh();
     mesh[ARML] = armMesh(1);
     mesh[ARMR] = armMesh(-1);
     mesh[CLAWL] = clawMesh(1);
     mesh[CLAWR] = clawMesh(-1);
-    mesh[HINDL] = hindMesh(1);
-    mesh[HINDR] = hindMesh(-1);
+    mesh[HINDL] = hindMesh(false);
+    mesh[HINDR] = hindMesh(false);
+    mesh[KNEEL] = hindMesh(true);
+    mesh[KNEER] = hindMesh(true);
+    mesh[FOOTL] = footMesh();
+    mesh[FOOTR] = footMesh();
+    mesh[CHEST] = bodyMesh(true);
     mesh[TAIL] = tailMesh();
     mesh[MOUND] = moundMesh();
     mesh[ROCK] = rockMesh();
@@ -1221,87 +1424,88 @@ pub fn rockModel(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-fn bodyMesh() rl.Mesh {
+fn bodyMesh(chest: bool) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xD31E);
     b.setMat(.skin);
-    b.addBlob(v3(0, 0.26 * H, -0.08), v3(0.42, 0.17 * H, 0.80), 8, 14, HIDE);
-    b.addBlob(v3(0, 0.30 * H, 0.30), v3(0.40, 0.15 * H, 0.38), 7, 13, HIDE);
-    b.addBlob(v3(0, 0.14 * H, 0.04), v3(0.36, 0.09 * H, 0.66), 6, 12, HIDE_LO);
-    b.addBlob(v3(0, 0.22 * H, -0.66), v3(0.30, 0.13 * H, 0.28), 6, 12, HIDE_LO);
-    var i: i32 = 0;
-    while (i < 8) : (i += 1) {
-        const u = @as(f32, @floatFromInt(i)) / 7.0;
-        const z = 0.50 - u * 1.24;
-        const taper = 1.0 - 0.45 * u;
-        b.addBlob(
-            v3(rng.signed() * 0.04, (0.26 + 0.155) * H - 0.05 * u * u, z),
-            v3(rng.range(0.16, 0.26) * taper, rng.range(0.024, 0.042), rng.range(0.08, 0.12)),
-            5,
-            10,
-            PLATE,
-        );
+    if (chest) {
+        b.addBlob(HULLS[1].center, HULLS[1].radii, 12, 20, HIDE);
+        b.addCapsule(mathx.subV(v3(0, 0.30 * H, 0.36), WAIST), mathx.subV(REST[HEAD], WAIST), 0.25, 0.20, 14, HIDE);
+    } else {
+        b.addBlob(HULLS[0].center, HULLS[0].radii, 12, 20, HIDE);
+        b.addBlob(v3(0, 0.14 * H, -0.14), v3(0.36, 0.09 * H, 0.48), 10, 18, HIDE_LO);
+        b.addBlob(HULLS[5].center, HULLS[5].radii, 10, 18, HIDE_LO);
+        b.addBlob(HULLS[2].center, HULLS[2].radii, 12, 18, HIDE);
+    }
+    for (0..8) |i| {
+        const u = @as(f32, @floatFromInt(i)) / 7;
+        const z = 0.50 - u * 1.24 + rng.signed() * 0.025;
+        const x = rng.signed() * 0.04;
+        const thick = rng.range(0.024, 0.042);
+        const radii = v3(rng.range(0.16, 0.26) * (1 - 0.45 * u), thick, rng.range(0.08, 0.12));
+        if ((z > 0.02) != chest) continue;
+        const c = if (chest) v3(0, 0.30 * H, 0.28) else v3(0, 0.26 * H, -0.28);
+        const r = if (chest) v3(0.40, 0.15 * H, 0.42) else v3(0.42, 0.17 * H, 0.59);
+        const y = c.y + r.y * @sqrt(@max(0, 1 - (x / r.x) * (x / r.x) - ((z - c.z) / r.z) * ((z - c.z) / r.z)));
+        b.addBlob(mathx.subV(v3(x, y - thick * 0.72, z), if (chest) WAIST else mathx.zero3), radii, 7, 14, PLATE);
     }
     return b.toMesh();
 }
-
 fn headMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addBlob(v3(0, 0, 0.04), v3(0.22, 0.16, 0.26), 7, 13, HIDE);
+    b.addBlob(HULLS[3].center, HULLS[3].radii, 10, 18, HIDE);
     b.addCapsule(v3(0, -0.02, 0.18), v3(0, -0.06, 0.38), 0.14, 0.09, 9, SNOUT);
     b.addBlob(v3(0, -0.06, 0.41), v3(0.10, 0.075, 0.07), 5, 10, SNOUT);
     b.addBlob(v3(0, 0.09, 0.12), v3(0.185, 0.042, 0.18), 5, 11, PLATE);
     b.setMat(.plain);
-    b.addBlob(v3(0.13, 0.01, 0.20), v3(0.030, 0.026, 0.026), 4, 8, EYE);
-    b.addBlob(v3(-0.13, 0.01, 0.20), v3(0.030, 0.026, 0.026), 4, 8, EYE);
+    b.addBlob(v3(0.16, 0.015, 0.22), v3(0.030, 0.026, 0.026), 4, 8, EYE);
+    b.addBlob(v3(-0.16, 0.015, 0.22), v3(0.030, 0.026, 0.026), 4, 8, EYE);
     return b.toMesh();
 }
 
 fn armMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addBlob(v3(0, 0, 0), v3(0.19, 0.18, 0.19), 5, 10, HIDE);
-    b.addCapsule(v3(0, -0.02, 0.02), v3(side * 0.12, -0.14, 0.44), 0.155, 0.125, 9, HIDE_LO);
+    b.addCapsule(v3(0, -0.02, 0.02), v3(side * 0.12, -0.14, 0.44), 0.19, 0.125, 16, HIDE_LO);
     return b.toMesh();
 }
 
 fn clawMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(side * 0.05, -0.09, 0.40), 0.125, 0.10, 9, HIDE_LO);
-    b.addBlob(v3(side * 0.05, -0.10, 0.44), v3(0.14, 0.11, 0.13), 5, 10, HIDE_LO);
+    b.addCapsule(v3(0, 0, 0), v3(side * 0.05, -0.09, 0.40), 0.125, 0.10, 12, HIDE_LO);
+    b.addBlob(v3(side * 0.05, -0.10, 0.44), v3(0.14, 0.11, 0.13), 7, 14, HIDE_LO);
     b.setMat(.plain);
-// **NONE ENDS IN A POINT** — a blunt capsule cap; what reads as sharp is the TAPER (0.062 to 0.020) and the hook.
-    inline for (.{
-        .{ 0.11, -0.12, 0.50, 0.13, -0.30, 0.92, 0.056, 0.020 },
-        .{ 0.00, -0.13, 0.51, 0.00, -0.33, 1.02, 0.062, 0.022 },
-        .{ -0.09, -0.12, 0.49, -0.12, -0.28, 0.87, 0.050, 0.019 },
-    }) |c| {
-        b.addBlob(v3(side * c[0], c[1] + 0.01, c[2] - 0.02), v3(c[6] * 1.5, c[6] * 1.4, c[6] * 1.6), 5, 8, HIDE_LO);
-        const mx = side * (c[0] + c[3]) * 0.5;
-        const my = (c[1] + c[4]) * 0.5 + 0.035;
-        const mz = (c[2] + c[5]) * 0.5;
-        b.addCapsule(v3(side * c[0], c[1], c[2]), v3(mx, my, mz), c[6], c[6] * 0.72, 7, CLAW);
-        b.addCapsule(v3(mx, my, mz), v3(side * c[3], c[4], c[5]), c[6] * 0.72, c[7], 7, CLAW);
-        b.addBlob(v3(side * c[3], c[4], c[5]), v3(c[7] * 1.1, c[7] * 1.1, c[7] * 1.2), 4, 7, CLAW_LT);
+    // **NONE ENDS IN A POINT** — a blunt capsule cap; what reads as sharp is the TAPER (0.062 to 0.020) and the hook.
+    for (NAILS, 0..) |c, i| {
+        const line = nailLine(side, i);
+        b.addBlob(v3(line[0].x, line[0].y + 0.01, line[0].z - 0.02), v3(c[6] * 1.13, c[6] * 1.08, c[6] * 1.16), 7, 14, HIDE_LO);
+        b.addCapsule(line[0], line[1], c[6], c[6] * 0.72, 11, CLAW);
+        b.addCapsule(line[1], line[2], c[6] * 0.72, c[7], 11, CLAW);
+        b.addBlob(line[2], v3(c[7] * 1.03, c[7] * 1.03, c[7] * 1.05), 5, 9, CLAW_LT);
     }
     return b.toMesh();
 }
 
-fn hindMesh(side: f32) rl.Mesh {
+fn hindMesh(lower: bool) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(side * 0.06, -0.28, -0.06), 0.16, 0.12, 9, HIDE_LO);
-    b.addBlob(v3(side * 0.07, -0.34, 0.02), v3(0.13, 0.07, 0.17), 5, 10, HIDE_LO);
+    b.addCapsule(mathx.zero3, if (lower) HIND_LOWER else HIND_UPPER, if (lower) 0.105 else 0.15, if (lower) 0.075 else 0.105, 12, HIDE_LO);
     return b.toMesh();
 }
 
+fn footMesh() rl.Mesh {
+    var b = Builder.init();
+    b.setMat(.skin);
+    b.addBlob(v3(0, 0, 0.055), v3(0.13, 0.07, 0.17), 9, 16, HIDE_LO);
+    return b.toMesh();
+}
 fn tailMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(0, -0.06, -0.34), 0.17, 0.10, 9, HIDE_LO);
-    b.addBlob(v3(0, -0.08, -0.40), v3(0.10, 0.09, 0.10), 5, 10, HIDE_LO);
+    b.addCapsule(v3(0, 0, 0), v3(0, -0.06, -0.34), 0.17, 0.10, 12, HIDE_LO);
+    b.addBlob(v3(0, -0.08, -0.40), v3(0.10, 0.09, 0.10), 7, 14, HIDE_LO);
     return b.toMesh();
 }
 
@@ -1569,10 +1773,10 @@ test "A CAUGHT CLAW NEVER ARRIVES" {
     d.state = .claw;
     d.t = CLAW_WIND - foe.PARRY_LEAD * 0.5;
     d.parry = .{ .live = true, .at = hero, .facing = 0 };
-    d.takeParry();
+    d.takeParry(false);
     try std.testing.expect(!d.parried and d.state == .claw);
     d.parry = .{ .live = true, .at = hero, .facing = std.math.pi };
-    d.takeParry();
+    d.takeParry(false);
     try std.testing.expect(d.parried);
     try std.testing.expect(d.state == .stunlight or d.state == .stunheavy);
     try std.testing.expect(d.clawCd > 0);
@@ -1586,6 +1790,7 @@ test "EVERY REACH IS MEASURED, NOT ARGUED — the claw arrives inside what `parr
     while (elapsed <= CLAW_WIND + CLAW_STRIKE) : (elapsed += 1.0 / 240.0) {
         d.t = elapsed;
         d.updateClaw(1.0 / 240.0, v3(0, 0, 3));
+        d.poseStep(1.0 / 240.0);
         d.pose();
         const seg = d.clawSeg();
         far = mathx.maxF(far, mathx.distXZ(d.pos, seg[1]));
@@ -1600,6 +1805,7 @@ test "EVERY REACH IS MEASURED, NOT ARGUED — the claw arrives inside what `parr
     while (rise <= CLAW_WIND + CLAW_STRIKE) : (rise += 1.0 / 240.0) {
         d.t = rise;
         d.updateClaw(1.0 / 240.0, v3(0, 0, 3));
+        d.poseStep(1.0 / 240.0);
         d.pose();
         for (d.clawSeg()) |q| high = mathx.maxF(high, q.y - d.pos.y);
     }
@@ -1697,6 +1903,7 @@ test "THE STROKE CROSSES A MAN STANDING IN FRONT — every range inside its own 
     while (t <= CLAW_WIND + CLAW_STRIKE) : (t += 1.0 / 240.0) {
         d.t = t;
         d.updateClaw(1.0 / 240.0, v3(0, 0, 3));
+        d.poseStep(1.0 / 240.0);
         d.pose();
         const tip = d.clawSeg()[1];
         lo = @min(lo, tip.x);
@@ -1745,4 +1952,162 @@ test "IT DIGS UP A ROCK AND THROWS IT FROM RANGE — a long tell, a long clock, 
     std.debug.print("\n  delver rock: dug at {d:.2} s, threw at {d:.2} s from {d:.2} m up, {d:.2} s in the air, landed {d:.2} m off the man (ring {d:.1} m)\n", .{ dug.?, threwAt, from.y, flight, miss, ROCK_SPLASH_R });
     try std.testing.expect(a.stuck);
     try std.testing.expect(miss < ROCK_SPLASH_R);
+}
+
+test "delver rock sits in both claws without stretching either arm" {
+    for ([_]f32{ 0.5, 1, 1.8, 2 }) |size| {
+        for ([_]f32{ 30, 60, 144 }) |fps| {
+            var d = Delver.spawn(v3(3, 0, -4), 0.8, size, 0.3);
+            d.diveCd = 100;
+            d.rockCd = 100;
+            d.enter(.dig);
+            var releases: usize = 0;
+            for (0..@intFromFloat(fps * 2.8)) |_| {
+                _ = d.update(1 / fps, v3(3, 0, 7), 400, .{});
+                if (!d.rockHeld and !d.threw) continue;
+                for ([_]usize{ ARML, ARMR }, [_]usize{ CLAWL, CLAWR }, [_]f32{ 1, -1 }) |ai, ci, side| {
+                    const shoulder = foe.markOn(d.xf[ai], mathx.zero3);
+                    const elbow = foe.markOn(d.xf[ci], mathx.zero3);
+                    const palm = foe.markOn(d.xf[ci], nailLine(side, 1)[1]);
+                    try std.testing.expectApproxEqAbs(mathx.lenV(REST[ci]) * size, mathx.lenV(mathx.subV(elbow, shoulder)), 0.001);
+                    try std.testing.expectApproxEqAbs(mathx.lenV(nailLine(side, 1)[1]) * size, mathx.lenV(mathx.subV(palm, elbow)), 0.001);
+                    const gap = mathx.lenV(mathx.subV(palm, d.rockWorld()));
+                    if (@abs(gap - ROCK_R * size) > 0.025 * size) std.debug.print("rock grip size {d} fps {d} t {d:.3} gap {d:.3} expected {d:.3}\n", .{ size, fps, d.t, gap, ROCK_R * size });
+                    try std.testing.expectApproxEqAbs(ROCK_R * size, gap, 0.025 * size);
+                }
+                if (d.threw) {
+                    releases += 1;
+                    try std.testing.expect(!d.rockHeld);
+                    try std.testing.expect(mathx.lenV(mathx.subV(d.throwFrom, d.rockWorld())) < 0.0001);
+                }
+            }
+            try std.testing.expectEqual(@as(usize, 1), releases);
+        }
+    }
+}
+
+test "delver both claw strokes cross their whole choice band at all sizes and frame rates" {
+    for ([_]f32{ 0.5, 1, 1.8, 2 }) |size| {
+        for ([_]f32{ 30, 60, 144 }) |fps| {
+            for ([_]bool{ false, true }) |rake| {
+                for (0..9) |i| {
+                    const dist = lerpF(BODY_R * size + foe.HERO_R, clawBand(size), @as(f32, @floatFromInt(i)) / 8);
+                    var d = Delver.spawn(mathx.zero3, 0, size, 0.3);
+                    if (rake) d.debugRake() else d.debugClaw();
+                    d.raked = true;
+                    var hit = false;
+                    const hero = v3(0, 0, dist);
+                    for (0..@intFromFloat(fps * 1.2)) |_| {
+                        if (d.state == .recover) break;
+                        if (d.update(1 / fps, hero, 400, .{}) != null) hit = true;
+                    }
+                    if (!hit) std.debug.print("claw miss size {d} fps {d} rake {} range {d:.2}\n", .{ size, fps, rake, dist });
+                    try std.testing.expect(hit);
+                }
+            }
+        }
+    }
+}
+
+test "delver surfaced paws and claws stay above the floor" {
+    for ([_]f32{ 0.5, 1, 2 }) |size| {
+        for (0..7) |mode| {
+            var d = Delver.spawn(mathx.zero3, 0, size, 0.3);
+            d.diveCd = 100;
+            d.rockCd = 100;
+            switch (mode) {
+                0 => d.debugClaw(),
+                1 => d.debugRake(),
+                2 => d.stagger(true),
+                3 => d.debugKill(),
+                4 => d.enter(.walk),
+                else => {},
+            }
+            d.raked = true;
+            var low: f32 = 1e9;
+            for (0..240) |_| {
+                const hero = if (mode == 4) v3(0, 0, 12) else v3(0, 0, 90);
+                _ = d.update(1.0 / 120.0, hero, 400, .{});
+                if (d.gone) break;
+                const fs = foe.rigScale(d.scale, d.fade);
+                for ([_]usize{ FOOTL, FOOTR }) |bi| low = @min(low, foe.markOn(d.xf[bi], mathx.zero3).y - 0.07 * fs);
+                for ([_]usize{ CLAWL, CLAWR }, [_]f32{ 1, -1 }) |bi, side| {
+                    for (NAILS, 0..) |c, i| {
+                        const line = nailLine(side, i);
+                        for (line, 0..) |point, j| low = @min(low, foe.markOn(d.xf[bi], point).y - (if (j == 2) c[7] else c[6]) * fs);
+                    }
+                }
+            }
+            if (low < -0.025 * size) std.debug.print("floor mode {d} size {d} lowest {d:.3}\n", .{ mode, size, low });
+            try std.testing.expect(low >= -0.025 * size);
+        }
+    }
+}
+test "delver plough travels the authored curve exactly and cannot hit another floor" {
+    const travel = UNDER_SPEED * 0.45 * PLOUGH_WIND + PLOUGH_SPEED * PLOUGH_DUR * ploughIntegral(1);
+    for ([_]f32{ 0.5, 1, 2 }) |size| {
+        for ([_]f32{ 30, 60, 144 }) |fps| {
+            var d = Delver.spawn(mathx.zero3, 0, size, 0.3);
+            d.debugPlough();
+            while (d.state == .plough) _ = d.update(1 / fps, v3(0, 0, 90), 400, .{});
+            try std.testing.expectApproxEqAbs(travel * size, d.pos.z, 0.001);
+            try std.testing.expectApproxEqAbs(travel / STRIDE, d.gait, 0.002);
+        }
+        var d = Delver.spawn(mathx.zero3, 0, size, 0.3);
+        d.pos.z = 2;
+        try std.testing.expect(d.furrowed(mathx.zero3, v3(0, 0, 1)));
+        try std.testing.expect(!d.furrowed(mathx.zero3, v3(0, 3, 1)));
+        try std.testing.expect(!d.furrowed(mathx.zero3, v3(0, -3, 1)));
+        d.enter(.burst);
+        d.updateBurst(1.0 / 60.0, v3(0, BURST_R * size + 1, 2));
+        try std.testing.expect(d.heroHit == null);
+    }
+}
+
+test "delver interrupts stay continuous and cancel the outgoing blow or stone" {
+    const dt: f32 = 1.0 / 120.0;
+    for ([_]bool{ false, true }) |rock| {
+        var d = Delver.spawn(mathx.zero3, 0, 1, 0.3);
+        if (rock) d.enter(.dig) else d.debugClaw();
+        const hero = if (rock) v3(0, 0, 10) else v3(0, 0, 1.4);
+        var contacted = false;
+        for (0..300) |_| {
+            var probe = d;
+            const hit = probe.update(dt, hero, 400, .{});
+            if ((rock and probe.threw) or (!rock and hit != null)) {
+                const center = probe.centerWorld();
+                const blade = foe.Blade{ .active = true, .a = center, .b = center, .a0 = center, .b0 = center, .r = 0.2, .hit = .{ .dmg = 1, .stance = 100 } };
+                const old = d.posed;
+                const predicted = foe.markOn(probe.xf[CLAWR], CLAW_TIP);
+                try std.testing.expect(d.update(dt, hero, 400, blade) == null);
+                try std.testing.expect(d.staggered());
+                try std.testing.expect(!d.threw and !d.rockHeld);
+                for (d.posed, old) |now, was| try std.testing.expect(@abs(now - was) < 0.45);
+                try std.testing.expect(mathx.lenV(mathx.subV(foe.markOn(d.xf[CLAWR], CLAW_TIP), predicted)) < 0.0001);
+                _ = d.update(0.0001, v3(0, 0, 90), 400, .{});
+                try std.testing.expect(mathx.lenV(mathx.subV(foe.markOn(d.xf[CLAWR], CLAW_TIP), predicted)) < 0.02);
+                for (d.posed, old) |now, was| try std.testing.expect(@abs(now - was) < 0.7);
+                contacted = true;
+                break;
+            }
+            d = probe;
+        }
+        try std.testing.expect(contacted);
+    }
+}
+
+test "delver hurt volume follows the rearing body and excludes empty side space" {
+    var d = Delver.spawn(mathx.zero3, 0, 1, 0.3);
+    d.stagger(true);
+    for (0..40) |_| _ = d.update(1.0 / 120.0, v3(0, 0, 90), 400, .{});
+    for (HULLS) |hull| {
+        const at = foe.markOn(d.xf[hull.bone], hull.center);
+        try std.testing.expect(d.hullTouches(at, at, 0.01));
+        try std.testing.expect(mathx.lenV(mathx.subV(at, d.centerWorld())) < d.hurtRadius());
+    }
+    const side = v3(0.8, 0.45, 0);
+    try std.testing.expect(!d.hullTouches(side, side, 0.05));
+    const blade = foe.Blade{ .active = true, .a = side, .b = side, .a0 = side, .b0 = side, .r = 0.05, .hit = .{ .dmg = 1 } };
+    d.tryHit(blade);
+    try std.testing.expectEqual(@as(u32, 0), d.hits);
 }

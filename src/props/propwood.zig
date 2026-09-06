@@ -58,6 +58,74 @@ pub fn deadLimbTinted(b: *Builder, rng: *mathx.Rng, root: rl.Vector3, a: f32, re
     }
 }
 
+/// **A ROOT IS DEEP, NOT WIDE, AND IT IS NEVER STRAIGHT.** Out of the flare, over a KNUCKLE, down to a toe at the
+/// surface and on DOWN under the tree — every joint kinked off the line so a set never reads as spokes. `reach`
+/// is how far out the toe sits; `deep` is how far under the ground the tip finishes, and it is the larger number.
+pub const RootSpec = struct {
+    n: i32,
+    up: f32,
+    reach: f32,
+    deep: f32,
+    r0: f32,
+    r1: f32,
+    col: rl.Color,
+    /// One root of the set breaks the surface on its way out — a bare fan of them all at the same height is a carpet.
+    heave: f32 = 0,
+};
+
+pub fn rootsInto(b: *Builder, rng: *mathx.Rng, sp: RootSpec) void {
+    // The flare they all grow out of, so nothing leaves the bole in mid-air.
+    b.addBlob(v3(0, sp.up * 0.34, 0), v3(sp.r0 * 2.5, sp.up * 0.80, sp.r0 * 2.4), 3, 10, sp.col);
+    var r: i32 = 0;
+    while (r < sp.n) : (r += 1) {
+        const a = std.math.tau * @as(f32, @floatFromInt(r)) / @as(f32, @floatFromInt(@max(sp.n, 1))) + rng.signed() * 0.34;
+        const dir = v3(mathx.cosf(a), 0, mathx.sinf(a));
+        const side = v3(-dir.z, 0, dir.x);
+        const reach = sp.reach * rng.range(0.82, 1.14);
+        const deep = sp.deep * rng.range(0.76, 1.22);
+        const heave: f32 = if (r == 1) sp.heave else 0.0;
+
+        // IT ARCHES, then it DIGS: out of the flare almost level, over a knuckle with daylight under it, down to a
+        // toe still fat at the surface, and on under the tree. Every joint kinks off the bearing so a set of them
+        // never reads as spokes.
+        const foot = v3(dir.x * sp.r0 * 0.9, sp.up, dir.z * sp.r0 * 0.9);
+        const arch = v3(
+            dir.x * reach * 0.55 + side.x * rng.signed() * reach * 0.16,
+            sp.up * rng.range(0.74, 0.96) + heave,
+            dir.z * reach * 0.55 + side.z * rng.signed() * reach * 0.16,
+        );
+        const toe = v3(
+            dir.x * reach + side.x * rng.signed() * reach * 0.20,
+            0.05 + heave * 0.5,
+            dir.z * reach + side.z * rng.signed() * reach * 0.20,
+        );
+        const tip = v3(
+            toe.x + dir.x * reach * 0.34 + side.x * rng.signed() * reach * 0.26,
+            -deep,
+            toe.z + dir.z * reach * 0.34 + side.z * rng.signed() * reach * 0.26,
+        );
+
+        const rA = sp.r0 * rng.range(0.94, 1.18);
+        const rB = sp.r0 * rng.range(0.74, 0.90);
+        const rC = sp.r0 * rng.range(0.50, 0.64);
+        b.addCapsule(foot, arch, rA, rB, 8, sp.col);
+        b.addCapsule(arch, toe, rB, rC, 8, sp.col);
+        b.addCapsule(toe, tip, rC, sp.r1, 7, sp.col);
+        // A bare joint between two tapers reads as cut pipe: every bend carries its own knuckle.
+        b.addBlob(arch, v3(rB * 1.30, rB * 1.14, rB * 1.30), 3, 7, sp.col);
+        b.addBlob(toe, v3(rC * 1.34, rC * 1.14, rC * 1.34), 3, 7, sp.col);
+        // …and it splits under the ground rather than running on as one shaft.
+        if (rng.float() < 0.6) {
+            const fork = v3(
+                toe.x + side.x * reach * 0.34,
+                -deep * rng.range(0.42, 0.82),
+                toe.z + side.z * reach * 0.34,
+            );
+            b.addCapsule(toe, fork, rC * 0.72, sp.r1 * 0.85, 6, sp.col);
+        }
+    }
+}
+
 pub fn treeMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4806);
@@ -105,13 +173,7 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
         const boleR = if (low) mathx.lerpF(0.165, 0.095, u) else mathx.lerpF(0.095, 0.035, u);
         deadLimbInto(&b, &rng, root, a, rng.range(0.9, 1.7) * (if (low) @as(f32, 1.0) else 0.72), rng.range(0.45, 1.0), boleR * rng.range(0.5, 0.78), 1 + rng.intn(2));
     }
-    var r: i32 = 0;
-    while (r < 5) : (r += 1) {
-        const a = std.math.tau * @as(f32, @floatFromInt(r)) / 5.0 + rng.signed() * 0.35;
-        const d = rng.range(0.42, 0.72);
-        const heave: f32 = if (r == 2) rng.range(0.14, 0.26) else 0.0;
-        b.addCapsule(v3(0, 0.26, 0), v3(mathx.cosf(a) * d, 0.02 + heave, mathx.sinf(a) * d), rng.range(0.09, 0.13), rng.range(0.025, 0.05), 5, BARK_OLD);
-    }
+    rootsInto(&b, &rng, .{ .n = 5, .up = 0.34, .reach = 0.64, .deep = 0.85, .r0 = 0.14, .r1 = 0.034, .col = BARK_OLD, .heave = 0.20 });
     b.setMat(.plant);
     const fa = rng.angle();
     const fy1 = rng.range(0.7, 1.5);
@@ -157,11 +219,7 @@ pub fn stumpMesh(shader: rl.Shader) rl.Model {
             BARK_DK,
         );
     }
-    var r: i32 = 0;
-    while (r < 4) : (r += 1) {
-        const a = rng.angle();
-        b.addCapsule(v3(0, 0.30, 0), v3(mathx.cosf(a) * 0.72, 0.02, mathx.sinf(a) * 0.72), 0.15, 0.05, 5, BARK_OLD);
-    }
+    rootsInto(&b, &rng, .{ .n = 5, .up = 0.36, .reach = 0.72, .deep = 0.95, .r0 = 0.16, .r1 = 0.040, .col = BARK_OLD, .heave = 0.18 });
     b.setMat(.plant);
     b.addBlob(v3(-0.12, 1.07, 0.10), v3(0.26, 0.08, 0.24), 3, 6, STONE_MOSS);
     return b.toModel(shader);
@@ -267,12 +325,7 @@ pub fn bigTreeMesh(shader: rl.Shader, spec: TreeSpec) rl.Model {
     b.setMat(.bark);
     const leanX = rng.signed() * 0.55;
     const leanZ = rng.signed() * 0.45;
-    var r: i32 = 0;
-    while (r < 7) : (r += 1) {
-        const a = std.math.tau * @as(f32, @floatFromInt(r)) / 7.0 + rng.signed() * 0.3;
-        const d = rng.range(1.1, 1.9);
-        b.addCapsule(v3(0, 0.85, 0), v3(mathx.cosf(a) * d, 0.04, mathx.sinf(a) * d), rng.range(0.20, 0.34), rng.range(0.06, 0.12), 6, BARK);
-    }
+    rootsInto(&b, &rng, .{ .n = 7, .up = 0.95, .reach = 1.55, .deep = 2.10, .r0 = 0.31, .r1 = 0.075, .col = BARK, .heave = 0.42 });
     const t1 = v3(leanX * 0.3, spec.trunk * 0.42, leanZ * 0.3);
     const t2 = v3(leanX * 0.7, spec.trunk * 0.78, leanZ * 0.7);
     const fork = v3(leanX, spec.trunk, leanZ);
@@ -342,11 +395,7 @@ pub fn willowMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(7002);
     b.setMat(.bark);
-    var r: i32 = 0;
-    while (r < 5) : (r += 1) {
-        const a = std.math.tau * @as(f32, @floatFromInt(r)) / 5.0 + rng.signed() * 0.3;
-        b.addCapsule(v3(0, 0.6, 0), v3(mathx.cosf(a) * 1.0, 0.03, mathx.sinf(a) * 1.0), 0.16, 0.06, 5, BARK);
-    }
+    rootsInto(&b, &rng, .{ .n = 6, .up = 0.68, .reach = 1.02, .deep = 1.45, .r0 = 0.18, .r1 = 0.050, .col = BARK, .heave = 0.30 });
     const crown = v3(rng.signed() * 0.35, 3.4, rng.signed() * 0.3);
     b.addCapsule(v3(0, 0, 0), v3(crown.x * 0.5, 1.8, crown.z * 0.5), 0.70, 0.52, 8, BARK_OLD);
     b.addCapsule(v3(crown.x * 0.5, 1.8, crown.z * 0.5), crown, 0.52, 0.34, 7, BARK);
@@ -400,11 +449,7 @@ pub fn coniferMesh(shader: rl.Shader) rl.Model {
     const H: f32 = rng.range(9.5, 11.5);
     b.addCapsule(v3(0, 0, 0), v3(rng.signed() * 0.25, H * 0.55, rng.signed() * 0.2), 0.52, 0.32, 8, BARK_OLD);
     b.addCapsule(v3(rng.signed() * 0.25, H * 0.55, rng.signed() * 0.2), v3(rng.signed() * 0.3, H, rng.signed() * 0.25), 0.32, 0.05, 7, BARK_DK);
-    var r: i32 = 0;
-    while (r < 5) : (r += 1) {
-        const a = std.math.tau * @as(f32, @floatFromInt(r)) / 5.0;
-        b.addCapsule(v3(0, 0.5, 0), v3(mathx.cosf(a) * 0.85, 0.03, mathx.sinf(a) * 0.85), 0.13, 0.05, 5, BARK);
-    }
+    rootsInto(&b, &rng, .{ .n = 5, .up = 0.56, .reach = 0.88, .deep = 1.20, .r0 = 0.15, .r1 = 0.044, .col = BARK, .heave = 0.24 });
     b.setMat(.plant);
     const whorls: i32 = 22;
     var w: i32 = 0;
@@ -446,6 +491,7 @@ pub fn birchMesh(shader: rl.Shader) rl.Model {
     const fork = v3(lean, H * 0.72, rng.signed() * 0.4);
     b.addCapsule(v3(0, 0, 0), mid, 0.30, 0.24, 8, BIRCH_BARK);
     b.addCapsule(mid, fork, 0.24, 0.17, 7, BIRCH_BARK);
+    rootsInto(&b, &rng, .{ .n = 5, .up = 0.30, .reach = 0.56, .deep = 0.80, .r0 = 0.12, .r1 = 0.032, .col = BIRCH_SCAR, .heave = 0.14 });
     var s: i32 = 0;
     while (s < 22) : (s += 1) {
         const t = rng.range(0.05, 0.70);
@@ -552,11 +598,7 @@ pub fn snagMesh(shader: rl.Shader) rl.Model {
         deadLimbInto(&b, &rng, onTrunk(H, lean, y, 0, 1.0), rng.angle(), rng.range(0.7, 1.3), rng.range(0.1, 0.4), 0.15, rng.intn(2));
     }
     deadLimbInto(&b, &rng, onTrunk(H, lean, H * 0.7, 0, 1.0), rng.angle(), 2.6, 0.5, 0.16, 2);
-    var r: i32 = 0;
-    while (r < 5) : (r += 1) {
-        const a = std.math.tau * @as(f32, @floatFromInt(r)) / 5.0 + rng.signed() * 0.3;
-        b.addCapsule(v3(0, 0.5, 0), v3(mathx.cosf(a) * rng.range(0.7, 1.2), 0.03, mathx.sinf(a) * rng.range(0.7, 1.2)), 0.15, 0.05, 5, BARK_OLD);
-    }
+    rootsInto(&b, &rng, .{ .n = 5, .up = 0.56, .reach = 0.95, .deep = 1.30, .r0 = 0.17, .r1 = 0.046, .col = BARK_OLD, .heave = 0.26 });
     b.setMat(.plant);
     // Moss up the weather side, SEATED on the trunk with only a cushion of it proud: the offset can exceed the trunk's own radius, and even inside it a 0.28 blob on a 0.48 trunk stands most of the way clear.
     b.addBlob(onTrunk(H, lean, rng.range(0.6, 2.2), rng.angle(), 0.55), v3(0.26, 0.34, 0.22), 3, 6, MOSS_DK);

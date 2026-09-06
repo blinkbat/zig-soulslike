@@ -45,7 +45,6 @@ const FANGS = 15;
 const LIDFANGS = 16;
 const N = 17;
 
-const PARENT = [N]i32{ -1, ROOT, HIP_FL, ROOT, HIP_FR, ROOT, HIP_BL, ROOT, HIP_BR, ROOT, NECK0, NECK1, NECK2, NECK3, HEAD, HEAD, LID };
 const LEGS = [4]struct { hip: usize, knee: usize, side: f32, fore: f32 }{
     .{ .hip = HIP_FL, .knee = KNEE_FL, .side = 1.0, .fore = 1.0 },
     .{ .hip = HIP_FR, .knee = KNEE_FR, .side = -1.0, .fore = 1.0 },

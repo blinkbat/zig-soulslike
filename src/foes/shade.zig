@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const gfx = @import("../gfx/gfx.zig");
 const mathx = @import("../core/mathx.zig");
 const combat = @import("../play/combat.zig");
+const anim = @import("../core/anim.zig");
 const foe = @import("foe.zig");
 const wf = @import("../world/worldfmt.zig");
 const sfx = @import("../core/audio.zig");
@@ -160,7 +161,7 @@ const Attack = struct {
 pub const GRASP: usize = 0;
 pub const WISP: usize = 1;
 const MOVES_BANK = [_]Attack{
-    .{ .windDur = 0.46, .strikeDur = 0.30, .recoverDur = 0.55, .cd = 2.6, .minR = 0, .maxR = 2.05, .hit = GRASP_HIT, .hurl = false },
+    .{ .windDur = 0.46, .strikeDur = 0.30, .recoverDur = 0.55, .cd = 2.6, .minR = 0, .maxR = 1.35, .hit = GRASP_HIT, .hurl = false },
     .{ .windDur = 0.68, .strikeDur = 0.18, .recoverDur = 0.62, .cd = 4.6, .minR = 4.2, .maxR = 12.0, .hit = WISP_HIT, .hurl = true },
 };
 /// the bench can reach is `MOVES[i].hit`, so a move retuned in the source flows through (`play/tune.zig`).
@@ -178,7 +179,6 @@ pub fn moveClock(which: usize) foe.Clock {
 }
 
 const GRASP_REACH: f32 = MOVES_BANK[GRASP].maxR;
-
 
 const THREAT_R: f32 = 2.4;
 const BLINK_CD: f32 = 5.2;
@@ -227,7 +227,7 @@ const ELR = 7;
 const WRR = 8;
 const HEM_0 = 9;
 const HEM_N = 8;
-const HEM_R: f32 = 0.074 * H;
+const HEM_R: f32 = 0.125 * H;
 const HEM_Y: f32 = -0.118 * H;
 
 const SH_HALF: f32 = 0.118 * H;
@@ -251,6 +251,57 @@ const REST = blk: {
     break :blk r;
 };
 
+const Posture = struct {
+    lean: f32 = 0,
+    recoil: f32 = 0,
+    reach: f32 = 0,
+    gather: f32 = 0,
+    head: f32 = 0,
+    pub fn chan(p: Posture) [5]f32 {
+        return .{ p.lean, p.recoil, p.reach, p.gather, p.head };
+    }
+};
+const Pose = anim.Pose(Posture);
+const GRASP_LOAD = Posture{ .lean = -9, .reach = -0.55, .head = -6 };
+const GRASP_END = Posture{ .lean = 10, .reach = 1, .head = 9 };
+const GRASP_KEYS = struct {
+    const wind = [_]Pose.PoseKey{
+        .{ .t = 0, .p = .{} },
+        .{ .t = 0.65, .p = GRASP_LOAD, .ease = .decel },
+        .{ .t = 1, .p = GRASP_LOAD, .ease = .hold },
+    };
+    const strike = [_]Pose.PoseKey{
+        .{ .t = 0, .p = GRASP_LOAD },
+        .{ .t = 0.48, .p = .{ .lean = 14, .reach = 1.1, .head = 12 }, .ease = .accel },
+        .{ .t = 1, .p = GRASP_END, .ease = .decel },
+    };
+    const recover = [_]Pose.PoseKey{
+        .{ .t = 0, .p = GRASP_END },
+        .{ .t = 0.24, .p = .{ .lean = 11, .reach = 1.02, .head = 8 }, .ease = .decel },
+        .{ .t = 0.72, .p = .{ .lean = -3, .reach = -0.12, .head = -3 } },
+        .{ .t = 1, .p = .{}, .ease = .decel },
+    };
+};
+const WISP_LOAD = Posture{ .lean = -7, .reach = 0.35, .gather = 1, .head = 10 };
+const WISP_END = Posture{ .lean = 8, .reach = 0.88, .head = -5 };
+const WISP_KEYS = struct {
+    const wind = [_]Pose.PoseKey{
+        .{ .t = 0, .p = .{} },
+        .{ .t = 0.74, .p = WISP_LOAD, .ease = .decel },
+        .{ .t = 1, .p = WISP_LOAD, .ease = .hold },
+    };
+    const strike = [_]Pose.PoseKey{
+        .{ .t = 0, .p = WISP_LOAD },
+        .{ .t = 0.44, .p = .{ .lean = 12, .reach = 1.12, .head = -8 }, .ease = .accel },
+        .{ .t = 1, .p = WISP_END, .ease = .decel },
+    };
+    const recover = [_]Pose.PoseKey{
+        .{ .t = 0, .p = WISP_END },
+        .{ .t = 0.25, .p = .{ .lean = 10, .reach = 0.70, .head = -4 }, .ease = .decel },
+        .{ .t = 0.72, .p = .{ .lean = -3, .reach = -0.08, .head = 3 } },
+        .{ .t = 1, .p = .{}, .ease = .decel },
+    };
+};
 const State = enum { idle, drift, circle, wind, strike, recover, blinkout, blinkin, stunlight, stunheavy, dead };
 
 const Choice = enum { hold, close, circle, grasp, wisp };
@@ -258,7 +309,7 @@ fn classify(dist: f32, scale: f32, graspReady: bool, wispReady: bool) Choice {
     if (dist > AGGRO_R) return .hold;
     if (dist <= foe.triggerBand(MOVES[GRASP].maxR, 1.0, scale)) return if (graspReady) .grasp else .circle;
     if (dist >= MOVES[WISP].minR and dist <= MOVES[WISP].maxR and wispReady) return .wisp;
-    if (dist > CIRCLE_BAND) return .close;
+    if (graspReady or dist > CIRCLE_BAND) return .close;
     return .circle;
 }
 
@@ -323,10 +374,14 @@ pub const Shade = struct {
     driftDir: rl.Vector3 = mathx.zero3,
     orbitSign: f32 = 1,
 
+    springs: anim.SpringBank(5) = .{},
+    recoil: f32 = 0,
+    head: f32 = 0,
     lean: f32 = 0,
     reach: f32 = 0,
     gather: f32 = 0,
     hemVel: rl.Vector3 = mathx.zero3,
+    hemSpring: anim.SpringBank(2) = .{},
     thin: f32 = 0,
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
@@ -357,6 +412,7 @@ pub const Shade = struct {
         s.fxRng = foe.fxStream(seed, 7331.0, 0x5EED);
         s.orbitSign = if (seed < 0.5) 1 else -1;
         s.cds[WISP] = seed * MOVES[WISP].cd;
+        s.springs.seat((Posture{}).chan());
         s.pose();
         return s;
     }
@@ -442,78 +498,50 @@ pub const Shade = struct {
         foe.tickParticles(&self.parts, dt, self.pos.y);
 
         var act: Act = .none;
-        // WHERE THE WISP LEAVES FROM IS READ AFTER THE POSE, not at the release: `reach` snaps from the wind's 0.30 to 1.0 on this exact frame, swinging the shoulder through 94 degrees.
+
         var hurling = false;
+        var touching = false;
+        const handsWas = self.handSegments();
         const was = self.pos;
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
 
         switch (self.state) {
             .idle => {
-                self.easeRest(dt);
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
                 const ps = foe.postStep(self, dt, bounds, DRIFT_SPEED, d, AGGRO_R);
                 if (ps.yaw) |w| self.facing = mathx.approachAngle(self.facing, w, TURN_RATE * dt);
                 self.decide(d, hero);
             },
             .drift => {
-                self.easeRest(dt);
                 self.faceToward(hero, dt);
                 mathx.stepXZ(&self.pos, self.nav.along(self.driftDir), DRIFT_SPEED * dt, bounds);
                 self.decide(d, hero);
             },
             .circle => {
-                self.easeRest(dt);
                 self.faceToward(hero, dt);
                 mathx.stepXZ(&self.pos, self.driftDir, CIRCLE_SPEED * dt, bounds);
                 if (self.t >= CIRCLE_DUR) self.decide(d, hero) else self.aimOrbit(hero);
             },
             .wind => {
-                const a = self.move();
                 self.faceToward(hero, dt);
-                const u = mathx.clampF(self.t / a.windDur, 0, 1);
-                if (a.hurl) {
-                    self.gather = mathx.smoothstep(0.15, 1.0, u);
-                    self.reach = mathx.approach(self.reach, 0.30, dt * 3.0);
-                } else {
-                    self.reach = mathx.approach(self.reach, -0.55, dt * 5.0);
-                }
-                self.lean = mathx.approach(self.lean, if (a.hurl) -6.0 else -9.0, dt * 60.0);
-                if (self.t >= a.windDur) self.enter(.strike);
+                if (self.t >= self.move().windDur) self.enter(.strike);
             },
             .strike => {
                 const a = self.move();
+                const u = mathx.clampF(self.t / a.strikeDur, 0, 1);
                 if (a.hurl) {
-                    if (!self.dealt) {
-                        self.dealt = true;
-                        self.gather = 0;
-                        self.reach = 1.0;
-                        self.leash.noteCombat();
-                        sfx.world(.shade_wisp, self.pos);
-                        hurling = true;
-                    }
-                    self.reach = mathx.approach(self.reach, 0.55, dt * 4.0);
+                    hurling = !self.dealt and u >= 0.55;
                 } else {
-                    const u = mathx.clampF(self.t / a.strikeDur, 0, 1);
-                    self.reach = lerpF(-0.55, 1.0, foe.swingCurve(u));
-                    if (!self.dealt and u >= GRASP_IMPACT_K and self.holds(hero)) {
-                        self.dealt = true;
-                        self.leash.noteCombat();
-                        sfx.world(.shade_touch, self.pos);
-                        self.drainMotes(hero);
-                        act = .{ .grasp = a.hit };
-                    }
+                    touching = !self.dealt and u >= GRASP_IMPACT_K;
                 }
-                self.lean = mathx.approach(self.lean, 7.0, dt * 90.0);
                 if (self.t >= a.strikeDur) self.enter(.recover);
             },
             .recover => {
-                self.easeRest(dt);
                 self.faceToward(hero, dt);
                 if (self.t >= self.move().recoverDur) self.decide(d, hero);
             },
             .blinkout => {
                 self.thin = mathx.clampF(self.t / BLINK_OUT, 0, 1);
-                self.easeRest(dt);
                 if (self.t >= BLINK_OUT) {
                     self.pos.x = self.blinkTo.x;
                     self.pos.z = self.blinkTo.z;
@@ -525,7 +553,6 @@ pub const Shade = struct {
             },
             .blinkin => {
                 self.thin = 1.0 - mathx.clampF(self.t / BLINK_IN, 0, 1);
-                self.easeRest(dt);
                 self.faceToward(hero, dt);
                 if (self.t >= BLINK_IN) {
                     self.thin = 0;
@@ -533,27 +560,37 @@ pub const Shade = struct {
                 }
             },
             .stunlight => {
-                self.easeRest(dt);
                 if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enter(.idle);
             },
             .stunheavy => {
-                self.easeRest(dt);
                 if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enter(.idle);
             },
             .dead => {
-                self.reach = mathx.approach(self.reach, -0.2, dt * 2.0);
                 self.thin = mathx.smoothstep(0, DEATH_DUR + DISS_DUR, self.t);
                 if (self.t >= DEATH_DUR + DISS_DUR) self.gone = true;
             },
         }
 
-        if (wantsBlink(d, self.blinkCd, self.spookLeft > 0, self.state, !foe.canLeap(&self.root))) self.enterBlink(hero);
+        if (!touching and !hurling and wantsBlink(d, self.blinkCd, self.spookLeft > 0, self.state, !foe.canLeap(&self.root))) self.enterBlink(hero);
 
         self.trailHem(if (self.airborne()) self.pos else was, dt);
+        self.poseStep(dt);
         self.pose();
-        if (hurling) act = .{ .hurl = self.wispWorld() };
-        if (self.takeParry()) act = .none;
+        const stopped = self.takeParry();
         self.tryHit(blade);
+        if (stopped or self.staggered()) return .none;
+        if (hurling) {
+            self.dealt = true;
+            self.leash.noteCombat();
+            sfx.world(.shade_wisp, self.pos);
+            act = .{ .hurl = self.wispWorld() };
+        } else if (touching and self.holds(hero) and self.handTouches(handsWas, hero)) {
+            self.dealt = true;
+            self.leash.noteCombat();
+            sfx.world(.shade_touch, self.pos);
+            self.drainMotes(hero);
+            act = .{ .grasp = self.move().hit };
+        }
         return act;
     }
 
@@ -563,8 +600,8 @@ pub const Shade = struct {
         const a = MOVES[GRASP];
         const at = a.strikeDur * GRASP_IMPACT_K;
         return switch (self.state) {
-            .wind => (a.windDur - self.t) + at,
-            .strike => at - self.t,
+            .wind => ((a.windDur - self.t) + at) * spec(self.role).slow,
+            .strike => (at - self.t) * spec(self.role).slow,
             .idle, .drift, .circle, .recover, .blinkout, .blinkin, .stunlight, .stunheavy, .dead => null,
         };
     }
@@ -606,12 +643,51 @@ pub const Shade = struct {
         return mathx.addV(self.pos, self.driftDir);
     }
 
-    fn easeRest(self: *Shade, dt: f32) void {
-        self.reach = mathx.approach(self.reach, 0, dt * 3.4);
-        self.gather = mathx.approach(self.gather, 0, dt * 4.0);
-        self.lean = mathx.approach(self.lean, 0, dt * 40.0);
+    fn poseStep(self: *Shade, dt: f32) void {
+        const a = self.move();
+        var target = switch (self.state) {
+            .wind => if (a.hurl) Pose.sample(&WISP_KEYS.wind, self.t / a.windDur) else Pose.sample(&GRASP_KEYS.wind, self.t / a.windDur),
+            .strike => if (a.hurl) Pose.sample(&WISP_KEYS.strike, self.t / a.strikeDur) else Pose.sample(&GRASP_KEYS.strike, self.t / a.strikeDur),
+            .recover => if (a.hurl) Pose.sample(&WISP_KEYS.recover, self.t / a.recoverDur) else Pose.sample(&GRASP_KEYS.recover, self.t / a.recoverDur),
+            .stunlight, .stunheavy => blk: {
+                const heavy = self.state == .stunheavy;
+                const u = self.t / combat.foeStunDur(heavy);
+                const recoil = anim.keyAt(&.{
+                    .{ .t = 0, .v = 0 },
+                    .{ .t = 0.12, .v = 1, .ease = .decel },
+                    .{ .t = 0.62, .v = 0.85 },
+                    .{ .t = 0.86, .v = -0.16 },
+                    .{ .t = 1, .v = 0, .ease = .decel },
+                }, u) * (if (heavy) @as(f32, 1) else 0.65);
+                break :blk (Posture{ .recoil = recoil, .reach = -0.35 * recoil, .head = -28 * recoil }).chan();
+            },
+            .dead => (Posture{ .lean = -10, .reach = -0.2, .head = -12 }).chan(),
+            else => (Posture{}).chan(),
+        };
+        self.springs.chase(&target, 2600, 0.70, 0.93, dt / spec(self.role).slow);
+        self.lean = target[0];
+        self.recoil = target[1];
+        self.reach = target[2];
+        self.gather = target[3];
+        self.head = target[4];
     }
 
+    fn handSegments(self: *const Shade) [2][2]rl.Vector3 {
+        var out: [2][2]rl.Vector3 = undefined;
+        for ([_]usize{ WRL, WRR }, 0..) |wrist, i| {
+            out[i] = .{
+                rl.math.vector3Transform(v3(0, -0.012 * H, 0.004 * H), self.xf[wrist]),
+                rl.math.vector3Transform(v3(0, -0.062 * H, 0.056 * H), self.xf[wrist]),
+            };
+        }
+        return out;
+    }
+    fn handTouches(self: *const Shade, was: [2][2]rl.Vector3, hero: rl.Vector3) bool {
+        for (was, self.handSegments()) |before, now| {
+            if (foe.sweptWeaponReaches(before, now, hero, foe.HERO_R + 0.04 * H * self.scale)) return true;
+        }
+        return false;
+    }
     fn enter(self: *Shade, s: State) void {
         self.state = s;
         self.t = 0;
@@ -676,7 +752,7 @@ pub const Shade = struct {
         self.state = s;
         self.t = 0;
         self.dealt = false;
-        self.gather = 0;
+
         self.thin = 0;
     }
 
@@ -720,8 +796,6 @@ pub const Shade = struct {
     pub fn debugKill(self: *Shade) void {
         self.enterDeath();
     }
-
-
 
     fn rift(self: *Shade) void {
         const c = self.centerWorld();
@@ -815,11 +889,12 @@ pub const Shade = struct {
         model.draw(self);
     }
 
-
     fn trailHem(self: *Shade, was: rl.Vector3, dt: f32) void {
         const step = mathx.subV(self.pos, was);
         const want = if (dt > 1e-5) mathx.scaleV(v3(step.x, 0, step.z), 1.0 / dt) else mathx.zero3;
-        self.hemVel = mathx.approachV(self.hemVel, want, HEM_LAG_RATE * dt * DRIFT_SPEED);
+        var target = [2]f32{ want.x, want.z };
+        self.hemSpring.chase(&target, HEM_LAG_RATE * HEM_LAG_RATE * 4, 0.64, 1, dt);
+        self.hemVel = v3(target[0], 0, target[1]);
     }
 
     pub fn pose(self: *Shade) void {
@@ -827,7 +902,7 @@ pub const Shade = struct {
         const facingDeg = mathx.degrees(self.facing);
         const bob = IDLE_BOB * mathx.sinf(self.elapsed * BOB_HZ * (1.0 + 0.16 * (self.seed - 0.5)) * std.math.tau + self.seed * 6.28);
         const sink = if (self.state == .dead) foe.rigSink(0.30, self.scale, self.thin) else 0;
-        const leanDeg = mathx.clampF(self.lean, -LEAN_MAX, LEAN_MAX);
+        const leanDeg = mathx.clampF(self.lean, -LEAN_MAX, LEAN_MAX) - 38 * self.recoil;
 
         var wx: [N]rl.Matrix = undefined;
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul(
@@ -837,7 +912,7 @@ pub const Shade = struct {
 
         wx[TORSO] = placeAt(REST[TORSO], mul(rx(leanDeg), rz(mathx.sinf(self.elapsed * (0.41 + 0.07 * (self.seed - 0.5)) + self.seed * 7.7) * 2.4)), wx[ROOT]);
         wx[COWL] = placeAt(REST[COWL], mul(
-            rx(-leanDeg * 0.35 + 4.0 * self.reach),
+            rx(-leanDeg * 0.35 + self.head),
             ry(mathx.sinf(self.elapsed * 0.33 + self.seed * 4.0) * 5.0),
         ), wx[TORSO]);
 
@@ -851,9 +926,9 @@ pub const Shade = struct {
         const r = self.reach;
         const out = mathx.maxF(r, 0);
         const furl = mathx.maxF(-r, 0);
-        const shX = lerpF(20.0, -74.0, out) + 16.0 * furl + 6.0 * self.gather;
-        const shZ = side * (lerpF(30.0, 11.0, out) + 34.0 * furl);
-        const elX = lerpF(52.0, 9.0, out) + 30.0 * furl - 18.0 * self.gather;
+        const shX = lerpF(12.0, -100.0, out) + 24.0 * furl + 6.0 * self.gather + 35 * self.recoil + 35 * @max(0, self.scale - 1) * out;
+        const shZ = side * (lerpF(22.0, -8.0, out) + 44.0 * furl + 24 * self.recoil - 18 * self.gather);
+        const elX = lerpF(32.0, 8.0, out) + 30.0 * furl - 92.0 * self.gather;
         const stretch = 1.0 + 0.85 * out;
         wx[sh] = placeAt(REST[sh], mul(scaleM(1, stretch, 1), mul(rx(shX), rz(shZ))), wx[TORSO]);
         wx[el] = placeAt(REST[el], rx(elX), wx[sh]);
@@ -882,7 +957,7 @@ pub const Shade = struct {
             wx[b] = placeAt(REST[b], mul(
                 rx(gain * localZ * HEM_SWING + wobble),
                 rz(-gain * localX * HEM_SWING + mathx.cosf(phase * 0.7) * HEM_WOBBLE * 0.6),
-            ), wx[ROOT]);
+            ), wx[TORSO]);
         }
     }
 };
@@ -959,7 +1034,6 @@ pub const Haunt = struct {
     }
 };
 
-
 fn buildMeshes(pal: Pal) [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
     mesh[ROOT] = emptyMesh(pal);
@@ -986,76 +1060,55 @@ fn emptyMesh(pal: Pal) rl.Mesh {
     return b.toMesh();
 }
 
-const PROF = [_][2]f32{
-    .{ 0.250, 0.084 },
-    .{ 0.208, 0.128 },
-    .{ 0.108, 0.112 },
-    .{ 0.006, 0.080 },
-};
-const HEM_FLARE: f32 = 0.150;
-const HEM_DOME_Y: f32 = -0.078;
+fn clothFace(b: *Builder, points: [4]rl.Vector3, col: rl.Color) void {
+    const n = mathx.normV(mathx.crossV(mathx.subV(points[1], points[0]), mathx.subV(points[2], points[0])));
+    b.quad(points[0], points[1], points[2], points[3], n, col);
+    b.quad(points[3], points[2], points[1], points[0], mathx.scaleV(n, -1), col);
+}
 
 fn shroudMesh(pal: Pal) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(4409);
     b.setMat(.cloth);
-    var i: usize = 0;
-    while (i + 1 < PROF.len) : (i += 1) {
-        b.addCapsule(
-            v3(rng.range(-0.006, 0.006) * H, PROF[i][0] * H, rng.range(-0.005, 0.005) * H),
-            v3(rng.range(-0.006, 0.006) * H, PROF[i + 1][0] * H, rng.range(-0.005, 0.005) * H),
-            PROF[i][1] * H,
-            PROF[i + 1][1] * H,
-            13,
-            pal.shroud,
-        );
-    }
-    b.addBlob(v3(0, HEM_DOME_Y * H, 0), v3(HEM_FLARE * H, 0.098 * H, HEM_FLARE * H * 0.86), 6, 13, pal.shroud);
-    var f: usize = 0;
-    while (f < 10) : (f += 1) {
-        const a = rng.range(0, std.math.tau);
-        const y0 = rng.range(0.055, 0.185) * H;
-        const y1 = mathx.maxF(y0 - rng.range(0.09, 0.20) * H, PROF[PROF.len - 1][0] * H + 0.004 * H);
-        const cx = mathx.cosf(a);
-        const cz = mathx.sinf(a) * 0.86;
-        const r0 = 0.96 * shroudHalf(y0 / H) * H;
-        const r1 = 0.96 * shroudHalf(y1 / H) * H;
-        b.addCapsule(
-            v3(cx * r0, y0, cz * r0),
-            v3(cx * r1, y1, cz * r1),
-            0.0080 * H * rng.range(0.8, 1.25),
-            0.0055 * H,
-            5,
-            if (rng.float() < 0.5) pal.shroudLt else pal.shroudDk,
-        );
-    }
-    b.addBlob(v3(0, 0.244 * H, -0.006 * H), v3(0.080 * H, 0.036 * H, 0.072 * H), 5, 11, pal.shroudLt);
-    return b.toMesh();
-}
-
-fn shroudHalf(y: f32) f32 {
-    if (y <= PROF[PROF.len - 1][0]) {
-        const t = mathx.clampF((PROF[PROF.len - 1][0] - y) / (PROF[PROF.len - 1][0] - HEM_DOME_Y), 0, 1);
-        return lerpF(PROF[PROF.len - 1][1], HEM_FLARE, t);
-    }
-    var i: usize = 0;
-    while (i + 1 < PROF.len) : (i += 1) {
-        if (y <= PROF[i][0] and y >= PROF[i + 1][0]) {
-            const t = (PROF[i][0] - y) / (PROF[i][0] - PROF[i + 1][0]);
-            return lerpF(PROF[i][1], PROF[i + 1][1], t);
+    const profile = [_][2]f32{
+        .{ -0.175, 0.142 }, .{ -0.090, 0.138 }, .{ 0.006, 0.113 },
+        .{ 0.108, 0.121 },  .{ 0.208, 0.135 },  .{ 0.258, 0.077 },
+    };
+    const sides = 32;
+    var rings: [profile.len][sides]rl.Vector3 = undefined;
+    var colors: [sides]rl.Color = undefined;
+    for (0..sides) |i| {
+        const angle = std.math.tau * @as(f32, @floatFromInt(i)) / sides;
+        const fold = 1 + rng.signed() * 0.026 + 0.028 * @cos(angle * 8 + 0.35);
+        const hem = rng.range(-0.012, 0.009);
+        colors[i] = mathx.lerpColor(pal.shroud, pal.shroudLt, rng.range(0.02, 0.22));
+        for (profile, 0..) |row, j| {
+            const drift = 0.004 * @sin(row[0] * 12 + 0.8);
+            rings[j][i] = v3(
+                (row[1] * @cos(angle) * fold + drift) * H,
+                (row[0] + if (j == 0) hem else @as(f32, 0)) * H,
+                row[1] * @sin(angle) * fold * 0.86 * H,
+            );
         }
     }
-    return PROF[0][1];
+    for (0..profile.len - 1) |row| {
+        for (0..sides) |i| {
+            const j = (i + 1) % sides;
+            clothFace(&b, .{ rings[row][i], rings[row + 1][i], rings[row + 1][j], rings[row][j] }, colors[i]);
+        }
+    }
+    b.addBlob(v3(0, 0.246 * H, -0.005 * H), v3(0.078 * H, 0.032 * H, 0.069 * H), 7, 16, pal.shroud);
+    b.addCapsule(v3(0, 0.235 * H, -0.012 * H), v3(0, 0.310 * H, -0.008 * H), 0.058 * H, 0.052 * H, 12, pal.shroudDk);
+    return b.toMesh();
 }
-
 fn cowlMesh(pal: Pal) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(9127);
     b.setMat(.cloth);
-    b.addBlob(v3(0, 0.055 * H, -0.010 * H), v3(0.083 * H, 0.098 * H, 0.086 * H), 5, 10, pal.shroud);
-    b.addBlob(v3(rng.range(-0.006, 0.006) * H, 0.118 * H, -0.030 * H), v3(0.050 * H, 0.052 * H, 0.048 * H), 4, 8, pal.shroudLt);
-    b.addBlob(v3(0, 0.010 * H, -0.056 * H), v3(0.072 * H, 0.070 * H, 0.048 * H), 4, 8, pal.shroudDk);
-    b.addBlob(v3(0, 0.048 * H, 0.052 * H), v3(0.056 * H, 0.062 * H, 0.048 * H), 5, 9, pal.hollow);
+    b.addBlob(v3(0, 0.055 * H, -0.010 * H), v3(0.083 * H, 0.098 * H, 0.086 * H), 10, 18, pal.shroud);
+    b.addBlob(v3(rng.range(-0.006, 0.006) * H, 0.118 * H, -0.030 * H), v3(0.050 * H, 0.052 * H, 0.048 * H), 8, 14, pal.shroudLt);
+    b.addBlob(v3(0, 0.010 * H, -0.056 * H), v3(0.072 * H, 0.070 * H, 0.048 * H), 8, 14, pal.shroudDk);
+    b.addBlob(v3(0, 0.048 * H, 0.052 * H), v3(0.056 * H, 0.062 * H, 0.048 * H), 9, 16, pal.hollow);
     b.setMat(.plain);
     for ([_]f32{ 1, -1 }) |side| {
         const ex = side * 0.024 * H * rng.range(0.92, 1.08);
@@ -1120,35 +1173,29 @@ fn tatterMesh(pal: Pal, len: f32, ang: f32, seed: u64) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
     b.setMat(.cloth);
-    const tan = v3(-mathx.sinf(ang), 0, mathx.cosf(ang));
-    const rad = v3(mathx.cosf(ang), 0, mathx.sinf(ang));
-    const SEGS = 4;
-    const curlX = rng.range(-0.05, 0.05);
-    const curlZ = rng.range(-0.04, 0.04);
-    const segLen = len * H / SEGS;
-    const THICK = 0.0055 * H;
-    var p = v3(0, 0, 0);
-    var hw = 0.058 * H * rng.range(0.88, 1.12);
-    var i: i32 = 0;
-    while (i < SEGS) : (i += 1) {
-        const fi: f32 = @floatFromInt(i + 1);
-        const q = v3(
-            curlX * segLen * fi * fi * 0.5,
-            -segLen * fi,
-            curlZ * segLen * fi * fi * 0.5,
-        );
-        const hw1 = hw * rng.range(0.74, 0.88);
-        const mid = mathx.lerpV(p, q, 0.5);
-        const half = mathx.scaleV(mathx.subV(q, p), 0.5);
-        const w = (hw + hw1) * 0.5;
-        b.addBox(mid, mathx.scaleV(tan, w), half, mathx.scaleV(rad, THICK), pal.shroud);
-        p = q;
-        hw = hw1;
+    const tangent = v3(-mathx.sinf(ang), 0, mathx.cosf(ang));
+    const radial = v3(mathx.cosf(ang), 0, mathx.sinf(ang));
+    const segs = 7;
+    const curl = rng.range(-0.035, 0.035);
+    const bend = rng.range(-0.045, 0.025);
+    const width = 0.058 * H * rng.range(0.88, 1.12);
+    var points: [segs + 1][3]rl.Vector3 = undefined;
+    for (&points, 0..) |*row, i| {
+        const u = @as(f32, @floatFromInt(i)) / segs;
+        const center = mathx.addV(v3(0, -len * H * u, 0), mathx.addV(mathx.scaleV(tangent, curl * H * u * u), mathx.scaleV(radial, bend * H * u * u)));
+        const w = width * (1 - 0.62 * u);
+        row.* = .{
+            mathx.addV(center, mathx.scaleV(tangent, -w)),
+            mathx.addV(center, mathx.scaleV(radial, 0.004 * H * (1 - 0.6 * u))),
+            mathx.addV(center, mathx.scaleV(tangent, w)),
+        };
+        if (i == segs) row[2].y += 0.011 * H;
     }
-    b.addBlob(p, v3(hw * 0.9, THICK * 2.2, hw * 0.9), 3, 7, pal.shroudLt);
+    for (0..segs) |i| {
+        for (0..2) |j| clothFace(&b, .{ points[i][j], points[i + 1][j], points[i + 1][j + 1], points[i][j + 1] }, if (j == 0) pal.shroud else mathx.lerpColor(pal.shroud, pal.shroudLt, 0.18));
+    }
     return b.toMesh();
 }
-
 pub fn wispMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     b.setMat(.plain);
@@ -1156,7 +1203,6 @@ pub fn wispMesh(shader: rl.Shader) rl.Model {
     b.addBlob(v3(0, 0, 0.022), v3(0.042, 0.042, 0.100), 6, 9, mathx.withAlpha(WISP_COL, 45));
     return b.toModel(shader);
 }
-
 
 test "the rig's tables are the rig's size, and the tatters are the tail of it" {
     try std.testing.expectEqual(@as(usize, N), REST.len);
@@ -1431,7 +1477,12 @@ test "the hem TRAILS the drift and settles back through its own rest" {
     s.trailHem(s.pos, dt);
     try std.testing.expect(s.hemVel.z < held and s.hemVel.z > 0);
     t = 0;
-    while (t < 2.0) : (t += dt) s.trailHem(s.pos, dt);
+    var rebound: f32 = 0;
+    while (t < 2.0) : (t += dt) {
+        s.trailHem(s.pos, dt);
+        rebound = @min(rebound, s.hemVel.z);
+    }
+    try std.testing.expect(rebound < -0.05);
     try std.testing.expectApproxEqAbs(@as(f32, 0), s.hemVel.z, 1e-3);
 }
 
@@ -1467,4 +1518,103 @@ test "a shade flying forward leaves its gown BEHIND it, and the trailing edge is
     try std.testing.expectEqual(HEM_N, pushed);
     try std.testing.expect(trail > lead + 0.05);
     try std.testing.expect(lead < 0 and trail < 0);
+}
+
+test "shade grasp follows the hands at different sizes and frame rates" {
+    var misses: usize = 0;
+    for ([_]Role{ .shade, .mourner }) |role| {
+        for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+            for ([_]f32{ 30, 60, 144 }) |fps| {
+                for ([_]f32{ 0, 0.5, 1 }) |u| {
+                    var s = Shade.spawnAs(role, mathx.zero3, 0, size, 0.3);
+                    s.blinkCd = 100;
+                    s.debugMove(GRASP);
+                    const near = foe.closestApproach(s.bodyR()) + 0.04;
+                    const far = foe.triggerBand(MOVES[GRASP].maxR, 1, s.scale) * 0.97;
+                    const hero = v3(0, 0, lerpF(near, far, u));
+                    var landed: usize = 0;
+                    var gap: f32 = 999;
+                    for (0..@as(usize, @intFromFloat(fps * 1.4 * spec(role).slow))) |_| {
+                        const was = s;
+                        const act = s.update(1 / fps, hero, 400, .{});
+                        if (s.state == .strike) {
+                            for (s.handSegments()) |hand| gap = @min(gap, mathx.segmentGapV(hand[0], hand[1], v3(0, foe.HERO_LOW, hero.z), v3(0, foe.HERO_HIGH, hero.z)));
+                        }
+                        if (act == .grasp) {
+                            landed += 1;
+                            try std.testing.expect(s.handTouches(was.handSegments(), hero));
+                            try std.testing.expect(!s.handTouches(was.handSegments(), v3(hero.x, 6, hero.z)));
+                            var cut = was;
+                            try std.testing.expect(cut.update(1 / fps, hero, 400, foe.shaftThrough(was.centerWorld(), .{ .dmg = 10000 })) == .none);
+                            try std.testing.expect(cut.dying());
+                        }
+                    }
+                    if (landed != 1) {
+                        misses += 1;
+                        std.debug.print("\n  {s} x{d:.1} {d:.0} Hz at {d:.2} m: {d} contacts, hand gap {d:.2}\n", .{ @tagName(role), size, fps, hero.z, landed, gap });
+                    }
+                }
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 0), misses);
+}
+
+test "shade recoil is continuous, visible, and settles through rest" {
+    for ([_]f32{ 30, 60, 144 }) |fps| {
+        var s = Shade.spawn(mathx.zero3, 0, 1, 0.3);
+        s.blinkCd = 100;
+        s.debugMove(GRASP);
+        for (0..@as(usize, @intFromFloat(fps * 0.6))) |_| _ = s.update(1 / fps, v3(0, 0, 90), 400, .{});
+        const before = s.wispWorld();
+        s.stagger(true);
+        s.pose();
+        try std.testing.expect(mathx.lenV(mathx.subV(s.wispWorld(), before)) < 1e-5);
+        var peak: f32 = 0;
+        var rebound: f32 = 0;
+        for (0..@as(usize, @intFromFloat(fps * 2.7))) |_| {
+            _ = s.update(1 / fps, v3(0, 0, 90), 400, .{});
+            peak = @max(peak, s.recoil);
+            rebound = @min(rebound, s.recoil);
+        }
+        try std.testing.expect(peak > 0.9);
+        try std.testing.expect(rebound < -0.08);
+        try std.testing.expect(@abs(s.recoil) < 0.01);
+    }
+}
+
+test "shade wisp releases from the posed hands and interruption cancels it" {
+    for ([_]f32{ 30, 60, 144 }) |fps| {
+        var s = Shade.spawn(mathx.zero3, 0, 1, 0.3);
+        s.blinkCd = 100;
+        s.debugMove(WISP);
+        var thrown: usize = 0;
+        for (0..@as(usize, @intFromFloat(fps * 1.4))) |_| {
+            const was = s;
+            switch (s.update(1 / fps, v3(0, 0, 90), 400, .{})) {
+                .hurl => |from| {
+                    thrown += 1;
+                    try std.testing.expect(mathx.lenV(mathx.subV(from, s.wispWorld())) < 1e-5);
+                    var cut = was;
+                    try std.testing.expect(cut.update(1 / fps, v3(0, 0, 90), 400, foe.shaftThrough(was.centerWorld(), .{ .dmg = 10000 })) == .none);
+                    try std.testing.expect(cut.dying());
+                },
+                else => {},
+            }
+        }
+        try std.testing.expectEqual(@as(usize, 1), thrown);
+    }
+}
+test "mourner parry tells use real seconds despite its slower move clock" {
+    var s = Shade.spawnAs(.mourner, mathx.zero3, 0, 1, 0.3);
+    s.blinkCd = 100;
+    s.debugMove(GRASP);
+    for ([_]f32{ 30, 60, 144 }) |fps| {
+        var sample = s;
+        for (0..@as(usize, @intFromFloat(fps * 0.5))) |_| {
+            const before = sample.toImpact().?;
+            _ = sample.update(1 / fps, v3(0, 0, 90), 400, .{});
+            if (sample.state == .wind) try std.testing.expectApproxEqAbs(1 / fps, before - sample.toImpact().?, 1e-5);
+        }
+    }
 }

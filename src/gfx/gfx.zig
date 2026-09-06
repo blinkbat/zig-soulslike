@@ -943,7 +943,11 @@ pub const Builder = struct {
             const p1 = scaleAdd(a, d1, ra);
             const p2 = scaleAdd(b, d1, rb);
             const p3 = scaleAdd(b, d0, rb);
-            const nmid = norm3(v3(d0.x + d1.x, d0.y + d1.y, d0.z + d1.z));
+            const radial = norm3(mathx.addV(d0, d1));
+            const span = mathx.subV(b, a);
+            const length = mathx.lenV(span);
+            const axial = mathx.scaleV(mathx.normVOr(span, v3(0, 1, 0)), (ra - rb) * mathx.cosf(std.math.pi / sf));
+            const nmid = if (length > 1e-6) norm3(mathx.addV(mathx.scaleV(radial, length), axial)) else radial;
             const arc0 = a0 * rmid + o.x;
             const arc1 = a1 * rmid + o.x;
             self.quadUV(p0, p1, p2, p3, nmid, col, .{ .x = arc0, .y = va }, .{ .x = arc1, .y = va }, .{ .x = arc1, .y = vb }, .{ .x = arc0, .y = vb });
@@ -1315,4 +1319,34 @@ test "EVERY PROGRAM THAT USES THE NOISE BASIS DECLARES IT ONCE — spliced, not 
         try std.testing.expectEqual(@as(usize, 1), count(src, "float vnoise(vec2 p){"));
     }
     try std.testing.expectEqual(@as(usize, 0), count(glsl.retroFS, "float vnoise(vec2 p){"));
+}
+
+test "capsule normals follow their rounded ends and tapered sides" {
+    const start = v3(1, 2, -3);
+    for ([_]rl.Vector3{ v3(0, 1, 0), v3(1, -0.4, 0.7), v3(-0.2, 0.1, -1) }) |direction| {
+        var b = Builder.init();
+        defer b.deinit();
+        const end = mathx.addV(start, direction);
+        b.addCapsule(start, end, 0.3, 0.16, 16, rl.Color.white);
+        var capVertices: usize = 0;
+        var i: usize = 0;
+        while (i < b.pos.items.len) : (i += 9) {
+            const p0 = v3(b.pos.items[i], b.pos.items[i + 1], b.pos.items[i + 2]);
+            const p1 = v3(b.pos.items[i + 3], b.pos.items[i + 4], b.pos.items[i + 5]);
+            const p2 = v3(b.pos.items[i + 6], b.pos.items[i + 7], b.pos.items[i + 8]);
+            const normal = v3(b.nrm.items[i], b.nrm.items[i + 1], b.nrm.items[i + 2]);
+            const face = mathx.crossV(mathx.subV(p1, p0), mathx.subV(p2, p0));
+            if (mathx.lenV(face) > 1e-6) try std.testing.expect(@abs(mathx.dotV(mathx.normV(face), normal)) > 0.999);
+            try std.testing.expectApproxEqAbs(@as(f32, 1), mathx.lenV(normal), 0.0001);
+            const midpoint = mathx.scaleV(mathx.addV(mathx.addV(p0, p1), p2), 1.0 / 3.0);
+            const axisPoint = mathx.closestOnSegV(midpoint, start, end);
+            const outward = mathx.normV(mathx.subV(midpoint, axisPoint));
+            try std.testing.expect(mathx.dotV(outward, normal) > 0.95);
+            if (@abs(mathx.dotV(outward, mathx.normV(direction))) > 0.8) {
+                capVertices += 1;
+                try std.testing.expect(@abs(mathx.dotV(normal, mathx.normV(direction))) > 0.8);
+            }
+        }
+        try std.testing.expect(capVertices > 16);
+    }
 }

@@ -829,8 +829,7 @@ const NO_PARRY = [_]struct { field: []const u8, why: []const u8 }{
     .{ .field = "host", .why = "a disc at your feet, a leap-slam that throws you, and a thrown sac: no strokes" },
     .{ .field = "crypt", .why = "the ancient priest never melees; the breath is a cone you walk out of" },
     .{ .field = "bed", .why = "the slumber bloom has no blow at all — the gas is a ring you walk out of" },
-    .{ .field = "conclave", .why = "the fungal magus never melees; the orbs and the bunches are not strokes" },
-    .{ .field = "coven", .why = "the druidess never melees; the vines are things on the ground you walk out of, and the spear is a line you step off" },
+    .{ .field = "conclave", .why = "the fungal magus never melees; the orbs, the bunches and the dust he breathes are not strokes — the dust is a cone you walk out of" },
 };
 
 const NO_ORDERS = [_]struct { field: []const u8, why: []const u8 }{
@@ -4537,7 +4536,8 @@ fn sunFocus(g: *const Game) rl.Vector3 {
 const RESERVED_LIGHTS = gfx.MAX_LIGHTS / 2;
 
 fn reservedLights(g: *const Game, out: *[RESERVED_LIGHTS]gfx.Light) []const gfx.Light {
-    var n: usize = 0;
+    out[0] = g.hero.bodyLight();
+    var n: usize = 1;
     if (g.hero.wandLight()) |w| {
         out[n] = w;
         n += 1;

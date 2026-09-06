@@ -29,7 +29,7 @@ code-authored map; refuses to overwrite).
 **Hero rig.** 18-bone FK skeleton, bone lengths as fractions of stature (Drillis & Contini / Winter). Walk on
 normative sagittal hip/knee/ankle curves (Perry / Winter); run and sprint on Novacheck. Gait phase driven by
 distance travelled, not time. Roll, jump, guard, parry, three melee classes (sword / dagger / club, two strokes
-each), bow, wand, torch.
+each), bow, wand, torch. A faint, steady body light reaches 3 m; the carried torch lights a much larger area.
 
 **Combat.** HP + two-tier stagger + poise + stance, stamina with a winded latch, FP, DS1-style directional
 block, L2 parry with a 0.16 s window, four PoE2 resistances plus an armour curve, ten status meters built the
@@ -43,7 +43,7 @@ fishman shoal (3 roles), blinkbat, the fungal duo (second boss, two bars), the o
 when you walk up to it), the corrupted druidess (third boss), the bone mimic and the mastodon, plus the spirit wolf that fights on your side. Shared leash, sight, parry, nav-steering
 and dissipation contracts in `foe.zig`.
 
-**World.** 560 m square ringed by cliffs, five regions, 168 prop kinds in three layers each. Sculptable
+**World.** 560 m square ringed by cliffs, five regions, 181 prop kinds in three layers each. Sculptable
 heightfield (40° slope limit, 0.55 m step). Painted soil with coverage and eight edge shapes; painted liquid
 with a derived coast you wade, in four kinds — water, tar, fungal soup (poison) and lava (burning, and it
 bites). All four wade the same; the look, the status and the voice are what differ. Day/night clock (~20 min day) driving every colour and shadow; sun 6→20 then the

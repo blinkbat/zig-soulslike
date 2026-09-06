@@ -1,4 +1,5 @@
 const std = @import("std");
+const anim = @import("../core/anim.zig");
 const rl = @import("raylib");
 const gfx = @import("../gfx/gfx.zig");
 const mathx = @import("../core/mathx.zig");
@@ -166,7 +167,7 @@ const MACE = Attack{
 
 const SLAM = Attack{
     .style = .slam,
-    .reachOut = 2.18, // MEASURED: near three metres of reach, cocked high and driven down through
+    .reachOut = 1.99,
     .windDur = 1.34,
     .swingDur = 0.30,
     .impactK = 0.24,
@@ -179,7 +180,7 @@ const SLAM = Attack{
 
 const LUNGE = Attack{
     .style = .lunge,
-    .reachOut = 1.98, // MEASURED: the point driven straight out — shorter than the slam's whole arc
+    .reachOut = 1.80,
     .windDur = 0.52,
     .swingDur = 0.26,
     .impactK = 0.46,
@@ -194,7 +195,7 @@ const LUNGE = Attack{
 
 const SWEEP = Attack{
     .style = .sweep,
-    .reachOut = 2.15,
+    .reachOut = 1.95,
     .windDur = 0.98,
     .swingDur = 0.34,
     .impactK = 0.30,
@@ -274,13 +275,13 @@ const CARRY_EL = -18.0;
 const CARRY_ABD = 12.0;
 /// `wpnTilt` is degrees the weapon leads FORWARD of the forearm line (0 = straight down it), so a shouldered carry is a big number and a blow — the weapon out on the arm's end — is small.
 const MACE_CARRY_TILT = 142.0;
-const GS_CARRY_TILT = 118.0;
+const GS_CARRY_TILT = 110.0;
 const GS_CARRY_SH = -22.0;
 const GS_CARRY_ABD = 26.0;
 
-const GUARD_OFF_SH = 58.0;
+const GUARD_OFF_SH = 36.0;
 const GUARD_OFF_ABD = 26.0;
-const GUARD_OFF_EL = -78.0;
+const GUARD_OFF_EL = -96.0;
 const GUARD_TWIST = -22.0;
 const GUARD_LEAN = 9.0;
 const GUARD_SH = 24.0;
@@ -315,8 +316,8 @@ const GS_WIND_TILT = -56.0; // MEASURED: better than three metres up, point over
 const GS_HIT_SH = 74.0;
 const GS_HIT_EL = -18.0;
 const GS_HIT_ABD = -12.0;
-const GS_HIT_TWIST = 44.0;
-const GS_HIT_SWEEP = 26.0;
+const GS_HIT_TWIST = 18.0;
+const GS_HIT_SWEEP = 18.0;
 const GS_HIT_LEAN = 34.0;
 const GS_END_ATT = 38.0;
 const GS_WIND_ATT = GS_WIND_SH + GS_WIND_TILT + 360.0;
@@ -354,21 +355,14 @@ const LUNGE_HIT_TWIST = 24.0;
 const LUNGE_HIT_SWEEP = 12.0;
 const LUNGE_HIT_LEAN = 22.0;
 const LUNGE_HIT_TILT = 56.0; // MEASURED: the point stays LEVEL, at chest height — never over your head
-const LEAP_LEAD_HIP = 68.0;
-const LEAP_LEAD_KNEE = 82.0;
-const LEAP_TRAIL_HIP = 26.0;
-const LEAP_TRAIL_KNEE = 22.0;
-const LEAP_TOE = 20.0;
+
 
 const BREAK_ARM = 104.0;
 const BREAK_STEP = 2.4;
 const KNEEL_IN = 0.24;
 const KNEEL_OUT = 0.62;
-const KNEEL_SINK = 0.315;
-const KNEEL_LEAD_HIP = 62.0;
-const KNEEL_LEAD_KNEE = 68.0;
-const KNEEL_TRAIL_HIP = 14.0;
-const KNEEL_TRAIL_KNEE = 122.0;
+const KNEEL_SINK = 0.260;
+
 const KNEEL_FOLD = 19.0;
 const KNEEL_HEAD = 40.0;
 
@@ -519,6 +513,8 @@ pub const Warrior = struct {
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
 
+    shieldFix: rl.Matrix = undefined,
+    poseSprings: anim.SpringBank(12) = .{},
     xf: [N]rl.Matrix = undefined,
     rest: [N]rl.Vector3 = undefined,
     wpnWas: [2]rl.Vector3 = .{ mathx.zero3, mathx.zero3 },
@@ -542,7 +538,17 @@ pub const Warrior = struct {
         w.fxRng = foe.fxStream(seed, 71237.0, 11);
         for (&w.cds) |*c| c.* = 0.3 + seed * 0.9;
         w.setCarryInstant();
+        w.shieldFix = rl.math.matrixIdentity();
+        if (role == .shieldman) w.setMaceWind(0, 0) else w.setCarry(0);
+        w.poseSprings.seat(w.poseChannels());
         w.pose();
+        if (role == .shieldman) {
+            const frame = mul(scaleM(w.scale, w.scale, w.scale), mul3(rx(SH_RAKE_X), rz(SH_RAKE_Z), ry(mathx.degrees(w.facing))));
+            const fist = foe.markOn(w.xf[WRL], v3(0, FIST_Y, FIST_Z));
+            const hub = mathx.subV(fist, foe.markOn(frame, SH_GRIP));
+            const guard = mul(frame, tr(hub.x, hub.y, hub.z));
+            w.shieldFix = mul(guard, rl.math.matrixInvert(w.xf[WRL]));
+        }
         return w;
     }
 
@@ -698,7 +704,11 @@ pub const Warrior = struct {
             .wind => {
                 self.faceToward(hero, dt * 0.5);
                 const dur = self.windDur();
-                self.setWind(mathx.smoothstep(0, dur * 0.88, self.t));
+                self.setWind(anim.keyAt(&.{
+                    .{ .t = 0, .v = 0 },
+                    .{ .t = 0.86, .v = 1 },
+                    .{ .t = 1, .v = 1, .ease = .hold },
+                }, self.t / dur));
                 const load: f32 = switch (a.style) {
                     .slam, .sweep => GATHER_HEAVY,
                     .lunge => GATHER_LEAP,
@@ -750,6 +760,9 @@ pub const Warrior = struct {
 
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, moveSpeed, moveYaw, self.facing);
         self.footfalls();
+        var target = self.poseChannels();
+        self.poseSprings.chase(&target, if (self.state == .swing) 14000 else 6500, 0.76, 0.96, dt);
+        self.applyPoseChannels(target);
         self.pose();
         if (self.live) self.tryReach(hero);
         if (self.state == .swing) self.crashIn();
@@ -1094,67 +1107,78 @@ pub const Warrior = struct {
         return if (self.role == .greatsword) GS_CARRY_ABD else CARRY_ABD;
     }
 
+    const POSE_FIELDS = .{ "bodyLean", "twist", "legBrace", "headPitch", "offSh", "offAbd", "offEl", "armSh", "armSweep", "armAbd", "armEl", "wpnTilt" };
+
+    fn poseChannels(self: *const Warrior) [POSE_FIELDS.len]f32 {
+        var values: [POSE_FIELDS.len]f32 = undefined;
+        inline for (POSE_FIELDS, 0..) |field, i| values[i] = @field(self, field);
+        return values;
+    }
+
+    fn applyPoseChannels(self: *Warrior, values: [POSE_FIELDS.len]f32) void {
+        inline for (POSE_FIELDS, 0..) |field, i| @field(self, field) = values[i];
+    }
+
+
     fn setCarryInstant(self: *Warrior) void {
         self.armSh = self.carrySh();
         self.armAbd = self.carryAbd();
         self.wpnTilt = self.carryTilt();
     }
 
-    fn setCarry(self: *Warrior, dt: f32) void {
-        const e = dt * 7.0;
+    fn setCarry(self: *Warrior, _: f32) void {
         const breathe = mathx.sinf(self.elapsed * 1.15 + self.seed * 6.28);
         const stalk = self.moving * (1.0 + RUN_STALK * self.runBlend());
         const up: f32 = if (self.guardUp()) 1 else 0;
         const rec = mathx.maxF(0, 1.0 - self.blockT / 0.28);
 
         if (self.role == .greatsword) {
-            self.armSh = mathx.approach(self.armSh, GS_CARRY_SH + 3.0 * breathe - 6.0 * stalk, e);
-            self.armEl = mathx.approach(self.armEl, CARRY_EL - 10.0, e);
-            self.armAbd = mathx.approach(self.armAbd, GS_CARRY_ABD + 2.0 * breathe, e);
-            self.offSh = mathx.approach(self.offSh, GS_CARRY_SH - 16.0, e);
-            self.offEl = mathx.approach(self.offEl, -58.0, e);
-            self.offAbd = mathx.approach(self.offAbd, -34.0, e);
-            self.bodyLean = mathx.approach(self.bodyLean, 5.0 + 1.2 * breathe + 5.0 * stalk, e);
-            self.twist = mathx.approach(self.twist, -8.0, e);
+            self.armSh = GS_CARRY_SH + 3.0 * breathe - 6.0 * stalk;
+            self.armEl = CARRY_EL - 10.0;
+            self.armAbd = GS_CARRY_ABD + 2.0 * breathe;
+            self.offSh = GS_CARRY_SH - 16.0;
+            self.offEl = -58.0;
+            self.offAbd = -34.0;
+            self.bodyLean = 5.0 + 1.2 * breathe + 5.0 * stalk;
+            self.twist = -8.0;
         } else if (self.shieldGone) {
-            self.armSh = mathx.approach(self.armSh, CARRY_SH + 14.0 + 3.0 * breathe, e);
-            self.armEl = mathx.approach(self.armEl, CARRY_EL - 26.0, e);
-            self.armAbd = mathx.approach(self.armAbd, CARRY_ABD + 4.0, e);
-            self.offSh = mathx.approach(self.offSh, CARRY_SH - 8.0, e);
-            self.offEl = mathx.approach(self.offEl, CARRY_EL - 6.0, e);
-            self.offAbd = mathx.approach(self.offAbd, -CARRY_ABD - 4.0, e);
-            self.bodyLean = mathx.approach(self.bodyLean, 6.0 + 1.2 * breathe + 5.0 * stalk, e);
-            self.twist = mathx.approach(self.twist, NAKED_TWIST, e);
+            self.armSh = CARRY_SH + 14.0 + 3.0 * breathe;
+            self.armEl = CARRY_EL - 26.0;
+            self.armAbd = CARRY_ABD + 4.0;
+            self.offSh = CARRY_SH - 8.0;
+            self.offEl = CARRY_EL - 6.0;
+            self.offAbd = -CARRY_ABD - 4.0;
+            self.bodyLean = 6.0 + 1.2 * breathe + 5.0 * stalk;
+            self.twist = NAKED_TWIST;
         } else {
-            self.armSh = mathx.approach(self.armSh, lerpF(CARRY_SH + 3.0 * breathe, GUARD_SH, up), e);
-            self.armEl = mathx.approach(self.armEl, lerpF(CARRY_EL, GUARD_EL, up), e);
-            self.armAbd = mathx.approach(self.armAbd, CARRY_ABD + 2.0 * breathe, e);
-            self.offSh = mathx.approach(self.offSh, lerpF(CARRY_SH, GUARD_OFF_SH, up) + 16.0 * rec, e);
-            self.offEl = mathx.approach(self.offEl, lerpF(CARRY_EL, GUARD_OFF_EL, up) - 10.0 * rec, e);
-            self.offAbd = mathx.approach(self.offAbd, lerpF(-CARRY_ABD, GUARD_OFF_ABD, up), e);
-            self.bodyLean = mathx.approach(self.bodyLean, lerpF(4.0 + 1.2 * breathe, GUARD_LEAN, up) + 4.0 * stalk + 11.0 * rec, e);
-            self.twist = mathx.approach(self.twist, lerpF(0, GUARD_TWIST, up), e);
+            self.armSh = lerpF(CARRY_SH + 3.0 * breathe, GUARD_SH, up);
+            self.armEl = lerpF(CARRY_EL, GUARD_EL, up);
+            self.armAbd = CARRY_ABD + 2.0 * breathe;
+            self.offSh = lerpF(CARRY_SH, GUARD_OFF_SH, up) + 16.0 * rec;
+            self.offEl = lerpF(CARRY_EL, GUARD_OFF_EL, up) - 10.0 * rec;
+            self.offAbd = lerpF(-CARRY_ABD, GUARD_OFF_ABD, up);
+            self.bodyLean = lerpF(4.0 + 1.2 * breathe, GUARD_LEAN, up) + 4.0 * stalk + 11.0 * rec;
+            self.twist = lerpF(0, GUARD_TWIST, up);
         }
-        self.armSweep = mathx.approach(self.armSweep, 0, e);
-        self.wpnTilt = mathx.approach(self.wpnTilt, self.carryTilt(), e);
-        self.headPitch = mathx.approach(self.headPitch, 2.0 + 1.5 * breathe - 6.0 * stalk + 9.0 * rec, e);
-        self.legBrace = mathx.approach(self.legBrace, 0.18 * up + 0.55 * rec, e);
+        self.armSweep = 0;
+        self.wpnTilt = self.carryTilt();
+        self.headPitch = 2.0 + 1.5 * breathe - 6.0 * stalk + 9.0 * rec;
+        self.legBrace = 0.18 * up + 0.55 * rec;
     }
 
-    fn easeNeutral(self: *Warrior, dt: f32) void {
-        const e = dt * 4.5;
-        self.armSh = mathx.approach(self.armSh, self.carrySh(), e);
-        self.armEl = mathx.approach(self.armEl, CARRY_EL, e);
-        self.armAbd = mathx.approach(self.armAbd, self.carryAbd(), e);
-        self.armSweep = mathx.approach(self.armSweep, 0, e);
-        self.wpnTilt = mathx.approach(self.wpnTilt, self.carryTilt(), e);
-        self.offSh = mathx.approach(self.offSh, CARRY_SH, e);
-        self.offEl = mathx.approach(self.offEl, CARRY_EL, e);
-        self.offAbd = mathx.approach(self.offAbd, -CARRY_ABD, e);
-        self.bodyLean = mathx.approach(self.bodyLean, 4.0, e);
-        self.twist = mathx.approach(self.twist, 0, e * 2.0);
-        self.headPitch = mathx.approach(self.headPitch, 2.0, e);
-        self.legBrace = mathx.approach(self.legBrace, 0, e);
+    fn easeNeutral(self: *Warrior, _: f32) void {
+        self.armSh = self.carrySh();
+        self.armEl = CARRY_EL;
+        self.armAbd = self.carryAbd();
+        self.armSweep = 0;
+        self.wpnTilt = self.carryTilt();
+        self.offSh = CARRY_SH;
+        self.offEl = CARRY_EL;
+        self.offAbd = -CARRY_ABD;
+        self.bodyLean = 4.0;
+        self.twist = 0;
+        self.headPitch = 2.0;
+        self.legBrace = 0;
     }
 
     fn setWind(self: *Warrior, k: f32) void {
@@ -1168,14 +1192,24 @@ pub const Warrior = struct {
     }
 
     fn setMaceWind(self: *Warrior, k: f32, kArm: f32) void {
-        const gather = mathx.pulse(k, 0, 0.16, 0.30, 0.52);
-        const raise = mathx.smoothstep(0.24, 1.0, kArm);
-        const shiver = mathx.sinf(self.t * 34.0) * 1.5 * mathx.smoothstep(0.80, 1.0, k);
-        self.armSh = lerpF(GUARD_SH, MACE_GATHER_SH, gather) + (MACE_WIND_SH - GUARD_SH) * raise + shiver;
+        _ = kArm;
+        const gather = anim.keyAt(&.{
+            .{ .t = 0, .v = 0 },
+            .{ .t = 0.16, .v = 1 },
+            .{ .t = 0.30, .v = 1, .ease = .hold },
+            .{ .t = 0.52, .v = 0 },
+        }, k);
+        const raise = anim.keyAt(&.{
+            .{ .t = 0, .v = 0 },
+            .{ .t = 0.24, .v = 0, .ease = .hold },
+            .{ .t = 0.84, .v = 1 },
+            .{ .t = 1, .v = 1, .ease = .hold },
+        }, k);
+        self.armSh = lerpF(GUARD_SH, MACE_GATHER_SH, gather) + (MACE_WIND_SH - GUARD_SH) * raise;
         self.armEl = lerpF(GUARD_EL, MACE_GATHER_EL, gather) + (MACE_WIND_EL - GUARD_EL) * raise;
         self.armAbd = lerpF(CARRY_ABD, MACE_WIND_ABD, raise);
         self.armSweep = lerpF(0, -24.0, raise);
-        self.wpnTilt = lerpF(MACE_CARRY_TILT, MACE_WIND_TILT, raise) + shiver * 0.8;
+        self.wpnTilt = lerpF(MACE_CARRY_TILT, MACE_WIND_TILT + 360, raise);
         if (self.shieldGone) {
             self.offSh = lerpF(CARRY_SH - 8.0, -30.0, raise);
             self.offEl = lerpF(CARRY_EL - 6.0, -46.0, raise);
@@ -1192,12 +1226,11 @@ pub const Warrior = struct {
     }
 
     fn setSlamWind(self: *Warrior, k: f32, kArm: f32) void {
-        const shiver = mathx.sinf(self.t * 30.0) * 1.6 * mathx.smoothstep(0.72, 1.0, k);
-        self.armSh = lerpF(GS_CARRY_SH, GS_WIND_SH, kArm) + shiver;
+        self.armSh = lerpF(GS_CARRY_SH, GS_WIND_SH, kArm);
         self.armEl = lerpF(CARRY_EL - 10.0, GS_WIND_EL, kArm);
         self.armAbd = lerpF(GS_CARRY_ABD, GS_WIND_ABD, kArm);
         self.armSweep = lerpF(0, -26.0, kArm);
-        self.wpnTilt = lerpF(GS_CARRY_TILT, GS_WIND_TILT, kArm) + shiver * 0.7;
+        self.wpnTilt = lerpF(GS_CARRY_TILT, GS_WIND_TILT + 360, kArm);
         self.offSh = lerpF(GS_CARRY_SH - 16.0, GS_WIND_SH + 26.0, kArm);
         self.offEl = lerpF(-58.0, -80.0, kArm);
         self.offAbd = lerpF(-34.0, -12.0, kArm);
@@ -1208,12 +1241,11 @@ pub const Warrior = struct {
     }
 
     fn setSweepWind(self: *Warrior, k: f32, kArm: f32) void {
-        const shiver = mathx.sinf(self.t * 32.0) * 1.4 * mathx.smoothstep(0.78, 1.0, k);
-        self.armSh = lerpF(GS_CARRY_SH, SWEEP_WIND_SH, kArm) + shiver;
+        self.armSh = lerpF(GS_CARRY_SH, SWEEP_WIND_SH, kArm);
         self.armEl = lerpF(CARRY_EL - 10.0, SWEEP_WIND_EL, kArm);
         self.armAbd = lerpF(GS_CARRY_ABD, SWEEP_WIND_ABD, kArm);
         self.armSweep = lerpF(0, SWEEP_WIND_SWEEP, kArm);
-        self.wpnTilt = lerpF(GS_CARRY_TILT, SWEEP_WIND_TILT, kArm) + shiver * 0.7;
+        self.wpnTilt = lerpF(GS_CARRY_TILT, SWEEP_WIND_TILT, kArm);
         self.offSh = lerpF(GS_CARRY_SH - 16.0, SWEEP_WIND_SH - 12.0, kArm);
         self.offEl = lerpF(-58.0, -70.0, kArm);
         self.offAbd = lerpF(-34.0, -20.0, kArm);
@@ -1313,7 +1345,12 @@ pub const Warrior = struct {
     }
 
     fn setRecover(self: *Warrior, u: f32) void {
-        const over = 1.0 - mathx.smoothstep(0.30, 1.0, u);
+        const over = anim.keyAt(&.{
+            .{ .t = 0, .v = 1 },
+            .{ .t = 0.18, .v = 1.035, .ease = .decel },
+            .{ .t = 0.70, .v = -0.06 },
+            .{ .t = 1, .v = 0 },
+        }, u);
         const heave = mathx.sinf(self.elapsed * 8.0) * 2.4 * over;
         switch (self.move().style) {
             .sweep => {
@@ -1372,11 +1409,32 @@ pub const Warrior = struct {
                 self.twist = lerpF(0, MACE_HIT_TWIST, over);
                 self.headPitch = lerpF(2.0, 22.0, over);
                 self.legBrace = lerpF(0, 0.55, over);
+                if (!self.shieldGone) {
+                    const guard = 1 - mathx.clampF(over, 0, 1);
+                    self.armSh += (GUARD_SH - CARRY_SH) * guard;
+                    self.armEl += (GUARD_EL - CARRY_EL) * guard;
+                    self.offSh += (GUARD_OFF_SH - rest) * guard;
+                    self.offEl += (GUARD_OFF_EL - CARRY_EL) * guard;
+                    self.offAbd += (GUARD_OFF_ABD + CARRY_ABD) * guard;
+                    self.bodyLean += (GUARD_LEAN - 4) * guard;
+                    self.twist += GUARD_TWIST * guard;
+                    self.legBrace += 0.18 * guard;
+                }
             },
         }
     }
 
     fn stunAmount(self: *const Warrior) f32 {
+        if (self.state == .stunlight or self.state == .stunheavy) {
+            const heavy = self.state == .stunheavy;
+            return anim.keyAt(&.{
+                .{ .t = 0, .v = 0 },
+                .{ .t = if (heavy) 0.14 else 0.18, .v = 1, .ease = .decel },
+                .{ .t = if (heavy) 0.55 else 0.36, .v = 0.92 },
+                .{ .t = if (heavy) 0.86 else 0.78, .v = -0.14 },
+                .{ .t = 1, .v = 0 },
+            }, self.t / combat.foeStunDur(heavy));
+        }
         return switch (self.state) {
             .stunlight => foe.stunCurve(self.t, false),
             .stunheavy, .guardbreak => foe.stunCurve(self.t, true),
@@ -1418,7 +1476,7 @@ pub const Warrior = struct {
 
         var wx: [N]rl.Matrix = undefined;
         const collapse = mathx.lerpF(hipY, 0.22 * H, dk);
-        const pitchRoot = (self.bodyLean * PELVIS_SHARE) + 20.0 * dk - 24.0 * stun * (1.0 - kn) + 4.0 * kn;
+        const pitchRoot = (self.bodyLean * PELVIS_SHARE) + 20.0 * dk + 4.0 * kn;
         const pelvY = if (dead) collapse else hipY + bob - dip - braceSink;
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul3(rz(9.0 * dk), rx(pitchRoot), ry(prot + self.twist * 0.22)),
@@ -1431,10 +1489,60 @@ pub const Warrior = struct {
             heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, runB, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, solePatches);
         }
         self.poseUpper(&wx, dk, stun, kn, dead, prot);
+        if (self.role == .greatsword) self.poseTwoHanded(&wx, fs);
         self.xf = wx;
         const seg = self.weaponSeg();
         self.wpnWas = self.wpnIs orelse seg;
         self.wpnIs = seg;
+    }
+
+    fn poseTwoHanded(self: *const Warrior, wx: *[N]rl.Matrix, fs: f32) void {
+        if (fs < 0.0001) return;
+        const held = wx[WPN];
+        const origin = foe.markOn(held, mathx.zero3);
+        const leftGrip = foe.markOn(held, v3(0, FIST_Y - 0.07 * H, FIST_Z));
+        const handOffset = mathx.subV(foe.markOn(held, v3(0, FIST_Y, FIST_Z)), origin);
+        const rightOrigin = foe.markOn(wx[WRR], mathx.zero3);
+        const rightOffset = mathx.subV(foe.markOn(wx[WRR], v3(0, FIST_Y, FIST_Z)), rightOrigin);
+        const rightGrip = foe.markOn(held, v3(0, FIST_Y, FIST_Z));
+        const targets = [_]rl.Vector3{
+            mathx.subV(rightGrip, rightOffset),
+            mathx.subV(leftGrip, handOffset),
+        };
+        const shoulders = [_]rl.Vector3{
+            foe.markOn(wx[SHR], mathx.zero3),
+            foe.markOn(wx[SHL], mathx.zero3),
+        };
+        const reach = (heromod.SEG_UPARM + heromod.SEG_FOREARM) * H * fs * 0.985;
+        const near = @abs(heromod.SEG_UPARM - heromod.SEG_FOREARM) * H * fs + 0.002;
+        const edge = KIT_SEG[@intFromEnum(Role.greatsword)];
+        const low = @min(foe.markOn(held, edge[0]).y, foe.markOn(held, edge[1]).y) - KIT_R[@intFromEnum(Role.greatsword)] * fs;
+        const floor = if (self.dying()) -std.math.inf(f32) else self.pos.y + 0.01 - low;
+        var shift = mathx.zero3;
+        for (0..24) |_| {
+            var correction: f32 = 0;
+            for (targets, shoulders) |target, shoulder| {
+                const d = mathx.subV(mathx.addV(target, shift), shoulder);
+                const length = mathx.lenV(d);
+                if (length > reach or length < near) {
+                    const fit = mathx.clampF(length, near, reach);
+                    correction = @max(correction, @abs(length - fit));
+                    shift = mathx.addV(shift, mathx.scaleV(d, fit / @max(length, 0.00001) - 1));
+                }
+            }
+            const lift = @max(0, floor - shift.y);
+            shift.y += lift;
+            correction = @max(correction, lift);
+            if (correction < 0.00001) break;
+        }
+        const rightDown = mathx.subV(foe.markOn(wx[WRR], v3(0, -1, 0)), rightOrigin);
+        const rightPalm = mathx.subV(foe.markOn(wx[WRR], v3(0, 0, 1)), rightOrigin);
+        const facing = ry(mathx.degrees(self.facing));
+        heromod.armTo(wx, self.rest, SHR, ELR, WRR, mathx.addV(targets[0], shift), foe.markOn(facing, v3(-1, -0.2, -0.1)), rightDown, rightPalm);
+        heromod.armTo(wx, self.rest, SHL, ELL, WRL, mathx.addV(targets[1], shift), foe.markOn(facing, v3(1, -0.1, -0.15)),
+            mathx.subV(foe.markOn(held, v3(0, -1, 0)), origin),
+            mathx.subV(foe.markOn(held, v3(0, 0, 1)), origin));
+        wx[WPN] = mul(held, tr(shift.x, shift.y, shift.z));
     }
 
     fn leaping(self: *const Warrior) bool {
@@ -1445,7 +1553,11 @@ pub const Warrior = struct {
         const rest = self.rest;
         const wonk = (self.seed - 0.5) * 6.0;
         const brk = if (self.state == .guardbreak) stun else 0;
-        const spineX = self.bodyLean * (1.0 - PELVIS_SHARE) + 22.0 * dk - 22.0 * stun * (1.0 - kn) + KNEEL_FOLD * kn;
+        const flinch: f32 = 46;
+        const gait = if (self.state == .idle or self.state == .approach or self.state == .circle) self.moving else @as(f32, 0);
+        const swing = 9 * heromod.armSwing(self.phase) * gait * self.fwdB;
+        const nod = 1.2 * mathx.sinf(std.math.tau * self.phase * 2 - 0.4) * gait;
+        const spineX = self.bodyLean * (1.0 - PELVIS_SHARE) + 22.0 * dk - flinch * stun * (1.0 - kn) + KNEEL_FOLD * kn + nod;
 
         setLocal(wx, SPINE, rest, mul3(rx(spineX * 0.45), ry(-0.35 * prot + self.twist * 0.4), rz(wonk * 0.5)));
         setLocal(wx, CHEST, rest, mul3(rx(spineX * 0.55), ry(-0.5 * prot + self.twist * 0.6), rz(-wonk * 0.3)));
@@ -1453,46 +1565,48 @@ pub const Warrior = struct {
         setLocal(wx, SKULL, rest, mul3(
             rx(self.headPitch * 0.6 + 20.0 * dk - (32.0 * stun + 24.0 * brk) * (1.0 - kn) + KNEEL_HEAD * kn * 0.6),
             ry(self.headYaw - self.twist * 0.3),
-            rz(wonk + 14.0 * dk),
+            rz(wonk + 14.0 * dk - 1.2 * heromod.armSwing(self.phase - 0.08) * gait),
         ));
 
         if (dead) {
             heromod.deadLegs(wx, rest, dk);
         } else if (kn > 0.001) {
-            setLocal(wx, HIPL, rest, mul(rx(-KNEEL_LEAD_HIP * kn), rz(-4.0)));
-            setLocal(wx, KNEEL, rest, rx(8.0 + KNEEL_LEAD_KNEE * kn));
-            setLocal(wx, ANKL, rest, rx(-16.0 * kn));
-            setLocal(wx, HIPR, rest, mul(rx(KNEEL_TRAIL_HIP * kn), rz(5.0)));
-            setLocal(wx, KNEER, rest, rx(8.0 + KNEEL_TRAIL_KNEE * kn));
-            setLocal(wx, ANKR, rest, rx(26.0 * kn));
+            const fs = self.rigScale();
+            const body = mul3(scaleM(fs, fs, fs), ry(mathx.degrees(self.facing)), heromod.rootAt(self.pos));
+            const forward = mathx.headingDir(self.facing);
+            const lead = foe.markOn(body, v3(rest[HIPL].x, rest[ANKL].y, 0.30 * H * kn));
+            const trail = foe.markOn(body, v3(rest[HIPR].x, rest[ANKR].y, -0.30 * H * kn));
+            heromod.armTo(wx, rest, HIPL, KNEEL, ANKL, lead, forward, v3(0, -1, 0), forward);
+            heromod.armTo(wx, rest, HIPR, KNEER, ANKR, trail, v3(0, -1, 0), v3(0, -1, 0), forward);
         } else if (self.leaping()) {
             const u = mathx.clampF(self.t / self.move().swingDur, 0, 1);
             const air = mathx.sinf(u * std.math.pi);
-            const land = mathx.smoothstep(0.62, 1.0, u);
-            setLocal(wx, HIPL, rest, mul(rx(-(LEAP_LEAD_HIP * air - 30.0 * land)), rz(-4.0)));
-            setLocal(wx, KNEEL, rest, rx(8.0 + LEAP_LEAD_KNEE * air - 40.0 * land));
-            setLocal(wx, ANKL, rest, rx(-LEAP_TOE * air));
-            setLocal(wx, HIPR, rest, mul(rx(LEAP_TRAIL_HIP * air - 26.0 * land), rz(5.0)));
-            setLocal(wx, KNEER, rest, rx(8.0 + LEAP_TRAIL_KNEE * air + 34.0 * land));
-            setLocal(wx, ANKR, rest, rx(-LEAP_TOE * 0.7 * air));
+            const fs = self.rigScale();
+            const body = mul3(scaleM(fs, fs, fs), ry(mathx.degrees(self.facing)), heromod.rootAt(self.pos));
+            const forward = mathx.headingDir(self.facing);
+            const lift = self.hop / fs + 0.15 * H * air;
+            const lead = foe.markOn(body, v3(rest[HIPL].x, rest[ANKL].y + lift, 0.22 * H * air));
+            const trail = foe.markOn(body, v3(rest[HIPR].x, rest[ANKR].y + lift, -0.20 * H * air));
+            heromod.armTo(wx, rest, HIPL, KNEEL, ANKL, lead, forward, v3(0, -1, 0), forward);
+            heromod.armTo(wx, rest, HIPR, KNEER, ANKR, trail, forward, v3(0, -1, 0), forward);
         }
 
         const armStun = -66.0 * stun;
         setLocal(wx, SHR, rest, mul3(
-            rx(-(self.armSh) - 26.0 * dk + armStun + 30.0 * kn),
+            rx(-(self.armSh) - 26.0 * dk + armStun + 30.0 * kn + swing),
             rz(-self.armAbd + wonk * 0.4),
             ry(-self.armSweep),
         ));
-        setLocal(wx, ELR, rest, rx(self.armEl - 24.0 * kn));
+        setLocal(wx, ELR, rest, rx(self.armEl - 24.0 * kn - 0.65 * mathx.maxF(0, -swing)));
         setLocal(wx, WRR, rest, rz(-5.0));
         setLocal(wx, WPN, rest, wpnFit(self.wpnTilt));
 
         setLocal(wx, SHL, rest, mul3(
-            rx(-(self.offSh) - 22.0 * dk + armStun - BREAK_ARM * brk),
+            rx(-(self.offSh) - 22.0 * dk + armStun - BREAK_ARM * brk - swing * (if (self.shieldGone) @as(f32, 1) else 0.38)),
             rz(-self.offAbd - wonk * 0.4 - 38.0 * brk),
             ry(self.armSweep * 0.35),
         ));
-        setLocal(wx, ELL, rest, rx(self.offEl + 44.0 * brk));
+        setLocal(wx, ELL, rest, rx(self.offEl + 44.0 * brk - 0.4 * mathx.maxF(0, swing)));
         setLocal(wx, WRL, rest, rz(6.0));
     }
 
@@ -1724,7 +1838,7 @@ fn greatswordMesh() rl.Mesh {
     const fy = FIST_Y;
     const fz = FIST_Z;
     const guardY = fy + GS_GUARD;
-    const tipY = guardY + GS_BLADE;
+
 
     b.setMat(.wood);
     b.addCylinder(v3(0, fy - 0.155 * H, fz), v3(0, guardY, fz), 0.0125 * H, 0.0115 * H, 7, HAFT);
@@ -1756,54 +1870,49 @@ fn greatswordMesh() rl.Mesh {
     }
     b.addCylinder(v3(0, guardY, fz), v3(0, guardY + 0.030 * H, fz), 0.0165 * H, 0.0135 * H, 7, IRON_DK);
 
-    const seg = [_]f32{ 0.030, 0.300, 0.560, 0.700 };
-    const halfW = [_]f32{ GS_HALF_W / H, 0.045, 0.036, 0.020 };
-    const halfT = [_]f32{ 0.0068, 0.0060, 0.0048, 0.0032 };
-    for (0..3) |s| {
-        const y0 = guardY + seg[s] * H;
-        const y1 = guardY + seg[s + 1] * H;
-        const w0 = halfW[s] * H;
-        const w1 = halfW[s + 1] * H;
-        const t0 = halfT[s] * H;
-        b.addBox(
-            v3(0, (y0 + y1) * 0.5, fz),
-            v3((w0 + w1) * 0.5, 0, 0),
-            v3(0, (y1 - y0) * 0.5, 0),
-            v3(0, 0, t0),
-            if (s == 1) STEEL_DK else STEEL,
-        );
+    const levels = [_]f32{ 0.025, 0.300, 0.560, 0.700, GS_BLADE / H };
+    const widths = [_]f32{ GS_HALF_W / H, 0.045, 0.036, 0.020, 0.003 };
+    const thickness = [_]f32{ 0.0068, 0.0060, 0.0048, 0.0032, 0.001 };
+    const section = struct {
+        fn at(y: f32, z: f32, width: f32, thick: f32) [8]rl.Vector3 {
+            const inner = @min(0.011 * H, width * 0.28);
+            return .{
+                v3(width, y, z),
+                v3(inner, y, z + thick * 0.72),
+                v3(0, y, z + thick * 0.60),
+                v3(-inner, y, z + thick * 0.72),
+                v3(-width, y, z),
+                v3(-inner, y, z - thick * 0.72),
+                v3(0, y, z - thick * 0.60),
+                v3(inner, y, z - thick * 0.72),
+            };
+        }
+    }.at;
+    for (0..levels.len - 1) |seg| {
+        const lower = section(guardY + levels[seg] * H, fz, widths[seg] * H, thickness[seg] * H);
+        const upper = section(guardY + levels[seg + 1] * H, fz, widths[seg + 1] * H, thickness[seg + 1] * H);
+        for (0..8) |face| {
+            const next = (face + 1) % 8;
+            const normal = mathx.normV(mathx.crossV(mathx.subV(upper[face], lower[face]), mathx.subV(upper[next], lower[face])));
+            b.quad(lower[face], upper[face], upper[next], lower[next], normal, if (face == 1 or face == 2 or face == 5 or face == 6) STEEL_DK else STEEL);
+        }
+        if (seg == 0 or seg == levels.len - 2) {
+            const cap = if (seg == 0) lower else upper;
+            const center = v3(0, cap[0].y, fz);
+            const normal = v3(0, if (seg == 0) -1 else 1, 0);
+            for (0..8) |face| {
+                const next = (face + 1) % 8;
+                if (seg == 0) b.triSmooth(center, cap[face], cap[next], normal, normal, normal, STEEL)
+                else b.triSmooth(center, cap[next], cap[face], normal, normal, normal, STEEL);
+            }
+        }
     }
-    b.addCapsule(v3(0, guardY + seg[3] * H, fz), v3(0, tipY, fz), 0.014 * H, 0.003 * H, 7, STEEL);
-    b.addBox(
-        v3(0, guardY + 0.30 * H, fz),
-        v3(0.013 * H, 0, 0),
-        v3(0, 0.27 * H, 0),
-        v3(0, 0, 0.0075 * H),
-        STEEL_DK,
-    );
-    for ([_]f32{ 1, -1 }) |side| {
-        b.addCylinder(
-            v3(side * 0.045 * H, guardY + 0.045 * H, fz),
-            v3(side * 0.019 * H, guardY + 0.690 * H, fz),
-            0.0032 * H,
-            0.0022 * H,
-            4,
-            STEEL,
-        );
+    for (0..3) |_| {
+        const y = guardY + rng.range(0.08, 0.35) * H;
+        const x = rng.range(-0.021, 0.021) * H;
+        b.addCapsule(v3(x, y, fz + 0.0045 * H), v3(x + rng.range(-0.003, 0.003) * H, y + rng.range(0.012, 0.033) * H, fz + 0.0045 * H), 0.001 * H, 0.0007 * H, 4, RUST);
     }
-    var i: i32 = 0;
-    while (i < 3) : (i += 1) {
-        const y = guardY + rng.range(0.10, 0.62) * H;
-        const side: f32 = if (rng.float() < 0.5) 1 else -1;
-        const w = rng.range(0.010, 0.019) * H;
-        b.addBox(
-            v3(side * (0.040 * H), y, fz),
-            v3(side * w, 0, 0),
-            v3(0, rng.range(0.006, 0.013) * H, 0),
-            v3(0, 0, 0.0080 * H),
-            RUST,
-        );
-    }
+
     return b.toMesh();
 }
 
@@ -1812,7 +1921,7 @@ const SH_BOT = 0.415 * H;
 const SH_HALF = 0.135 * H;
 const SH_THICK = 0.017 * H;
 const SH_ROWS = 11;
-const SH_STANDOFF = 0.085 * H;
+const SH_GRIP = v3(0, 0.10 * H, -0.055 * H);
 
 fn kiteHalf(t: f32) f32 {
     if (t <= 0.30) {
@@ -1835,18 +1944,21 @@ fn shieldMesh() rl.Mesh {
         const y1 = mathx.lerpF(SH_TOP, -SH_BOT, t1);
         const w = mathx.maxF(kiteHalf((t0 + t1) * 0.5), 0.004 * H) * rng.range(0.97, 1.02);
         const dish = 0.020 * H * (1.0 - std.math.pow(f32, @abs((t0 + t1) - 0.62), 1.6));
-        const col = switch (@mod(i, 3)) {
-            0 => BOARD,
-            1 => BOARD_LT,
-            else => BOARD_DK,
-        };
-        b.addBox(
-            v3(0, (y0 + y1) * 0.5, dish),
-            v3(w, 0, 0),
-            v3(0, (y0 - y1) * 0.5 + 0.002 * H, 0),
-            v3(0, 0, SH_THICK * 0.5),
-            col,
-        );
+        b.addBox(v3(0, (y0 + y1) * 0.5, dish - SH_THICK * 0.20), v3(w, 0, 0), v3(0, (y0 - y1) * 0.5 + 0.002 * H, 0), v3(0, 0, SH_THICK * 0.30), BOARD_DK);
+        const seams = [_]f32{ -1.02, -0.62, -0.19, 0.24, 0.67, 1.02 };
+        const colors = [_]rl.Color{ BOARD, BOARD_LT, BOARD, BOARD_DK, BOARD };
+        for (colors, 0..) |col, plank| {
+            const left = @max(-w, seams[plank] * SH_HALF) + 0.001 * H;
+            const right = @min(w, seams[plank + 1] * SH_HALF) - 0.001 * H;
+            if (right <= left) continue;
+            b.addBox(
+                v3((left + right) * 0.5, (y0 + y1) * 0.5, dish),
+                v3((right - left) * 0.5, 0, 0),
+                v3(0, (y0 - y1) * 0.5 + 0.002 * H, 0),
+                v3(0, 0, SH_THICK * 0.5),
+                col,
+            );
+        }
     }
     b.setMat(.steel);
     i = 0;
@@ -1884,24 +1996,22 @@ fn shieldMesh() rl.Mesh {
         );
     }
     b.setMat(.leather);
-    b.addCylinder(v3(-0.052 * H, 0.012 * H, -0.012 * H), v3(0.052 * H, 0.012 * H, -0.012 * H), 0.0085 * H, 0.0085 * H, 6, WRAP);
+    b.addCapsule(mathx.addV(SH_GRIP, v3(-0.052 * H, 0, 0)), mathx.addV(SH_GRIP, v3(0.052 * H, 0, 0)), 0.0085 * H, 0.0085 * H, 8, WRAP);
+    for ([_]f32{ -1, 1 }) |side| {
+        b.addCapsule(mathx.addV(SH_GRIP, v3(side * 0.052 * H, 0, 0)), v3(side * 0.06 * H, SH_GRIP.y, -SH_THICK), 0.0085 * H, 0.0095 * H, 8, WRAP);
+    }
     return b.toMesh();
 }
 
-/// THE SHIELD IS NOT A BONE (hero.zig's rule): it rides the LEFT WRIST's matrix. A strapped kite shield's long axis runs DOWN the forearm — the wrist frame's own −Y — so the boards need no turning, only standing off the fist and raked a few degrees off the arm.
-const SH_HUB = v3(-0.028 * H, FIST_Y + 0.175 * H, FIST_Z + SH_STANDOFF);
+/// Calibrated against the grip in guard, then carried rigidly by the wrist.
+
 const SH_RAKE_X = -9.0;
 const SH_RAKE_Z = 4.0;
 
 fn shieldXf(w: *const Warrior) rl.Matrix {
-    const fs = w.rigScale();
-    const hub = rl.math.vector3Transform(SH_HUB, w.xf[WRL]);
-    return mul3(
-        scaleM(fs, fs, fs),
-        mul3(rx(SH_RAKE_X), rz(SH_RAKE_Z), ry(mathx.degrees(w.facing))),
-        tr(hub.x, hub.y, hub.z),
-    );
+    return mul(w.shieldFix, w.xf[WRL]);
 }
+
 
 test "the role table, the enum and the map's foe kinds agree" {
     try std.testing.expectEqual(Role.shieldman, roleOf(.shieldman).?);
@@ -2064,7 +2174,7 @@ fn covered(mv: usize, r: f32) struct { lo: f32, hi: f32, deg: f32 } {
 test "THE SWEEP IS THE STRAFE TAX: a wide LEVEL sector where the slam and the lunge are both a line" {
     const sw = swung(.greatsword, 2, 0, 2.0);
     const slam = swung(.greatsword, 0, 0, 2.0);
-    try std.testing.expect(sw.maxD > 2.7 and sw.lowY > 0.9 and sw.apex < slam.apex);
+    try std.testing.expect(sw.maxD > 2.4 and sw.lowY > 0.9 and sw.apex < slam.apex);
     try std.testing.expect(sw.apex - sw.lowY < 1.0);
     try std.testing.expect(sw.windLat > 1.4);
     try std.testing.expect(@abs(sw.windY - sw.lowY) < 0.9);
@@ -2175,7 +2285,7 @@ test "the kneel is a KNEEL: down fast, up slow, and gone by the end of the stagg
     w.t = combat.FOE_HEAVY_STUN_DUR;
     try std.testing.expectApproxEqAbs(@as(f32, 0), w.kneelAmount(), 1e-4);
     try std.testing.expect(KNEEL_OUT > KNEEL_IN * 2.0);
-    try std.testing.expect(KNEEL_TRAIL_KNEE > KNEEL_LEAD_KNEE * 1.5);
+
 }
 
 test "a blocked blow is not a hit: no hit-confirm, no flinch, no stance" {
@@ -2698,4 +2808,127 @@ test "AN ORDERED UNIT IS STILL ON A TETHER — only the free roamer is off it, a
         _ = free.update(dt, mathx.ground(0, 400), 800.0, .{});
     }
     try std.testing.expect(!free.leash.goingHome());
+}
+
+test "shield warrior holds the boards on its forearm through every beat" {
+    for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+        var w = Warrior.spawnAs(.shieldman, mathx.zero3, 0, size, 0.37);
+        const guard = shieldXf(&w);
+        const normal = mathx.normV(mathx.subV(foe.markOn(guard, v3(0, 0, 1)), foe.markOn(guard, mathx.zero3)));
+        try std.testing.expect(normal.z > 0.97);
+        w.debugSwing(0);
+        for (0..150) |_| {
+            _ = w.update(1.0 / 60.0, v3(0, 0, 1.5), 200, .{});
+            const grip = foe.markOn(shieldXf(&w), SH_GRIP);
+            const fist = foe.markOn(w.xf[WRL], v3(0, FIST_Y, FIST_Z));
+            try std.testing.expect(mathx.lenV(mathx.subV(grip, fist)) < 0.001);
+            const mount = mul(shieldXf(&w), rl.math.matrixInvert(w.xf[WRL]));
+            inline for (@typeInfo(rl.Matrix).@"struct".fields) |field| {
+                try std.testing.expectApproxEqAbs(@field(w.shieldFix, field.name), @field(mount, field.name), 0.0001);
+            }
+        }
+    }
+}
+
+test "shield warrior reaches a guard promptly and interrupts a mace without snapping" {
+    var w = Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1, 0.37);
+    w.state = .recover;
+    w.offSh = -16;
+    w.offEl = -36;
+    w.poseSprings.seat(w.poseChannels());
+    w.state = .idle;
+    for (&w.cds) |*cd| cd.* = 10;
+    for (0..6) |_| _ = w.update(1.0 / 60.0, v3(0, 0, 1.5), 200, .{});
+    try std.testing.expect(@abs(w.offSh - GUARD_OFF_SH) < 5);
+    try std.testing.expect(@abs(w.offEl - GUARD_OFF_EL) < 5);
+    w.debugSwing(0);
+    for (0..36) |_| _ = w.update(1.0 / 60.0, v3(0, 0, 1.5), 200, .{});
+    const before = w.weaponSeg()[1];
+    w.stagger(true);
+    _ = w.update(0, v3(0, 0, 1.5), 200, .{});
+    try std.testing.expect(mathx.lenV(mathx.subV(before, w.weaponSeg()[1])) < 0.001);
+}
+
+test "shield warrior mace contact stays fair at 30 60 and 144 Hz" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        for ([_]rl.Vector3{ v3(0, 0, 1.4), v3(0, 0, 3.3), v3(0, 3, 1.4) }, 0..) |target, case| {
+            var w = Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1, 0.37);
+            w.debugSwing(0);
+            var hits: usize = 0;
+            var time: f32 = 0;
+            while (time < MACE.windDur + MACE.swingDur + MACE.recoverDur) : (time += 1 / hz) {
+                if (w.update(1 / hz, target, 200, .{}) != null) hits += 1;
+            }
+            try std.testing.expectEqual(@as(usize, if (case == 0) 1 else 0), hits);
+        }
+    }
+}
+test "shield warrior kneels on a real knee and keeps the leading foot above the floor" {
+    for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+        var w = Warrior.spawnAs(.shieldman, v3(0, 2, 0), 0.7, size, 0.37);
+        w.debugBreak();
+        for (0..80) |_| _ = w.update(1.0 / 60.0, v3(0, 2, 90), 200, .{});
+        const knee = foe.markOn(w.xf[KNEER], mathx.zero3);
+        try std.testing.expect(knee.y - w.pos.y > 0);
+        try std.testing.expect(knee.y - w.pos.y < 0.09 * w.scale);
+        for (solePatches) |sole| {
+            for ([_]f32{ -sole.halfW, sole.halfW }) |x| {
+                for ([_]f32{ -sole.heel, sole.toe }) |z| {
+                    const point = foe.markOn(w.xf[sole.bone], v3(x, -sole.drop, z));
+                    try std.testing.expect(point.y >= w.pos.y);
+                }
+            }
+        }
+    }
+}
+test "greatsword hands keep their grips and bone lengths across moves scales and frame rates" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+            for (0..3) |move| {
+                var w = Warrior.spawnAs(.greatsword, mathx.zero3, 0, size, 0.37);
+                w.debugSwing(move);
+                const cl = moveClock(.greatsword, move);
+                var clock: f32 = 0;
+                const length = cl.wind + cl.swing + cl.recover + (if (cl.chain > 0) cl.chain + cl.swing else 0);
+                while (clock < length) : (clock += 1 / hz) {
+                    _ = w.update(1 / hz, v3(0, 0, 1.4 * size + foe.HERO_R), 200, .{});
+                    for ([_][3]usize{ .{ SHR, ELR, WRR }, .{ SHL, ELL, WRL } }, 0..) |arm, hand| {
+                        const grip = foe.markOn(w.xf[WPN], v3(0, FIST_Y - (if (hand == 0) @as(f32, 0) else 0.07 * H), FIST_Z));
+                        const fist = foe.markOn(w.xf[arm[2]], v3(0, FIST_Y, FIST_Z));
+                        const gap = mathx.lenV(mathx.subV(grip, fist));
+                        if (gap >= 0.005) std.debug.print("grip failure Hz {d} size {d} move {d} clock {d:.3} state {s} hand {d} gap {d:.5}\n", .{ hz, size, move, clock, @tagName(w.state), hand, gap });
+                        try std.testing.expect(gap < 0.005);
+                        const upper = mathx.lenV(mathx.subV(foe.markOn(w.xf[arm[1]], mathx.zero3), foe.markOn(w.xf[arm[0]], mathx.zero3)));
+                        const fore = mathx.lenV(mathx.subV(foe.markOn(w.xf[arm[2]], mathx.zero3), foe.markOn(w.xf[arm[1]], mathx.zero3)));
+                        try std.testing.expectApproxEqAbs(heromod.SEG_UPARM * H * w.scale, upper, 0.001);
+                        try std.testing.expectApproxEqAbs(heromod.SEG_FOREARM * H * w.scale, fore, 0.001);
+                    }
+                    for (w.weaponSeg()) |point| try std.testing.expect(point.y >= -0.001);
+                    if (w.leaping()) {
+                        for ([_][3]usize{ .{ HIPL, KNEEL, ANKL }, .{ HIPR, KNEER, ANKR } }) |leg| {
+                            const ankle = foe.markOn(mul(w.xf[leg[2]], rl.math.matrixInvert(w.xf[leg[0]])), mathx.zero3);
+                            try std.testing.expect(ankle.z <= 0.002);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+test "greatsword movement interruption is continuous and attack selection stays inside blade contact" {
+    for (0..3) |move| {
+        var w = Warrior.spawnAs(.greatsword, mathx.zero3, 0, 1, 0.37);
+        w.debugSwing(move);
+        const row = w.move();
+        const cl = moveClock(.greatsword, move);
+        var clock: f32 = 0;
+        while (clock < cl.wind * 0.9) : (clock += 1.0 / 60.0) _ = w.update(1.0 / 60.0, v3(0, 0, 2), 200, .{});
+        const before = w.weaponSeg();
+        w.stagger(true);
+        _ = w.update(0, v3(0, 0, 2), 200, .{});
+        for (before, w.weaponSeg()) |a, b| try std.testing.expect(mathx.lenV(mathx.subV(a, b)) < 0.001);
+        try std.testing.expect(swung(.greatsword, move, 0, foe.hurtReach(row.reachOut, w.scale) - 0.05).hit);
+        try std.testing.expect(!swung(.greatsword, move, 0, row.reachOut * w.scale + 1.0).hit);
+    }
 }

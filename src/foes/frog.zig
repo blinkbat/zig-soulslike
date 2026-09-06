@@ -3,6 +3,7 @@ const rl = @import("raylib");
 const gfx = @import("../gfx/gfx.zig");
 const mathx = @import("../core/mathx.zig");
 const combat = @import("../play/combat.zig");
+const anim = @import("../core/anim.zig");
 const foe = @import("foe.zig");
 const wf = @import("../world/worldfmt.zig");
 const sfx = @import("../core/audio.zig");
@@ -80,8 +81,11 @@ const CHOMP_SNAP = 0.11;
 /// cos 63 deg: the jaws' own half-cone.
 const CHOMP_FRONT_DOT: f32 = 0.45;
 const CHOMP_RECOVER = 0.42;
-const CHOMP_JAW = 64.0;
-const CHOMP_SAC = 1.95;
+const CHOMP_JAW = 48.0;
+const CHOMP_SAC = 1.50;
+const CHOMP_CONTACT_JAW = 8.0;
+const BITE_EDGE_Z = 0.54;
+const BITE_PAD = 0.11;
 const LUNGE_CD = 2.1;
 const CHOMP_CD = 0.7;
 const TURN_RATE = 5.0;
@@ -129,12 +133,10 @@ const CHOMP_HIT = combat.Hit{ .dmg = 13, .poise = 15 };
 pub var LUNGE_HIT = combat.Hit{ .dmg = 19, .poise = 26, .stance = 8 };
 const PARRY_LEAD = foe.PARRY_LEAD;
 
-const LUNGE_IMPACT_R = 1.9;
+
 const LUNGE_FRONT_DOT = 0.25;
 const LUNGE_IMPACT_FWD = 0.6; // dust-burst / impact-zone centre, this far ahead of the seat (pre-scale)
-/// `BITE_R`/`LUNGE_IMPACT_R` are WORLD metres at the shipped `SCALE` — what `classify` measures a raw `distXZ` against. A HURT BOX is the creature's OWN metres (`foe.hurtReach`), so it is those divided back out, and that is what makes a re-scaled placement's reach track its body.
-const BITE_OWN = BITE_R / SCALE;
-const LUNGE_IMPACT_OWN = LUNGE_IMPACT_R / SCALE;
+const LUNGE_IMPACT_OWN = BITE_EDGE_Z + BITE_PAD;
 const TRAIL_RATE: f32 = 150.0;
 const DEATH_DUR = 1.25;
 pub var SOULS: u32 = 60;
@@ -145,7 +147,7 @@ const PANIC_AT = 0.28;
 
 const Choice = enum { rest, hop, lunge, chomp, scatter, wait };
 fn classify(dist: f32, scale: f32, lungeReady: bool, chompReady: bool, rooted: bool, pressed: bool) Choice {
-    if (dist <= foe.triggerBand(BITE_R, SCALE, scale)) return if (chompReady) .chomp else .wait;
+    if (dist <= foe.hurtReach(BITE_EDGE_Z + BITE_PAD - 0.02, scale)) return if (chompReady) .chomp else .wait;
     if (rooted) return .wait;
     if (dist > AGGRO_R) return .rest;
     if (dist <= LUNGE_R and lungeReady) return .lunge;
@@ -153,7 +155,37 @@ fn classify(dist: f32, scale: f32, lungeReady: bool, chompReady: bool, rooted: b
     return .hop;
 }
 
+pub fn chompClock() foe.Clock {
+    return .{ .wind = CHOMP_GAPE, .strike = CHOMP_SNAP, .recover = CHOMP_RECOVER };
+}
+
 const Particle = foe.Particle;
+
+const Posture = struct {
+    pitch: f32 = 0,
+    sy: f32 = 1,
+    sxz: f32 = 1,
+    legExt: f32 = REST_EXT,
+    arm: f32 = 0,
+    jaw: f32 = 0,
+    sac: f32 = 1,
+
+    pub fn chan(p: Posture) [7]f32 {
+        return .{ p.pitch, p.sy, p.sxz, p.legExt, p.arm, p.jaw, p.sac };
+    }
+};
+const Pose = anim.Pose(Posture);
+const GAPE = Posture{ .pitch = -24, .sy = 0.96, .sxz = 1.04, .legExt = 0.28, .arm = 0.06, .jaw = CHOMP_JAW, .sac = CHOMP_SAC };
+const CHOMP_KEYS = [_]Pose.PoseKey{
+    .{ .t = 0, .p = .{} },
+    .{ .t = CHOMP_GAPE * 0.62, .p = GAPE },
+    .{ .t = CHOMP_GAPE, .p = GAPE, .ease = .hold },
+    .{ .t = CHOMP_GAPE + CHOMP_SNAP * 0.50, .p = .{ .pitch = 6, .sy = 1.03, .sxz = 1.02, .arm = 0.1, .sac = 0.90 }, .ease = .accel },
+    .{ .t = CHOMP_GAPE + CHOMP_SNAP, .p = .{ .pitch = 12, .sy = 1.05, .sxz = 0.98, .arm = 0.1, .sac = 0.92 }, .ease = .decel },
+    .{ .t = CHOMP_GAPE + CHOMP_SNAP + CHOMP_RECOVER * 0.24, .p = .{ .pitch = -5, .sy = 0.98, .sxz = 1.015, .jaw = 3, .sac = 1.05 } },
+    .{ .t = CHOMP_GAPE + CHOMP_SNAP + CHOMP_RECOVER * 0.58, .p = .{ .pitch = 2, .sy = 1.008, .sac = 0.98 } },
+    .{ .t = CHOMP_GAPE + CHOMP_SNAP + CHOMP_RECOVER, .p = .{} },
+};
 
 pub const Model = struct {
     mesh: [NP]rl.Mesh,
@@ -209,6 +241,7 @@ pub const Frog = struct {
     arm: f32 = 0,
     jaw: f32 = 0,
     sac: f32 = 1,
+    springs: anim.SpringBank(7) = .{},
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
     hits: u32 = 0,
@@ -239,12 +272,13 @@ pub const Frog = struct {
         f.panicSide = if (f.fxRng.float() < 0.5) 1 else -1;
         f.idleWait = 1.0 + seed * 2.0;
         f.resolveIdle();
+        f.springs.seat(f.channels());
         f.pose();
         return f;
     }
 
     pub fn centerWorld(self: *const Frog) rl.Vector3 {
-        return foe.bodyPoint(self.pos, BODY_CY, self.scale, self.lift);
+        return foe.markOn(self.xf[BODY], v3(0, BODY_CY, 0));
     }
     pub fn hurtRadius(self: *const Frog) f32 {
         return HURT_R * self.scale;
@@ -299,6 +333,14 @@ pub const Frog = struct {
         self.heroLatch = false;
         sfx.world(if (lunge) .toad_lunge else .toad_hop, self.pos);
     }
+    pub fn hopClock(self: *const Frog) foe.Clock {
+        return .{
+            .wind = if (self.isLunge) LUNGE_COIL else HOP_COIL,
+            .strike = self.hopDur,
+            .recover = if (self.isLunge) LUNGE_LAND else HOP_LAND,
+        };
+    }
+
     pub fn startChomp(self: *Frog) void {
         self.state = .chomp;
         self.t = 0;
@@ -349,13 +391,22 @@ pub const Frog = struct {
         self.enterDeath();
     }
     /// The mouth is at the FRONT: the gape turns to follow him, the snap does not, so a man who rolled round it is not bitten.
-    fn tryBite(self: *Frog, hero: rl.Vector3, range: f32, h: combat.Hit) void {
+    fn biteEdge(self: *const Frog) [2]rl.Vector3 {
+        return .{
+            foe.markOn(self.xf[LJAW], v3(-0.26, 0.235 - P_JAW.y, BITE_EDGE_Z - P_JAW.z)),
+            foe.markOn(self.xf[LJAW], v3(0.26, 0.235 - P_JAW.y, BITE_EDGE_Z - P_JAW.z)),
+        };
+    }
+
+    fn tryBite(self: *Frog, hero: rl.Vector3, was: [2]rl.Vector3) void {
         if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(range, self.scale), CHOMP_FRONT_DOT)) return;
-        self.heroHit = h;
+        if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(BITE_EDGE_Z + BITE_PAD, self.scale), CHOMP_FRONT_DOT)) return;
+        if (!foe.weaponReaches(was, self.biteEdge(), hero, foe.hurtReach(BITE_PAD, self.scale))) return;
+        self.heroHit = CHOMP_HIT;
         self.heroLatch = true;
         self.leash.noteCombat();
     }
+
     fn tryImpact(self: *Frog, hero: rl.Vector3, h: combat.Hit) void {
         if (self.heroLatch) return;
         if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(LUNGE_IMPACT_OWN, self.scale), LUNGE_FRONT_DOT)) return;
@@ -370,6 +421,8 @@ pub const Frog = struct {
             return null;
         }
         self.heroHit = null;
+        const jawWas = self.jaw;
+        const edgeWas = self.biteEdge();
         self.justDied = false;
         self.parried = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
@@ -415,7 +468,16 @@ pub const Frog = struct {
             },
         }
 
+        var target = self.channels();
+        self.springs.chase(&target, if (self.state == .chomp) 6500 else 1800, 0.74, 0.94, dt);
+        self.setChannels(target);
+        self.jaw = mathx.maxF(self.jaw, 0);
         self.pose();
+        if (self.state == .chomp and self.t >= CHOMP_GAPE and jawWas > CHOMP_CONTACT_JAW and self.jaw <= CHOMP_CONTACT_JAW) {
+            self.spitSpray();
+            sfx.world(.toad_chomp, self.pos);
+            self.tryBite(hero, edgeWas);
+        }
         self.tryHit(blade);
         return self.heroHit;
     }
@@ -424,6 +486,10 @@ pub const Frog = struct {
         self.state = .idle;
         self.t = 0;
         self.idleWait = wait;
+    }
+
+    fn keepOff(self: *const Frog) f32 {
+        return mathx.maxF(self.bodyR() + foe.HERO_R, foe.hurtReach(BITE_EDGE_Z + BITE_PAD - 0.02, self.scale) * (KEEP_OFF / BITE_R));
     }
 
     fn decide(self: *Frog, hero: rl.Vector3, bounds: f32) void {
@@ -436,12 +502,12 @@ pub const Frog = struct {
             .lunge => {
                 self.lungeCd = LUNGE_CD;
                 const dir = mathx.dirXZ(self.pos, hero);
-                const reach = mathx.minF(mathx.maxF(0, d - KEEP_OFF), LUNGE_R);
+                const reach = mathx.minF(mathx.maxF(0, d - self.keepOff()), LUNGE_R);
                 self.startHop(v3(self.pos.x + dir.x * reach, 0, self.pos.z + dir.z * reach), bounds, true);
             },
             .hop => {
                 const dir = self.nav.along(mathx.dirXZ(self.pos, hero));
-                const reach = mathx.minF(HOP_REACH, mathx.maxF(0, d - KEEP_OFF));
+                const reach = mathx.minF(HOP_REACH, mathx.maxF(0, d - self.keepOff()));
                 self.startHop(v3(self.pos.x + dir.x * reach, 0, self.pos.z + dir.z * reach), bounds, false);
             },
             .scatter => {
@@ -480,13 +546,15 @@ pub const Frog = struct {
 
     fn updateHop(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32, coil: f32, flight: f32, land: f32) void {
         const total = coil + flight + land;
+        const travelDt = mathx.maxF(0, mathx.minF(self.t, coil + flight) - mathx.maxF(self.t - dt, coil));
+        if (travelDt > 0) foe.hopStep(self, travelDt, bounds, self.fdir(), flight);
         if (self.t < coil) {
             self.faceToward(self.hopAim, dt);
             const k = mathx.smoothstep(0, coil, self.t);
             self.resolveCoil(k, self.isLunge);
             if (self.isLunge) self.emitCoil(dt, k);
         } else if (self.t < coil + flight) {
-            const s = foe.hopStep(self, dt, bounds, self.fdir(), coil, flight);
+            const s = (self.t - coil) / flight;
             self.resolveFlight(s);
             if (self.isLunge) self.emitLungeTrail(dt, s);
         } else {
@@ -509,22 +577,27 @@ pub const Frog = struct {
     }
 
     fn updateChomp(self: *Frog, dt: f32, hero: rl.Vector3) void {
+        self.setChannels(Pose.sample(&CHOMP_KEYS, self.t));
+        self.lift = 0;
         if (self.t < CHOMP_GAPE) {
             self.faceToward(hero, dt);
-            const k = foe.swingCurve(self.t / CHOMP_GAPE);
-            self.resolveGape(k);
-            self.emitGape(dt, k);
-        } else if (self.t < CHOMP_GAPE + CHOMP_SNAP) {
-            if ((self.t - dt) < CHOMP_GAPE) {
-                self.spitSpray();
-                sfx.world(.toad_chomp, self.pos);
-            }
-            self.resolveSnap((self.t - CHOMP_GAPE) / CHOMP_SNAP);
-            self.tryBite(hero, BITE_OWN, CHOMP_HIT);
-        } else {
-            self.resolveChompRecover(mathx.smoothstep(0, CHOMP_RECOVER, self.t - CHOMP_GAPE - CHOMP_SNAP));
-            if (self.t >= CHOMP_GAPE + CHOMP_SNAP + CHOMP_RECOVER) self.enterIdle(0.1);
+            self.emitGape(dt, mathx.clampF(self.t / CHOMP_GAPE, 0, 1));
         }
+        if (self.t >= CHOMP_GAPE + CHOMP_SNAP + CHOMP_RECOVER) self.enterIdle(0.1);
+    }
+
+    fn channels(self: *const Frog) [7]f32 {
+        return .{ self.pitch, self.sy, self.sxz, self.legExt, self.arm, self.jaw, self.sac };
+    }
+
+    fn setChannels(self: *Frog, p: [7]f32) void {
+        self.pitch = p[0];
+        self.sy = p[1];
+        self.sxz = p[2];
+        self.legExt = p[3];
+        self.arm = p[4];
+        self.jaw = p[5];
+        self.sac = p[6];
     }
 
     fn base(self: *Frog) void {
@@ -563,30 +636,38 @@ pub const Frog = struct {
         self.jaw = if (lunge) 12.0 * k else 0.0;
     }
     fn resolveFlight(self: *Frog, s: f32) void {
-        self.lift = self.hopApex * 4.0 * s * (1.0 - s); // parabola, peak at s=0.5
-        const launch = 1.0 - mathx.smoothstep(0.0, 0.32, s);
-        const preland = mathx.smoothstep(0.72, 1.0, s);
-        self.legExt = mathx.clampF(1.0 - 0.35 * preland, 0.0, 1.0);
+        self.resolveCoil(1, self.isLunge);
+        const coiled = self.channels();
+        self.lift = self.hopApex * 4.0 * s * (1.0 - s);
+        const launch = 1.0 - mathx.smoothstep(0.18, 0.42, s);
+        const preland = mathx.smoothstep(0.65, 1.0, s);
+        self.legExt = mathx.lerpF(1.0, 0.2, preland);
         self.sy = 1.0 + 0.20 * launch - 0.10 * preland;
         self.sxz = 1.0 - 0.12 * launch + 0.06 * preland;
         self.pitch = mathx.lerpF(-14.0, 16.0, s);
         self.arm = mathx.smoothstep(0.55, 1.0, s);
         self.jaw = 2.0;
         self.sac = 1.0;
+        var flying = self.channels();
+        const push = mathx.smoothstep(0, 0.18, s);
+        for (&flying, coiled) |*v, from| v.* = mathx.lerpF(from, v.*, push);
+        self.setChannels(flying);
     }
     fn resolveLand(self: *Frog, k: f32) void {
         const splat = mathx.pulse(k, 0, 0.45, 0.45, 1.0);
-        // A mass in motion OVERSHOOTS its rest: the squash rebounds PAST 1 and settles back onto it. The rebound peaks at 0.92, where the splat has decayed to nothing — earlier and the two cancel out.
         const reb = mathx.pulse(k, 0.72, 0.92, 0.92, 1.0);
+        const restY: f32 = if (self.isLunge) 0.80 else 1.0;
+        const restXZ: f32 = if (self.isLunge) 1.14 else 1.0;
         self.lift = 0;
-        self.sy = 1.0 - 0.26 * splat + 0.08 * reb;
-        self.sxz = 1.0 + 0.16 * splat - 0.055 * reb;
-        self.legExt = mathx.lerpF(0.2, REST_EXT, k);
-        self.arm = 1.0 - k;
-        self.pitch = 8.0 * (1.0 - k);
-        self.jaw = 2.0;
-        self.sac = 1.0;
+        self.sy = mathx.lerpF(0.90, restY, k) - 0.26 * splat + 0.08 * reb;
+        self.sxz = mathx.lerpF(1.06, restXZ, k) + 0.16 * splat - 0.055 * reb;
+        self.legExt = mathx.lerpF(0.2, if (self.isLunge) 0.12 else REST_EXT, k);
+        self.arm = mathx.lerpF(1.0, if (self.isLunge) 0.5 else 0, k);
+        self.pitch = mathx.lerpF(16.0, if (self.isLunge) 7.0 else 0, k);
+        self.jaw = mathx.lerpF(2.0, if (self.isLunge) 8.0 else 2.0, k);
+        self.sac = mathx.lerpF(1.0, if (self.isLunge) 1.18 else 1.0, k);
     }
+
     fn resolveRecover(self: *Frog) void {
         const u = mathx.clampF(self.t / RECOVER_DUR, 0, 1);
         const out = 1.0 - mathx.smoothstep(0.7, 1.0, u);
@@ -600,54 +681,24 @@ pub const Frog = struct {
         self.jaw = 8.0 * out + 3.0 * pant * out;
         self.sac = 1.0 + (0.18 + 0.10 * pant) * out;
     }
-    fn resolveGape(self: *Frog, k: f32) void {
-        self.base();
-        self.sy = 1.0 - 0.06 * k;
-        self.sxz = 1.0 + 0.05 * k;
-        self.pitch = -13.0 * k;
-        self.jaw = CHOMP_JAW * k;
-        self.sac = 1.0 + (CHOMP_SAC - 1.0) * k;
-        self.legExt = mathx.lerpF(REST_EXT, 0.22, k);
-        self.arm = 0.2 * k;
-    }
-    fn resolveSnap(self: *Frog, s: f32) void {
-        self.jaw = mathx.lerpF(CHOMP_JAW, 0.0, mathx.smoothstep(0, 0.55, s));
-        self.pitch = mathx.lerpF(-13.0, 14.0, s);
-        self.sac = mathx.lerpF(CHOMP_SAC, 0.9, s);
-        self.sy = 1.0 + 0.05 * s;
-        self.sxz = 1.0 - 0.03 * s;
-        self.lift = 0;
-        self.legExt = 0.30;
-        self.arm = 0.2;
-    }
-    fn resolveChompRecover(self: *Frog, k: f32) void {
-        const rc = mathx.sinf(k * std.math.pi) * (1.0 - k);
-        self.sy = 1.0 - 0.03 * rc;
-        self.sxz = 1.0 + 0.02 * rc;
-        self.lift = 0;
-        self.pitch = mathx.lerpF(12.0, 0.0, k);
-        self.jaw = 3.0 * (1.0 - k);
-        self.sac = mathx.lerpF(0.9, 1.0, k);
-        self.legExt = mathx.lerpF(0.30, REST_EXT, k);
-        self.arm = 0.2 * (1.0 - k);
-    }
+
 
     fn resolveStunLight(self: *Frog) void {
         self.base();
         const u = mathx.clampF(self.t / combat.FOE_LIGHT_STUN_DUR, 0, 1);
-        const j = mathx.sinf(u * std.math.pi);
+        const j = foe.stunCurve(self.t, false) - 0.16 * mathx.pulse(u, 0.70, 0.88, 0.88, 1.0);
         self.pitch = -30.0 * j;
         self.sy = 1.0 - 0.22 * j;
         self.sxz = 1.0 + 0.15 * j;
         self.jaw = 30.0 * j;
         self.legExt = mathx.lerpF(REST_EXT, 0.66, j);
-        self.lift = 0.16 * j;
+        self.lift = 0.16 * mathx.maxF(j, 0);
         self.sac = 1.0 + 0.14 * j;
     }
     fn resolveStunHeavy(self: *Frog) void {
         self.base();
         const u = mathx.clampF(self.t / combat.FOE_HEAVY_STUN_DUR, 0, 1);
-        const down = mathx.pulse(u, 0, 0.16, 0.74, 1.0);
+        const down = foe.stunCurve(self.t, true) - 0.10 * mathx.pulse(u, 0.78, 0.94, 0.94, 1.0);
         const reel = mathx.sinf(self.elapsed * 8.0);
         self.lift = 0;
         self.sy = mathx.lerpF(1.0, 0.56, down);
@@ -851,14 +902,17 @@ pub const Frog = struct {
         const sink = foe.rigSink(0.30, self.scale, self.fade);
         const bframe = mul(
             scaleM(fs, fs, fs),
-            mul3(rx(self.pitch), ry(mathx.degrees(self.facing)), tr(self.pos.x, self.pos.y + self.lift + sink, self.pos.z)),
+            mul(ry(mathx.degrees(self.facing)), tr(self.pos.x, self.pos.y + self.lift + sink, self.pos.z)),
         );
         const squash = scaleM(self.sxz, self.sy, self.sxz);
 
         var wx: [NP]rl.Matrix = undefined;
-        wx[BODY] = mul(squash, bframe);
+        const hinge = mul3(tr(0, -P_HIP.y, -P_HIP.z), rx(self.pitch), tr(0, P_HIP.y, P_HIP.z));
+        wx[BODY] = mul3(squash, hinge, bframe);
         wx[LJAW] = place(P_JAW, rx(self.jaw), wx[BODY]);
-        wx[THROAT] = place(P_SAC, scaleM(self.sac, self.sac, self.sac), wx[BODY]);
+        const sacY = 1.0 + (self.sac - 1.0) * 0.45;
+        const sacAt = v3(P_SAC.x, P_SAC.y + 0.14 * (sacY - 1.0), P_SAC.z - 0.20 * mathx.smoothstep(6, 32, self.jaw));
+        wx[THROAT] = place(sacAt, scaleM(self.sac, sacY, self.sac), wx[BODY]);
 
         const hipDeg = (self.legExt - REST_EXT) * HIP_SWING;
         const kneeDeg = (self.legExt - REST_EXT) * KNEE_STRAIGHTEN;
@@ -996,7 +1050,7 @@ fn eyeMesh(col: rl.Color) rl.Mesh {
         const k: f32 = if (sgn < 0) 1.0 else 0.92;
         const ex = 0.19 * sgn;
         const cy = mathx.lerpF(0.525, 0.585, k);
-        b.addBlob(v3(ex, cy, 0.34), v3(0.10 * k, 0.055 * k, 0.095 * k), 7, 12, col);
+        b.addBlob(v3(ex, cy, 0.34), v3(0.10 * k, 0.055 * k, 0.095 * k), 9, 16, col);
         b.addBlob(v3(ex, cy + 0.002, 0.34 + 0.095 * k - 0.008), v3(0.018, 0.038, 0.017), 5, 8, PUPIL);
     }
     return b.toMesh();
@@ -1006,7 +1060,7 @@ fn bodyMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(4207);
     b.setMat(.hide);
-    b.addBlob(v3(0, 0.26, -0.02), v3(0.42, 0.27, 0.45), 9, 15, HIDE);
+    b.addBlob(v3(0, 0.26, -0.02), v3(0.42, 0.27, 0.45), 12, 20, HIDE);
     b.addBlob(v3(0.02, 0.43, -0.13), v3(0.29, 0.20, 0.29), 8, 13, HIDE);
     b.addBlob(v3(-0.03, 0.28, -0.36), v3(0.19, 0.15, 0.15), 7, 12, HIDE_DK);
     b.setMat(.skin);
@@ -1014,7 +1068,7 @@ fn bodyMesh() rl.Mesh {
     b.setMat(.hide);
 
     // The head: one broad jowled mass jutting at the mouth line (~y0.24), never a slab.
-    b.addBlob(v3(0, 0.345, 0.30), v3(0.33, 0.13, 0.22), 9, 15, HIDE);
+    b.addBlob(v3(0, 0.345, 0.30), v3(0.33, 0.13, 0.22), 11, 20, HIDE);
     for ([_]f32{ -1, 1 }) |sgn| {
         const k: f32 = if (sgn < 0) 1.06 else 0.96;
         b.addBlob(v3(sgn * 0.215, 0.315, 0.34), v3(0.145 * k, 0.10 * k, 0.15 * k), 7, 12, HIDE);
@@ -1022,7 +1076,7 @@ fn bodyMesh() rl.Mesh {
     b.addBlob(v3(0, 0.26, 0.44), v3(0.32, 0.05, 0.10), 8, 14, HIDE_DK);
     b.setMat(.skin);
     b.addBlob(v3(0, 0.30, 0.30), v3(0.24, 0.035, 0.17), 6, 12, MAW);
-    b.addBlob(v3(0, 0.25, 0.16), v3(0.21, 0.085, 0.10), 6, 11, MAW);
+    b.addBlob(v3(0, 0.235, 0.39), v3(0.245, 0.15, 0.065), 9, 17, MAW);
     b.setMat(.hide);
 
     for ([_]f32{ -1, 1 }) |sgn| {
@@ -1040,13 +1094,15 @@ fn bodyMesh() rl.Mesh {
     var w: i32 = 0;
     while (w < 17) : (w += 1) {
         const a = rng.angle();
-        const h = rng.range(0.30, 0.50);
-        const rr = mathx.lerpF(0.40, 0.16, (h - 0.28) / 0.32) - 0.02;
-        const wx = mathx.cosf(a) * rr;
-        const wz = -0.05 + mathx.sinf(a) * rr;
-        const ws = rng.range(0.026, 0.050);
-        b.addBlob(v3(wx, h, wz), v3(ws, ws * rng.range(0.45, 0.7), ws * rng.range(0.8, 1.25)), 5, 9, if (rng.float() < 0.5) HIDE_DK else HIDE_LT);
+        const h = rng.range(0.18, 0.82);
+        const ring = @sqrt(1.0 - h * h);
+        const ws = rng.range(0.016, 0.026);
+        const wx = mathx.cosf(a) * ring * (0.42 - ws * 0.65);
+        const wy = 0.26 + h * (0.27 - ws * 0.40);
+        const wz = -0.02 + mathx.sinf(a) * ring * (0.45 - ws * 0.65);
+        b.addBlob(v3(wx, wy, wz), v3(ws, ws * rng.range(0.45, 0.7), ws * rng.range(0.8, 1.25)), 5, 9, if (rng.float() < 0.5) HIDE_DK else HIDE_LT);
     }
+
     return b.toMesh();
 }
 
@@ -1164,7 +1220,7 @@ test "THE LEAP IS AN INSTANT FROM BEING SWATTED, and nothing else the toad does 
 
 test "A CAUGHT LEAP NEVER ARRIVES, and the toad comes straight down out of the air" {
     var f = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
-    const hero = v3(0, 0, 1.5);
+    const hero = v3(0, 0, 1.2);
     f.startHop(hero, 60.0, true);
     f.facing = 0;
     f.t = LUNGE_COIL + f.hopDur - PARRY_LEAD * 0.5;
@@ -1345,5 +1401,85 @@ test "THE WOUND OPENS: five frames on, the blood is a spray across the throw and
         std.debug.print("\n  toad {s}: {d} motes, opens {d:.2} m across the throw, reaches {d:.2} m, {d} stains, all down by {d:.2} s\n", .{ b.name, m.motes, m.open, m.reach, m.splats, m.sink });
         try std.testing.expect(m.open > 0.38);
         try std.testing.expect(m.splats * 2 >= m.motes);
+    }
+}
+
+test "toad chomp: the closing jaws bill once, on contact, across frame rates and scales" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        for ([_]f32{ 0.5, 1.0, 1.8 }) |scale| {
+            var f = Frog.spawn(mathx.zero3, 0, scale, 0.0);
+            const reach = foe.hurtReach(BITE_EDGE_Z + BITE_PAD - 0.02, f.scale);
+            const hero = v3(0, 0, reach - 0.03);
+            f.startChomp();
+            var hits: usize = 0;
+            var clock: f32 = 0;
+            var contact: f32 = 0;
+            while (clock < CHOMP_GAPE + CHOMP_SNAP + CHOMP_RECOVER - 1.0 / hz) : (clock += 1.0 / hz) {
+                if (f.update(1.0 / hz, hero, 200, .{}) != null) {
+                    hits += 1;
+                    contact = f.t;
+                    try std.testing.expect(f.t > CHOMP_GAPE);
+                    try std.testing.expect(f.jaw <= CHOMP_CONTACT_JAW);
+                    try std.testing.expect(f.jaw >= 0);
+                }
+            }
+            std.debug.print("\n  toad chomp {d:.0} Hz x{d:.1}: {d} hits at {d:.3}s, reach {d:.3}m\n", .{ hz, scale, hits, contact, reach });
+            try std.testing.expectEqual(@as(usize, 1), hits);
+        }
+    }
+}
+
+test "toad chomp: a dodge behind, beside, above or past the mouth is safe" {
+    for ([_]rl.Vector3{ v3(0, 0, -1.1), v3(1.1, 0, 0), v3(0, 2.0, 1.0), v3(0, 0, 2.0) }) |escape| {
+        var f = Frog.spawn(mathx.zero3, 0, 1, 0);
+        f.startChomp();
+        var clock: f32 = 0;
+        while (clock < CHOMP_GAPE + CHOMP_SNAP + CHOMP_RECOVER) : (clock += 1.0 / 60.0) {
+            const at = if (f.t + 1.0 / 60.0 < CHOMP_GAPE) v3(0, 0, 1.0) else escape;
+            try std.testing.expect(f.update(1.0 / 60.0, at, 200, .{}) == null);
+        }
+        try std.testing.expectApproxEqAbs(@as(f32, 0), f.facing, 1e-5);
+    }
+}
+
+test "toad posture: an interrupted gape stays continuous, and torso lean leaves the legs planted" {
+    var f = Frog.spawn(mathx.zero3, 0, 1, 0);
+    f.startChomp();
+    for (0..22) |_| _ = f.update(1.0 / 60.0, v3(0, 0, 1), 200, .{});
+    const jaw = f.jaw;
+    const before = f.lockPoint();
+    f.stagger(true);
+    _ = f.update(0.001, v3(0, 0, 1), 200, .{});
+    try std.testing.expect(@abs(f.jaw - jaw) < 1.0);
+    try std.testing.expect(mathx.lenV(mathx.subV(f.lockPoint(), before)) < 0.01);
+    f.pitch = -30;
+    f.pose();
+    const foot = foe.markOn(f.xf[SHANK_L], v3(-0.10, -P_KNEE.y, 0.16 - P_KNEE.z));
+    f.pitch = 20;
+    f.pose();
+    const after = foe.markOn(f.xf[SHANK_L], v3(-0.10, -P_KNEE.y, 0.16 - P_KNEE.z));
+    try std.testing.expect(mathx.lenV(mathx.subV(foot, after)) < 1e-5);
+}
+test "toad lunge: the landing hits its body-length zone and leaves distant ground safe" {
+    var f = Frog.spawn(mathx.zero3, 0, 1, 0);
+    f.tryImpact(v3(0, 0, 2.0), LUNGE_HIT);
+    try std.testing.expect(f.heroHit == null);
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        for ([_]f32{ 0.5, 1.0, 1.8 }) |scale| {
+            f = Frog.spawn(mathx.zero3, 0, scale, 0);
+            const hero = v3(0, 0, 4.5);
+            f.decide(hero, 200);
+            var hits: usize = 0;
+            var clock: f32 = 0;
+            while (clock < LUNGE_COIL + LUNGE_FLIGHT + LUNGE_LAND + 0.1) : (clock += 1.0 / hz) {
+                if (f.update(1.0 / hz, hero, 200, .{}) != null) {
+                    hits += 1;
+                    try std.testing.expect(f.lift == 0);
+                }
+            }
+            std.debug.print("\n  toad lunge {d:.0} Hz x{d:.1}: {d} hits, landing {d:.3}m from quarry\n", .{ hz, scale, hits, mathx.distXZ(f.pos, hero) });
+            try std.testing.expectEqual(@as(usize, 1), hits);
+            try std.testing.expectApproxEqAbs(f.keepOff(), mathx.distXZ(f.pos, hero), 0.0001);
+        }
     }
 }

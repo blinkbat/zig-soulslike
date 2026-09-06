@@ -1,4 +1,5 @@
 const std = @import("std");
+const anim = @import("../core/anim.zig");
 const rl = @import("raylib");
 const gfx = @import("../gfx/gfx.zig");
 const mathx = @import("../core/mathx.zig");
@@ -604,6 +605,8 @@ pub const Archer = struct {
     buttCd: f32 = 0,
     /// -1 fully cocked, +1 fully driven out. ONE signed channel, so the cock and the jab cannot disagree about where the stave is.
     buttK: f32 = 0,
+    jab: anim.Spring = .{},
+    jabRecover: bool = false,
     buttDone: f32 = 0,
     /// The one-frame blow, read by the loop the frame it appears (`game.zig`) — an archer's only melee.
     heroHit: ?combat.Hit = null,
@@ -640,6 +643,7 @@ pub const Archer = struct {
     nockXf: rl.Matrix = undefined,
     nockVis: bool = false,
     lastNock: rl.Vector3 = mathx.zero3,
+    aimAt: rl.Vector3 = mathx.zero3,
     rest: [N]rl.Vector3 = undefined,
 
     pub fn spawn(home: rl.Vector3, faceYaw: f32, scale: f32, seed: f32) Archer {
@@ -647,6 +651,7 @@ pub const Archer = struct {
         a.rest = REST;
         a.fxRng = foe.fxStream(seed, 71237.0, 11);
         a.reloadCd = 0.4 + seed;
+        a.aimAt = mathx.addV(home, mathx.scaleV(mathx.headingDir(faceYaw), 12));
         a.pose();
         return a;
     }
@@ -702,6 +707,9 @@ pub const Archer = struct {
             foe.tickParticles(&self.parts, dt, self.pos.y);
             return false;
         }
+        const wasBow = self.bowEdge();
+        var jabLive = false;
+        var jabTarget: f32 = 0;
         self.justDied = false;
         self.heroHit = null;
         self.parried = false;
@@ -710,6 +718,7 @@ pub const Archer = struct {
         if (grip.killed) self.enterDeath();
         if (grip.downed) self.stagger(true);
         self.elapsed += dt;
+        self.aimAt = hero;
         self.vit.tick(dt);
         self.reloadCd = mathx.maxF(0, self.reloadCd - dt);
         self.backstepCd = mathx.maxF(0, self.backstepCd - dt);
@@ -823,19 +832,30 @@ pub const Archer = struct {
                 self.faceToward(hero, dt);
                 self.armT = mathx.approach(self.armT, 0, dt * 8.0);
                 self.drawAmt = mathx.approach(self.drawAmt, 0, dt * 10.0);
-                self.buttK = -mathx.smoothstep(0, BUTT_WIND, self.t);
+                jabTarget = anim.keyAt(&.{
+                    .{ .t = 0, .v = 0 },
+                    .{ .t = 0.72, .v = -1 },
+                    .{ .t = 1, .v = -1, .ease = .hold },
+                }, self.t / BUTT_WIND);
                 if (self.t >= BUTT_WIND) self.enter(.butt);
             },
             .butt => {
                 foe.faceToward(self.pos, &self.facing, hero, TURN_RATE * 0.5, dt);
                 const u = mathx.clampF(self.t / BUTT_STRIKE, 0, 1);
                 const e = foe.swingCurve(u);
-                self.buttK = mathx.lerpF(-1.0, 1.0, e);
+                jabTarget = anim.keyAt(&.{
+                    .{ .t = 0, .v = -1 },
+                    .{ .t = 0.80, .v = 1.12, .ease = .accel },
+                    .{ .t = 1, .v = 1.05, .ease = .decel },
+                }, u);
                 const want = BUTT_STEP * self.scale * e;
                 mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), want - self.buttDone, bounds);
                 self.buttDone = want;
-                if (self.t >= BUTT_STRIKE * BUTT_IMPACT_K) self.tryButt(hero);
-                if (self.t >= BUTT_STRIKE) self.enter(.recover);
+                jabLive = self.t >= BUTT_STRIKE * BUTT_IMPACT_K;
+                if (self.t >= BUTT_STRIKE) {
+                    self.enter(.recover);
+                    self.jabRecover = true;
+                }
             },
             .stunlight => {
                 self.armT = mathx.approach(self.armT, 0, dt * 8.0);
@@ -852,7 +872,16 @@ pub const Archer = struct {
             },
         }
         if (self.state != .loose) self.kick = mathx.approach(self.kick, 0, dt * 4.5);
-        if (self.state != .buttwind and self.state != .butt) self.buttK = mathx.approach(self.buttK, 0, dt * 5.0);
+        if (self.state == .recover and self.jabRecover and !jabLive) {
+            jabTarget = anim.keyAt(&.{
+                .{ .t = 0, .v = 1.05 },
+                .{ .t = 0.24, .v = 0.58, .ease = .decel },
+                .{ .t = 0.55, .v = -0.12 },
+                .{ .t = 0.82, .v = 0 },
+                .{ .t = 1, .v = 0, .ease = .hold },
+            }, self.t / RECOVER_DUR);
+        }
+        self.buttK = self.jab.step(jabTarget, 12000, 0.8, dt);
 
         // `legChain`'s geometry is RIG-LOCAL (it divides the measured hip height by the root matrix's own scale), so the stride phase must be fed a SCALE-CORRECTED distance or a scale≠1 archer skates.
         const gaitSpeed: f32 = if (movedDist > 0) WALK_SPEED else 0;
@@ -860,6 +889,7 @@ pub const Archer = struct {
         self.pose();
         self.takeParry();
         self.tryHit(blade);
+        if (jabLive and !self.staggered()) self.tryButt(hero, wasBow);
         return loosed;
     }
 
@@ -896,6 +926,7 @@ pub const Archer = struct {
         self.state = s;
         self.t = 0;
         self.looseFired = false;
+        self.jabRecover = false;
         if (s == .draw) sfx.world(.bow_draw, self.pos);
     }
 
@@ -948,9 +979,17 @@ pub const Archer = struct {
         sfx.world(.swing_light, self.pos);
     }
 
-    fn tryButt(self: *Archer, hero: rl.Vector3) void {
+    fn bowEdge(self: *const Archer) [2]rl.Vector3 {
+        return .{
+            foe.markOn(self.xf[BOW], v3(0, BOW_FY + TIP_UP, BOW_FZ + TIP_Z)),
+            foe.markOn(self.xf[BOW], v3(0, BOW_FY - TIP_DN, BOW_FZ + TIP_Z)),
+        };
+    }
+
+    fn tryButt(self: *Archer, hero: rl.Vector3, was: [2]rl.Vector3) void {
         if (self.heroLatch) return;
         if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(BUTT_R, self.scale), BUTT_FRONT_DOT)) return;
+        if (!foe.weaponReaches(was, self.bowEdge(), hero, foe.hurtReach(0.035, self.scale))) return;
         self.heroHit = BUTT_HIT;
         self.heroLatch = true;
         self.leash.noteCombat();
@@ -963,7 +1002,7 @@ pub const Archer = struct {
         self.drawAmt = 0;
         self.looseFired = false;
         self.hop = 0;
-        self.buttK = 0;
+        self.jabRecover = false;
     }
     fn enterDeath(self: *Archer) void {
         self.state = .dead;
@@ -1000,7 +1039,12 @@ pub const Archer = struct {
             const u = leapU(self.t);
             return 0.11 * H * (1.0 - u) + 0.14 * H * mathx.smoothstep(0.6, 1.0, u);
         }
-        return 0.14 * H * (1.0 - mathx.smoothstep(0, 1, mathx.clampF(land, 0, 1)));
+        return H * anim.keyAt(&.{
+            .{ .t = 0, .v = 0.14 },
+            .{ .t = 0.22, .v = 0.17, .ease = .decel },
+            .{ .t = 0.72, .v = -0.008 },
+            .{ .t = 1, .v = 0 },
+        }, land);
     }
 
     pub fn tryHit(self: *Archer, blade: foe.Blade) void {
@@ -1044,7 +1088,7 @@ pub const Archer = struct {
 
         var wx: [N]rl.Matrix = undefined;
         const collapse = mathx.lerpF(hipY, 0.22 * H, dk);
-        const pitchBody = 20.0 * dk - 26.0 * stunAmt;
+        const pitchBody = 20.0 * dk;
         const pelvY = if (dead) collapse else hipY + bob - dip - self.leapCrouch();
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul3(rz(10.0 * dk), rx(pitchBody), ry(prot)),
@@ -1056,8 +1100,43 @@ pub const Archer = struct {
             heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, solePatches);
         }
         self.poseUpper(&wx, dk, stunAmt, dead, prot);
+        self.poseAim(&wx, fs);
         self.xf = wx;
         self.poseString();
+    }
+
+    fn aimArm(self: *const Archer, wx: *[N]rl.Matrix, sh: usize, el: usize, wr: usize, target: rl.Vector3, hint: rl.Vector3, frame: rl.Matrix, k: f32) void {
+        const wrist = foe.markOn(wx[wr], mathx.zero3);
+        const down = mathx.subV(foe.markOn(wx[wr], v3(0, -1, 0)), wrist);
+        const palm = mathx.subV(foe.markOn(wx[wr], v3(0, 0, 1)), wrist);
+        const bend = mathx.subV(foe.markOn(wx[el], mathx.zero3), foe.markOn(wx[sh], mathx.zero3));
+        heromod.armTo(wx, self.rest, sh, el, wr, mathx.lerpV(wrist, target, k),
+            mathx.lerpV(bend, hint, k),
+            mathx.lerpV(down, foe.markOn(frame, v3(0, -1, 0)), k),
+            mathx.lerpV(palm, foe.markOn(frame, v3(0, 0, 1)), k));
+    }
+
+    fn poseAim(self: *const Archer, wx: *[N]rl.Matrix, fs: f32) void {
+        const k = mathx.smoothstep(0.15, 0.92, self.armT);
+        if (k <= 0) return;
+        const body = mul3(scaleM(fs, fs, fs), ry(mathx.degrees(self.facing)), heromod.rootAt(self.pos));
+        const anchor = foe.markOn(body, v3(-0.05 * H, 0.85 * H + self.hop / fs, 0.06 * H));
+        const axis = mathx.normV(launchArrow(anchor, self.aimAt).vel);
+        const frame = mul(scaleM(fs, fs, fs), orientZ(mathx.scaleV(axis, -1)));
+        const grip = mathx.addV(anchor, mathx.scaleV(axis, 0.22 * H * fs));
+        const bowWrist = mathx.subV(grip, foe.markOn(frame, v3(0, BOW_FY + 0.01 * H, BOW_FZ)));
+        const bowHint = mathx.subV(foe.markOn(body, v3(-1, -0.5, 0)), self.pos);
+        const from = rl.math.quaternionFromMatrix(mul(wx[BOW], scaleM(1 / fs, 1 / fs, 1 / fs)));
+        const to = rl.math.quaternionFromMatrix(orientZ(mathx.scaleV(axis, -1)));
+        self.aimArm(wx, SHR, ELR, WRR, bowWrist, bowHint, frame, k);
+        const wrist = foe.markOn(wx[WRR], mathx.zero3);
+        wx[BOW] = mul3(scaleM(fs, fs, fs), rl.math.quaternionToMatrix(rl.math.quaternionSlerp(from, to, k)), tr(wrist.x, wrist.y, wrist.z));
+        const releasing = self.state == .loose or self.state == .recover;
+        const pull = if (releasing) @as(f32, 1) else self.drawAmt;
+        const nock = mathx.subV(mathx.lerpV(mathx.subV(grip, mathx.scaleV(axis, 0.07 * H * fs)), anchor, pull), mathx.scaleV(axis, self.kick * 0.035 * H * fs));
+        const drawWrist = mathx.subV(nock, foe.markOn(frame, FIST_L));
+        const drawHint = mathx.subV(foe.markOn(body, v3(1, 0.2, -0.5)), self.pos);
+        self.aimArm(wx, SHL, ELL, WRL, drawWrist, drawHint, frame, k);
     }
 
     fn poseString(self: *Archer) void {
@@ -1065,7 +1144,7 @@ pub const Archer = struct {
         self.stringXf = p.string;
         self.nockXf = p.nock;
         self.lastNock = p.at;
-        self.nockVis = (self.state == .draw or self.state == .hold) and self.drawAmt > 0.03;
+        self.nockVis = (self.state == .draw or self.state == .hold or (self.state == .loose and !self.looseFired)) and self.drawAmt > 0.03;
     }
 
     fn leapLean(self: *const Archer) f32 {
@@ -1076,11 +1155,15 @@ pub const Archer = struct {
     }
 
     fn stunAmount(self: *const Archer) f32 {
-        return switch (self.state) {
-            .stunlight => foe.stunCurve(self.t, false),
-            .stunheavy => foe.stunCurve(self.t, true),
-            else => 0,
-        };
+        if (self.state != .stunlight and self.state != .stunheavy) return 0;
+        const heavy = self.state == .stunheavy;
+        return anim.keyAt(&.{
+            .{ .t = 0, .v = 0 },
+            .{ .t = if (heavy) 0.14 else 0.18, .v = 1, .ease = .decel },
+            .{ .t = if (heavy) 0.55 else 0.36, .v = 0.92 },
+            .{ .t = if (heavy) 0.86 else 0.78, .v = -0.14 },
+            .{ .t = 1, .v = 0 },
+        }, self.t / combat.foeStunDur(heavy));
     }
 
     fn poseUpper(self: *Archer, wx: *[N]rl.Matrix, dk: f32, stun: f32, dead: bool, prot: f32) void {
@@ -1095,15 +1178,18 @@ pub const Archer = struct {
         const swy = mathx.sinf(swayArg) * idleAmt;
         const swyLag = mathx.sinf(swayArg - 0.8) * idleAmt;
 
+        const gait = self.moving * (1 - at) * (1 - mathx.clampF(@abs(self.buttK), 0, 1)) * (1 - dk);
+        const swing = 9.0 * heromod.armSwing(self.phase) * gait * self.fwdB;
+        const nod = 1.1 * mathx.sinf(std.math.tau * self.phase * 2 - 0.4) * gait;
         const twist = 26.0 * self.buttK;
-        const spineX = 4.0 - 3.0 * dr + 22.0 * dk - 20.0 * stun + 26.0 * self.leapLean() + 7.0 * self.buttK;
+        const spineX = 4.0 - 3.0 * dr + 22.0 * dk - 46.0 * stun + 26.0 * self.leapLean() + 7.0 * self.buttK + nod;
         setLocal(wx, SPINE, rest, mul3(rx(spineX * 0.5 + 0.8 * swy), ry(-0.35 * prot + twist * 0.35), rz(wonk * 0.5 + 1.1 * swy)));
         setLocal(wx, CHEST, rest, mul3(rx(spineX * 0.5 + 0.6 * swyLag), ry(-0.5 * prot - 5.0 * reach - 9.0 * pull + 2.0 * swyLag + twist * 0.65), rz(-wonk * 0.3 - 0.8 * swyLag)));
         setLocal(wx, NECK, rest, rx(3.0 + 12.0 * dk - 8.0 * stun));
         setLocal(wx, SKULL, rest, mul3(
             rx(6.0 + 4.0 * pull + 20.0 * dk - 30.0 * stun),
             ry(self.headScan + 8.0 * pull),
-            rz(wonk + 9.0 * dr + 14.0 * dk - 1.4 * swyLag),
+            rz(wonk + 9.0 * dr + 14.0 * dk - 1.4 * swyLag - 1.2 * heromod.armSwing(self.phase - 0.08) * gait),
         ));
 
         if (dead) {
@@ -1119,14 +1205,20 @@ pub const Archer = struct {
             const w = mathx.sinf(mathx.clampF(u, 0, 1) * std.math.pi);
             if (w > 0.02) {
                 const catchUp = mathx.smoothstep(0.52, 1.0, u);
-                const hipA = -32.0 * w + 34.0 * catchUp;
-                const kneeA = 10.0 + 84.0 * w - 46.0 * catchUp;
-                setLocal(wx, HIPL, rest, mul(rx(hipA + 7.0), rz(-4.0)));
-                setLocal(wx, KNEEL, rest, rx(kneeA + 9.0));
-                setLocal(wx, ANKL, rest, rx(-14.0 * w));
-                setLocal(wx, HIPR, rest, mul(rx(hipA - 6.0), rz(4.0)));
-                setLocal(wx, KNEER, rest, rx(kneeA - 7.0));
-                setLocal(wx, ANKR, rest, rx(-11.0 * w));
+                const thigh = SEG_THIGH * H;
+                const shank = SEG_SHANK * H;
+                const height = thigh + shank - self.leapCrouch();
+                const brace = mathx.legAngles(thigh, shank, height);
+                const braceHip = brace.hip;
+                const braceKnee = brace.knee;
+                const hipA = -braceHip - 20 * w + 12 * catchUp * w;
+                const kneeA = braceKnee + 45 * w;
+                setLocal(wx, HIPL, rest, mul(rx(hipA + 7 * w), rz(-4)));
+                setLocal(wx, KNEEL, rest, rx(kneeA + 9 * w));
+                setLocal(wx, ANKL, rest, rx(-hipA - kneeA - 16 * w));
+                setLocal(wx, HIPR, rest, mul(rx(hipA - 6 * w), rz(4)));
+                setLocal(wx, KNEER, rest, rx(kneeA - 7 * w));
+                setLocal(wx, ANKR, rest, rx(-hipA - kneeA - 9 * w));
             }
         }
 
@@ -1135,17 +1227,17 @@ pub const Archer = struct {
         // `buttK` is -1 cocked, +1 driven out, and every channel below reads that ONE number, so nothing can promise a jab the blow is not throwing.
         const bk = self.buttK;
         const flat = @abs(bk);
-        const bowShFwd = mathx.lerpF(-26.0, -88.0, bowT) + 5.0 * self.kick + armStun + 2.2 * swyLag - 54.0 * bk;
+        const bowShFwd = mathx.lerpF(-26.0, -88.0, bowT) + 5.0 * self.kick + armStun + 2.2 * swyLag - 54.0 * bk + swing;
         setLocal(wx, SHR, rest, mul3(rx(bowShFwd - 30.0 * dk), rz(-9.0 + wonk * 0.4 - 16.0 * flat), ry(-30.0 * bk)));
-        setLocal(wx, ELR, rest, rx(-(8.0 + 5.0 * bowT) - 52.0 * flat + 46.0 * mathx.maxF(0, bk)));
+        setLocal(wx, ELR, rest, rx(-(8.0 + 5.0 * bowT) - 52.0 * flat + 46.0 * mathx.maxF(0, bk) - 0.65 * mathx.maxF(0, -swing)));
         setLocal(wx, WRR, rest, rz(-6.0 - 4.0 * self.kick));
         setLocal(wx, BOW, rest, mul(ry(180.0 - 26.0 * flat), rx(100.0 - 3.0 * self.kick - 68.0 * flat)));
 
         const wob = (mathx.sinf(self.elapsed * 9.0 + self.seed * 7.0) + 0.5 * mathx.sinf(self.elapsed * 23.0)) * 1.1 * dr;
-        const drawSh = -26.0 - 102.0 * reach + 44.0 * pull + armStun - 30.0 * dk + wob + 1.8 * swy;
+        const drawSh = -26.0 - 102.0 * reach + 44.0 * pull + armStun - 30.0 * dk + wob + 1.8 * swy - swing;
         const drawYaw = -26.0 * reach + 10.0 * pull;
         const drawRz = 9.0 + 24.0 * pull - wonk * 0.4;
-        const drawEl = 16.0 + 104.0 * reach + 32.0 * pull - 30.0 * self.kick;
+        const drawEl = 16.0 + 104.0 * reach + 32.0 * pull - 30.0 * self.kick + 0.65 * mathx.maxF(0, swing);
         setLocal(wx, SHL, rest, mul3(rx(drawSh), ry(drawYaw), rz(drawRz)));
         setLocal(wx, ELL, rest, rx(-drawEl));
         setLocal(wx, WRL, rest, rx(-12.0 * self.kick));
@@ -1208,16 +1300,20 @@ pub const Line = struct {
 };
 
 fn buildMeshes() [N]rl.Mesh {
-    var mesh = boneMeshes();
+    var mesh = skeletonMeshes(true);
     mesh[BOW] = bowMesh();
     return mesh;
 }
 
 pub fn boneMeshes() [N]rl.Mesh {
+    return skeletonMeshes(false);
+}
+
+fn skeletonMeshes(quiver: bool) [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
     mesh[ROOT] = pelvisMesh();
     mesh[SPINE] = lumbarMesh();
-    mesh[CHEST] = ribcageMesh();
+    mesh[CHEST] = ribcageMesh(quiver);
     mesh[NECK] = neckMesh();
     mesh[SKULL] = skullMesh();
     mesh[HIPL] = femurMesh(101);
@@ -1242,22 +1338,24 @@ fn bone(b: *Builder, rng: *mathx.Rng, a: rl.Vector3, e: rl.Vector3, r: f32, col:
         (a.z + e.z) * 0.5 + rng.range(-0.007, 0.007) * H,
     );
     const rm = r * rng.range(0.78, 0.9);
-    b.addCylinder(a, mid, r, rm, 7, col);
-    b.addCylinder(mid, e, rm, r * 0.92, 7, col);
-    b.addCylinder(v3(a.x, a.y + r * 0.6, a.z), v3(a.x, a.y - r * 0.6, a.z), r * rng.range(1.5, 1.75), r * 1.55, 7, BONE_LT);
-    b.addCylinder(v3(e.x, e.y + r * 0.6, e.z), v3(e.x, e.y - r * 0.6, e.z), r * rng.range(1.4, 1.65), r * 1.5, 7, BONE_LT);
+    b.addCapsule(a, mid, r, rm, 9, col);
+    b.addCapsule(mid, e, rm, r * 0.92, 9, col);
+    b.addBlob(a, v3(r * rng.range(1.5, 1.75), r * 0.95, r * 1.55), 6, 10, BONE_LT);
+    b.addBlob(e, v3(r * rng.range(1.4, 1.65), r * 0.9, r * 1.5), 6, 10, BONE_LT);
 }
 
 fn pelvisMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
-    b.addCube(v3(0, 0.0, -0.02 * H), v3(0.085 * H, 0.10 * H, 0.075 * H), BONE_DK);
-    b.addCube(v3(0, -0.045 * H, -0.005 * H), v3(0.11 * H, 0.055 * H, 0.055 * H), SOCKET);
-    b.addBox(v3(0.082 * H, 0.022 * H, 0.0), v3(0.05 * H, 0.024 * H, 0.0), v3(0.014 * H, 0.062 * H, 0.0), v3(0, 0, 0.055 * H), BONE);
-    b.addBox(v3(-0.080 * H, 0.018 * H, 0.0), v3(0.046 * H, 0.02 * H, 0.0), v3(-0.012 * H, 0.056 * H, 0.0), v3(0, 0, 0.050 * H), STAIN);
-    b.addCylinder(v3(0.07 * H, -0.055 * H, 0.045 * H), v3(-0.07 * H, -0.055 * H, 0.045 * H), 0.016 * H, 0.016 * H, 6, BONE_DK);
-    b.addCylinder(v3(0.090 * H, -0.002 * H, 0.01 * H), v3(0.090 * H, -0.032 * H, 0.01 * H), 0.030 * H, 0.026 * H, 7, BONE_LT);
-    b.addCylinder(v3(-0.090 * H, -0.002 * H, 0.01 * H), v3(-0.090 * H, -0.032 * H, 0.01 * H), 0.030 * H, 0.026 * H, 7, BONE_LT);
+    b.addBlob(v3(0, -0.005 * H, -0.030 * H), v3(0.039 * H, 0.052 * H, 0.029 * H), 7, 11, BONE_DK);
+    for ([_]f32{ -1, 1 }) |side| {
+        const col = if (side < 0) STAIN else BONE;
+        const shift: f32 = if (side < 0) -0.004 else 0;
+        b.addBlob(v3(side * 0.078 * H, (0.025 + shift) * H, -0.018 * H), v3(0.047 * H, 0.063 * H, 0.026 * H), 8, 12, col);
+        b.addCapsule(v3(side * 0.067 * H, 0.036 * H, -0.017 * H), v3(side * 0.092 * H, -0.027 * H, 0.012 * H), 0.026 * H, 0.025 * H, 9, col);
+        b.addCapsule(v3(side * 0.09 * H, -0.026 * H, 0.015 * H), v3(side * 0.065 * H, -0.070 * H, 0.033 * H), 0.018 * H, 0.013 * H, 8, BONE_DK);
+        b.addCapsule(v3(side * 0.065 * H, -0.070 * H, 0.033 * H), v3(0, -0.055 * H, 0.038 * H), 0.013 * H, 0.014 * H, 8, col);
+    }
     return b.toMesh();
 }
 
@@ -1275,14 +1373,13 @@ fn lumbarMesh() rl.Mesh {
     return b.toMesh();
 }
 
-fn ribcageMesh() rl.Mesh {
+fn ribcageMesh(quiver: bool) rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
-    b.addCube(v3(0, 0.015 * H, -0.005 * H), v3(0.13 * H, 0.185 * H, 0.10 * H), SOCKET);
-    b.addCube(v3(0, 0.02 * H, -0.07 * H), v3(0.05 * H, 0.17 * H, 0.05 * H), BONE_DK);
-    b.addCube(v3(0, 0.032 * H, 0.078 * H), v3(0.036 * H, 0.125 * H, 0.016 * H), BONE_LT);
-    b.addBox(v3(0.07 * H, 0.10 * H, 0.02 * H), v3(0.075 * H, 0.012 * H, 0.0), v3(0, 0.012 * H, 0), v3(0, 0, 0.02 * H), BONE);
-    b.addBox(v3(-0.07 * H, 0.10 * H, 0.02 * H), v3(0.075 * H, 0.015 * H, 0.0), v3(0, 0.010 * H, 0), v3(0, 0, 0.02 * H), STAIN);
+    b.addCapsule(v3(0, -0.066 * H, -0.065 * H), v3(0, 0.105 * H, -0.068 * H), 0.026 * H, 0.023 * H, 9, BONE_DK);
+    b.addCapsule(v3(0, -0.031 * H, 0.078 * H), v3(0, 0.088 * H, 0.073 * H), 0.015 * H, 0.020 * H, 9, BONE_LT);
+    b.addCapsule(v3(0.008 * H, 0.095 * H, 0.055 * H), v3(0.145 * H, 0.10 * H, 0.014 * H), 0.014 * H, 0.013 * H, 9, BONE);
+    b.addCapsule(v3(-0.008 * H, 0.095 * H, 0.055 * H), v3(-0.145 * H, 0.105 * H, 0.014 * H), 0.014 * H, 0.012 * H, 9, STAIN);
     var rng = mathx.Rng.init(911);
     const levels = [_]f32{ 0.088, 0.052, 0.014, -0.024, -0.060 };
     const halfw = [_]f32{ 0.104, 0.122, 0.120, 0.105, 0.082 };
@@ -1295,18 +1392,20 @@ fn ribcageMesh() rl.Mesh {
         const col = if (@mod(li, 2) == 0) BONE else BONE_LT;
         for ([_]f32{ 1, -1 }) |sgn| {
             const droop = rng.range(-0.004, 0.010) * H;
-            const spinePt = v3(0, y, -0.06 * H);
-            const sidePt = v3(sgn * w, y - 0.006 * H - droop, 0.01 * H);
-            const frontPt = v3(sgn * 0.02 * H, y - 0.014 * H - droop, fz);
-            b.addCylinder(spinePt, sidePt, rr, rr, 5, col);
-            if (li == 3 and sgn > 0) {
-                const stub = mathx.lerpV(sidePt, frontPt, 0.38);
-                b.addCylinder(sidePt, stub, rr, rr * 0.25, 5, STAIN);
-            } else {
-                b.addCylinder(sidePt, frontPt, rr, rr * 0.85, 5, col);
+            const broken = li == 3 and sgn > 0;
+            const arc: f32 = if (broken) 2.0 else 2.96;
+            var prev = v3(0, y, -0.06 * H);
+            for (1..8) |seg| {
+                const t = @as(f32, @floatFromInt(seg)) / 7;
+                const a = arc * t;
+                const next = v3(sgn * w * mathx.sinf(a), y - (0.014 * H + droop) * t, -0.06 * H + (fz + 0.06 * H) * (1 - mathx.cosf(a)) * 0.5);
+                const taper = if (broken and seg == 7) @as(f32, 0.65) else 1 - 0.15 * t;
+                b.addCapsule(prev, next, rr * (1 - 0.15 * (t - 1.0 / 7.0)), rr * taper, 8, col);
+                prev = next;
             }
         }
     }
+    if (!quiver) return b.toMesh();
     b.setMat(.leather);
     const qBase = v3(0.010 * H, -0.095 * H, -0.105 * H);
     const qMouth = v3(0.125 * H, 0.115 * H, -0.120 * H);
@@ -1439,14 +1538,21 @@ pub fn bowMesh() rl.Mesh {
     b.addCylinder(v3(0, fy + 0.055 * H, fz), v3(0, fy - 0.055 * H, fz), 0.019 * H, 0.019 * H, 7, GRIP_WRAP);
     b.addCylinder(v3(0, fy + 0.012 * H, fz), v3(0, fy - 0.012 * H, fz), 0.021 * H, 0.021 * H, 7, BOWWOOD_LT);
     b.setMat(.wood);
-    const uy = [_]f32{ 0.055, 0.22, 0.40 };
-    const ly = [_]f32{ 0.055, 0.21, 0.37 };
-    const zz = [_]f32{ 0.0, -0.028, 0.06 };
-    const rr = [_]f32{ 0.016, 0.011, 0.005 };
-    for (0..2) |seg| {
-        b.addCylinder(v3(0, fy + uy[seg] * H, fz + zz[seg] * H), v3(0, fy + uy[seg + 1] * H, fz + zz[seg + 1] * H), rr[seg] * H, rr[seg + 1] * H, 6, BOWWOOD);
-        b.addCylinder(v3(0, fy - ly[seg] * H, fz + zz[seg] * H), v3(0, fy - ly[seg + 1] * H, fz + zz[seg + 1] * H), rr[seg] * H, rr[seg + 1] * H, 6, BOWWOOD);
+    for ([_]f32{ 1, -1 }) |side| {
+        const reach: f32 = if (side > 0) 0.40 else 0.37;
+        var prev = v3(0, fy + side * 0.055 * H, fz);
+        var rad: f32 = 0.016 * H;
+        for (1..8) |seg| {
+            const t = @as(f32, @floatFromInt(seg)) / 7;
+            const bend = -0.10 * t + 0.16 * t * t;
+            const next = v3(0.002 * H * mathx.sinf(t * std.math.pi) * side, fy + side * mathx.lerpF(0.055, reach, t) * H, fz + bend * H);
+            const nr = mathx.lerpF(0.016, 0.005, t) * H;
+            b.addCapsule(prev, next, rad, nr, 9, BOWWOOD);
+            prev = next;
+            rad = nr;
+        }
     }
+
     b.setMat(.plain);
     b.addCylinder(v3(0, fy + 0.385 * H, fz + 0.054 * H), v3(0, fy + 0.406 * H, fz + 0.062 * H), 0.008 * H, 0.004 * H, 5, TEETH);
     b.addCylinder(v3(0, fy - 0.352 * H, fz + 0.054 * H), v3(0, fy - 0.376 * H, fz + 0.062 * H), 0.008 * H, 0.004 * H, 5, TEETH);
@@ -1664,7 +1770,7 @@ test "A PARRIED JAB IS DROPPED AND PAID FOR — and there is a window to catch i
     try std.testing.expect(a.buttCd > 0);
     a.state = .butt;
     a.t = BUTT_WIND;
-    a.tryButt(mathx.ground(0, 0.8));
+    a.tryButt(mathx.ground(0, 0.8), a.bowEdge());
     try std.testing.expect(a.heroHit == null);
 }
 
@@ -1691,7 +1797,7 @@ test "THE BUTT LANDS ONCE, IN FRONT, AND ONLY AFTER THE TELL" {
     b.facing = std.math.pi;
     b.enterButt();
     b.enter(.butt);
-    b.tryButt(at);
+    b.tryButt(at, b.bowEdge());
     try std.testing.expect(b.heroHit == null);
     var c = Archer.spawn(mathx.zero3, 0, 1.0, 0.3);
     c.backstepCd = BACKSTEP_CD;
@@ -1949,4 +2055,112 @@ test "AND NOTHING ELSE IN THE POOL GAINED A BOUNCE — a shaft still plants wher
     }
     try std.testing.expect(a.stuck);
     try std.testing.expectEqual(@as(u8, 0), a.bounces);
+}
+
+test "archer release keeps its arrow until the projectile takes over" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        var a = Archer.spawn(mathx.zero3, 0, 1, 0.37);
+        const target = v3(0, 0, 12);
+        a.reloadCd = 0;
+        var seen = false;
+        var fired = false;
+        for (0..400) |_| {
+            const visible = a.nockVis;
+            if (a.update(1 / hz, target, 200, .{})) {
+                try std.testing.expect(visible);
+                try std.testing.expect(!a.nockVis);
+                const arrow = launchArrow(a.nockWorld(), target);
+                const axis = mathx.normV(mathx.subV(foe.markOn(a.nockXf, v3(0, 0, 1)), a.nockWorld()));
+                try std.testing.expect(mathx.dotV(axis, mathx.normV(arrow.vel)) > 0.999);
+                fired = true;
+                break;
+            }
+            seen = seen or a.nockVis;
+            if (seen) try std.testing.expect(a.nockVis);
+        }
+        try std.testing.expect(fired);
+    }
+}
+
+test "archer aim keeps bone lengths and the shaft aligned across body sizes and elevations" {
+    for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+        for ([_]f32{ 8, 12, 20 }) |range| {
+            for ([_]f32{ -1, 0, 2 }) |height| {
+                var a = Archer.spawn(mathx.zero3, 0.7, size, 0.37);
+                a.state = .hold;
+                a.armT = 1;
+                a.drawAmt = 1;
+                a.aimAt = mathx.scaleV(mathx.headingDir(a.facing), range);
+                a.aimAt.y = height;
+                a.pose();
+                const arrow = launchArrow(a.nockWorld(), a.aimAt);
+                const axis = mathx.normV(mathx.subV(foe.markOn(a.nockXf, v3(0, 0, 1)), a.nockWorld()));
+                const dot = mathx.dotV(axis, mathx.normV(arrow.vel));
+                try std.testing.expect(dot > 0.995);
+                for ([_][3]usize{ .{ SHR, ELR, WRR }, .{ SHL, ELL, WRL } }) |arm| {
+                    const upper = mathx.lenV(mathx.subV(foe.markOn(a.xf[arm[1]], mathx.zero3), foe.markOn(a.xf[arm[0]], mathx.zero3)));
+                    const fore = mathx.lenV(mathx.subV(foe.markOn(a.xf[arm[2]], mathx.zero3), foe.markOn(a.xf[arm[1]], mathx.zero3)));
+                    try std.testing.expectApproxEqAbs(SEG_UPARM * H * a.scale, upper, 0.001);
+                    try std.testing.expectApproxEqAbs(SEG_FOREARM * H * a.scale, fore, 0.001);
+                }
+                try std.testing.expect(mathx.lenV(mathx.subV(foe.markOn(a.xf[WRL], FIST_L), a.nockWorld())) < 0.001);
+            }
+        }
+    }
+}
+
+test "archer jab only damages swept wood and a parry wins its impact frame" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        for ([_]rl.Vector3{ v3(0, 0, 1.1), v3(0, 0, 2.3), v3(0, 3, 1.1), v3(1.7, 0, 1.1) }, 0..) |at, case| {
+            var a = Archer.spawn(mathx.zero3, 0, 1, 0.37);
+            a.backstepCd = 10;
+            a.enterButt();
+            var hits: usize = 0;
+            var clock: f32 = 0;
+            while (clock < 1) : (clock += 1 / hz) {
+                const old = a.bowEdge();
+                const target = if (a.state == .buttwind) v3(0, 0, 1.1) else at;
+                _ = a.update(1 / hz, target, 200, .{});
+                if (a.heroHit != null) {
+                    hits += 1;
+                    try std.testing.expect(foe.weaponReaches(old, a.bowEdge(), target, foe.hurtReach(0.035, a.scale)));
+                }
+            }
+            try std.testing.expectEqual(@as(usize, if (case == 0) 1 else 0), hits);
+        }
+    }
+    var a = Archer.spawn(mathx.zero3, 0, 1, 0.37);
+    a.backstepCd = 10;
+    a.enterButt();
+    a.state = .butt;
+    a.t = BUTT_STRIKE * BUTT_IMPACT_K - 1.0 / 60.0;
+    a.parry = .{ .live = true, .at = v3(0, 0, 1.1), .facing = std.math.pi, .arc = combat.GUARD_ARC };
+    _ = a.update(1.0 / 60.0, a.parry.at, 200, .{});
+    try std.testing.expect(a.parried);
+    try std.testing.expect(a.heroHit == null);
+}
+test "archer landing supports its pelvis without inverted knees or buried soles" {
+    for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+        var a = Archer.spawn(mathx.zero3, 0, size, 0.37);
+        a.state = .backstep;
+        for (0..101) |frame| {
+            a.t = BACKSTEP_GATHER + (BACKSTEP_FLIGHT + BACKSTEP_LAND) * @as(f32, @floatFromInt(frame)) / 100;
+            a.hop = BACKSTEP_RISE * mathx.sinf(leapU(a.t) * std.math.pi);
+            a.pose();
+            for ([_][3]usize{ .{ HIPL, KNEEL, ANKL }, .{ HIPR, KNEER, ANKR } }, solePatches) |leg, sole| {
+                const shin = foe.markOn(mul(a.xf[leg[2]], rl.math.matrixInvert(a.xf[leg[1]])), mathx.zero3);
+                try std.testing.expect(shin.y < 0);
+                const ank = foe.markOn(mul(a.xf[leg[2]], rl.math.matrixInvert(a.xf[leg[0]])), mathx.zero3);
+                try std.testing.expect(ank.z <= 0.002);
+                if (a.t >= BACKSTEP_GATHER + BACKSTEP_FLIGHT) {
+                    for ([_]f32{ -sole.halfW, sole.halfW }) |x| {
+                        for ([_]f32{ -sole.heel, sole.toe }) |z| {
+                            const point = foe.markOn(a.xf[sole.bone], v3(x, -sole.drop, z));
+                            try std.testing.expect(point.y > -0.015 * a.scale);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

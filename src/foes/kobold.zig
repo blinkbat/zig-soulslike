@@ -7,6 +7,7 @@ const heromod = @import("../play/hero.zig");
 const foe = @import("foe.zig");
 const wf = @import("../world/worldfmt.zig");
 const sfx = @import("../core/audio.zig");
+const anim = @import("../core/anim.zig");
 const propart = @import("../props/propart.zig");
 
 const v3 = mathx.v3;
@@ -24,8 +25,6 @@ const EYE = rgba(250, 196, 74, 105);
 const TOOTH = rgba(150, 143, 126, 255);
 const HIDE = rgba(24, 18, 14, 255);
 const HIDE_LT = rgba(36, 28, 20, 255);
-const CLOTH = rgba(52, 45, 33, 255);
-const CLOTH_DK = rgba(33, 28, 21, 255);
 
 const ZERK_CLOTH = rgba(101, 57, 51, 255);
 const ZERK_CLOTH_DK = rgba(63, 35, 32, 255);
@@ -192,7 +191,7 @@ fn dashTravel(t: f32) f32 {
     return DASH_DIST * (1.0 - (1.0 - u) * (1.0 - u));
 }
 const ZERK_RECOVER = 1.75;
-const ZERK_REACH = 1.9;
+const ZERK_REACH = 0.95;
 pub const ZERK_HIT = combat.Hit{ .dmg = 11, .poise = 9 };
 
 const CAST_DUR = 1.25;
@@ -205,17 +204,16 @@ const HEAL_BLOOM: u32 = 34;
 
 const WHIRL_DUR = 0.70;
 const SLING_CD = 1.9;
-const BITE_R = 1.45;
-const BITE_PREFER_R = 5.0;
+const BITE_R = 0.45;
+const BITE_PREFER_R = BITE_R;
 /// The jaws arrive at `BITE_DUR * BITE_HIT_A` = 0.34 s — over `foe.TELL_MIN`. At the old 0.52 x 0.30 the snap landed at 0.156 s, and the fairness test never caught it because it compared the FRACTION against the SECONDS.
 const BITE_DUR = 0.62;
 const BITE_HIT_A = 0.55;
 const BITE_HIT_B = 0.76;
 const BITE_CD = 1.15;
-const BITE_COIL_AT = 0.42;
 const BITE_ARCH = 14.0;
 // The snap: the waist throwing the whole head at you (degrees through the lumbar; the chest adds 0.65 of it again and the pelvis its small share).
-const BITE_FOLD = 18.0;
+const BITE_FOLD = 42.0;
 const BITE_GAZE = 26.0;
 const BITE_ARM_BACK = 30.0;
 const BITE_ARM_TUCK = 14.0;
@@ -235,11 +233,6 @@ const CROUCH_STUN: f32 = 20.0;
 
 const DASH_COIL: f32 = 30.0;
 const DASH_ABSORB: f32 = 24.0;
-const DASH_LEAD_HIP: f32 = 76.0;
-const DASH_LEAD_KNEE: f32 = 88.0;
-const DASH_TRAIL_HIP: f32 = 32.0;
-const DASH_TRAIL_KNEE: f32 = 26.0;
-const DASH_TOE: f32 = 24.0;
 const DASH_LEAN: f32 = 20.0;
 const DASH_ARM_BACK: f32 = 44.0;
 
@@ -332,6 +325,20 @@ pub const Kobold = struct {
     fxRng: mathx.Rng = mathx.Rng.init(1),
     wade: foe.Wade = .{},
 
+    poseStep: f32 = 0,
+    poseSeated: bool = false,
+    bodyPose: [7]f32 = .{ 0, 0, 0, 0, 0, 0, 0 },
+    bodySpring: anim.SpringBank(7) = .{},
+    priestCast: anim.Spring = .{},
+    slingArmSpring: anim.SpringBank(5) = .{},
+    slingSpin: anim.Spring = .{ .v = -90 },
+    slingTurn: f32 = -90,
+    mouthWas: [2]rl.Vector3 = undefined,
+    mouthIs: ?[2]rl.Vector3 = null,
+    zerkArms: [8]f32 = .{ 0, 0, 24, 24, 0, 0, 13, 13 },
+    zerkArmSpring: anim.SpringBank(8) = .{},
+    axeWas: [2][2]rl.Vector3 = .{ .{ mathx.zero3, mathx.zero3 }, .{ mathx.zero3, mathx.zero3 } },
+    axeIs: ?[2][2]rl.Vector3 = null,
     xf: [N]rl.Matrix = undefined,
     jawXf: rl.Matrix = undefined,
     tailXf: [TAIL_N]rl.Matrix = undefined,
@@ -414,9 +421,23 @@ pub const Kobold = struct {
     }
 
     pub fn slingPoint(self: *const Kobold) rl.Vector3 {
-        return rl.math.vector3Transform(v3(0, 0, SLING_LEN * H), self.xf[KIT]);
+        return foe.markOn(self.xf[KIT], slingPouch());
     }
 
+    fn slingFrame(self: *const Kobold) rl.Matrix {
+        const grip = v3(0, -0.05 * H, 0.006 * H);
+        const held = foe.markOn(self.xf[WRR], grip);
+        const fs = foe.rigScale(self.scale, self.fade);
+        const turn = mul3(scaleM(fs, fs, fs), rx(-self.slingSpin.v), ry(mathx.degrees(self.facing)));
+        return mul3(tr(-grip.x, -grip.y, -grip.z), turn, tr(held.x, held.y, held.z));
+    }
+
+    fn mouthEdge(self: *const Kobold) [2]rl.Vector3 {
+        return .{
+            foe.markOn(self.xf[SKULL], v3(-0.026 * H, 0.010 * H, (0.040 + SNOUT_LEN) * H)),
+            foe.markOn(self.xf[SKULL], v3(0.026 * H, 0.010 * H, (0.040 + SNOUT_LEN) * H)),
+        };
+    }
     pub fn hurtOpen(self: *const Kobold) bool {
         if (self.dealt) return false;
         const u = switch (self.state) {
@@ -434,7 +455,7 @@ pub const Kobold = struct {
     pub fn hurtReach(self: *const Kobold) f32 {
         return switch (self.state) {
             .chop => foe.hurtReach(ZERK_REACH, self.scale),
-            .bite => foe.hurtReach(BITE_R, self.scale),
+            .bite => BITE_R * self.scale + foe.HERO_R,
             else => 0,
         };
     }
@@ -473,6 +494,7 @@ pub const Kobold = struct {
         self.dashCd = mathx.maxF(0, self.dashCd - dt);
         self.tailWhip = mathx.approach(self.tailWhip, 0, dt * TAIL_WHIP_DECAY);
         var act: Act = .none;
+        var releaseSling = false;
         var movedDist: f32 = 0;
         var moveYaw: ?f32 = null;
         var moveSpeed: f32 = 0;
@@ -500,9 +522,9 @@ pub const Kobold = struct {
             .chop => {
                 self.faceToward(hero, dt * 0.35);
                 const u = self.t / ZERK_CHOP;
-                if (u >= ZERK_HIT_A and u < ZERK_HIT_B) {
-                    mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), ZERK_STEP / ((ZERK_HIT_B - ZERK_HIT_A) * ZERK_CHOP) * dt, bounds);
-                }
+                const before = @max(0, self.t - dt * self.vit.hasteMult()) / ZERK_CHOP;
+                const travel = @max(0, @min(u, ZERK_HIT_B) - @max(before, ZERK_HIT_A));
+                mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), ZERK_STEP * travel / (ZERK_HIT_B - ZERK_HIT_A), bounds);
                 if (self.t >= ZERK_CHOP) {
                     if (self.chopsLeft > 0) {
                         self.chopsLeft -= 1;
@@ -540,13 +562,9 @@ pub const Kobold = struct {
             .whirl => {
                 self.faceToward(hero, dt);
                 self.whirlPh += dt * 3.4;
-                self.emitWhirlEmbers(dt);
+
                 if (self.t >= WHIRL_DUR) {
-                    act = .{ .sling = self.slingPoint() };
-                    self.slingCd = SLING_CD;
-                    sfx.world(.kobold_sling, self.pos);
-                    self.releaseSparks();
-                    self.decide(d);
+                    releaseSling = true;
                 }
             },
             .bite => {
@@ -563,9 +581,18 @@ pub const Kobold = struct {
 
         const gaitSpeed: f32 = if (movedDist > 0) moveSpeed else 0;
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, gaitSpeed, moveYaw, self.facing);
+        self.poseStep = dt;
         self.pose();
+        if (self.state == .whirl) self.emitWhirlEmbers(dt);
         self.takeParry();
         self.tryHit(blade);
+        if (releaseSling and self.state == .whirl) {
+            act = .{ .sling = self.slingPoint() };
+            self.slingCd = SLING_CD;
+            sfx.world(.kobold_sling, self.pos);
+            self.releaseSparks();
+            self.decide(d);
+        }
         return act;
     }
 
@@ -606,6 +633,9 @@ pub const Kobold = struct {
     }
 
     fn enter(self: *Kobold, s: State) void {
+        if (s == .whirl or self.state == .whirl) {
+            self.slingTurn = -90 + 360 * @round((self.slingSpin.v + 90) / 360);
+        }
         self.state = s;
         self.t = 0;
         self.dealt = false;
@@ -666,7 +696,7 @@ pub const Kobold = struct {
                 return self.enter(.idle);
             },
             .slinger => {
-                if (d <= foe.hurtReach(BITE_PREFER_R, self.scale) and self.biteCd <= 0) return self.enter(.bite);
+                if (d <= BITE_PREFER_R * self.scale + foe.HERO_R and self.biteCd <= 0) return self.enter(.bite);
                 if (d < s.wantMin) {
                     self.moveDir = self.awayDir();
                     return self.enter(.reposition);
@@ -710,7 +740,7 @@ pub const Kobold = struct {
 
     fn emitWhirlEmbers(self: *Kobold, dt: f32) void {
         const at = self.slingPoint();
-        const tangent = mathx.headingDir(self.facing + std.math.pi * 0.5 + self.whirlPh);
+        const tangent = mathx.addV(mathx.scaleV(mathx.headingDir(self.facing), -mathx.sinf(mathx.radians(self.slingSpin.v))), v3(0, mathx.cosf(mathx.radians(self.slingSpin.v)), 0));
         var n: u32 = 0;
         while (n < 2) : (n += 1) {
             if (self.fxRng.float() > dt * 26.0) continue;
@@ -778,7 +808,7 @@ pub const Kobold = struct {
     }
 
     pub fn staffTop(self: *const Kobold) rl.Vector3 {
-        return rl.math.vector3Transform(v3(0, STAFF_TOP * H, 0), self.xf[KIT]);
+        return rl.math.vector3Transform(staffCrown(), self.xf[KIT]);
     }
 
     pub fn healBloom(self: *Kobold, at: rl.Vector3, spread: f32) void {
@@ -883,6 +913,11 @@ pub const Kobold = struct {
     }
 
     pub fn pose(self: *Kobold) void {
+        defer self.poseStep = 0;
+        var target = [7]f32{ self.heaveAmtTarget(), self.stunAmountTarget(), self.chopTwistTarget(), self.chopThrowTarget(), self.biteLungeTarget(), self.biteCoilTarget(), self.biteGapeTarget() };
+        if (!self.poseSeated) self.bodySpring.seat(target);
+        self.bodySpring.chase(&target, 12000, 0.76, 0.96, self.poseStep);
+        self.bodyPose = target;
         const fs = foe.rigScale(self.scale, self.fade);
         const sink = foe.rigSink(0.4, self.scale, self.fade);
         const facingDeg = mathx.degrees(self.facing);
@@ -906,11 +941,11 @@ pub const Kobold = struct {
         const fly = self.dashFly();
         const landAbs = self.dashLand();
         const dashLoad = DASH_COIL * gather + DASH_ABSORB * landAbs;
-        const crouch = CROUCH_HEAVE * heave + CROUCH_STUN * stunAmt + dashLoad;
+        const crouch = CROUCH_HEAVE * heave + CROUCH_STUN * stunAmt + dashLoad + 40 * self.biteLunge();
         const o = self.idleSway(m, dk);
         // The base skulk is DEALT, not authored (5..9.5 deg): three of one warband stand three ways.
         const slouch = (5.0 + 4.5 * o.deal) + 1.8 * o.br + 4.0 * m + PELVIS_SHARE * (46.0 * heave + BITE_FOLD * self.biteLunge()) +
-            16.0 * dk - 14.0 * stunAmt;
+            16.0 * dk;
         const sag = legSink(crouch);
         const pelvY = if (dead) collapse else hipY + bob + 0.006 * H * o.br - dip - sag;
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
@@ -921,13 +956,8 @@ pub const Kobold = struct {
 
         if (dead) {
             self.legCrumple(&wx, dk);
-        } else if (self.state == .dash) {
-            const leadL = self.dashLeadIsLeft();
-            self.legDash(&wx, dashLoad, fly, leadL, 1.0, HIPL, KNEEL, ANKL);
-            self.legDash(&wx, dashLoad, fly, !leadL, -1.0, HIPR, KNEER, ANKR);
-        } else if (crouch > 0.5) {
-            self.legCrouch(&wx, crouch, 1.0, HIPL, KNEEL, ANKL);
-            self.legCrouch(&wx, crouch, -1.0, HIPR, KNEER, ANKR);
+        } else if (self.state == .dash or crouch > 0.5 or self.moving < 0.25) {
+            self.plantedLegs(&wx, fly);
         } else {
             heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, solePatches);
         }
@@ -935,18 +965,34 @@ pub const Kobold = struct {
         self.xf = wx;
         self.poseJaw();
         self.poseTail(dk, stunAmt);
+        if (self.role == .berserker) {
+            self.xf[KIT] = self.axeFrame(false);
+            const edges = [2][2]rl.Vector3{ self.axeEdge(true), self.axeEdge(false) };
+            self.axeWas = self.axeIs orelse edges;
+            self.axeIs = edges;
+        } else if (self.role == .priest) {
+            const grip = v3(0, -0.05 * H, 0.006 * H);
+            const turn = mul3(tr(-grip.x, -grip.y, -grip.z), rx(mathx.lerpF(24, 156, self.priestCast.v)), tr(grip.x, grip.y, grip.z));
+            self.xf[KIT] = mul(turn, self.xf[WRR]);
+        }
+        if (self.role == .slinger) {
+            self.xf[KIT] = self.slingFrame();
+            const edge = self.mouthEdge();
+            self.mouthWas = self.mouthIs orelse edge;
+            self.mouthIs = edge;
+        }
+        self.poseSeated = true;
     }
 
-    fn legCrouch(self: *Kobold, wx: *[N]rl.Matrix, crouch: f32, side: f32, hip: usize, knee: usize, ank: usize) void {
-        self.legDash(wx, crouch, 0, false, side, hip, knee, ank);
-    }
-
-    fn legDash(self: *Kobold, wx: *[N]rl.Matrix, load: f32, fly: f32, lead: bool, side: f32, hip: usize, knee: usize, ank: usize) void {
-        const hipA = if (lead) DASH_LEAD_HIP * fly else -DASH_TRAIL_HIP * fly;
-        const kneeA = if (lead) DASH_LEAD_KNEE * fly else DASH_TRAIL_KNEE * fly;
-        setLocal(wx, hip, self.rest, mul(rx(-(load + hipA)), rz(-side * heromod.HIP_ADDUCT)));
-        setLocal(wx, knee, self.rest, rx(heromod.IDLE_KNEE + 2.0 * load + kneeA));
-        setLocal(wx, ank, self.rest, mul(rx(-load + DASH_TOE * fly), ry(side * heromod.FOOT_TOEOUT)));
+    fn plantedLegs(self: *const Kobold, wx: *[N]rl.Matrix, fly: f32) void {
+        const fs = foe.rigScale(self.scale, self.fade);
+        const body = mul3(scaleM(fs, fs, fs), ry(mathx.degrees(self.facing)), heromod.rootAt(self.pos));
+        const forward = mathx.headingDir(self.facing);
+        for ([_][3]usize{ .{ HIPL, KNEEL, ANKL }, .{ HIPR, KNEER, ANKR } }, 0..) |leg, side| {
+            const lead = (side == 0) == self.dashLeadIsLeft();
+            const ankle = foe.markOn(body, v3(self.rest[leg[0]].x, solePatches[side].drop + self.hop / @max(fs, 0.001) + 0.12 * H * fly, (if (lead) @as(f32, 0.22) else -0.20) * H * fly));
+            heromod.armTo(wx, self.rest, leg[0], leg[1], leg[2], ankle, forward, v3(0, -1, 0), forward);
+        }
     }
 
     fn legCrumple(self: *Kobold, wx: *[N]rl.Matrix, dk: f32) void {
@@ -985,42 +1031,73 @@ pub const Kobold = struct {
     }
 
     fn stunAmount(self: *const Kobold) f32 {
-        return switch (self.state) {
-            .stunlight => 1.0 - mathx.smoothstep(0, combat.FOE_LIGHT_STUN_DUR, self.t),
-            .stunheavy => 1.0 - 0.45 * mathx.smoothstep(0, combat.FOE_HEAVY_STUN_DUR, self.t),
-            else => 0,
-        };
+        return self.bodyPose[1];
+    }
+    fn heaveAmt(self: *const Kobold) f32 {
+        return self.bodyPose[0];
+    }
+    fn chopTwist(self: *const Kobold) f32 {
+        return self.bodyPose[2];
+    }
+    fn chopThrow(self: *const Kobold) f32 {
+        return self.bodyPose[3];
     }
 
-    fn heaveAmt(self: *const Kobold) f32 {
+    fn axeFrame(self: *const Kobold, left: bool) rl.Matrix {
+        const grip = v3(0, -0.05 * H, 0.006 * H);
+        const tilt = self.zerkArms[if (left) 4 else 5];
+        const turn = mul3(tr(-grip.x, -grip.y, -grip.z), rx(tilt), tr(grip.x, grip.y, grip.z));
+        return mul(turn, self.xf[if (left) WRL else WRR]);
+    }
+
+    fn axeEdge(self: *const Kobold, left: bool) [2]rl.Vector3 {
+        const xf = self.axeFrame(left);
+        const x = (if (left) @as(f32, -0.125) else 0.125) * H;
+        const y = (AXE_HAFT - 0.056) * H;
+        return .{ foe.markOn(xf, v3(x, y - 0.068 * H, 0.028 * H)), foe.markOn(xf, v3(x, y + 0.068 * H, 0.028 * H)) };
+    }
+
+    fn weaponTouches(self: *const Kobold, hero: rl.Vector3) bool {
+        if (self.role == .slinger) return foe.weaponReaches(self.mouthWas, self.mouthEdge(), hero, 0.027 * H * self.scale + foe.HERO_R);
+        if (self.role != .berserker) return false;
+        return foe.weaponReaches(self.axeWas[if (self.chopLeftHand) 0 else 1], self.axeEdge(self.chopLeftHand), hero, 0.025 * H * self.scale + foe.HERO_R);
+    }
+
+    fn stunAmountTarget(self: *const Kobold) f32 {
+        if (self.state != .stunlight and self.state != .stunheavy) return 0;
+        return anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.12, .v = 1, .ease = .decel }, .{ .t = 0.48, .v = 0.92 }, .{ .t = 0.84, .v = -0.12 }, .{ .t = 1, .v = 0 } }, self.t / combat.foeStunDur(self.state == .stunheavy));
+    }
+    fn heaveAmtTarget(self: *const Kobold) f32 {
         if (self.state != .heave) return 0;
         const u = mathx.clampF(self.t / ZERK_RECOVER, 0, 1);
         return mathx.pulse(u, 0, 0.16, 0.78, 1.0);
     }
 
     /// THE CHOP'S TRUNK COIL, in degrees of yaw: −1 wound AWAY from the live hand, +1 whipped through past it.
-    fn chopTwist(self: *const Kobold) f32 {
+    fn chopTwistTarget(self: *const Kobold) f32 {
         if (self.state != .chop) return 0;
-        const u = mathx.clampF(self.t / ZERK_CHOP, 0, 1);
-        const coil = 1.0 - mathx.smoothstep(0, ZERK_HIT_A, u);
-        const thru = mathx.smoothstep(ZERK_HIT_A, ZERK_HIT_B, u);
-        const sgn: f32 = if (self.chopLeftHand) -1.0 else 1.0;
-        return sgn * (28.0 * coil - 22.0 * thru);
+        const sign: f32 = if (self.chopLeftHand) -1 else 1;
+        return sign * anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.36, .v = 28 }, .{ .t = 0.51, .v = 28, .ease = .hold }, .{ .t = 0.69, .v = -22, .ease = .accel }, .{ .t = 0.85, .v = -26, .ease = .decel }, .{ .t = 1, .v = 0 } }, self.t / ZERK_CHOP);
     }
 
-    fn chopThrow(self: *const Kobold) f32 {
+    fn chopThrowTarget(self: *const Kobold) f32 {
         if (self.state != .chop) return 0;
-        const u = mathx.clampF(self.t / ZERK_CHOP, 0, 1);
-        return 22.0 * mathx.pulse(u, ZERK_HIT_A * 0.6, ZERK_HIT_B, ZERK_HIT_B, 1.0) -
-            9.0 * (1.0 - mathx.smoothstep(0, ZERK_HIT_A, u));
+        return anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.36, .v = -9 }, .{ .t = 0.51, .v = -9, .ease = .hold }, .{ .t = 0.70, .v = 22, .ease = .accel }, .{ .t = 0.86, .v = 25, .ease = .decel }, .{ .t = 1, .v = 0 } }, self.t / ZERK_CHOP);
     }
 
     fn biteLunge(self: *const Kobold) f32 {
-        if (self.state != .bite) return 0;
-        const u = mathx.clampF(self.t / BITE_DUR, 0, 1);
-        return mathx.pulse(u, 0, BITE_HIT_A, BITE_HIT_B, 1.0);
+        return self.bodyPose[4];
     }
 
+    fn biteLungeTarget(self: *const Kobold) f32 {
+        if (self.state != .bite) return 0;
+        return anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.51, .v = 0, .ease = .hold }, .{ .t = 0.65, .v = 1, .ease = .accel }, .{ .t = 0.76, .v = 1.08 }, .{ .t = 0.94, .v = -0.06 }, .{ .t = 1, .v = 0 } }, self.t / BITE_DUR);
+    }
+
+    fn biteGapeTarget(self: *const Kobold) f32 {
+        if (self.state != .bite) return 0;
+        return anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.35, .v = 0.9 }, .{ .t = 0.53, .v = 1, .ease = .hold }, .{ .t = 0.68, .v = 0, .ease = .accel }, .{ .t = 1, .v = 0 } }, self.t / BITE_DUR);
+    }
     fn dashGather(self: *const Kobold) f32 {
         if (self.state != .dash) return 0;
         return mathx.pulse(self.t, 0, DASH_GATHER * 0.8, DASH_GATHER, DASH_GATHER + DASH_FLIGHT * 0.22);
@@ -1040,12 +1117,13 @@ pub const Kobold = struct {
     }
 
     fn biteCoil(self: *const Kobold) f32 {
-        if (self.state != .bite) return 0;
-        const u = mathx.clampF(self.t / BITE_DUR, 0, 1);
-        const knee = BITE_HIT_A * BITE_COIL_AT;
-        return mathx.pulse(u, 0, knee, knee, BITE_HIT_A);
+        return self.bodyPose[5];
     }
 
+    fn biteCoilTarget(self: *const Kobold) f32 {
+        if (self.state != .bite) return 0;
+        return anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.26, .v = 1 }, .{ .t = 0.51, .v = 1, .ease = .hold }, .{ .t = 0.64, .v = 0, .ease = .accel }, .{ .t = 1, .v = 0 } }, self.t / BITE_DUR);
+    }
     fn poseUpper(self: *Kobold, wx: *[N]rl.Matrix, dk: f32, stunAmt: f32, prot: f32, o: anytype) void {
         const twoPi = std.math.tau;
         const ph = self.phase;
@@ -1058,7 +1136,7 @@ pub const Kobold = struct {
         const coil = self.biteCoil();
         const fold = 46.0 * heave + BITE_FOLD * lunge - BITE_ARCH * coil + DASH_LEAN * self.dashFly();
         const gasp = 9.0 * heave * mathx.sinf(twoPi * 2.4 * self.t);
-        const spineExtra = 14.0 * dk - 16.0 * stunAmt;
+        const spineExtra = 14.0 * dk - 30.0 * stunAmt;
         const twist = self.chopTwist();
         const throwF = self.chopThrow();
         setLocal(wx, SPINE, self.rest, mul3(
@@ -1097,24 +1175,22 @@ pub const Kobold = struct {
         var aR = shR;
         var eL = elL;
         var eR = elR;
+        var abdL = abd;
+        var abdR = abd;
+        var tiltL: f32 = 0;
+        var tiltR: f32 = 0;
         if (self.state == .chop) {
             const u = mathx.clampF(self.t / ZERK_CHOP, 0, 1);
-            const raise = 1.0 - mathx.smoothstep(0, ZERK_HIT_A, u);
-            const fall = mathx.smoothstep(ZERK_HIT_A, ZERK_HIT_B, u);
-            const live = -150.0 * raise + 55.0 * fall;
-            const idleArm = 34.0 * mathx.smoothstep(ZERK_HIT_B, 1.0, u);
+            const active = anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.36, .v = -145 }, .{ .t = 0.51, .v = -145, .ease = .hold }, .{ .t = 0.69, .v = -60, .ease = .accel }, .{ .t = 0.85, .v = -48, .ease = .decel }, .{ .t = 1, .v = 0 } }, u);
+            const elbow = anim.keyAt(&.{ .{ .t = 0, .v = 24 }, .{ .t = 0.36, .v = 95 }, .{ .t = 0.51, .v = 95, .ease = .hold }, .{ .t = 0.69, .v = 18, .ease = .accel }, .{ .t = 0.85, .v = 16, .ease = .decel }, .{ .t = 1, .v = 24 } }, u);
+            const tilt = anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.36, .v = 180 }, .{ .t = 0.51, .v = 180, .ease = .hold }, .{ .t = 0.69, .v = 200, .ease = .accel }, .{ .t = 0.85, .v = 214, .ease = .decel }, .{ .t = 1, .v = 0 } }, u);
+            const cross = anim.keyAt(&.{ .{ .t = 0, .v = abd }, .{ .t = 0.51, .v = abd, .ease = .hold }, .{ .t = 0.69, .v = -20, .ease = .accel }, .{ .t = 0.85, .v = -16, .ease = .decel }, .{ .t = 1, .v = abd } }, u);
+            const off = anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.42, .v = -65 }, .{ .t = 0.77, .v = -100 }, .{ .t = 1, .v = 0 } }, u);
             if (self.chopLeftHand) {
-                aL = live;
-                eL = 96.0 * raise + 12.0 * fall;
-                aR = -70.0 - idleArm;
-                eR = 74.0;
+                aL = active; eL = elbow; tiltL = tilt; abdL = cross; aR = off; eR = 65;
             } else {
-                aR = live;
-                eR = 96.0 * raise + 12.0 * fall;
-                aL = -70.0 - idleArm;
-                eL = 74.0;
-            }
-        } else if (heave > 0.01) {
+                aR = active; eR = elbow; tiltR = tilt; abdR = cross; aL = off; eL = 65;
+            }        } else if (heave > 0.01) {
             const swingLoose = 9.0 * heave * mathx.sinf(std.math.tau * 1.2 * self.t);
             aL = 30.0 * heave + swingLoose;
             aR = 30.0 * heave - swingLoose;
@@ -1127,18 +1203,25 @@ pub const Kobold = struct {
             eL = 30.0 + 46.0 * f;
             eR = 30.0 + 38.0 * f;
         }
+        var arms = [8]f32{ aL, aR, eL, eR, tiltL, tiltR, abdL, abdR };
+        if (!self.poseSeated) self.zerkArmSpring.seat(arms);
+        self.zerkArmSpring.chase(&arms, if (self.state == .chop) 16000 else 7500, 0.76, 0.96, self.poseStep);
+        self.zerkArms = arms;
+        aL = arms[0]; aR = arms[1]; eL = arms[2]; eR = arms[3]; abdL = arms[6]; abdR = arms[7];
         const flail = 52.0 * stunAmt + 40.0 * dk;
-        setLocal(wx, SHL, self.rest, mul3(rx(aL - flail * 0.78), ry(-8.0 - 14.0 * stunAmt), rz(abd + 20.0 * stunAmt)));
+        setLocal(wx, SHL, self.rest, mul3(rx(aL - flail * 0.78), ry(-8.0 - 14.0 * stunAmt), rz(abdL + 20.0 * stunAmt)));
         setLocal(wx, ELL, self.rest, rx(-eL - 18.0 * stunAmt));
         setLocal(wx, WRL, self.rest, rx(-8.0));
-        setLocal(wx, SHR, self.rest, mul3(rx(aR - flail), ry(8.0 + 18.0 * stunAmt), rz(-abd - 26.0 * stunAmt)));
+        setLocal(wx, SHR, self.rest, mul3(rx(aR - flail), ry(8.0 + 18.0 * stunAmt), rz(-abdR - 26.0 * stunAmt)));
         setLocal(wx, ELR, self.rest, rx(-eR - 26.0 * stunAmt));
         setLocal(wx, WRR, self.rest, rx(-8.0));
         setLocal(wx, KIT, self.rest, rl.math.matrixIdentity());
     }
 
     fn posePriest(self: *Kobold, wx: *[N]rl.Matrix, shL: f32, shR: f32, elL: f32, elR: f32, abd: f32, dk: f32, stunAmt: f32) void {
-        const c = if (self.state == .cast) mathx.smoothstep(0, 0.55, self.t / CAST_DUR) else 0;
+        const target = if (self.state == .cast) anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.34, .v = 0.88 }, .{ .t = 0.52, .v = 1.04 }, .{ .t = 0.66, .v = 1 }, .{ .t = 1, .v = 1, .ease = .hold } }, self.t / CAST_DUR) else 0;
+        if (!self.poseSeated) self.priestCast.set(target);
+        const c = self.priestCast.step(target, 6500, 0.76, self.poseStep);
         const flail = 28.0 * stunAmt + 20.0 * dk;
         const aR = mathx.lerpF(shR - 14.0, -112.0, c);
         const eR = mathx.lerpF(elR, 34.0, c);
@@ -1154,36 +1237,25 @@ pub const Kobold = struct {
     }
 
     fn poseSlinger(self: *Kobold, wx: *[N]rl.Matrix, shL: f32, shR: f32, elL: f32, elR: f32, abd: f32, dk: f32, stunAmt: f32) void {
-        var aR = shR;
-        var eR = elR;
-        var yR: f32 = 8.0;
-        if (self.state == .whirl) {
-            const w = self.whirlPh * std.math.tau;
-            aR = -118.0 + 22.0 * mathx.sinf(w);
-            yR = 34.0 * mathx.cosf(w);
-            eR = 26.0;
-        }
-        var aL = shL;
-        var eL = elL;
+        const u = self.t / WHIRL_DUR;
+        const lift = if (self.state == .whirl) anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.26, .v = 1 }, .{ .t = 0.88, .v = 1, .ease = .hold }, .{ .t = 1, .v = 0.8 } }, u) else 0;
+        var arms = [5]f32{ mathx.lerpF(shR, -116, lift), mathx.lerpF(elR, 28, lift), mathx.lerpF(shL, -26, lift), mathx.lerpF(elL, 68, lift), lift };
+        if (!self.poseSeated) self.slingArmSpring.seat(arms);
+        self.slingArmSpring.chase(&arms, 6500, 0.76, 0.95, self.poseStep);
+        const spin = if (self.state == .whirl) self.slingTurn + 720 * mathx.smoothstep(0.16, 0.97, u) else self.slingTurn;
+        _ = self.slingSpin.step(spin, 16000, 0.82, self.poseStep);
         const snap = self.biteLunge();
-        if (self.state == .bite) {
-            aR = shR + BITE_ARM_BACK * snap;
-            eR = elR + 34.0 * snap;
-            aL = shL + BITE_ARM_BACK * snap;
-            eL = elL + 34.0 * snap;
-        }
         const flail = 46.0 * stunAmt + 36.0 * dk;
-        setLocal(wx, SHL, self.rest, mul3(rx(aL - flail * 0.78), ry(-6.0 - 12.0 * stunAmt), rz(abd + 18.0 * stunAmt - BITE_ARM_TUCK * snap)));
-        setLocal(wx, ELL, self.rest, rx(-eL - 16.0 * stunAmt));
+        setLocal(wx, SHL, self.rest, mul3(rx(arms[2] + BITE_ARM_BACK * snap - flail * 0.78), ry(-6.0 - 12.0 * stunAmt), rz(abd + 18.0 * stunAmt - BITE_ARM_TUCK * snap)));
+        setLocal(wx, ELL, self.rest, rx(-arms[3] - 34 * snap - 16.0 * stunAmt));
         setLocal(wx, WRL, self.rest, rx(-6.0));
-        setLocal(wx, SHR, self.rest, mul3(rx(aR - flail), ry(yR + 16.0 * stunAmt), rz(-abd - 24.0 * stunAmt + BITE_ARM_TUCK * snap)));
-        setLocal(wx, ELR, self.rest, rx(-eR - 22.0 * stunAmt));
+        setLocal(wx, SHR, self.rest, mul3(rx(arms[0] + BITE_ARM_BACK * snap - flail), ry(8.0 + 16.0 * stunAmt), rz(-abd - 20 * arms[4] - 24.0 * stunAmt + BITE_ARM_TUCK * snap)));
+        setLocal(wx, ELR, self.rest, rx(-arms[1] - 34 * snap - 22.0 * stunAmt));
         setLocal(wx, WRR, self.rest, rx(-8.0));
-        setLocal(wx, KIT, self.rest, rx(if (self.state == .whirl) -40.0 else 10.0));
+        setLocal(wx, KIT, self.rest, rl.math.matrixIdentity());
     }
-
     pub fn gape(self: *const Kobold) f32 {
-        if (self.state == .bite) return self.biteLunge();
+        if (self.role == .slinger) return @max(0, self.bodyPose[6]) + @max(0, self.stunAmount()) * 0.7;
         if (self.state == .chop) {
             const u = mathx.clampF(self.t / ZERK_CHOP, 0, 1);
             return 0.62 * mathx.pulse(u, 0, ZERK_HIT_A, ZERK_HIT_B, 1.0);
@@ -1201,8 +1273,8 @@ pub const Kobold = struct {
 };
 
 
-const STAND_PELT: f32 = 0.20;
-const STAND_MANE: f32 = 0.34;
+const STAND_PELT: f32 = 0.04;
+const STAND_MANE: f32 = 0.085;
 
 fn furInto(b: *Builder, a: rl.Vector3, bb: rl.Vector3, r: f32, n: i32, rng: *mathx.Rng, col: rl.Color, stand: f32) void {
     const axis = mathx.normV(mathx.subV(bb, a));
@@ -1239,11 +1311,11 @@ fn skullMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x4B0B01D);
     const s = H;
-    b.addBlob(v3(0, 0.032 * s, 0.004 * s), v3(0.066 * s, 0.058 * s, 0.070 * s), 5, 9, FUR);
-    b.addBlob(v3(0, 0.020 * s, -0.040 * s), v3(0.054 * s, 0.048 * s, 0.040 * s), 4, 8, FUR_DK);
+    b.addBlob(v3(0, 0.032 * s, 0.004 * s), v3(0.066 * s, 0.058 * s, 0.070 * s), 8, 14, FUR);
+    b.addBlob(v3(0, 0.020 * s, -0.040 * s), v3(0.054 * s, 0.048 * s, 0.040 * s), 7, 12, FUR_DK);
     b.addCapsule(v3(-0.050 * s, 0.044 * s, 0.044 * s), v3(0.050 * s, 0.044 * s, 0.044 * s), 0.017 * s, 0.017 * s, 7, FUR_LT);
     for ([_]f32{ -1, 1 }) |side| {
-        b.addBlob(v3(side * 0.044 * s, 0.016 * s, 0.022 * s), v3(0.024 * s, 0.026 * s, 0.030 * s), 4, 7, FUR);
+        b.addBlob(v3(side * 0.044 * s, 0.016 * s, 0.022 * s), v3(0.024 * s, 0.026 * s, 0.030 * s), 6, 11, FUR);
     }
     const noseZ = (0.040 + SNOUT_LEN) * s;
     b.addCapsule(v3(0, 0.024 * s, 0.040 * s), v3(0, 0.024 * s - SNOUT_DROP * s, noseZ), 0.040 * s, 0.030 * s, 9, MUZZLE);
@@ -1333,72 +1405,77 @@ fn loinMesh(r: Role) rl.Mesh {
     return b.toMesh();
 }
 
+fn clothLoft(b: *Builder, rings: []const [5]f32, seed: u64, ragged: bool) void {
+    const sides = 24;
+    var rng = mathx.Rng.init(seed);
+    var fold: [sides]f32 = undefined;
+    var hem: [sides]f32 = undefined;
+    var col: [sides]rl.Color = undefined;
+    for (0..sides) |i| {
+        fold[i] = 1 + rng.signed() * 0.035;
+        hem[i] = if (ragged) rng.range(-0.024, 0.016) else 0;
+        col[i] = mathx.lerpColor(fabric(.priest)[0], fabric(.priest)[1], rng.range(0, 0.4));
+    }
+    for (rings[0 .. rings.len - 1], rings[1..], 0..) |lo, hi, row| {
+        for (0..sides) |i| {
+            const j = (i + 1) % sides;
+            var points: [4]rl.Vector3 = undefined;
+            for ([_][2]usize{ .{ i, 0 }, .{ i, 1 }, .{ j, 1 }, .{ j, 0 } }, 0..) |at, n| {
+                const ring = if (at[1] == 0) lo else hi;
+                const angle = std.math.tau * @as(f32, @floatFromInt(at[0])) / sides;
+                const y = ring[1] + (if (row == 0 and at[1] == 0) hem[at[0]] else 0);
+                points[n] = v3((ring[0] + ring[3] * mathx.cosf(angle) * fold[at[0]]) * H, y * H, (ring[2] + ring[4] * mathx.sinf(angle) * fold[at[0]]) * H);
+            }
+            const normal = mathx.normV(mathx.crossV(mathx.subV(points[1], points[0]), mathx.subV(points[2], points[0])));
+            b.quad(points[0], points[1], points[2], points[3], normal, col[i]);
+            b.quad(points[3], points[2], points[1], points[0], mathx.scaleV(normal, -1), col[i]);
+        }
+    }
+}
+
 fn hatMesh() rl.Mesh {
     var b = Builder.init();
-    var rng = mathx.Rng.init(0x4A7);
-    const s = H;
-    const col = fabric(.priest);
     b.setMat(.cloth);
-    b.addBlob(v3(0, 0.052 * s, 0.006 * s), v3(0.062 * s, 0.012 * s, 0.062 * s), 4, 9, col[1]);
-    const TIERS = 7;
-    var i: i32 = 0;
-    while (i < TIERS) : (i += 1) {
-        const t = @as(f32, @floatFromInt(i)) / @as(f32, TIERS - 1);
-        const leanX = 0.084 * t * t * s;
-        const leanZ = 0.030 * t * t * s;
-        const y = (0.058 + 0.106 * t) * s;
-        const r = (0.050 * (1.0 - t) + 0.006) * s;
-        b.addBlob(
-            v3(leanX + rng.signed() * 0.004 * s, y, leanZ + rng.signed() * 0.004 * s),
-            v3(r, 0.020 * s, r),
-            4,
-            8,
-            if (@rem(i, 2) == 0) col[0] else col[1],
-        );
-    }
-    b.addBlob(v3(-0.058 * s, 0.030 * s, 0.020 * s), v3(0.008 * s, 0.016 * s, 0.008 * s), 3, 5, TOOTH);
+    b.addBlob(v3(0, 0.060 * H, 0.006 * H), v3(0.073 * H, 0.013 * H, 0.073 * H), 5, 16, fabric(.priest)[1]);
+    clothLoft(&b, &.{
+        .{ 0, 0.059, 0.006, 0.061, 0.061 },
+        .{ 0.003, 0.091, 0.007, 0.052, 0.049 },
+        .{ 0.014, 0.128, 0.011, 0.037, 0.036 },
+        .{ 0.038, 0.161, 0.018, 0.024, 0.023 },
+        .{ 0.066, 0.179, 0.024, 0.013, 0.014 },
+        .{ 0.082, 0.170, 0.030, 0.006, 0.007 },
+    }, 0x4A7, false);
+    b.addBlob(v3(0.082 * H, 0.170 * H, 0.030 * H), v3(0.007 * H, 0.008 * H, 0.008 * H), 4, 8, fabric(.priest)[0]);
+    b.addBlob(v3(-0.058 * H, 0.030 * H, 0.020 * H), v3(0.008 * H, 0.016 * H, 0.008 * H), 3, 5, TOOTH);
     return b.toMesh();
 }
 
-fn robeMesh() rl.Mesh {
+fn robeMesh(skirt: bool) rl.Mesh {
     var b = Builder.init();
-    var rng = mathx.Rng.init(0x0BE);
-    const s = H;
-    const col = fabric(.priest);
     b.setMat(.cloth);
-    var i: i32 = 0;
-    while (i < 7) : (i += 1) {
-        const k = @as(f32, @floatFromInt(i)) / 6.0;
-        const y = (0.10 - 0.34 * k) * s;
-        const wide = (0.098 + 0.052 * k) * s;
-        b.addCube(
-            v3(rng.signed() * 0.006 * s, y, rng.signed() * 0.005 * s),
-            v3(wide * 2.0, 0.062 * s, (0.086 + 0.030 * k) * s),
-            if (@rem(i, 2) == 0) col[0] else col[1],
-        );
-    }
-    b.addBlob(v3(0, 0.108 * s, -0.062 * s), v3(0.082 * s, 0.062 * s, 0.070 * s), 4, 8, col[1]);
-    b.addBlob(v3(0, 0.126 * s, -0.020 * s), v3(0.094 * s, 0.034 * s, 0.078 * s), 4, 8, col[0]);
-    var k2: i32 = 0;
-    while (k2 < 11) : (k2 += 1) {
-        if (rng.float() < 0.18) continue;
-        const a = std.math.tau * (@as(f32, @floatFromInt(k2)) + rng.signed() * 0.3) / 11.0;
-        const r = 0.140 * s;
-        const drop = rng.range(0.034, 0.108) * s;
-        b.addCube(
-            v3(mathx.cosf(a) * r, -0.252 * s - drop * 0.5, mathx.sinf(a) * r * 0.72),
-            v3(0.042 * s, drop, 0.030 * s),
-            if (rng.float() < 0.45) CLOTH_DK else CLOTH,
-        );
+    if (skirt) {
+        clothLoft(&b, &.{
+            .{ 0.004, -0.208, 0.004, 0.218, 0.204 },
+            .{ 0.002, -0.106, 0, 0.205, 0.191 },
+            .{ 0, 0.014, 0, 0.188, 0.168 },
+            .{ 0, 0.172, 0, 0.148, 0.144 },
+        }, 0x0BE, true);
+    } else {
+        clothLoft(&b, &.{
+            .{ 0, -0.194, -0.004, 0.180, 0.162 },
+            .{ 0, -0.104, -0.002, 0.168, 0.157 },
+            .{ 0, 0.013, 0.002, 0.165, 0.176 },
+            .{ -0.003, 0.082, 0.002, 0.138, 0.143 },
+            .{ -0.002, 0.118, -0.004, 0.081, 0.088 },
+        }, 0x0BE, false);
     }
     return b.toMesh();
 }
-
 fn lumbarMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x10BA);
     const s = H;
-    b.addBlob(v3(0, 0.058 * s, -0.004 * s), v3(0.116 * s, 0.070 * s, 0.116 * s), 5, 9, FUR);
+    b.addCapsule(v3(0, -0.030 * s, -0.004 * s), v3(0, 0.058 * s, -0.004 * s), 0.091 * s, 0.112 * s, 12, FUR);
     furInto(&b, v3(0, 0.014 * s, -0.062 * s), v3(0, 0.100 * s, -0.062 * s), 0.064 * s, 22, &rng, FUR_DK, STAND_PELT);
     return b.toMesh();
 }
@@ -1491,9 +1568,13 @@ fn footMesh(seed: u64) rl.Mesh {
 
 const AXE_HAFT = 0.250;
 const STAFF_TOP = 0.340;
+
+fn staffCrown() rl.Vector3 {
+    return v3(mathx.sinf(2.6) * 0.012 * H, (STAFF_TOP - 0.020) * H, (0.012 + mathx.sinf(2.7) * 0.008) * H);
+}
 const SLING_LEN = 0.190;
 
-fn axeMesh(seed: u64) rl.Mesh {
+fn axeMesh(seed: u64, side: f32) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
     const s = H;
@@ -1502,10 +1583,32 @@ fn axeMesh(seed: u64) rl.Mesh {
     b.addCylinder(v3(grip.x, grip.y - 0.048 * s, grip.z), v3(grip.x, headY, grip.z + 0.020 * s), 0.0145 * s, 0.0120 * s, 8, HAFT);
     b.addDome(v3(grip.x, grip.y - 0.048 * s, grip.z), v3(0, -1, 0), 0.0145 * s, 8, HAFT);
     b.addCube(v3(grip.x, grip.y - 0.006 * s, grip.z), v3(0.032 * s, 0.042 * s, 0.032 * s), HIDE);
-    const bx = 0.056 * s * rng.range(0.9, 1.1);
-    b.addBox(v3(grip.x + bx * 0.5, headY - 0.006 * s, grip.z + 0.022 * s), v3(bx, 0.010 * s, 0), v3(0, 0.082 * s, 0.006 * s), v3(0, 0, 0.020 * s), IRON);
-    b.addBox(v3(grip.x + bx * 1.0, headY - 0.006 * s, grip.z + 0.022 * s), v3(0.018 * s, 0.005 * s, 0), v3(0, 0.068 * s, 0), v3(0, 0, 0.014 * s), IRON_LT);
-    b.addCapsule(v3(grip.x - 0.006 * s, headY - 0.024 * s, grip.z + 0.014 * s), v3(grip.x + 0.010 * s, headY + 0.034 * s, grip.z + 0.026 * s), 0.0115 * s, 0.0115 * s, 7, HIDE_LT);
+    const width = rng.range(0.95, 1.05);
+    const outline = [_][2]f32{ .{ -0.012, -0.065 }, .{ 0.028, -0.052 }, .{ 0.086, -0.100 }, .{ 0.115, -0.082 }, .{ 0.131, -0.014 }, .{ 0.117, 0.075 }, .{ 0.090, 0.102 }, .{ 0.040, 0.058 }, .{ -0.014, 0.055 } };
+    const emit = struct {
+        fn tri(builder: *Builder, a: rl.Vector3, bb: rl.Vector3, c: rl.Vector3, mirror: f32, col: rl.Color) void {
+            const p = if (mirror > 0) bb else c;
+            const q = if (mirror > 0) c else bb;
+            const normal = mathx.normV(mathx.crossV(mathx.subV(p, a), mathx.subV(q, a)));
+            builder.triSmooth(a, p, q, normal, normal, normal, col);
+        }
+    }.tri;
+    b.setMat(.steel);
+    for ([_]f32{ -1, 1 }) |face| {
+        const center = v3(side * 0.038 * s, headY, grip.z + (0.022 + face * 0.014) * s);
+        for (outline, 0..) |p0, i| {
+            const p1 = outline[(i + 1) % outline.len];
+            const outer0 = v3(side * p0[0] * width * s, headY + p0[1] * s, grip.z + 0.022 * s);
+            const outer1 = v3(side * p1[0] * width * s, headY + p1[1] * s, grip.z + 0.022 * s);
+            const inner0 = v3(side * (0.038 + (p0[0] * width - 0.038) * 0.88) * s, headY + p0[1] * 0.90 * s, center.z);
+            const inner1 = v3(side * (0.038 + (p1[0] * width - 0.038) * 0.88) * s, headY + p1[1] * 0.90 * s, center.z);
+            emit(&b, center, inner0, inner1, side * face, IRON);
+            emit(&b, inner0, outer0, outer1, side * face, IRON_LT);
+            emit(&b, inner0, outer1, inner1, side * face, IRON_LT);
+        }
+    }
+    b.setMat(.leather);
+    b.addCapsule(v3(side * -0.006 * s, headY - 0.024 * s, grip.z + 0.014 * s), v3(side * 0.010 * s, headY + 0.034 * s, grip.z + 0.026 * s), 0.0115 * s, 0.0115 * s, 7, HIDE_LT);
     return b.toMesh();
 }
 
@@ -1530,7 +1633,7 @@ fn staffMesh() rl.Mesh {
     for ([_]f32{ -1, 1 }) |side| {
         b.addCapsule(prev, v3(prev.x + side * 0.032 * s, prev.y + 0.042 * s, prev.z + 0.010 * s), 0.0095 * s, 0.0062 * s, 6, HAFT);
     }
-    b.addBlob(v3(prev.x, prev.y + 0.030 * s, prev.z + 0.006 * s), v3(0.021 * s, 0.025 * s, 0.021 * s), 4, 8, HEAL_GLOW);
+    b.addBlob(staffCrown(), v3(0.021 * s, 0.025 * s, 0.021 * s), 4, 8, HEAL_GLOW);
     var k: i32 = 0;
     while (k < 4) : (k += 1) {
         const hy = prev.y - rng.range(0.03, 0.10) * s;
@@ -1542,11 +1645,15 @@ fn staffMesh() rl.Mesh {
     return b.toMesh();
 }
 
-fn slingMesh() rl.Mesh {
+fn slingPouch() rl.Vector3 {
+    return v3(0, -0.05 * H, (0.006 + SLING_LEN) * H);
+}
+
+fn slingMesh(loaded: bool) rl.Mesh {
     var b = Builder.init();
     const s = H;
     const grip = v3(0, -0.05 * s, 0.006 * s);
-    const pouch = v3(grip.x, grip.y, grip.z + SLING_LEN * s);
+    const pouch = slingPouch();
     for ([_]f32{ -1, 1 }) |side| {
         b.addCapsule(
             v3(grip.x + side * 0.009 * s, grip.y, grip.z),
@@ -1558,12 +1665,14 @@ fn slingMesh() rl.Mesh {
         );
     }
     b.addBlob(pouch, v3(0.024 * s, 0.015 * s, 0.021 * s), 4, 7, HIDE);
+    if (loaded) {
     const lump = v3(pouch.x, pouch.y + 0.008 * s, pouch.z);
     b.addBlob(lump, v3(0.014 * s, 0.013 * s, 0.014 * s), 3, 6, CLUMP_CHAR);
     b.addBlob(lump, v3(0.017 * s, 0.017 * s, 0.017 * s), 3, 8, EMBER_CORE);
     b.setMat(.flame);
     b.setAnimY(lump.y);
     b.addBlob(v3(lump.x, lump.y + 0.016 * s, lump.z), v3(0.014 * s, 0.026 * s, 0.014 * s), 3, 7, propart.FLAME_MID);
+    }
     b.setMat(.plain);
     b.addCube(grip, v3(0.030 * s, 0.038 * s, 0.030 * s), HIDE_LT);
     return b.toMesh();
@@ -1621,8 +1730,10 @@ pub const Model = struct {
     mesh: [N]rl.Mesh,
     kit: [SPEC.len]rl.Mesh,
     offAxe: rl.Mesh,
+    emptySling: rl.Mesh,
     jaw: rl.Mesh,
     robe: rl.Mesh,
+    skirt: rl.Mesh,
     hat: rl.Mesh,
     loin: [SPEC.len]rl.Mesh,
     tail: [TAIL_N]rl.Mesh,
@@ -1634,10 +1745,12 @@ pub const Model = struct {
         for (0..TAIL_N) |i| tail[i] = tailMesh(i);
         return .{
             .mesh = buildMeshes(),
-            .kit = [SPEC.len]rl.Mesh{ axeMesh(0xA7E1), staffMesh(), slingMesh() },
-            .offAxe = axeMesh(0xA7E2),
+            .kit = [SPEC.len]rl.Mesh{ axeMesh(0xA7E1, 1), staffMesh(), slingMesh(true) },
+            .offAxe = axeMesh(0xA7E2, -1),
+            .emptySling = slingMesh(false),
             .jaw = jawMesh(),
-            .robe = robeMesh(),
+            .robe = robeMesh(false),
+            .skirt = robeMesh(true),
             .hat = hatMesh(),
             .loin = [SPEC.len]rl.Mesh{ loinMesh(.berserker), loinMesh(.priest), loinMesh(.slinger) },
             .tail = tail,
@@ -1656,12 +1769,13 @@ pub const Model = struct {
         for (0..TAIL_N) |i| rl.drawMesh(self.tail[i], self.mat, k.tailXf[i]);
         rl.drawMesh(self.loin[@intFromEnum(k.role)], self.mat, k.xf[ROOT]);
         if (k.role == .priest) {
-            rl.drawMesh(self.robe, self.mat, k.xf[SPINE]);
+            rl.drawMesh(self.robe, self.mat, k.xf[CHEST]);
+            rl.drawMesh(self.skirt, self.mat, k.xf[ROOT]);
             rl.drawMesh(self.hat, self.mat, k.xf[SKULL]);
         }
-        rl.drawMesh(self.kit[@intFromEnum(k.role)], self.mat, k.xf[KIT]);
+        rl.drawMesh(if (k.role == .slinger and k.state != .whirl) self.emptySling else self.kit[@intFromEnum(k.role)], self.mat, k.xf[KIT]);
         if (k.role == .berserker) {
-            rl.drawMesh(self.offAxe, self.mat, mul(mathx.scaleM(-1, 1, 1), k.xf[WRL]));
+            rl.drawMesh(self.offAxe, self.mat, k.axeFrame(true));
         }
     }
 };
@@ -1767,7 +1881,7 @@ pub const Warband = struct {
                     }
                 },
             }
-            if (k.hurtOpen() and mathx.distXZ(k.pos, hero) <= k.hurtReach()) {
+            if (k.hurtOpen() and mathx.distXZ(k.pos, hero) <= k.hurtReach() and k.weaponTouches(hero)) {
                 k.markDealt();
                 foe.worseBlow(&blow, k.hurtBlow(), k.pos, &k.threat);
             }
@@ -1891,7 +2005,7 @@ test "BOTH KOBOLD STROKES CAN BE CAUGHT, and the DASH cannot — a leap is not a
         k.dealt = false;
         k.t = c.at - foe.PARRY_LEAD * 0.5;
         const reach = k.parryable() orelse return error.TestUnexpectedResult;
-        try std.testing.expectApproxEqAbs(foe.hurtReach(c.reach, k.scale), reach, 1e-5);
+        try std.testing.expectApproxEqAbs(c.reach * k.scale + (if (c.st == .bite) foe.HERO_R else foe.HERO_REACH), reach, 1e-5);
         k.parry = .{ .live = true, .at = mathx.ground(0, c.reach * 0.5), .facing = std.math.pi, .arc = combat.GUARD_ARC };
         k.takeParry();
         try std.testing.expect(k.parried);
@@ -1938,4 +2052,157 @@ test "THE SLINGER DRIFTS WHILE THE SLING COOLS — the bearing sweeps and the ba
     std.debug.print("\n  slinger drift: bearing swept {d:.0} deg, range {d:.1} m (band {d:.1}..{d:.1})\n", .{ mathx.degrees(swept), d, spec(.slinger).wantMin, spec(.slinger).wantMax });
     try std.testing.expect(swept > mathx.radians(12.0));
     try std.testing.expect(d > spec(.slinger).wantMin and d < spec(.slinger).wantMax + 1.0);
+}
+
+test "berserker axes reach the chosen range and the step is stable across frame rates and scales" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+            for ([_]bool{ false, true }) |left| {
+                var k = Kobold.spawnAs(.berserker, mathx.zero3, 0, size, 0.15);
+                k.enter(.chop);
+                k.chopLeftHand = left;
+                k.chopsLeft = 0;
+                const target = v3(0, 0, k.hurtReach() - 0.05);
+                var hit = false;
+                for (0..240) |_| {
+                    _ = k.update(1 / hz, target, 200, .{});
+                    if (k.hurtOpen() and k.weaponTouches(target)) hit = true;
+                    try std.testing.expect(!k.weaponTouches(v3(0, 10, target.z)));
+                    try std.testing.expect(!k.weaponTouches(v3(0, 0, -4 * size)));
+                    if (k.state != .chop) break;
+                }
+                if (!hit) std.debug.print("axe range miss Hz {d} size {d} left {} target {d:.3}\n", .{ hz, size, left, target.z });
+                try std.testing.expect(hit);
+                try std.testing.expectApproxEqAbs(ZERK_STEP, k.pos.z, 0.002);
+            }
+        }
+    }
+}
+
+test "berserker interrupts keep both axe grips continuous" {
+    var k = Kobold.spawnAs(.berserker, mathx.zero3, 0, 1, 0.15);
+    k.enter(.chop);
+    for (0..17) |_| _ = k.update(1.0 / 60.0, v3(0, 0, 1.7), 200, .{});
+    const before = [2][2]rl.Vector3{ k.axeEdge(true), k.axeEdge(false) };
+    k.stagger(true);
+    _ = k.update(0, v3(0, 0, 1.7), 200, .{});
+    for (before, [_]bool{ true, false }) |edge, left| {
+        for (edge, k.axeEdge(left)) |a, b| try std.testing.expect(mathx.lenV(mathx.subV(a, b)) < 0.001);
+        const grip = v3(0, -0.05 * H, 0.006 * H);
+        try std.testing.expect(mathx.lenV(mathx.subV(foe.markOn(k.axeFrame(left), grip), foe.markOn(k.xf[if (left) WRL else WRR], grip))) < 0.001);
+    }
+}
+
+test "berserker planted recovery and stagger paws clear the floor" {
+    for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+        for ([_]State{ .stunheavy, .heave, .dash }) |state| {
+            var k = Kobold.spawnAs(.berserker, v3(0, 2, 0), 0, size, 0.15);
+            k.enter(state);
+            for (0..140) |_| {
+                _ = k.update(1.0 / 60.0, v3(0, 2, 90), 200, .{});
+                for (solePatches) |sole| {
+                    for ([_]f32{ -sole.halfW, sole.halfW }) |x| {
+                        for ([_]f32{ -sole.heel, sole.toe }) |z| {
+                            const at = foe.markOn(k.xf[sole.bone], v3(x, -sole.drop, z));
+                            if (at.y < k.pos.y - 0.01) std.debug.print("paw below floor state {s} size {d} t {d:.3} depth {d:.3}\n", .{ @tagName(k.state), size, k.t, k.pos.y - at.y });
+                            try std.testing.expect(at.y >= k.pos.y - 0.01);
+                        }
+                    }
+                }
+                if (k.state != state) break;
+            }
+        }
+    }
+}
+test "priest staff stays seated and upright through cast and interrupts" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+            var k = Kobold.spawnAs(.priest, mathx.zero3, 0, size, 0.55);
+            k.enter(.cast);
+            k.castCd = 10;
+            for (0..@as(usize, @intFromFloat(hz * 1.6))) |_| {
+                _ = k.update(1 / hz, v3(0, 0, 90), 200, .{});
+                const grip = v3(0, -0.05 * H, 0.006 * H);
+                const held = foe.markOn(k.xf[KIT], grip);
+                const hand = foe.markOn(k.xf[WRR], grip);
+                try std.testing.expect(mathx.lenV(mathx.subV(held, hand)) < 0.001);
+                try std.testing.expect(k.staffTop().y > held.y + 0.35 * size);
+            }
+            k.enter(.cast);
+            for (0..@as(usize, @intFromFloat(hz * 0.65))) |_| _ = k.update(1 / hz, v3(0, 0, 90), 200, .{});
+            const before = k.staffTop();
+            k.stagger(true);
+            _ = k.update(0, v3(0, 0, 90), 200, .{});
+            try std.testing.expect(mathx.lenV(mathx.subV(before, k.staffTop())) < 0.001);
+            for (0..@as(usize, @intFromFloat(hz * 2.5))) |_| {
+                _ = k.update(1 / hz, v3(0, 0, 90), 200, .{});
+                for (solePatches) |sole| {
+                    for ([_]f32{ -sole.halfW, sole.halfW }) |x| {
+                        for ([_]f32{ -sole.heel, sole.toe }) |z| {
+                            try std.testing.expect(foe.markOn(k.xf[sole.bone], v3(x, -sole.drop, z)).y >= -0.01);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+test "slinger bite contact follows the jaws across frame rates and scales" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+            var k = Kobold.spawnAs(.slinger, mathx.zero3, 0, size, 0.55);
+            k.enter(.bite);
+            const target = v3(0, 0, k.hurtReach() - 0.03);
+            var hit = false;
+            var closest: f32 = 100;
+            for (0..200) |_| {
+                _ = k.update(1 / hz, target, 200, .{});
+                if (k.hurtOpen()) {
+                    if (k.weaponTouches(target)) hit = true;
+                    closest = @min(closest, mathx.lenV(mathx.subV(k.mouthEdge()[0], v3(0, 1, target.z))));
+                    try std.testing.expect(!k.weaponTouches(v3(0, 8, target.z)));
+                    try std.testing.expect(!k.weaponTouches(v3(0, 0, -2 * size)));
+                }
+                if (k.state != .bite) break;
+            }
+            if (!hit) std.debug.print("bite missed Hz {d} size {d} range {d:.3} closest {d:.3}\n", .{ hz, size, target.z, closest });
+            try std.testing.expect(hit);
+            k.enter(.idle);
+            k.decide(4);
+            try std.testing.expect(k.state != .bite);
+        }
+    }
+}
+
+test "slinger release comes from the held pouch and interrupts stay continuous" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+            var k = Kobold.spawnAs(.slinger, mathx.zero3, 0, size, 0.55);
+            k.enter(.whirl);
+            var released = false;
+            for (0..200) |_| {
+                const act = k.update(1 / hz, v3(0, 0, 8), 200, .{});
+                const grip = v3(0, -0.05 * H, 0.006 * H);
+                try std.testing.expect(mathx.lenV(mathx.subV(foe.markOn(k.xf[KIT], grip), foe.markOn(k.xf[WRR], grip))) < 0.001);
+                switch (act) {
+                    .sling => |from| {
+                        try std.testing.expect(mathx.lenV(mathx.subV(from, k.slingPoint())) < 0.001);
+                        const forward = mathx.headingDir(k.facing);
+                        const tangent = mathx.addV(mathx.scaleV(forward, -mathx.sinf(mathx.radians(k.slingSpin.v))), v3(0, mathx.cosf(mathx.radians(k.slingSpin.v)), 0));
+                        try std.testing.expect(mathx.dotV(forward, tangent) > 0.95);
+                        released = true;
+                    },
+                    else => {},
+                }
+                if (released) break;
+            }
+            try std.testing.expect(released);
+            k.enter(.whirl);
+            for (0..@as(usize, @intFromFloat(hz * 0.4))) |_| _ = k.update(1 / hz, v3(0, 0, 8), 200, .{});
+            const before = k.slingPoint();
+            k.stagger(true);
+            _ = k.update(0, v3(0, 0, 8), 200, .{});
+            try std.testing.expect(mathx.lenV(mathx.subV(before, k.slingPoint())) < 0.001);
+        }
+    }
 }

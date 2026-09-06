@@ -112,6 +112,34 @@ pub fn closestOnSegXZ(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     return v3(a.x + abx * t, 0, a.z + abz * t);
 }
 
+pub const TwoBone = struct { joint: rl.Vector3, end: rl.Vector3 };
+
+pub fn twoBone(root: rl.Vector3, target: rl.Vector3, upper: f32, lower: f32, hint: rl.Vector3) TwoBone {
+    var to = subV(target, root);
+    var distance = lenV(to);
+    if (distance < 1e-4) {
+        to = v3(0, -1e-4, 0);
+        distance = 1e-4;
+    }
+    const reach = clampF(distance, @abs(upper - lower) + 1e-3, upper + lower - 1e-3);
+    const along = scaleV(to, 1 / distance);
+    var side = subV(hint, scaleV(along, dotV(hint, along)));
+    if (lenV(side) < 1e-4) side = crossV(along, if (@abs(along.y) < 0.9) v3(0, 1, 0) else v3(1, 0, 0));
+    side = normV(side);
+    const cosine = clampF((upper * upper + reach * reach - lower * lower) / (2 * upper * reach), -1, 1);
+    const direction = addV(scaleV(along, cosine), scaleV(side, @sqrt(@max(0, 1 - cosine * cosine))));
+    return .{ .joint = addV(root, scaleV(direction, upper)), .end = addV(root, scaleV(along, reach)) };
+}
+
+pub const LegAngles = struct { hip: f32, knee: f32 };
+
+/// THE PLANAR PAIR A STRAIGHT-DOWN LEG STANDS AT, in DEGREES: `hip` off the vertical, `knee` as flexion (0 straight). `height` is root to end-joint, and the caller bounds it — `twoBone` is the same triangle when the target is a POINT rather than a height.
+pub fn legAngles(upper: f32, lower: f32, height: f32) LegAngles {
+    return .{
+        .hip = degrees(std.math.acos(clampF((upper * upper + height * height - lower * lower) / (2 * upper * height), -1, 1))),
+        .knee = 180 - degrees(std.math.acos(clampF((upper * upper + lower * lower - height * height) / (2 * upper * lower), -1, 1))),
+    };
+}
 pub fn closestOnSegV(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     const ab = subV(b, a);
     const denom = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z;
@@ -121,6 +149,29 @@ pub fn closestOnSegV(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     return v3(a.x + ab.x * t, a.y + ab.y * t, a.z + ab.z * t);
 }
 
+pub fn segmentGapV(a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3) f32 {
+    const ab = subV(b, a);
+    const cd = subV(d, c);
+    const ac = subV(a, c);
+    const aa = dotV(ab, ab);
+    const cc = dotV(cd, cd);
+    if (aa < 1e-12) return lenV(subV(a, closestOnSegV(a, c, d)));
+    if (cc < 1e-12) return lenV(subV(c, closestOnSegV(c, a, b)));
+    const cross = dotV(ab, cd);
+    const ar = dotV(ab, ac);
+    const cr = dotV(cd, ac);
+    const denom = aa * cc - cross * cross;
+    var u = if (denom > 1e-8 * aa * cc) clampF((cross * cr - ar * cc) / denom, 0, 1) else @as(f32, 0);
+    var v = (cross * u + cr) / cc;
+    if (v < 0) {
+        v = 0;
+        u = clampF(-ar / aa, 0, 1);
+    } else if (v > 1) {
+        v = 1;
+        u = clampF((cross - ar) / aa, 0, 1);
+    }
+    return lenV(subV(lerpV(a, b, u), lerpV(c, d, v)));
+}
 pub fn addV(a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
     return v3(a.x + b.x, a.y + b.y, a.z + b.z);
 }
@@ -408,4 +459,28 @@ test "smoothstep clamps outside [a,b] and passes its midpoint" {
     try std.testing.expectEqual(@as(f32, 0), smoothstep(0.2, 0.8, 0.0));
     try std.testing.expectEqual(@as(f32, 1), smoothstep(0.2, 0.8, 1.0));
     try std.testing.expectApproxEqAbs(@as(f32, 0.5), smoothstep(0, 1, 0.5), 1e-6);
+}
+
+test "two-bone solve preserves lengths at reach limits and parallel hints" {
+    for ([_]f32{ 0.5, 1, 1.8 }) |size| {
+        const root = v3(2, 3, -4);
+        const upper = 0.45 * size;
+        const lower = 0.62 * size;
+        for ([_]rl.Vector3{ root, addV(root, v3(0, -0.5 * size, 0)), addV(root, v3(0, -8, 0)) }) |target| {
+            const solved = twoBone(root, target, upper, lower, v3(0, -1, 0));
+            try std.testing.expectApproxEqAbs(upper, lenV(subV(solved.joint, root)), 0.0001);
+            try std.testing.expectApproxEqAbs(lower, lenV(subV(solved.end, solved.joint)), 0.0001);
+            try std.testing.expect(lenV(subV(solved.end, root)) < upper + lower);
+        }
+    }
+}
+test "segmentGapV handles crossing, skew, parallel and collapsed segments" {
+    for ([_]f32{ 0.5, 1, 3 }) |s| {
+        try std.testing.expectApproxEqAbs(@as(f32, 0), segmentGapV(v3(-s, 0, 0), v3(s, 0, 0), v3(0, -s, 0), v3(0, s, 0)), 1e-5);
+        try std.testing.expectApproxEqAbs(s, segmentGapV(v3(-s, 0, 0), v3(s, 0, 0), v3(0, -s, s), v3(0, s, s)), 1e-5);
+        try std.testing.expectApproxEqAbs(s, segmentGapV(v3(-s, 0, 0), v3(s, 0, 0), v3(-s, s, 0), v3(s, s, 0)), 1e-5);
+        try std.testing.expectApproxEqAbs(s, segmentGapV(zero3, zero3, v3(-s, s, 0), v3(s, s, 0)), 1e-5);
+        try std.testing.expectApproxEqAbs(s, segmentGapV(v3(-s, s, 0), v3(s, s, 0), zero3, zero3), 1e-5);
+        try std.testing.expectApproxEqAbs(s * @sqrt(@as(f32, 2)), segmentGapV(zero3, v3(s, 0, 0), v3(2 * s, s, 0), v3(3 * s, s, 0)), 1e-5);
+    }
 }

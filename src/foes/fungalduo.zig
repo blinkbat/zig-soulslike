@@ -263,7 +263,7 @@ const SW_LUNGE_KEYS = [_]PoseKey{
     .{ .t = 1.00, .p = .{ .lean = 22.0, .twist = 12.0, .head = -8.0, .rsh = 78.0, .rabd = 6.0, .rel = 10.0, .lsh = -22.0, .lel = 18.0, .tilt = 88.0 } },
 };
 
-/// Solved, not picked: `asin(shoulderHalf / armLen)` on this body's own numbers (0.57 m and 0.88 m).
+/// Solved, not picked — the derivation is on `CH_CLASP`.
 const SW_HEAVY_CLASP: f32 = 40.0;
 
 const SW_HEAVY_WIND_KEYS = [_]PoseKey{
@@ -381,6 +381,27 @@ const MG_BUNCH: usize = 4;
 const MG_BUNCH_R: f32 = 1.8;
 const CAP_STAGGER: f32 = 0.45;
 
+/// THE DUST IS HIS CLOSE ANSWER, not a step back: a lungful of spore blown into the man's face, and it HANGS where it was blown.
+const MG_PUFF_R: f32 = 4.2;
+pub const MG_PUFF_WIND: f32 = 0.34;
+pub const MG_PUFF_DUR: f32 = 0.24;
+pub const MG_PUFF_BLOW_K: f32 = 0.40;
+const MG_PUFF_CD: f32 = 3.4;
+pub const MG_PUFF_REACH: f32 = 4.1;
+/// HALF-angle either side of his facing (`foe.inArc` takes a half-width): an 80-degree cone.
+const MG_PUFF_ARC: f32 = 40.0;
+/// How far in front of him the cloud settles.
+pub const MG_PUFF_OUT: f32 = 1.5;
+pub var PUFF_HIT = combat.Hit{ .dmg = 6, .poise = 16, .stance = 8, .elem = combat.elems(.{ .chaos = 16 }), .venom = true };
+
+pub const DUST_N: usize = 6;
+pub const DUST_R: f32 = 2.4;
+pub const DUST_LIFE: f32 = 5.5;
+pub const DUST_BLOOM: f32 = 0.6;
+/// IT BITES WHILE IT HANGS — a pulse on its own clock with no poise, the knight's gas pattern.
+pub const DUST_EVERY: f32 = 0.5;
+pub var DUST_PULSE_HIT = combat.Hit{ .dmg = 5, .elem = combat.elems(.{ .chaos = 5 }), .venom = true };
+
 const MG_FADE_OUT: f32 = 1.15;
 const MG_GONE_DUR: f32 = 0.55;
 const MG_FADE_IN: f32 = 0.60;
@@ -400,6 +421,11 @@ comptime {
     std.debug.assert(MG_SPROUT_MIN >= MG_FLEE_R and MG_ORB_MIN >= MG_FLEE_R);
     std.debug.assert(MG_FADE_OUT > MG_ORB_WIND * 2.0);
     std.debug.assert(MG_REAPPEAR_R > MG_FLEE_R);
+    std.debug.assert(MG_PUFF_WIND >= foe.TELL_MIN);
+    std.debug.assert(MG_PUFF_R < MG_FLEE_R); // …or the dust would answer a band he is already casting into
+    std.debug.assert(MG_PUFF_REACH + foe.HERO_R > MG_PUFF_R); // …or the ring hands out a breath that stops short of the man it was blown at
+    std.debug.assert(MG_PUFF_CD > MG_PUFF_WIND + MG_PUFF_DUR + MG_REC);
+    std.debug.assert(DUST_BLOOM < DUST_LIFE * 0.5 and DUST_EVERY < DUST_LIFE);
     std.debug.assert(CAP_GROW > CAP_GLOW * 2.0);
     std.debug.assert(ORB_SPEED * ORB_LIFE > AGGRO_R_BANK);
     std.debug.assert(MG_PRESS_RATE_HURT >= 1.0 and MG_FADE_CD_HURT <= MG_FADE_CD);
@@ -433,17 +459,33 @@ const MG_SPROUT_KEYS = [_]PoseKey{
     .{ .t = 1.00, .p = .{ .lean = 20.0, .head = -11.0, .rsh = 48.0, .rabd = 8.0, .rel = 16.0, .lsh = 40.0, .lel = 20.0, .tilt = 22.0 } },
 };
 
+// THE DUST IS A BREATH: the free hand cupped up to his mouth and the head dropped into it, then the whole trunk snaps forward and the hand throws open.
+const MG_PUFF_WIND_KEYS = [_]PoseKey{
+    .{ .t = 0.00, .p = MG_CARRY },
+    .{ .t = 0.62, .p = .{ .lean = -12.0, .twist = 8.0, .head = -13.0, .rsh = 16.0, .rabd = 7.0, .rel = 38.0, .lsh = 84.0, .lel = 124.0, .tilt = 172.0 }, .ease = .accel },
+    .{ .t = 1.00, .p = .{ .lean = -17.0, .twist = 11.0, .head = -18.0, .rsh = 16.0, .rabd = 7.0, .rel = 38.0, .lsh = 94.0, .lel = 134.0, .tilt = 172.0 } },
+};
+
+const MG_PUFF_KEYS = [_]PoseKey{
+    .{ .t = 0.00, .p = .{ .lean = -17.0, .twist = 11.0, .head = -18.0, .rsh = 16.0, .rabd = 7.0, .rel = 38.0, .lsh = 94.0, .lel = 134.0, .tilt = 172.0 } },
+    .{ .t = 0.40, .p = .{ .lean = 26.0, .twist = -7.0, .head = 17.0, .rsh = 16.0, .rabd = 7.0, .rel = 38.0, .lsh = 120.0, .lel = 30.0, .tilt = 172.0 }, .ease = .snap },
+    .{ .t = 1.00, .p = .{ .lean = 19.0, .twist = -4.0, .head = 12.0, .rsh = 16.0, .rabd = 7.0, .rel = 38.0, .lsh = 112.0, .lel = 38.0, .tilt = 172.0 } },
+};
+
+const MG_PUFF_REC_KEYS = recTrack(&MG_PUFF_KEYS, MG_CARRY);
 const MG_SPROUT_REC_KEYS = recTrack(&MG_SPROUT_KEYS, MG_CARRY);
 const MG_ORB_REC_KEYS = recTrack(&MG_ORB_KEYS, MG_CARRY);
 
 const MgRecover = enum {
     orb,
     sprout,
+    puff,
 
     fn keys(self: MgRecover) []const PoseKey {
         return switch (self) {
             .orb => &MG_ORB_REC_KEYS,
             .sprout => &MG_SPROUT_REC_KEYS,
+            .puff => &MG_PUFF_REC_KEYS,
         };
     }
 };
@@ -453,12 +495,14 @@ const MG_FADE_KEYS = [_]PoseKey{
     .{ .t = 1.00, .p = .{ .lean = 26.0, .head = -22.0, .rsh = 4.0, .rabd = 4.0, .rel = 118.0, .lsh = 4.0, .lel = 112.0, .tilt = 150.0 }, .ease = .accel },
 };
 
-const MgState = enum { idle, drift, orb_wind, orb_throw, sprout_wind, sprout, recover, fade_out, gone, fade_in, stunlight, stunheavy, dead };
+const MgState = enum { idle, drift, orb_wind, orb_throw, sprout_wind, sprout, puff_wind, puff, recover, fade_out, gone, fade_in, stunlight, stunheavy, dead };
 
-const MgChoice = enum { hold, back, keep, orb, sprout, vanish };
+const MgChoice = enum { hold, back, keep, orb, sprout, puff, vanish };
 
-fn mgClassify(dist: f32, orbReady: bool, sproutReady: bool, fadeReady: bool, pressed: bool) MgChoice {
+/// A MAN IN HIS FACE GETS THE DUST BEFORE HE GETS THE BACK OF THE MAGUS — the puff outranks both the retreat AND the blink, and he only vanishes once the breath is spent.
+fn mgClassify(dist: f32, orbReady: bool, sproutReady: bool, fadeReady: bool, puffReady: bool, pressed: bool) MgChoice {
     if (dist > AGGRO_R) return .hold;
+    if (dist <= MG_PUFF_R and puffReady) return .puff;
     if (pressed and fadeReady) return .vanish;
     if (dist < MG_FLEE_R) return .back;
     if (sproutReady and dist >= MG_SPROUT_MIN and dist <= MG_SPROUT_MAX) return .sprout;
@@ -485,6 +529,27 @@ pub const Cap = struct {
     }
     pub fn showing(self: *const Cap) bool {
         return self.live and self.t > 0;
+    }
+};
+
+/// The cloud the breath leaves standing. It blooms fast, HANGS, then thins out.
+pub const Dust = struct {
+    live: bool = false,
+    at: rl.Vector3 = mathx.zero3,
+    t: f32 = 0,
+    pulse: f32 = 0,
+    seed: f32 = 0,
+
+    pub fn amt(self: *const Dust) f32 {
+        if (!self.live) return 0;
+        const u = mathx.clampF(self.t / DUST_LIFE, 0, 1);
+        return mathx.minF(1.0, self.t / (DUST_BLOOM * 0.5)) * (1.0 - mathx.smoothstep(0.55, 1.0, u));
+    }
+    pub fn radius(self: *const Dust) f32 {
+        return DUST_R * (0.45 + 0.55 * mathx.clampF(self.t / DUST_BLOOM, 0, 1));
+    }
+    pub fn biting(self: *const Dust) bool {
+        return self.live and self.amt() > 0.10;
     }
 };
 
@@ -1077,6 +1142,7 @@ pub const Magus = struct {
     orbCd: f32 = 0,
     sproutCd: f32 = 0,
     fadeCd: f32 = 0,
+    puffCd: f32 = 0,
     press: f32 = 0,
     rec: MgRecover = .sprout,
 
@@ -1089,6 +1155,8 @@ pub const Magus = struct {
     sowAt: rl.Vector3 = mathx.zero3,
     misted: bool = false,
     mistAt: rl.Vector3 = mathx.zero3,
+    puffed: bool = false,
+    puffAt: rl.Vector3 = mathx.zero3,
 
     moveDir: rl.Vector3 = mathx.zero3,
     homing: bool = false,
@@ -1214,6 +1282,11 @@ pub const Magus = struct {
         return mathx.addV(self.pos, self.moveDir);
     }
 
+    /// Where the cloud settles: a stride in front of his own feet, on his facing.
+    pub fn puffSpot(self: *const Magus) rl.Vector3 {
+        const f = self.fdir();
+        return v3(self.pos.x + f.x * MG_PUFF_OUT, self.pos.y, self.pos.z + f.z * MG_PUFF_OUT);
+    }
     pub fn staffHead(self: *const Magus) rl.Vector3 {
         // The head knob sits 0.58 of the shaft over the mid-shaft grip (`staffMesh`).
         return rl.math.vector3Transform(v3(0, STAFF_LEN * 0.58 + 0.028 * H, 0), self.xf[HELD]);
@@ -1245,6 +1318,7 @@ pub const Magus = struct {
         self.threw = false;
         self.sowed = false;
         self.misted = false;
+        self.puffed = false;
         self.heroHit = null;
         if (self.gone) {
             foe.tickParticles(&self.parts, dt, self.pos.y);
@@ -1267,6 +1341,7 @@ pub const Magus = struct {
         self.orbCd = mathx.maxF(0, self.orbCd - dt);
         self.sproutCd = mathx.maxF(0, self.sproutCd - dt);
         self.fadeCd = mathx.maxF(0, self.fadeCd - dt);
+        self.puffCd = mathx.maxF(0, self.puffCd - dt);
         foe.fadeFlash(&self.flash, dt);
         foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
@@ -1344,6 +1419,30 @@ pub const Magus = struct {
                     self.recoverAfter(.sprout);
                 }
             },
+            .puff_wind => {
+                self.faceToward(hero, dt);
+                const u = mathx.clampF(self.t / MG_PUFF_WIND, 0, 1);
+                self.chanSet(samplePose(&MG_PUFF_WIND_KEYS, u));
+                self.kindle(dt, u * 0.7);
+                if (self.t >= MG_PUFF_WIND) self.enter(.puff);
+            },
+            .puff => {
+                self.chanSet(samplePose(&MG_PUFF_KEYS, mathx.clampF(self.t / MG_PUFF_DUR, 0, 1)));
+                const at = MG_PUFF_DUR * MG_PUFF_BLOW_K;
+                if (self.t - dt < at and self.t >= at) {
+                    self.puffed = true;
+                    self.puffAt = self.puffSpot();
+                    if (foe.inArc(self.pos, self.facing, hero, foe.hurtReach(MG_PUFF_REACH, self.scale), MG_PUFF_ARC)) {
+                        self.heroHit = PUFF_HIT;
+                        self.leash.noteCombat();
+                    }
+                    sfx.world(.duo_fade, self.pos);
+                }
+                if (self.t >= MG_PUFF_DUR) {
+                    self.puffCd = MG_PUFF_CD;
+                    self.recoverAfter(.puff);
+                }
+            },
             .recover => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt * 0.6);
                 self.chanSet(samplePose(self.rec.keys(), mathx.clampF(self.t / MG_REC, 0, 1)));
@@ -1409,9 +1508,10 @@ pub const Magus = struct {
         const f = mathx.dirXZ(self.pos, toward);
         const side: f32 = if (self.seed < 0.5) 1.0 else -1.0;
         const lat = mathx.scaleV(mathx.perpXZ(f), side);
-        switch (mgClassify(dist, self.orbCd <= 0, self.sproutCd <= 0, self.fadeCd <= 0, self.press >= MG_PRESS_HOLD)) {
+        switch (mgClassify(dist, self.orbCd <= 0, self.sproutCd <= 0, self.fadeCd <= 0, self.puffCd <= 0, self.press >= MG_PRESS_HOLD)) {
             .orb => self.enter(.orb_wind),
             .sprout => self.enter(.sprout_wind),
+            .puff => self.enter(.puff_wind),
             .vanish => {
                 const a = self.rng.angle();
                 const away = v3(mathx.cosf(a), 0, mathx.sinf(a));
@@ -1485,6 +1585,10 @@ pub const Magus = struct {
         self.enter(.dead);
     }
 
+    pub fn debugPuff(self: *Magus) void {
+        self.puffCd = 0;
+        self.enter(.puff_wind);
+    }
     pub fn markSlain(self: *Magus) void {
         self.vit.hp = 0;
         self.vit.dead = true;
@@ -1999,11 +2103,13 @@ pub const Vanguard = struct {
 pub const Conclave = struct {
     model: MgModel,
     orbModel: rl.Model,
+    capModel: rl.Model,
     magi: [MG_CAP]Magus = undefined,
     n: usize = 0,
 
     orbs: [ORB_N]Orb = [_]Orb{.{}} ** ORB_N,
     caps: [CAP_N]Cap = [_]Cap{.{}} ** CAP_N,
+    dusts: [DUST_N]Dust = [_]Dust{.{}} ** DUST_N,
     mists: [MIST_N]Mist = [_]Mist{.{}} ** MIST_N,
     soak: foe.Soak = .{},
 
@@ -2012,11 +2118,12 @@ pub const Conclave = struct {
     fxRng: mathx.Rng = mathx.Rng.init(0xD00),
 
     pub fn init(shader: rl.Shader) Conclave {
-        return .{ .model = MgModel.init(shader), .orbModel = orbMesh(shader) };
+        return .{ .model = MgModel.init(shader), .orbModel = orbMesh(shader), .capModel = capMesh(shader) };
     }
     pub fn setShader(self: *Conclave, sh: rl.Shader) void {
         self.model.setShader(sh);
         self.orbModel.materials[0].shader = sh;
+        self.capModel.materials[0].shader = sh;
     }
     pub fn live(self: *Conclave) []Magus {
         return self.magi[0..self.n];
@@ -2034,9 +2141,15 @@ pub const Conclave = struct {
         self.clearGround();
     }
 
+    /// Shot-stage only: wipe what is standing on the ground without touching the bodies.
+    pub fn clearGroundForShot(self: *Conclave) void {
+        self.clearGround();
+    }
+
     fn clearGround(self: *Conclave) void {
         self.orbs = [_]Orb{.{}} ** ORB_N;
         self.caps = [_]Cap{.{}} ** CAP_N;
+        self.dusts = [_]Dust{.{}} ** DUST_N;
         self.mists = [_]Mist{.{}} ** MIST_N;
         self.soak = .{};
     }
@@ -2047,10 +2160,12 @@ pub const Conclave = struct {
             if (k.update(dt, k.threat.aim(hero), bounds, blade)) |h| foe.worseBlow(&worst, h, k.pos, &k.threat);
             if (k.threw) self.launchOrb(k.threwFrom, k.threat.aim(hero), k.pos.y);
             if (k.sowed) self.sow(k.sowAt);
+            if (k.puffed) self.blow(k.puffAt);
             if (k.misted) self.mist(k.mistAt);
         }
         self.tickOrbs(dt, hero, &worst);
         self.tickCaps(dt, hero, &worst);
+        self.tickDusts(dt, hero, &worst);
         for (&self.mists) |*g| {
             if (!g.live) continue;
             g.t += dt;
@@ -2098,7 +2213,7 @@ pub const Conclave = struct {
         }
     }
 
-    fn sow(self: *Conclave, at: rl.Vector3) void {
+    pub fn sow(self: *Conclave, at: rl.Vector3) void {
         var placed: usize = 0;
         var tries: usize = 0;
         while (placed < MG_BUNCH and tries < MG_BUNCH * 4) : (tries += 1) {
@@ -2129,6 +2244,37 @@ pub const Conclave = struct {
         }
     }
 
+    pub fn blow(self: *Conclave, at: rl.Vector3) void {
+        for (&self.dusts) |*g| {
+            if (g.live) continue;
+            g.* = .{ .live = true, .at = at, .seed = self.fxRng.float() };
+            foe.spray(&self.parts, &self.fxHead, &self.fxRng, v3(at.x, at.y + 0.9, at.z), v3(0, 1, 0), 20, 2.6, 1.0, SPORE_SPRAY);
+            return;
+        }
+    }
+
+    pub fn tickDusts(self: *Conclave, dt: f32, hero: rl.Vector3, worst: *?foe.Blow) void {
+        for (&self.dusts) |*g| {
+            if (!g.live) continue;
+            g.t += dt;
+            if (g.t >= DUST_LIFE) {
+                g.live = false;
+                continue;
+            }
+            if (!g.biting()) continue;
+            g.pulse += dt;
+            if (g.pulse < DUST_EVERY) continue;
+            g.pulse -= DUST_EVERY;
+            if (mathx.distXZ(g.at, hero) <= g.radius() + foe.HERO_R) foe.worseBlow(worst, DUST_PULSE_HIT, g.at, &GROUND_THREAT);
+        }
+    }
+
+    pub fn liveDusts(self: *const Conclave) usize {
+        var k: usize = 0;
+        for (&self.dusts) |*g| k += @intFromBool(g.live);
+        return k;
+    }
+
     fn mist(self: *Conclave, at: rl.Vector3) void {
         for (&self.mists) |*g| {
             if (g.live) continue;
@@ -2147,7 +2293,7 @@ pub const Conclave = struct {
         foe.drawGroup(self.liveConst(), &self.model, scene);
         for (&self.caps) |*c| {
             if (!c.showing() or c.burst) continue;
-            drawCap(c);
+            drawCap(&self.capModel, c);
         }
     }
 
@@ -2163,6 +2309,7 @@ pub const Conclave = struct {
             if (a <= 0.02) continue;
             rl.drawSphereEx(v3(g.at.x, g.at.y + MIST_R * 0.16, g.at.z), MIST_R * (0.55 + 0.45 * a), 10, 6, mathx.withAlpha(MIST_COL, mathx.u8f(46.0 * a)));
         }
+        for (&self.dusts) |*g| drawDust(g);
         foe.drawParticles(&self.parts);
     }
 
@@ -2185,17 +2332,139 @@ pub const Conclave = struct {
 
 const DUO_PARTS: usize = 96;
 
-fn drawCap(c: *const Cap) void {
+/// THE MESH IS BUILT AT A CAP RADIUS OF ONE and scaled per bunch, so a cap's world size is the one number `CAP_SIZE * Cap.r`.
+const CAP_STIPE: f32 = 0.19;
+/// A MUSHROOM STANDS ABOUT AS TALL AS ITS CAP IS WIDE. At 0.90 against a cap radius of 1 it was a puck on the floor.
+const CAP_STEM_H: f32 = 1.58;
+const CAP_DROP: f32 = 0.34;
+const CAP_GILLS: i32 = 15;
+const CAP_WARTS: i32 = 6;
+const CAP_BEADS: i32 = 7;
+pub const CAP_SIZE: f32 = 0.54;
+const CAP_STEM = rgba(78, 72, 56, 255);
+const CAP_STEM_DK = rgba(46, 42, 33, 255);
+const CAP_LIT = mathx.withAlpha(CHAOS_CORE, 210);
+const CAP_LIT_DIM = mathx.withAlpha(CHAOS_EDGE, 185);
+
+/// A REAL MUSHROOM: a foot that swells out of the ground, a stem that narrows at the waist and flares back under the cap, a skirt, LIT GILLS, a domed cap and warts on it — wabi-sabi off a seeded rng so the build stays deterministic.
+pub fn capMesh(shader: rl.Shader) rl.Model {
+    var rng = mathx.Rng.init(0xCA95);
+    var b = Builder.init();
+    b.setMat(.plant);
+    b.addBlob(v3(0, CAP_STIPE * 0.55, 0), v3(CAP_STIPE * 2.05, CAP_STIPE * 1.00, CAP_STIPE * 1.95), 3, 9, CAP_STEM_DK);
+    const waist = CAP_STEM_H * 0.50;
+    b.addCapsule(v3(0, 0, 0), v3(0.02, waist, -0.01), CAP_STIPE * 1.25, CAP_STIPE * 0.72, 9, CAP_STEM);
+    b.addCapsule(v3(0.02, waist, -0.01), v3(0, CAP_STEM_H, 0), CAP_STIPE * 0.72, CAP_STIPE * 1.05, 9, CAP_STEM_DK);
+    b.addBlob(v3(0, CAP_STEM_H * 0.76, 0), v3(CAP_STIPE * 1.90, CAP_STIPE * 0.20, CAP_STIPE * 1.85), 2, 9, CAP_STEM);
+
+    // The gills carry the light — the shroom is lit from UNDER its own cap, never from a lamp on top of it.
+    var i: i32 = 0;
+    while (i < CAP_GILLS) : (i += 1) {
+        const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(CAP_GILLS)) + rng.range(-0.04, 0.04);
+        const c = mathx.cosf(a);
+        const sn = mathx.sinf(a);
+        const inner = 0.20;
+        const outer = rng.range(0.84, 0.92);
+        const mid = (inner + outer) * 0.5;
+        b.addBlob(
+            v3(c * mid, CAP_STEM_H - CAP_DROP * 0.30, sn * mid),
+            v3(@abs(c) * (outer - inner) * 0.5 + 0.016, CAP_DROP * 0.11, @abs(sn) * (outer - inner) * 0.5 + 0.016),
+            2,
+            5,
+            CAP_LIT_DIM,
+        );
+    }
+
+    b.setMat(.plant);
+    b.addBlob(v3(0, CAP_STEM_H, 0), v3(1.0, CAP_DROP * 1.32, 0.97), 5, 13, CAP_DK);
+    b.addBlob(v3(0.02, CAP_STEM_H + CAP_DROP * 0.30, -0.015), v3(0.73, CAP_DROP * 1.12, 0.71), 4, 12, CAP_COL);
+    b.addBlob(v3(0, CAP_STEM_H - CAP_DROP * 0.26, 0), v3(1.01, CAP_DROP * 0.28, 0.99), 2, 13, CAP_DK);
+    i = 0;
+    while (i < CAP_WARTS) : (i += 1) {
+        const a = rng.angle();
+        const d = @sqrt(rng.float()) * 0.74;
+        const r = rng.range(0.030, 0.058);
+        const up = CAP_DROP * 1.12 * @sqrt(mathx.maxF(1.0 - d * d, 0));
+        b.addBlob(v3(mathx.cosf(a) * d, CAP_STEM_H + up * 0.86, mathx.sinf(a) * d), v3(r, r * 0.48, r), 2, 6, WART);
+    }
+
+    // THE LIGHT IS PART OF THE BODY, not a lamp put on top of it: a bead under the crown, one in the stem, and spores hung off the rim.
+    b.setMat(.flame);
+    b.addBlob(v3(0, CAP_STEM_H - CAP_DROP * 0.10, 0), v3(0.56, CAP_DROP * 0.54, 0.54), 4, 10, CAP_LIT);
+    b.addBlob(v3(0, CAP_STEM_H * 0.84, 0), v3(CAP_STIPE * 0.62, CAP_STIPE * 1.10, CAP_STIPE * 0.62), 3, 7, CAP_LIT);
+    i = 0;
+    while (i < CAP_BEADS) : (i += 1) {
+        const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(CAP_BEADS)) + rng.range(-0.18, 0.18);
+        const d = rng.range(0.72, 0.90);
+        const r = rng.range(0.038, 0.072);
+        b.addBlob(v3(mathx.cosf(a) * d, CAP_STEM_H - CAP_DROP * rng.range(0.55, 1.30), mathx.sinf(a) * d), v3(r, r * 1.35, r), 2, 6, CAP_LIT_DIM);
+    }
+    return b.toModel(shader);
+}
+
+/// Up PAST its rest and back onto it — a mass in motion overshoots (the law). A damped cosine: 0 at the start, ~10% proud around the middle, home at the end.
+pub fn capRise(g: f32) f32 {
+    const u = mathx.clampF(g, 0, 1);
+    return 1.0 - @exp(-5.0 * u) * mathx.cosf(7.0 * u);
+}
+
+/// The button pushes up first and the cap opens out after it.
+pub fn capSpread(g: f32) f32 {
+    return 0.40 + 0.60 * mathx.smoothstep(0.18, 1.0, mathx.clampF(g, 0, 1));
+}
+
+fn drawCap(model: *const rl.Model, c: *const Cap) void {
     const g = c.grown();
-    const up = c.r * (0.34 + 0.66 * @sqrt(g));
-    const stem = v3(c.at.x, c.at.y + up * 0.46, c.at.z);
-    rl.drawCylinderEx(c.at, stem, c.r * 0.17, c.r * 0.24, 6, RIND_LT);
     const heat = c.heat();
-    const head = v3(stem.x, stem.y + up * 0.24, stem.z);
-    const col = mathx.lerpColor(mathx.withAlpha(CHAOS_EDGE, 255), mathx.withAlpha(CHAOS_CORE, 255), heat);
-    rl.drawSphereEx(head, up * 0.54, 7, 6, col);
-    const puff = up * (0.70 + 0.60 * heat) * (1.0 + 0.10 * mathx.sinf(c.t * 20.0));
-    rl.drawSphereEx(head, puff, 7, 6, mathx.withAlpha(CHAOS_CORE, mathx.u8f(38.0 + 76.0 * heat)));
+    const size = CAP_SIZE * c.r;
+    const swell = 1.0 + 0.09 * heat * (1.0 + 0.18 * mathx.sinf(c.t * 19.0));
+    const sy = size * capRise(g) * swell;
+    const sxz = size * capSpread(g) * swell;
+    rl.drawModelEx(
+        model.*,
+        c.at,
+        v3(0, 1, 0),
+        c.seed * 360.0,
+        v3(sxz, sy, sxz),
+        mathx.lerpColor(rgba(214, 214, 214, 255), rl.Color.white, heat),
+    );
+    // IT GLOWS FROM THE MOMENT IT IS UP and only brightens: the halo and the pool under it are always there, and the heat is how hard they burn.
+    const head = v3(c.at.x, c.at.y + sy * CAP_STEM_H, c.at.z);
+    const beat = 1.0 + 0.10 * mathx.sinf(c.t * 6.0 + c.seed * 6.28);
+    // UNDER the cap, not around it: a halo wide enough to hide the mushroom is a bubble, not a light.
+    const lamp = v3(head.x, head.y - sy * CAP_DROP * 0.55, head.z);
+    rl.drawSphereEx(lamp, sxz * (0.30 + 0.34 * heat) * beat, 8, 6, mathx.withAlpha(CHAOS_CORE, mathx.u8f(26.0 + 92.0 * heat)));
+    const pool = sxz * (0.85 + 0.75 * heat);
+    rl.drawCylinderEx(c.at, v3(c.at.x, c.at.y + 0.02, c.at.z), pool, pool, 12, mathx.withAlpha(CHAOS_EDGE, mathx.u8f(10.0 + 48.0 * heat)));
+}
+
+const DUST_COL = rgba(198, 184, 118, 255);
+const DUST_DK = rgba(138, 128, 82, 255);
+
+/// The motes thrown on the breath itself. They RISE — spore, not gravel — and are dragged to a stop where the cloud stands.
+const SPORE_SPRAY = foe.Spray{
+    .fanLo = 1.1,  .fanHi = 3.2,
+    .upLo = 0.5,   .upHi = 2.0,
+    .lifeLo = 0.9, .lifeHi = 2.1,
+    .rLo = 0.020,  .rHi = 0.055,
+    .r1 = 0.10,    .col = rgba(206, 192, 126, 225), .grav = -0.5,
+    .col1 = rgba(146, 136, 90, 0), .drag = 2.6,
+};
+
+/// FIVE overlapping puffs on their own drifts, so a cloud is a mass rather than a ball, and it climbs as it thins.
+fn drawDust(g: *const Dust) void {
+    const a = g.amt();
+    if (a <= 0.02) return;
+    const r = g.radius();
+    const lift = 0.26 + 0.30 * mathx.clampF(g.t / DUST_LIFE, 0, 1);
+    var i: usize = 0;
+    while (i < 5) : (i += 1) {
+        const k = @as(f32, @floatFromInt(i));
+        const ang = g.seed * std.math.tau + k * 1.257 + g.t * 0.30;
+        const off = r * (0.16 + 0.13 * k);
+        const at = v3(g.at.x + mathx.cosf(ang) * off, g.at.y + r * (lift + 0.10 * @sin(k)), g.at.z + mathx.sinf(ang) * off);
+        rl.drawSphereEx(at, r * (0.48 - 0.05 * k), 9, 6, mathx.withAlpha(if (i % 2 == 1) DUST_DK else DUST_COL, mathx.u8f(64.0 * a)));
+    }
 }
 
 const GROUND_THREAT = foe.Threat{};
@@ -2245,22 +2514,85 @@ test "ONE STROKE THROWS HIM AND IT IS THE SLOW ONE — the lunge stopped jugglin
     try std.testing.expect(SW_HEAVY_REC > air);
 }
 
-test "THE MAGUS NEVER CLOSES, and being pressed outranks casting" {
-    try std.testing.expectEqual(MgChoice.back, mgClassify(MG_FLEE_R - 0.1, true, true, false, false));
-    try std.testing.expectEqual(MgChoice.vanish, mgClassify(MG_FLEE_R - 0.1, true, true, true, true));
-    try std.testing.expectEqual(MgChoice.back, mgClassify(MG_FLEE_R - 0.1, true, true, false, true));
-    try std.testing.expectEqual(MgChoice.sprout, mgClassify(MG_SPROUT_MIN + 0.1, true, true, false, false));
-    try std.testing.expectEqual(MgChoice.orb, mgClassify(MG_SPROUT_MIN + 0.1, true, false, false, false));
-    try std.testing.expectEqual(MgChoice.hold, mgClassify(AGGRO_R + 1.0, true, true, true, true));
+test "THE MAGUS NEVER CLOSES, and being pressed outranks casting — but the DUST outranks both" {
+    try std.testing.expectEqual(MgChoice.back, mgClassify(MG_FLEE_R - 0.1, true, true, false, true, false));
+    try std.testing.expectEqual(MgChoice.vanish, mgClassify(MG_FLEE_R - 0.1, true, true, true, true, true));
+    try std.testing.expectEqual(MgChoice.back, mgClassify(MG_FLEE_R - 0.1, true, true, false, true, true));
+    try std.testing.expectEqual(MgChoice.sprout, mgClassify(MG_SPROUT_MIN + 0.1, true, true, false, true, false));
+    try std.testing.expectEqual(MgChoice.orb, mgClassify(MG_SPROUT_MIN + 0.1, true, false, false, true, false));
+    try std.testing.expectEqual(MgChoice.hold, mgClassify(AGGRO_R + 1.0, true, true, true, true, true));
+
+    // In his face he blows dust rather than backing off, and rather than blinking out — the blink is what is left when the breath is spent.
+    try std.testing.expectEqual(MgChoice.puff, mgClassify(MG_PUFF_R - 0.1, false, false, false, true, false));
+    try std.testing.expectEqual(MgChoice.puff, mgClassify(MG_PUFF_R - 0.1, true, true, true, true, true));
+    try std.testing.expectEqual(MgChoice.vanish, mgClassify(MG_PUFF_R - 0.1, true, true, true, false, true));
+    try std.testing.expectEqual(MgChoice.back, mgClassify(MG_PUFF_R + 0.1, false, false, false, true, false));
     var d: f32 = 0;
     while (d <= AGGRO_R) : (d += 0.25) {
-        const c = mgClassify(d, false, false, false, false);
+        const c = mgClassify(d, false, false, false, false, false);
         try std.testing.expect(c == .back or c == .keep);
     }
+    std.debug.print("\n  magus: dust inside {d:.1} m on a {d:.1} s cooldown, flees inside {d:.1}, casts out to {d:.1}\n", .{ MG_PUFF_R, MG_PUFF_CD, MG_FLEE_R, MG_KEEP_R });
+}
+
+test "THE DUST IS BLOWN INTO A FRONTAL CONE AND THEN HANGS THERE, biting on its own clock" {
+    const dt: f32 = 1.0 / 60.0;
+    var c = Conclave{ .model = undefined, .orbModel = undefined, .capModel = undefined };
+    c.n = 1;
+    c.magi[0] = Magus.spawn(mathx.zero3, 0, 1.0, 0.3);
+    c.magi[0].orbCd = 99;
+    c.magi[0].sproutCd = 99;
+    c.magi[0].fadeCd = 99;
+    const hero = mathx.ground(0, MG_PUFF_R - 1.4);
+    var t: f32 = 0;
+    var wound: ?f32 = null;
+    var blown: ?f32 = null;
+    var breath: u32 = 0;
+    var pulses: u32 = 0;
+    while (t < DUST_LIFE + MG_PUFF_WIND + MG_PUFF_DUR) : (t += dt) {
+        c.magi[0].leash.noteSeen();
+        if (c.update(dt, hero, 400.0, .{})) |b| {
+            if (b.hit.dmg == PUFF_HIT.dmg) breath += 1;
+            if (b.hit.dmg == DUST_PULSE_HIT.dmg) pulses += 1;
+        }
+        if (c.magi[0].state == .puff_wind and wound == null) wound = t;
+        if (c.magi[0].puffed and blown == null) blown = t;
+    }
+    std.debug.print("  magus dust at {d:.1} m: wound at {d:.2} s, blown {d:.2} s later, {d} breath and {d} pulses of {d:.0} through a {d:.1} s cloud\n", .{ MG_PUFF_R - 1.4, wound orelse -1.0, (blown orelse 0) - (wound orelse 0), breath, pulses, DUST_PULSE_HIT.dmg, DUST_LIFE });
+    try std.testing.expect(wound != null and wound.? < 0.2);
+    try std.testing.expectEqual(@as(u32, 1), breath);
+    try std.testing.expect(pulses >= 4);
+
+    // Behind him it is a cloud he is not standing in: no breath at all, and the cloud never reaches him.
+    var away = Conclave{ .model = undefined, .orbModel = undefined, .capModel = undefined };
+    away.n = 1;
+    away.magi[0] = Magus.spawn(mathx.zero3, 0, 1.0, 0.3);
+    away.blow(mathx.ground(0, 0));
+    var far: u32 = 0;
+    t = 0;
+    while (t < DUST_LIFE) : (t += dt) {
+        var worst: ?foe.Blow = null;
+        away.tickDusts(dt, mathx.ground(0, DUST_R + foe.HERO_R + 1.0), &worst);
+        if (worst != null) far += 1;
+    }
+    try std.testing.expectEqual(@as(u32, 0), far);
+    try std.testing.expectEqual(@as(usize, 0), away.liveDusts());
+}
+
+test "A CAP RISES PAST ITS REST AND SETTLES ONTO IT, and opens out after it has come up" {
+    try std.testing.expectApproxEqAbs(@as(f32, 0), capRise(0), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), capRise(1), 0.01);
+    var proud: f32 = 0;
+    var g: f32 = 0;
+    while (g <= 1.0) : (g += 1.0 / 240.0) proud = @max(proud, capRise(g));
+    try std.testing.expect(proud > 1.04 and proud < 1.20);
+    try std.testing.expect(capSpread(0) < capSpread(0.5) and capSpread(0.5) < capSpread(1.0));
+    try std.testing.expectApproxEqAbs(@as(f32, 1), capSpread(1.0), 1e-5);
+    std.debug.print("  a cap comes up {d:.0}% proud of its rest and settles; it stands {d:.2} m at r 1.0 and opens {d:.2} m across\n", .{ (proud - 1.0) * 100.0, CAP_SIZE * (CAP_STEM_H + CAP_DROP * 1.32), CAP_SIZE * 2.0 });
 }
 
 test "A BUNCH GROWS LONGER THAN IT GLOWS, and the glow is the last warning" {
-    var duo = Conclave{ .model = undefined, .orbModel = undefined };
+    var duo = Conclave{ .model = undefined, .orbModel = undefined, .capModel = undefined };
     duo.sow(mathx.ground(0, 0));
     var n: usize = 0;
     for (&duo.caps) |*c| n += @intFromBool(c.live);
@@ -2279,7 +2611,7 @@ test "A BUNCH GROWS LONGER THAN IT GLOWS, and the glow is the last warning" {
 }
 
 test "CLEARING THE FIELD CLEARS THE BODIES TOO, not just what they left on it" {
-    var duo = Conclave{ .model = undefined, .orbModel = undefined };
+    var duo = Conclave{ .model = undefined, .orbModel = undefined, .capModel = undefined };
     duo.magi[0] = Magus.spawn(mathx.ground(0, 0), 0, 1.0, 0.3);
     duo.n = 1;
     duo.caps[0] = .{ .live = true };
@@ -2290,7 +2622,7 @@ test "CLEARING THE FIELD CLEARS THE BODIES TOO, not just what they left on it" {
 }
 
 test "THE MIST THICKENS BEFORE IT BILLS, then bills on entry and on the clock" {
-    var duo = Conclave{ .model = undefined, .orbModel = undefined };
+    var duo = Conclave{ .model = undefined, .orbModel = undefined, .capModel = undefined };
     duo.mist(mathx.ground(0, 0));
     const dt: f32 = 1.0 / 60.0;
     try std.testing.expectEqual(@as(f32, 0), duo.breath(mathx.ground(0.5, 0), dt));
@@ -2377,6 +2709,7 @@ test "THE SEAMS HOLD — every pose track starts where the one before it ended" 
         const cast = switch (r) {
             .orb => &MG_ORB_KEYS,
             .sprout => &MG_SPROUT_KEYS,
+            .puff => &MG_PUFF_KEYS,
         };
         for (samplePose(cast, 1.0), samplePose(r.keys(), 0.0)) |a, b| try std.testing.expectApproxEqAbs(a, b, 1e-5);
     }
@@ -2549,7 +2882,7 @@ test "THE VENOM IS ON EVERY STROKE, and it is the clock the fight runs on" {
 
 test "AN ORB FLIES, LANDS ON HIM AND IS SPENT - and the pool never leaks" {
 // Zig only analyses what is reached, and `run` never called the orb path.
-    var c = Conclave{ .model = undefined, .orbModel = undefined };
+    var c = Conclave{ .model = undefined, .orbModel = undefined, .capModel = undefined };
     const hero = mathx.ground(0, 9);
     c.launchOrb(v3(0, 1.6, 0), hero, 0);
     var lit: usize = 0;
@@ -2574,7 +2907,7 @@ test "AN ORB FLIES, LANDS ON HIM AND IS SPENT - and the pool never leaks" {
 }
 
 test "AN ORB THROWN FROM BELOW HIM SURVIVES THE STAFF — the earth is not wherever he is standing" {
-    var c = Conclave{ .model = undefined, .orbModel = undefined };
+    var c = Conclave{ .model = undefined, .orbModel = undefined, .capModel = undefined };
     const dt = 1.0 / 120.0;
     const rise = 2.4;
     const staff = 1.6;
@@ -2593,7 +2926,7 @@ test "AN ORB THROWN FROM BELOW HIM SURVIVES THE STAFF — the earth is not where
 }
 
 test "A BUNCH GOES OFF ONCE, on the frame it bursts, and only on what is standing in it" {
-    var c = Conclave{ .model = undefined, .orbModel = undefined };
+    var c = Conclave{ .model = undefined, .orbModel = undefined, .capModel = undefined };
     c.sow(mathx.ground(0, 0));
     const dt = 1.0 / 120.0;
     var hits: usize = 0;
@@ -2606,7 +2939,7 @@ test "A BUNCH GOES OFF ONCE, on the frame it bursts, and only on what is standin
     try std.testing.expectEqual(MG_BUNCH, hits);
     for (&c.caps) |*cp| try std.testing.expect(!cp.live);
 
-    var away = Conclave{ .model = undefined, .orbModel = undefined };
+    var away = Conclave{ .model = undefined, .orbModel = undefined, .capModel = undefined };
     away.sow(mathx.ground(0, 0));
     var miss: usize = 0;
     var u: f32 = 0;
@@ -2649,7 +2982,7 @@ const PAIR_OVER_KNIGHT: f32 = 1.60;
 fn conclaveDps(stand: f32, secs: f32) f32 {
     const dt = 1.0 / 60.0;
     const hero = mathx.ground(0, stand);
-    var c = Conclave{ .model = undefined, .orbModel = undefined };
+    var c = Conclave{ .model = undefined, .orbModel = undefined, .capModel = undefined };
     c.magi[0] = Magus.spawn(mathx.ground(0, 0), 0, 1.0, 0.70);
     c.n = 1;
     var total: f32 = 0;

@@ -362,7 +362,7 @@ pub const sceneFS =
 ++ EDGE_SHAPE_GLSL ++ EDGE_ID_GLSL ++ LIQUID_GLSL ++ BAY_GLSL ++ WATER_GLSL ++
     \\// WHERE THE LOOKUP ACTUALLY READS FROM. This is the whole fix: the displacement used to be one fixed
     \\// noise applied to EVERY material before anything else was asked, so the material BOUNDARY wandered
-    \\// +/-1.7 m whatever its policy said — and `soilHard` only ever snapped the COVERAGE. Nothing could
+    \\// +/-1.7 m whatever its policy said — and `soilCovAt`'s `snap` only ever snapped the COVERAGE. Nothing could
     \\// produce a straight edge because the thing being straightened was not the thing being bent.
     \\vec2 edgeWarp(vec2 p, int e, vec3 k){
     \\  if (k.x <= 0.0001) return p;

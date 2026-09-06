@@ -2516,6 +2516,45 @@ fn climbsNear(e: *const Env, x: f32, z: f32, r: f32) bool {
     return false;
 }
 
+/// AN UNUSED DRAFT, KEPT FOR REFERENCE ONLY — the live face path is `faceProto`/`faceProtoOf`/`faceStamp` above, and this reaches nothing. Its comment describes what that one does; read that one.
+const CliffStampDraft = struct {
+    var protoCache: [proprock.CLIFF_FACES.len]?gfx.Builder = [_]?gfx.Builder{null} ** proprock.CLIFF_FACES.len;
+
+    fn prototype(i: usize) *const gfx.Builder {
+        if (protoCache[i] == null) protoCache[i] = proprock.cliffBuild(proprock.CLIFF_FACES[i].seed, proprock.CLIFF_FACES[i].kind);
+        return &protoCache[i].?;
+    }
+
+    fn stamp(f: Face, u: [2]f32, _: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi: f32, len: f32) void {
+        const drop = hi - lo;
+        if (drop < FACE_PROP_MIN_DROP) return;
+        // The along-run coordinate the whole face agrees on, so a station belongs to exactly one chord however
+        // the cut is cut up into cells.
+        const alongX = -nz;
+        const alongZ = nx;
+        const sU = u[0] * alongX + u[1] * alongZ;
+        const dot = ax * alongX + az * alongZ;
+        if (@abs(dot) < 0.5) return;
+        const s0 = @min(sU, sU + len * dot);
+        const s1 = @max(sU, sU + len * dot);
+        const yaw = std.math.atan2(-nx, -nz);
+        var k: i32 = @intFromFloat(@floor(s0 / FACE_PROP_M) + 1);
+        while (@as(f32, @floatFromInt(k)) * FACE_PROP_M < s1) : (k += 1) {
+            const kk: u32 = @bitCast(k +% 0x51F);
+            const pick: usize = @intFromFloat(@abs(wf.hashSigned(kk, 0xFACE)) * @as(f32, @floatFromInt(proprock.CLIFF_FACES.len)) * 0.999);
+            const proto = prototype(pick);
+            const bb = proto.bounds();
+            if (bb.hi.y <= 0.01) continue;
+            // Its own top lands on the lip, and nothing pokes over: the cut has to stay the straight line.
+            const sc = drop / bb.hi.y;
+            const st = @as(f32, @floatFromInt(k)) * FACE_PROP_M + wf.hashSigned(kk, 0x5EED) * FACE_PROP_M * 0.35;
+            const t = (st - sU) / dot;
+            f.b.stamp(proto, v3(u[0] + ax * t, lo, u[1] + az * t), yaw, v3(sc, sc, sc));
+        }
+    }
+
+};
+
 /// `loEnd`/`hiEnd` are the floors either side of the cut at the chord's two ends, so on sloping ground the wall runs with them.
 fn cliffWall(f: Face, ch: Chord, loEnd: [2]f32, hiEnd: [2]f32, highRef: [2]f32, cell: f32) void {
     const u = ch.u;

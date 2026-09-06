@@ -774,6 +774,7 @@ pub const Leechfly = struct {
     }
 
     pub fn pose(self: *Leechfly) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.scale, self.fade);
         const bob = mathx.sinf((self.elapsed + self.seed) * BOB_HZ * std.math.tau) * BOB_AMP * self.scale;
         const root = mul3(

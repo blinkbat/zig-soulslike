@@ -1551,6 +1551,9 @@ fn liveParts(st: *const State) usize {
 }
 
 pub fn draw(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
+    // The bench stands its subject at the origin under its own lens; the world's cull and pose gates would answer for a body standing where the hero is not.
+    foemod.setCull(null, 0);
+    foemod.setPoseLens(mathx.zero3, null, 0);
     switch (st.mode) {
         .effects => return benchPanel(st, env, scene, ctx),
         .volumes => return volumePanel(st, env, scene, ctx),

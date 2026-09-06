@@ -362,10 +362,6 @@ pub const Mastodon = struct {
     pub fn noseWorld(self: *const Mastodon) rl.Vector3 {
         return foe.markOn(self.xf[HEAD], v3(0, 0, 0.16 * W));
     }
-    pub fn recovering(self: *const Mastodon) bool {
-        return self.state == .lunge_rec or self.state == .charge_rec;
-    }
-
     pub fn navWant(self: *const Mastodon, hero: rl.Vector3) ?rl.Vector3 {
         return switch (self.state) {
             .idle, .walk => blk: {
@@ -855,6 +851,7 @@ pub const Mastodon = struct {
     }
 
     pub fn pose(self: *Mastodon) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.scale, self.fade);
         const sink = foe.rigSink(SINK_DEPTH, self.scale, self.fade);
         const g = gaitAt(self.speedS);
@@ -952,18 +949,6 @@ pub const Drove = struct {
     }
     pub fn update(self: *Drove, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
         return foe.groupBlow(self.live(), dt, hero, bounds, blade);
-    }
-    pub fn anyLanded(self: *const Drove) bool {
-        for (self.liveConst()) |*m| {
-            if (m.landed) return true;
-        }
-        return false;
-    }
-    pub fn anyStamped(self: *const Drove) bool {
-        for (self.liveConst()) |*m| {
-            if (m.stamped) return true;
-        }
-        return false;
     }
     pub fn draw(self: *const Drove, scene: ?*gfx.Scene) void {
         foe.drawGroup(self.liveConst(), &self.model, scene);

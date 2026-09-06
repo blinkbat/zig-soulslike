@@ -502,6 +502,7 @@ pub const Wight = struct {
     }
 
     pub fn pose(self: *Wight) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.scale, self.fade);
         const sink = foe.rigSink(foe.SINK_HUMANOID, self.scale, self.fade);
         const facingDeg = mathx.degrees(self.facing);

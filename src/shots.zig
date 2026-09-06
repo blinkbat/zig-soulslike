@@ -64,6 +64,18 @@ comptime {
 
 pub const SHOT_DT: f32 = 1.0 / 60.0;
 pub const SETTLE_DT: f32 = 10.0;
+
+/// The slack a stamp already on the clock is allowed, so it costs no step at all.
+const STAMP_EPS: f32 = 0.0001;
+
+fn runTo(body: anytype, clock: *f32, at: f32, quarry: rl.Vector3, bounds: f32) void {
+    while (clock.* + STAMP_EPS < at) {
+        const dt = @min(SHOT_DT, at - clock.*);
+        _ = body.update(dt, quarry, bounds, .{});
+        clock.* += dt;
+    }
+}
+
 const SHOT_DOWNRANGE = mathx.ground(0, -22);
 fn stepWorld(g: *Game, dt: f32, speed: f32) void {
     const moved = speed * dt;
@@ -2300,11 +2312,7 @@ fn knightStudyShots(g: *Game) void {
             const view = knightStudyView(body, &bounds, quarry, stamps[stamps.len - 1]);
             var clock: f32 = 0;
             for (stamps, 0..) |at, frame| {
-                while (clock + 0.0001 < at) {
-                    const dt = @min(SHOT_DT, at - clock);
-                    _ = body.update(dt, quarry, game.PLAY_HALF, .{});
-                    clock += dt;
-                }
+                runTo(&body, &clock, at, quarry, game.PLAY_HALF);
                 var tag: [80]u8 = undefined;
                 unitStudyViewFrame(g, rt, &body, &g.vigil.model, std.fmt.bufPrint(&tag, "knight_study_{d}_{d}_{d}", .{ side, mode, frame }) catch unreachable, view);
             }
@@ -2346,7 +2354,7 @@ fn hauntStudyShots(g: *Game, role: shademod.Role, prefix: []const u8) void {
             if (mode >= 2 and mode != 4) for (&stamps) |*at| { at.* *= slow; };
             var clock: f32 = 0;
             for (stamps, 0..) |at, frame| {
-                while (clock + 0.0001 < at) {
+                while (clock + STAMP_EPS < at) {
                     const dt = @min(SHOT_DT, at - clock);
                     _ = body.update(dt, if (mode == 4 and clock > 0.65) mathx.scaleV(mathx.headingDir(yaw), 90) else quarry, game.PLAY_HALF, .{});
                     clock += dt;
@@ -2382,11 +2390,7 @@ fn leechStudyShots(g: *Game) void {
             };
             var clock: f32 = 0;
             for (stamps, 0..) |at, frame| {
-                while (clock + 0.0001 < at) {
-                    const dt = @min(SHOT_DT, at - clock);
-                    _ = body.update(dt, quarry, game.PLAY_HALF, .{});
-                    clock += dt;
-                }
+                runTo(&body, &clock, at, quarry, game.PLAY_HALF);
                 var tag: [80]u8 = undefined;
                 unitStudyFrame(g, rt, &body, &g.swarm.model, std.fmt.bufPrint(&tag, "leech_study_{d}_{d}_{d}", .{ side, mode, frame }) catch unreachable, 2.4, body.centerWorld().y - body.pos.y);
             }
@@ -2419,11 +2423,7 @@ fn rootedStudyShots(g: *Game) void {
             else [_]f32{ 0, 0.10, 0.28, 0.60, 1.0, 1.6, 2.2, 3.3 };
             var clock: f32 = 0;
             for (stamps, 0..) |at, frame| {
-                while (clock + 0.0001 < at) {
-                    const dt = @min(SHOT_DT, at - clock);
-                    _ = body.update(dt, quarry, game.PLAY_HALF, .{});
-                    clock += dt;
-                }
+                runTo(&body, &clock, at, quarry, game.PLAY_HALF);
                 var tag: [80]u8 = undefined;
                 unitStudyFrame(g, rt, &body, &g.grove.model, std.fmt.bufPrint(&tag, "rooted_study_{s}{d}_{d}_{d}", .{ if (size > 1) @as([]const u8, "big_") else "", side, mode, frame }) catch unreachable, 10.2 * size, 3.4 * size);
             }
@@ -2456,7 +2456,7 @@ fn shroomStudyShots(g: *Game) void {
             var clock: f32 = 0;
             var cut = false;
             for (stamps, 0..) |at, frame| {
-                while (clock + 0.0001 < at) {
+                while (clock + STAMP_EPS < at) {
                     const dt = @min(SHOT_DT, at - clock);
                     _ = body.update(dt, quarry, game.PLAY_HALF, .{});
                     clock += dt;
@@ -2503,11 +2503,7 @@ fn delverStudyShots(g: *Game) void {
             };
             var clock: f32 = 0;
             for (stamps, 0..) |at, frame| {
-                while (clock + 0.0001 < at) {
-                    const dt = @min(SHOT_DT, at - clock);
-                    _ = body.update(dt, quarry, game.PLAY_HALF, .{});
-                    clock += dt;
-                }
+                runTo(&body, &clock, at, quarry, game.PLAY_HALF);
                 var tag: [80]u8 = undefined;
                 unitStudyFrame(g, rt, &body, &g.warrens.model, std.fmt.bufPrint(&tag, "delver_study_{s}{d}_{d}_{d}", .{ if (size > 1) "big_" else "", side, mode, frame }) catch unreachable, 3.2 * size, 0.85 * size);
             }
@@ -2570,7 +2566,7 @@ fn necroStamps(mode: usize) [10]f32 {
 }
 
 fn necroRun(body: *necromod.Necro, clock: *f32, to: f32, quarry: rl.Vector3, interrupt: f32) void {
-    while (clock.* + 0.0001 < to) {
+    while (clock.* + STAMP_EPS < to) {
         const dt = @min(SHOT_DT, to - clock.*);
         const was = clock.*;
         _ = body.update(dt, quarry, game.PLAY_HALF, .{});
@@ -2654,7 +2650,7 @@ fn sacStudyShots(g: *Game) void {
         const stamps = if (mode == 0) [_]f32{ 0.01, 3, 6, 9, 11.35, 11.49, 11.56, 11.80 } else [_]f32{ 0, 0.02, 0.05, 0.09, 0.15, 0.23, 0.36, 0.54 };
         var clock: f32 = 0;
         for (stamps, 0..) |at, frame| {
-            while (clock + 0.0001 < at) {
+            while (clock + STAMP_EPS < at) {
                 const dt = @min(SHOT_DT, at - clock);
                 _ = body.update(dt, .{});
                 clock += dt;
@@ -2691,7 +2687,7 @@ fn broodlingStudyShots(g: *Game) void {
             };
             var clock: f32 = 0;
             for (stamps, 0..) |at, frame| {
-                while (clock + 0.0001 < at) {
+                while (clock + STAMP_EPS < at) {
                     if (mode == 6 and clock >= 0.43 and body.state == .leap) body.stagger(true);
                     const dt = @min(SHOT_DT, at - clock);
                     _ = body.update(dt, quarry, 200, .{});
@@ -2728,11 +2724,7 @@ fn broodStudyShots(g: *Game) void {
             };
             var clock: f32 = 0;
             for (stamps, 0..) |at, frame| {
-                while (clock + 0.0001 < at) {
-                    const dt = @min(SHOT_DT, at - clock);
-                    _ = body.update(dt, quarry, 200, .{});
-                    clock += dt;
-                }
+                runTo(&body, &clock, at, quarry, 200);
                 var tag: [80]u8 = undefined;
                 unitStudyFrame(g, rt, &body, &g.brood.model, std.fmt.bufPrint(&tag, "brood_study_{d}_{d}_{d}", .{ mode, side, frame }) catch unreachable, 3.8, 0.90);
             }
@@ -2760,11 +2752,7 @@ fn slingerStudyShots(g: *Game) void {
                 else => [_]f32{ 0.01, 0.15, 0.35, 0.60, 1.00, 1.55, 2.10, 2.35 },
             };
             for (stamps, 0..) |at, frame| {
-                while (clock + 0.0001 < at) {
-                    const dt = @min(SHOT_DT, at - clock);
-                    _ = k.update(dt, quarry, 200, .{});
-                    clock += dt;
-                }
+                runTo(&k, &clock, at, quarry, 200);
                 unitStudyFrame(g, rt, &k, &g.band.model, std.fmt.bufPrint(&tag, "slinger_study_{d}_{d}_{d}", .{ mode, side, frame }) catch unreachable, 4.0, 1.55);
             }
         }
@@ -2789,11 +2777,7 @@ fn priestStudyShots(g: *Game) void {
                 else => [_]f32{ 0.01, 0.15, 0.35, 0.60, 1.00, 1.55, 2.10, 2.35 },
             };
             for (stamps, 0..) |at, frame| {
-                while (clock + 0.0001 < at) {
-                    const dt = @min(SHOT_DT, at - clock);
-                    _ = k.update(dt, quarry, 200, .{});
-                    clock += dt;
-                }
+                runTo(&k, &clock, at, quarry, 200);
                 unitStudyFrame(g, rt, &k, &g.band.model, std.fmt.bufPrint(&tag, "priest_study_{d}_{d}_{d}", .{ mode, side, frame }) catch unreachable, 4.0, 1.55);
             }
             if (mode == 3) std.debug.assert(mathx.distXZ(k.pos, mathx.zero3) > 0.3);
@@ -2829,11 +2813,7 @@ fn zerkStudyShots(g: *Game) void {
                 else => .{ 0.10, 0.35, 0.55, 0.75, 0.95, 1.15, 1.35, 1.55 },
             };
             for (stamps, 0..) |at, frame| {
-                while (clock + 0.0001 < at) {
-                    const dt = @min(SHOT_DT, at - clock);
-                    _ = k.update(dt, quarry, 200, .{});
-                    clock += dt;
-                }
+                runTo(&k, &clock, at, quarry, 200);
                 unitStudyFrame(g, rt, &k, &g.band.model, std.fmt.bufPrint(&tag, "zerk_study_{d}_{d}_{d}", .{ mode, side, frame }) catch unreachable, 3.7, 1.3);
             }
         }
@@ -2858,11 +2838,7 @@ fn ogreStudyShots(g: *Game) void {
                 else [_]f32{ 0.02, 0.10, 0.25, 0.45, 0.66, 0.85, 0.98 };
             for (stamps, 0..) |stamp, frame| {
                 const at = if (mode < 4) stamp else stamp * recovery;
-                while (clock + 0.0001 < at) {
-                    const dt = @min(SHOT_DT, at - clock);
-                    _ = o.update(dt, quarry, 200, .{});
-                    clock += dt;
-                }
+                runTo(&o, &clock, at, quarry, 200);
                 unitStudyFrame(g, rt, &o, &g.grief.model, std.fmt.bufPrint(&tag, "ogre_study_{d}_{d}_{d}", .{ mode, side, frame }) catch unreachable, 8.0, 2.9);
             }
         }
@@ -2883,11 +2859,7 @@ fn greatswordStudyShots(g: *Game) void {
             w.debugSwing(move);
             var clock: f32 = 0;
             for ([_]f32{ cl.wind * 0.40, cl.wind * 0.90, cl.wind + cl.swing * 0.25, cl.wind + cl.swing * 0.55, cl.wind + cl.swing * 0.90, cl.wind + cl.swing + cl.recover * 0.30, cl.wind + cl.swing + cl.recover * 0.88 }, 0..) |at, frame| {
-                while (clock + 0.0001 < at) {
-                    const dt = @min(SHOT_DT, at - clock);
-                    _ = w.update(dt, quarry, 200, .{});
-                    clock += dt;
-                }
+                runTo(&w, &clock, at, quarry, 200);
                 unitStudyFrame(g, rt, &w, &g.muster.model, std.fmt.bufPrint(&tag, "greatsword_study_{d}_{d}_{d}", .{ move, side, frame }) catch unreachable, 4.5, 1.65);
             }
         }
@@ -2900,11 +2872,7 @@ fn greatswordStudyShots(g: *Game) void {
             var clock: f32 = 0;
             for ([_]f32{ 0.08, 0.20, 0.40, 0.65, 0.85, 0.97 }, 0..) |stamp, frame| {
                 const at = stamp * (if (mode == 1) @as(f32, 1.5) else combat.FOE_HEAVY_STUN_DUR);
-                while (clock + 0.0001 < at) {
-                    const dt = @min(SHOT_DT, at - clock);
-                    _ = w.update(dt, mathx.scaleV(mathx.headingDir(yaw), if (mode == 1) 12 else 90), 200, .{});
-                    clock += dt;
-                }
+                runTo(&w, &clock, at, mathx.scaleV(mathx.headingDir(yaw), if (mode == 1) 12 else 90), 200);
                 unitStudyFrame(g, rt, &w, &g.muster.model, std.fmt.bufPrint(&tag, "greatsword_study_motion_{s}_{d}_{d}", .{ if (mode == 0) @as([]const u8, "stun") else "walk", side, frame }) catch unreachable, 4.5, 1.65);
             }
         }
@@ -2926,11 +2894,7 @@ fn shieldStudyShots(g: *Game) void {
         w.debugSwing(0);
         var clock: f32 = 0;
         for ([_]f32{ cl.wind * 0.24, cl.wind * 0.88, cl.wind + cl.swing * 0.30, cl.wind + cl.swing * 0.60, cl.wind + cl.swing * 0.95, cl.wind + cl.swing + cl.recover * 0.45, cl.wind + cl.swing + cl.recover * 0.92 }, 0..) |at, frame| {
-            while (clock + 0.0001 < at) {
-                const dt = @min(SHOT_DT, at - clock);
-                _ = w.update(dt, quarry, 200, .{});
-                clock += dt;
-            }
+            runTo(&w, &clock, at, quarry, 200);
             unitStudyFrame(g, rt, &w, &g.muster.model, std.fmt.bufPrint(&tag, "shield_study_mace_{d}_{d}", .{ side, frame }) catch unreachable, 3.7, 1.45);
         }
         if (side > 1) continue;
@@ -2941,11 +2905,7 @@ fn shieldStudyShots(g: *Game) void {
             clock = 0;
             for ([_]f32{ 0.08, 0.20, 0.40, 0.65, 0.85, 0.97 }, 0..) |stamp, frame| {
                 const at = stamp * (if (mode == 2) @as(f32, 1.5) else combat.FOE_HEAVY_STUN_DUR);
-                while (clock + 0.0001 < at) {
-                    const dt = @min(SHOT_DT, at - clock);
-                    _ = w.update(dt, mathx.scaleV(mathx.headingDir(yaw), if (mode == 2) 12 else 90), 200, .{});
-                    clock += dt;
-                }
+                runTo(&w, &clock, at, mathx.scaleV(mathx.headingDir(yaw), if (mode == 2) 12 else 90), 200);
                 const kind: []const u8 = switch (mode) { 0 => "break", 1 => "stun", else => "walk" };
                 unitStudyFrame(g, rt, &w, &g.muster.model, std.fmt.bufPrint(&tag, "shield_study_{s}_{d}_{d}", .{ kind, side, frame }) catch unreachable, 3.7, 1.45);
             }
@@ -2966,22 +2926,14 @@ fn archerStudyShots(g: *Game) void {
         _ = a.update(SHOT_DT, quarry, 200, .{});
         var clock: f32 = 0;
         for ([_]f32{ 0.40, 0.78, 1.10, 1.32, 1.38, 1.62 }, 0..) |at, frame| {
-            while (clock + 0.0001 < at) {
-                const dt = @min(SHOT_DT, at - clock);
-                _ = a.update(dt, quarry, 200, .{});
-                clock += dt;
-            }
+            runTo(&a, &clock, at, quarry, 200);
             unitStudyFrame(g, rt, &a, &g.line.model, std.fmt.bufPrint(&tag, "archer_study_shoot_{d}_{d}", .{ side, frame }) catch unreachable, 3.2, 1.15);
         }
         a = archermod.Archer.spawn(mathx.zero3, yaw, 1, 0.37);
         a.backstepCd = 10;
         clock = 0;
         for ([_]f32{ 0.15, 0.35, 0.42, 0.49, 0.58, 0.78 }, 0..) |at, frame| {
-            while (clock + 0.0001 < at) {
-                const dt = @min(SHOT_DT, at - clock);
-                _ = a.update(dt, mathx.scaleV(mathx.headingDir(yaw), 1.2), 200, .{});
-                clock += dt;
-            }
+            runTo(&a, &clock, at, mathx.scaleV(mathx.headingDir(yaw), 1.2), 200);
             unitStudyFrame(g, rt, &a, &g.line.model, std.fmt.bufPrint(&tag, "archer_study_jab_{d}_{d}", .{ side, frame }) catch unreachable, 3.2, 1.15);
         }
         if (side > 1) continue;
@@ -2997,11 +2949,7 @@ fn archerStudyShots(g: *Game) void {
             };
             for (times, 0..) |stamp, frame| {
                 const at = stamp * (if (mode == 2) combat.FOE_HEAVY_STUN_DUR else @as(f32, 1));
-                while (clock + 0.0001 < at) {
-                    const dt = @min(SHOT_DT, at - clock);
-                    _ = a.update(dt, mathx.scaleV(mathx.headingDir(yaw), if (mode == 0) 2.2 else 6.5), 200, .{});
-                    clock += dt;
-                }
+                runTo(&a, &clock, at, mathx.scaleV(mathx.headingDir(yaw), if (mode == 0) 2.2 else 6.5), 200);
                 const kind: []const u8 = switch (mode) { 0 => "leap", 1 => "walk", else => "stun" };
                 unitStudyFrame(g, rt, &a, &g.line.model, std.fmt.bufPrint(&tag, "archer_study_{s}_{d}_{d}", .{ kind, side, frame }) catch unreachable, 3.2, 1.15);
             }
@@ -3054,7 +3002,7 @@ fn frogStudyShots(g: *Game) void {
         p.shot(g, rt, std.fmt.bufPrint(&tag, "idle_{d}", .{side}) catch unreachable, false);
         f.startChomp();
         for ([_]f32{ cl.wind * 0.85, cl.wind + cl.strike * 0.28, cl.wind + cl.strike * 0.72, cl.wind + cl.strike + cl.recover * 0.1, cl.wind + cl.strike + cl.recover * 0.38, cl.wind + cl.strike + cl.recover * 0.8 }, 0..) |at, frame| {
-            while (f.t + 0.0001 < at) _ = f.update(@min(SHOT_DT, at - f.t), quarry, 200, .{});
+            while (f.t + STAMP_EPS < at) _ = f.update(@min(SHOT_DT, at - f.t), quarry, 200, .{});
             p.shot(g, rt, std.fmt.bufPrint(&tag, "bite_{d}_{d}", .{ side, frame }) catch unreachable, false);
         }
     }
@@ -3067,11 +3015,7 @@ fn frogStudyShots(g: *Game) void {
         const p = Plate{ .body = &f, .model = &g.warren.model };
         var clock: f32 = 0;
         for ([_]f32{ clh.wind * 0.85, clh.wind + clh.strike * 0.1, clh.wind + clh.strike * 0.5, clh.wind + clh.strike * 0.9, clh.wind + clh.strike + clh.recover * 0.45, clh.wind + clh.strike + clh.recover * 0.92 }, 0..) |at, frame| {
-            while (clock + 0.0001 < at) {
-                const dt = @min(SHOT_DT, at - clock);
-                _ = f.update(dt, quarry, 200, .{});
-                clock += dt;
-            }
+            runTo(&f, &clock, at, quarry, 200);
             var tag: [80]u8 = undefined;
             p.shot(g, rt, std.fmt.bufPrint(&tag, "{s}_{d}", .{ if (lunge) @as([]const u8, "lunge") else "hop", frame }) catch unreachable, true);
         }
@@ -4034,6 +3978,8 @@ test "THE STRIP FRAMES THE ARC IT IS A STRIP OF — solved against the swept kit
         try std.testing.expect(@abs(st.lift + camera.TARGET_RAISE - (loY + hiY) * 0.5) <= 0.25);
         try std.testing.expect(wideF + camera.SHOULDER <= halfH * aspect);
         try std.testing.expect(fill >= STRIP_FILL * 0.85 and fill <= STRIP_FILL * 1.13);
+        // The draw cull is a sphere on his FEET (`foe.DRAW_BOUND`), so the top of the arc is what has to fit in it or the sword clips off at the frame edge.
+        try std.testing.expect(hiY <= foemod.DRAW_BOUND and wideF <= foemod.DRAW_BOUND);
     }
 }
 

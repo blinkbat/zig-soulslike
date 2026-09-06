@@ -453,6 +453,7 @@ pub const Golem = struct {
     }
 
     pub fn pose(self: *Golem) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.scale, self.fade);
         const facingDeg = mathx.degrees(self.facing);
         const dk = if (self.state == .dead) mathx.smoothstep(0, 0.5, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;

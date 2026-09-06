@@ -602,7 +602,6 @@ pub const Druidess = struct {
     pub fn orbWorld(self: *const Druidess) rl.Vector3 {
         return foe.markOn(self.xf[ORB], ORB_AT);
     }
-    /// The free hand — the one that rakes.
     pub fn clawWorld(self: *const Druidess) rl.Vector3 {
         return foe.markOn(self.xf[WRL], mathx.zero3);
     }
@@ -1066,11 +1065,7 @@ pub const Druidess = struct {
                 self.enter(.drift);
             },
             .hold => {
-                if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
-                    self.homing = true;
-                    self.moveDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
-                    self.enter(.drift);
-                } else self.enter(.idle);
+                if (foe.headHome(self)) self.enter(.drift) else self.enter(.idle);
             },
         }
     }
@@ -1370,6 +1365,7 @@ pub const Druidess = struct {
     }
 
     pub fn pose(self: *Druidess) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.scale, self.fade);
         const sink = foe.rigSink(foe.SINK_HUMANOID, self.scale, self.fade);
         const facingDeg = mathx.degrees(self.facing);
@@ -2012,7 +2008,6 @@ fn chestMesh() rl.Mesh {
     const shx = SHOULDER_HALF * H;
     const shy = (0.818 - 0.760) * H;
     b.addCapsule(v3(-shx, shy, 0), v3(shx, shy, 0), 0.036 * H, 0.036 * H, 8, ROBE);
-    // The cowl over the shoulders, a skirt hung from the collar.
     b.addSkirt(v3(0, 0.074 * H, 0), 0.062 * H, 0.096 * H, 0.118 * H, 0.008 * H, 10, ROBE_DK, &rng);
     var i: u32 = 0;
     while (i < 5) : (i += 1) {
@@ -2044,7 +2039,6 @@ fn hoodMesh() rl.Mesh {
         b.addBlob(v3(side * 0.020 * H, 0.012 * H, 0.056 * H), v3(0.007 * H, 0.005 * H, 0.004 * H), 3, 6, EYE);
     }
     b.setMat(.cloth);
-    // THE HOOD: a shell over the crown that stands proud at the front and falls to a peak behind.
     b.addBlob(v3(0, 0.040 * H, -0.010 * H), v3(0.066 * H, 0.062 * H, 0.070 * H), 5, 12, ROBE);
     b.addBlob(v3(0, 0.020 * H, -0.040 * H), v3(0.058 * H, 0.066 * H, 0.050 * H), 4, 10, ROBE_DK);
     b.addCapsule(v3(0, 0.070 * H, -0.030 * H), v3(0.010 * H * rng.signed(), 0.096 * H, -0.096 * H), 0.030 * H, 0.012 * H, 7, ROBE_DK);
@@ -2084,7 +2078,6 @@ fn sleeveMesh(side: f32) rl.Mesh {
     b.setMat(.cloth);
     b.addBlob(v3(0, 0.004 * H, 0), v3(0.032 * H, 0.030 * H, 0.030 * H), 4, 9, ROBE);
     b.addCylinder(v3(0, 0, 0), v3(0, -heromod.SEG_UPARM * H, 0), 0.028 * H, 0.040 * H, 8, ROBE);
-    // The sleeve hangs open below the elbow, torn and heavy.
     b.addSkirt(v3(0, -heromod.SEG_UPARM * H, 0), 0.040 * H, 0.070 * H, 0.056 * H, 0.006 * H, 8, ROBE_DK, &rng);
     return b.toMesh();
 }
@@ -2167,7 +2160,6 @@ fn trailMesh(comptime i: usize) rl.Mesh {
         b.addCapsule(pts[k], pts[k + 1], ra, mathx.maxF(rb, 0.010 * H), 7, if (k % 2 == 0) HEM else ROBE_DK);
         if (k >= 2) b.addBlob(pts[k], v3(0.030 * H, 0.020 * H, 0.032 * H), 3, 7, if (rng.float() < 0.5) ROT else ROBE_LT);
     }
-    // Side tendrils off the run along the ground.
     var t: u32 = 0;
     while (t < 3) : (t += 1) {
         const at = mathx.lerpV(pts[3], pts[5], rng.range(0.1, 0.9));

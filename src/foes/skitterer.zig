@@ -549,6 +549,7 @@ pub const Skitterer = struct {
     }
 
     pub fn pose(self: *Skitterer) void {
+        if (!foe.posed(self)) return;
         const s = foe.rigScale(self.scale, self.fade);
         const m = mathx.clampF(self.speedS / RUN_SPEED, 0, 1);
         const react: f32 = if (self.state == .hurt) foe.stunCurve(self.t, self.heavyStun) else 0;

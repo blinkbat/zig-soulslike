@@ -1874,6 +1874,7 @@ pub const Spider = struct {
         wx[TIBIA_0 + base + i] = mul3(scaleM(fs, fs, fs), lower, tr(solved.joint.x, solved.joint.y, solved.joint.z));
     }
     pub fn pose(self: *Spider) void {
+        if (!foe.posed(self)) return;
         defer self.poseStep = 0;
         {
             var target = [8]f32{ self.crouch, self.rear, self.pitch, self.abdoPump, self.armSpread, self.armDrive, self.bladeOpen, self.fangs };

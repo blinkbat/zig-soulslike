@@ -135,13 +135,11 @@ pub const ROCK_MIN: f32 = 6.5;
 pub const DIG_DUR: f32 = 0.95;
 pub const HEAVE_DUR: f32 = 0.40;
 pub const THROW_DUR: f32 = 0.32;
-/// Where in the throw the stone leaves the claws.
 pub const THROW_RELEASE: f32 = 0.38;
 const ROCK_RECOVER: f32 = 0.75;
 pub const ROCK_CD: f32 = 16.0;
 pub const ROCK_SPEED: f32 = 13.0;
 pub const ROCK_SPLASH_R: f32 = 1.8;
-/// The stone's own radius, held and thrown alike.
 pub const ROCK_R: f32 = 0.34;
 const ROCK_HIT_BANK = combat.Hit{ .dmg = 30, .poise = 44, .stance = 14, .launch = 1.2 };
 pub var ROCK_HIT = ROCK_HIT_BANK;
@@ -1213,6 +1211,7 @@ pub const Delver = struct {
         self.placeArm(ai, ci, side, root, fs, target, nailLine(side, 1)[1], blend);
     }
     pub fn pose(self: *Delver) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.scale, self.fade);
         const sink = mathx.sinf(mathx.radians(@abs(self.posed[0]))) * BODY_HALF;
         const clear = sink * (1.0 - mathx.clampF(self.depth / UNDER_DEPTH, 0, 1)) * fs;

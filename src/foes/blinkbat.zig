@@ -763,6 +763,7 @@ pub const Bat = struct {
     }
 
     pub fn pose(self: *Bat) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.scale, self.fade);
         const facingDeg = mathx.degrees(self.facing);
         const dead = self.state == .dead;

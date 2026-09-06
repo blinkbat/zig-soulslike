@@ -785,10 +785,7 @@ pub const Ogre = struct {
             .wait => self.enterIdle(),
             .idle => {
                 // ONE RADIUS DECIDES "AM I AT MY POST", and it is the LEASH's own (`foe.LEASH_HOME_R`): setting off at 3 m and arriving at 2 m leaves him trudging a metre past the boundary that sent him.
-                if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
-                    self.homing = true;
-                    self.enter(.approach);
-                } else self.enterIdle();
+                if (foe.headHome(self)) self.enter(.approach) else self.enterIdle();
             },
         }
     }
@@ -1219,6 +1216,7 @@ pub const Ogre = struct {
     }
 
     pub fn pose(self: *Ogre) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.scale, self.fade);
         const sink = foe.rigSink(0.95, self.scale, self.fade);
         const facingDeg = mathx.degrees(self.facing);

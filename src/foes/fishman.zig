@@ -715,6 +715,7 @@ pub const Fishman = struct {
     }
 
     pub fn pose(self: *Fishman) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.rigSize(), self.fade);
         const sink = foe.rigSink(foe.SINK_HUMANOID, self.rigSize(), self.fade);
         const facingDeg = mathx.degrees(self.facing);

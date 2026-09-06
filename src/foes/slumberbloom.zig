@@ -453,6 +453,7 @@ pub const Bloom = struct {
     }
 
     pub fn pose(self: *Bloom) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.scale, self.fade);
         const root = mul3(
             scaleM(fs, fs, fs),

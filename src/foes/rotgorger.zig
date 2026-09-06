@@ -502,6 +502,7 @@ pub const Gorger = struct {
     }
 
     pub fn pose(self: *Gorger) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.scale, self.fade);
         const sink = foe.rigSink(SINK_DEPTH, self.scale, self.fade);
         const g = wolf.gaitAt(self.speedS);

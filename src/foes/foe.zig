@@ -348,6 +348,8 @@ pub const Leash = struct {
     breakLeft: f32 = 0,
     engagedLeft: f32 = 0,
     returning: bool = false,
+    /// Whether the rig has ever run its chain (`foe.posed`); nothing else may write it.
+    posedOnce: bool = false,
 
     /// Per frame, BEFORE the state machine decides anything. BOTH RANGES ARE MEASURED FROM THE POST — `out` for the creature, `heroOut` for the hero.
     pub fn tick(self: *Leash, dt: f32, out: f32, heroOut: f32, aggroR: f32) void {
@@ -1716,7 +1718,7 @@ pub fn drawParticles(pool: []const Particle) void {
     }
     var any = false;
     for (pool) |*q| {
-        if (q.life > 0) {
+        if (q.life > 0 and motesVisible(q.p, q.r0 + q.r1)) {
             any = true;
             break;
         }
@@ -1743,6 +1745,7 @@ fn drawPass(pool: []const Particle, add: bool) void {
         const frac = mathx.clampF(q.life / q.max, 0, 1);
         const rad = mathx.lerpF(q.r1, q.r0, frac);
         if (rad <= 0.0004) continue;
+        if (!motesVisible(q.p, rad)) continue;
         const col = if (q.col1) |c1| mathx.lerpColor(q.col, c1, 1.0 - frac) else q.col;
         const a = mathx.u8f(@as(f32, @floatFromInt(col.a)) * frac);
         const soft = wantsSoft(q);
@@ -1829,6 +1832,14 @@ pub fn homeFor(self: anytype) rl.Vector3 {
     const T = @TypeOf(self.*);
     if (comptime !@hasField(T, "post")) return self.home;
     return if (self.post.ai == .hold) self.home else self.pos;
+}
+
+/// A ROUTINE'S `.hold` ARM, WHICH IS THE SAME ON EVERY CREATURE: too far from home and it walks back, otherwise it stands. Answers whether to walk and leaves the caller its own state name — `.hold => if (foe.headHome(self)) self.enter(.drift) else self.enter(.idle)`. Bodies that steer without a `moveDir` just ignore the field.
+pub fn headHome(self: anytype) bool {
+    if (mathx.distXZ(self.pos, homeFor(self)) <= LEASH_HOME_R) return false;
+    self.homing = true;
+    if (comptime @hasField(@TypeOf(self.*), "moveDir")) self.moveDir = mathx.dirXZ(self.pos, tetherFor(self));
+    return true;
 }
 
 /// THE ANCHOR A GO-HOME WALKS TO, AND NEVER `self.home`: `Leash.tick` arms and releases `returning` against THIS point, so a patroller sent home to its spawn pin arrives where the tether is still out.
@@ -2017,6 +2028,7 @@ pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
     var iced: f32 = -1;
     for (foes) |*f| {
         if (!f.alive() or offField(f)) continue;
+        if (!drawn(f)) continue;
         var thin: f32 = winOf(f).in;
         if (scene) |sc| {
             const want = FLASH_GAIN * f.flashFrac();
@@ -2718,6 +2730,64 @@ pub fn setLens(at: rl.Vector3, fwd: rl.Vector3) void {
         lensRight = r;
         lensUp = mathx.crossV(r, fwd);
     }
+}
+
+/// THE SPHERE A BODY IS CULLED BY, centred on its FEET, because `pos` and `bodyR` are the only two reads that
+/// are valid before a rig's first `pose`. Over the longest thing anything here swings: the knight's overhead
+/// carries his sword tip 7.84 m up (`shots` pins it against this number).
+pub const DRAW_BOUND: f32 = 10.0;
+
+var drawCull: ?env.Cull = null;
+var drawReach: f32 = 1e9;
+
+/// The pass being drawn, or null to draw every body — the object viewer stands its subject under a lens of its own.
+pub fn setCull(cull: ?env.Cull, reach: f32) void {
+    drawCull = cull;
+    drawReach = reach;
+}
+
+fn boundOf(f: anytype) f32 {
+    const r = if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "bodyR")) f.bodyR() else 0;
+    return DRAW_BOUND + r;
+}
+
+fn drawn(f: anytype) bool {
+    const cull = drawCull orelse return true;
+    return env.bodyDrawn(cull, f.pos, boundOf(f), drawReach);
+}
+
+/// Metres from what a body could TOUCH inside which it poses whatever the lens sees: over the shadow box
+/// (`env.shadowBox` is 76.4 m), over the widest aggro ring (30 m) so nothing can be mid-stroke unposed, and over
+/// every reach that reads a BONE — the hollow's `TOLL_R` 34 is the widest.
+pub const POSE_NEAR: f32 = 90.0;
+/// `pose` runs in `update` and the lens is set in `drawScene`, so the view test is a frame stale and carries a frame of travel.
+const POSE_SLACK: f32 = 6.0;
+
+var poseAt: rl.Vector3 = mathx.zero3;
+var poseView: ?env.View = null;
+var poseReach: f32 = 1e9;
+
+pub fn setPoseLens(at: rl.Vector3, view: ?env.View, reach: f32) void {
+    poseAt = at;
+    poseView = view;
+    poseReach = reach;
+}
+
+/// FALSE ONLY FOR A BODY NOTHING WILL SEE OR TOUCH THIS FRAME. `xf` holds its last pose while this answers false,
+/// so a rig may skip its chain — every reach that reads a bone, and every state that sweeps one, is inside `POSE_NEAR`.
+pub fn posed(f: anytype) bool {
+    // `xf` is `undefined` until a rig has run once, and that once is inside `spawnAs`, before any lens is set.
+    if (!f.leash.posedOnce) {
+        f.leash.posedOnce = true;
+        return true;
+    }
+    const near = POSE_NEAR * POSE_NEAR;
+    if (mathx.dist2XZ(f.pos, poseAt) <= near) return true;
+    if (comptime @hasField(@TypeOf(f.*), "threat")) {
+        if (mathx.dist2XZ(f.pos, f.threat.at) <= near) return true;
+    }
+    const vw = poseView orelse return true;
+    return vw.visible(f.pos, boundOf(f) + POSE_SLACK, poseReach);
 }
 
 /// Past this a mote of any size is under a pixel and the haze has most of it (`gfx.HAZE_DENSITY` at 60 m is over half, and more in a storm).

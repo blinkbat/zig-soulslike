@@ -913,6 +913,7 @@ pub const Kobold = struct {
     }
 
     pub fn pose(self: *Kobold) void {
+        if (!foe.posed(self)) return;
         defer self.poseStep = 0;
         var target = [7]f32{ self.heaveAmtTarget(), self.stunAmountTarget(), self.chopTwistTarget(), self.chopThrowTarget(), self.biteLungeTarget(), self.biteCoilTarget(), self.biteGapeTarget() };
         if (!self.poseSeated) self.bodySpring.seat(target);

@@ -689,7 +689,6 @@ fn circleParts(comptime r: f32, comptime h: f32) []const Part {
     return &.{.{ .r = r, .h = h }};
 }
 
-/// The ring, and the two knee-high steps that stand off it.
 const WATCH_PARTS = art.towerRing ++ [_]Part{
     .{ .ax = 4.20, .az = -4.55, .bx = 4.20, .bz = -4.55, .r = 0.50, .h = 0.9 },
     .{ .ax = 5.60, .az = 1.85, .bx = 5.60, .bz = 1.85, .r = 0.50, .h = 0.9 },
@@ -963,7 +962,6 @@ pub const INFO = [NK]Info{
     } },
     .{ .kind = .wall, .build = ruins.wallMesh, .bound = 5.0, .top = 3.6, .view = 220, .solid = true, .parts = &.{.{ .ax = -3.55, .az = -0.01, .bx = 3.25, .bz = -0.01, .r = 0.37, .h = 3.0, .flat = true }} },
     .{ .kind = .tree, .build = wood.treeMesh, .bound = 5.3, .top = 4.9, .view = 240, .parts = circleParts(0.38, 3.6), .occl = &.{.{ .r = 0.90, .y1 = 4.3 }}, .surf = .wood },
-    // Five stones, not one ring around nothing.
     .{ .kind = .graves, .build = ruins.gravesMesh, .bound = 2.3, .top = 1.05, .view = 150, .parts = &.{
         .{ .ax = -0.30, .az = -0.05, .bx = -0.30, .bz = -0.05, .r = 0.30, .h = 0.9 },
         .{ .ax = -0.40, .az = -0.87, .bx = -0.40, .bz = -0.87, .r = 0.30, .h = 0.9 },
@@ -1052,7 +1050,6 @@ pub const INFO = [NK]Info{
     .{ .kind = .shrine, .build = village.shrineMesh, .bound = 2.8, .top = 2.5, .view = 240, .parts = circleParts(0.72, 1.9), .light = .{ .y = 1.20, .col = v3(0.56, 0.32, 0.13), .radius = 5.5, .flicker = 0.19 } },
     .{ .kind = .lantern, .build = village.lanternMesh, .bound = 3.4, .top = 3.1, .view = 230, .parts = circleParts(0.17, 3.0), .light = .{ .y = 2.62, .col = v3(1.05, 0.60, 0.25), .radius = 11.5, .flicker = 0.08 }, .surf = .metal },
     .{ .kind = .fence, .build = village.fenceMesh, .bound = 3.6, .top = 1.25, .view = 180, .parts = &.{.{ .ax = -3.0, .bx = 3.0, .r = 0.16, .h = 1.25 }}, .surf = .wood },
-    // Three barrels, each its own.
     .{ .kind = .barrels, .build = village.barrelsMesh, .bound = 1.8, .top = 1.35, .view = 170, .parts = &.{
         .{ .ax = -0.75, .az = -0.45, .bx = -0.75, .bz = -0.45, .r = 0.34, .h = 1.2 },
         .{ .ax = 0.02, .az = 0.06, .bx = 0.02, .bz = 0.06, .r = 0.34, .h = 1.2 },
@@ -1160,7 +1157,6 @@ pub const INFO = [NK]Info{
         .{ .ax = -bone.ARCH_HALF, .bx = -bone.ARCH_HALF, .r = 0.75, .h = 2.6 },
         .{ .ax = bone.ARCH_HALF, .bx = bone.ARCH_HALF, .r = 0.75, .h = 2.6 },
     }, .occl = &.{ .{ .x = -bone.ARCH_HALF, .r = 1.10, .y1 = 4.2 }, .{ .x = bone.ARCH_HALF, .r = 1.10, .y1 = 4.2 } } },
-    // The cranium, and the jaw lying off it to +z.
     .{ .kind = .skull, .build = bone.skullMesh, .bound = 3.9, .top = 2.3, .view = 300, .parts = &.{
         .{ .ax = -0.45, .az = -0.25, .bx = 0.55, .bz = -0.25, .r = 1.32, .h = 1.95 },
         .{ .ax = -1.50, .az = 1.30, .bx = 0.30, .bz = 1.30, .r = 0.32, .h = 1.2, .flat = true },
@@ -1178,7 +1174,6 @@ pub const INFO = [NK]Info{
     }, .occl = &.{.{ .r = 0.70, .y1 = 5.4 }}, .surf = .wood },
 
     .{ .kind = .hoodoo, .build = rock.hoodooMesh, .bound = 6.4, .top = 5.90, .view = FAR, .parts = &.{.{ .ax = 0.03, .bx = 0.03, .r = 0.85, .h = 4.6 }}, .occl = &.{ .{ .r = 0.90, .y1 = 3.5 }, .{ .r = 1.45, .y0 = 3.4, .y1 = 5.8 } } },
-    // The spire and the four boulders shed around its foot.
     .{ .kind = .spire, .build = rock.spireMesh, .bound = 10.2, .top = 9.40, .view = FAR, .parts = &.{
         .{ .az = 0.02, .bz = 0.02, .r = 1.22, .h = 7.0 },
         .{ .ax = 2.15, .az = -0.30, .bx = 2.15, .bz = -0.30, .r = 0.45, .h = 0.8 },
@@ -1271,7 +1266,6 @@ pub const INFO = [NK]Info{
 
     .{ .kind = .ashcrag, .build = ash.ashCragMesh, .bound = ash.CRAG_TOP + 0.7, .top = ash.CRAG_TOP, .view = FAR, .parts = &.{.{ .ax = -0.75, .az = 0.10, .bx = 0.35, .bz = 0.10, .r = 1.55, .h = ash.CRAG_TOP * 0.86 }}, .occl = &.{.{ .r = 1.40, .y1 = ash.CRAG_TOP }} },
     .{ .kind = .stalagmite, .build = ash.stalagmiteMesh, .bound = ash.STAL_TOP + 0.40, .top = ash.STAL_TOP, .view = 200 },
-    // The stone, and the mound heaped against its west side.
     .{ .kind = .menhir, .build = ash.menhirMesh, .bound = ash.MENHIR_TOP + 0.6, .top = ash.MENHIR_TOP, .view = FAR, .parts = &.{
         .{ .ax = -0.05, .az = -0.20, .bx = -0.05, .bz = -0.20, .r = 0.82, .h = ash.MENHIR_TOP * 0.90 },
         .{ .ax = -1.05, .bx = -1.05, .r = 0.40, .h = 0.8 },
@@ -1297,7 +1291,6 @@ pub const INFO = [NK]Info{
         .{ .ax = market.AWNING_HW, .bx = market.AWNING_HW, .az = -market.AWNING_HD, .bz = market.AWNING_HD, .r = 0.13, .h = 2.30 },
     } },
     .{ .kind = .rugpile, .build = market.rugPileMesh, .bound = market.RUGS_R * 1.6, .top = market.RUGS_TOP, .view = 180, .parts = circleParts(0.58, market.RUGS_TOP * 0.9) },
-    // The post and the two feet of the scale beside it.
     .{ .kind = .scalepost, .build = market.scalePostMesh, .bound = market.SCALE_TOP + 0.5, .top = market.SCALE_TOP, .view = 280, .parts = &.{
         .{ .ax = 0.02, .az = 0.22, .bx = 0.02, .bz = 0.22, .r = 0.14, .h = market.SCALE_TOP * 0.82 },
         .{ .ax = -0.47, .az = 0.62, .bx = -0.47, .bz = 0.62, .r = 0.12, .h = 1.2 },

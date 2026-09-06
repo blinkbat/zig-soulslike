@@ -2577,10 +2577,7 @@ pub const Knight = struct {
                 self.enterIdle();
             },
             .hold => {
-                if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
-                    self.homing = true;
-                    self.enter(.approach);
-                } else self.enterIdle();
+                if (foe.headHome(self)) self.enter(.approach) else self.enterIdle();
             },
         }
     }
@@ -3153,6 +3150,7 @@ pub const Knight = struct {
     }
 
     pub fn pose(self: *Knight) void {
+        if (!foe.posed(self)) return;
         const fs = self.rigScale();
         const sink = foe.rigSink(0.9, self.scale, self.fade);
         const facingDeg = mathx.degrees(self.facing);

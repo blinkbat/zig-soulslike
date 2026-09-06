@@ -654,6 +654,7 @@ pub const Mimic = struct {
     }
 
     pub fn pose(self: *Mimic) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.scale, self.fade);
         const sink = foe.rigSink(0.3, self.scale, self.fade);
         const facingDeg = mathx.degrees(self.facing);
@@ -829,7 +830,6 @@ fn pelvisMesh() rl.Mesh {
     b.setMat(.plain);
     b.addBlob(v3(0, 0, 0), v3(0.26, 0.16, 0.30), 5, 10, BONE);
     b.addBlob(v3(0, 0.08, -0.02), v3(0.14, 0.10, 0.22), 4, 8, BONE_DK);
-    // The ribs, a cage that stands proud of the pelvis and open below.
     var i: u32 = 0;
     while (i < 5) : (i += 1) {
         const z = -0.20 + 0.10 * @as(f32, @floatFromInt(i));
@@ -857,7 +857,6 @@ fn shinMesh(side: f32) rl.Mesh {
     b.setMat(.plain);
     b.addBlob(v3(0, 0.01, 0), v3(0.05, 0.045, 0.05), 4, 7, BONE_DK);
     b.addCapsule(v3(0, 0, 0), v3(side * 0.01, -SHIN + 0.03, 0.02), 0.028, 0.020, 6, BONE);
-    // Three toes splayed on the ground.
     var i: u32 = 0;
     while (i < 3) : (i += 1) {
         const a = -0.6 + 0.6 * @as(f32, @floatFromInt(i));
@@ -874,7 +873,6 @@ fn vertebraMesh(i: u32) rl.Mesh {
     const r = 0.085 - 0.008 * @as(f32, @floatFromInt(i));
     b.addBlob(v3(0, 0, 0), v3(r, r * 0.8, r * 0.9), 5, 9, BONE);
     b.addCapsule(v3(0, 0, 0), v3(0, NECK_STEP * 0.6, 0.02), r * 0.55, r * 0.5, 7, BONE_DK);
-    // Processes off each vertebra, uneven, the way a spine is.
     inline for (.{ 1.0, -1.0 }) |side| {
         const out = (0.10 + rng.range(-0.02, 0.03));
         b.addCapsule(v3(0, NECK_STEP * 0.3, 0), v3(side * out, NECK_STEP * 0.36, -0.03), 0.018, 0.010, 5, BONE_LT);
@@ -883,7 +881,6 @@ fn vertebraMesh(i: u32) rl.Mesh {
     return b.toMesh();
 }
 
-/// Under the chest: the gullet the stalk runs into, and the sinew that holds the box to it.
 fn throatMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);

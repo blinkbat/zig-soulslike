@@ -750,7 +750,7 @@ pub const Book = struct {
         const i = idx(self.page);
         const next = switch (self.page) {
             .equipment => slotStep(self.cur[i], sx, sy),
-            .inventory => grid(self.cur[i], @max(v.bag.distinct(), 1), BAG_COLS, sx, sy),
+            .inventory => grid(self.cur[i], bagCells(v), BAG_COLS, sx, sy),
             .stats => if (sy == 0) self.cur[i] else @as(usize, @intCast(@mod(
                 @as(i32, @intCast(self.cur[i])) + sy + @as(i32, stats.NA),
                 @as(i32, stats.NA),
@@ -3004,6 +3004,24 @@ test "THE DERIVED COLUMN PRICES THE TREE'S OWN MULTIPLES, not only its attribute
         flat.spell = s;
         try std.testing.expectApproxEqAbs(combat.spellDamage(s), worth(derive(flat, v), .spell), 1e-3);
     }
+}
+
+test "THE STICK REACHES THE LAST KIND IN THE BAG — the purse is cell 0, so the run is one longer than `distinct`" {
+    var bag = item.Bag{};
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+    bag.add(.bloodgrass, 1);
+    bag.add(.kobold_fang, 1);
+    bag.add(.iron_key, 1);
+    const v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+
+    var b = Book{ .page = .inventory };
+    var steps: usize = 0;
+    while (steps < BAG_ROWS * BAG_COLS) : (steps += 1) b.move(1, 0, v);
+    try std.testing.expectEqual(bagCells(v) - 1, b.cur[idx(.inventory)]);
+    try std.testing.expectEqual(bag.nth(bag.distinct() - 1).?, bagAt(v, b.cur[idx(.inventory)]).?);
 }
 
 test "the bag cursor is pulled back onto a real cell when the last of something is drunk" {

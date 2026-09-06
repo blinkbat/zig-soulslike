@@ -974,11 +974,7 @@ pub const Swordsman = struct {
                 self.enter(.stride);
             },
             .hold => {
-                if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
-                    self.homing = true;
-                    self.moveDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
-                    self.enter(.stride);
-                } else self.enter(.idle);
+                if (foe.headHome(self)) self.enter(.stride) else self.enter(.idle);
             },
         }
     }
@@ -1084,6 +1080,7 @@ pub const Swordsman = struct {
     }
 
     pub fn pose(self: *Swordsman) void {
+        if (!foe.posed(self)) return;
         poseBody(self, SW_DEATH_DUR);
     }
 
@@ -1532,11 +1529,7 @@ pub const Magus = struct {
                 self.enter(.drift);
             },
             .hold => {
-                if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
-                    self.homing = true;
-                    self.moveDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
-                    self.enter(.drift);
-                } else self.enter(.idle);
+                if (foe.headHome(self)) self.enter(.drift) else self.enter(.idle);
             },
         }
     }
@@ -1612,6 +1605,7 @@ pub const Magus = struct {
     }
 
     pub fn pose(self: *Magus) void {
+        if (!foe.posed(self)) return;
         poseBody(self, MG_DEATH_DUR);
     }
 

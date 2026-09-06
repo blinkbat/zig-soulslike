@@ -276,48 +276,57 @@ const interactTips = [_][:0]const u8{
     "Click to place. Right-click > Items... to fill",
     "Sweep to erase",
 };
-const foeTips = [NFOE_KIND][:0]const u8{
-    "",
-    "",
-    "",
-    "Two axes, a wild flurry, then a long opening",
-    "No attack, heals the hurt one; break the cast",
-    "Stones at range, teeth up close",
-    "Slow, spits acid pools, lays up to three sacs",
-    "Fast, one hit kills it, leaps",
-    "Hatches on its own clock unless you cut it open",
-    "Blocks what comes at his front; break the guard, then punish",
-    "A long diagonal slam you cannot interrupt; walk out of it",
-    "Drains focus up close, wisps at range, teleports when threatened",
-    "Flyer. Heals off what it drains, and zooms out of sword reach",
-    "Disguised as a snag. Eyes open before its reach does; never moves",
-    "Flings itself and bursts a poison spore cloud. Sometimes it trips instead",
-    "Unbreakable shield across his front. Work round the side; stand behind him and he falls on you",
-    "Travels underground as a moving mound, then bursts up under your feet. Cannot be locked on while down",
-    "Skeletons near it stop dissolving and get raised. Also lays a delayed ice ring",
-    "Keeps its distance. The flower RISES, then spits spores that HANG before they home. Cornered, it gores",
-    "Lobs slow bouncing fireballs. Backing away stays in the bounce line; go sideways",
-    "Place in water. Surfaces when you wade; cannot leave water or be hit while down",
-    "Very tough against steel, weak to fire and lightning. Slams forward at anyone who backs off",
-    "A ribcage on its ribs. Fastest thing on foot; one long vertical slice you can walk out of",
-    "No melee. Raises skitterers from bare earth far off, breathes cold up close. Weak to fire",
-    "High HP, no armour, feeble bite. Rings the bell on its back and the camp comes; weak to lightning",
-    "A shade twice over, slower. Its grip leaves a STUPOR: thin focus and dragged feet. Stand off it",
-    "Never moves, never strikes. Swells, then vents SLEEP over 5 m. Walk out of the ring",
-    "The ground it walks over stays BURNING. Slower than your run. Fireproof; cold is the answer",
-    "EATS THE DEAD to heal, its own kin included. Head down it is wide open. Weak to fire",
-    "Slow, high poise. SET IT ALIGHT and it dies in 15 s - half again as fast, and it lights the next one",
-    "Frail, feeble. Killing it lights a 0.85 s fuse and it SHATTERS over 3.2 m. They chain",
-    "Two-handed trident. The longest common reach in the game; one slow thrust down a line",
-    "Throws a NET that takes your feet for 1.35 s - exactly one thrust. Cannot throw it up close",
-    "No blow at all. Heals the whole band off its own bars. Softest body, biggest purse: kill it first",
-    "Blinks onto your flank, one bite, gone. A bite that LANDS heals it - block it, or stagger the drink off it",
-    "Half of the DUO. Fast, lunges to close, poisoned longsword, and he jumps back to come at you again",
-    "The other half. Keeps its distance, sprouts BUNCHES that swell and burst, throws chaos orbs, and DISSOLVES when pressed",
-    "A carving until you walk close. It wakes, rakes and slams, and hops back to fan stone quills down its own bearing",
-    "BOSS. Keeps away: vines that snare where you stood, vines that whip, a vine SPEAR down the line as you close. Leaps clear, sidesteps a rush. At half health she calls a wave and jumps off to HEAL - go and hit her",
-    "A chest, glowing BLUE, until you open it: then a bone stalk on small legs with the box for a head. Lunging bite, a full-circle head swing. Dangerous",
-    "LARGE beast, horns over head and shoulders. Headbutt and bite up close, a CHARGE from a distance, a jump-lunge with a long recovery, and a tail swipe that turns him if you get behind",
+const FoeTip = struct { kind: wf.FoeKind, tip: [:0]const u8 };
+
+/// One row per `FoeKind`, IN ITS ORDER — the kind is written beside its own line so a creature inserted mid-enum cannot slide every tip onto the wrong body. Pinned in the comptime block with `unitIcons`.
+const FOE_TIPS = [NFOE_KIND]FoeTip{
+    .{ .kind = .toad, .tip = "" },
+    .{ .kind = .archer, .tip = "" },
+    .{ .kind = .ogre, .tip = "" },
+    .{ .kind = .berserker, .tip = "Two axes, a wild flurry, then a long opening" },
+    .{ .kind = .priest, .tip = "No attack, heals the hurt one; break the cast" },
+    .{ .kind = .slinger, .tip = "Stones at range, teeth up close" },
+    .{ .kind = .brood_mother, .tip = "Slow, spits acid pools, lays up to three sacs" },
+    .{ .kind = .broodling, .tip = "Fast, one hit kills it, leaps" },
+    .{ .kind = .brood_sac, .tip = "Hatches on its own clock unless you cut it open" },
+    .{ .kind = .shieldman, .tip = "Blocks what comes at his front; break the guard, then punish" },
+    .{ .kind = .greatsword, .tip = "A long diagonal slam you cannot interrupt; walk out of it" },
+    .{ .kind = .shade, .tip = "Drains focus up close, wisps at range, teleports when threatened" },
+    .{ .kind = .leechfly, .tip = "Flyer. Heals off what it drains, and zooms out of sword reach" },
+    .{ .kind = .rooted, .tip = "Disguised as a snag. Eyes open before its reach does; never moves" },
+    .{ .kind = .shroom, .tip = "Flings itself and bursts a poison spore cloud. Sometimes it trips instead" },
+    .{ .kind = .bone_knight, .tip = "Unbreakable shield across his front. Work round the side; stand behind him and he falls on you" },
+    .{ .kind = .delver, .tip = "Travels underground as a moving mound, then bursts up under your feet. Cannot be locked on while down" },
+    .{ .kind = .necromancer, .tip = "Skeletons near it stop dissolving and get raised. Also lays a delayed ice ring" },
+    .{ .kind = .fungal_deer, .tip = "Keeps its distance. The flower RISES, then spits spores that HANG before they home. Cornered, it gores" },
+    .{ .kind = .mushroom_mage, .tip = "Lobs slow bouncing fireballs. Backing away stays in the bounce line; go sideways" },
+    .{ .kind = .fen_lurker, .tip = "Place in water. Surfaces when you wade; cannot leave water or be hit while down" },
+    .{ .kind = .spore_golem, .tip = "Very tough against steel, weak to fire and lightning. Slams forward at anyone who backs off" },
+    .{ .kind = .bone_skitterer, .tip = "A ribcage on its ribs. Fastest thing on foot; one long vertical slice you can walk out of" },
+    .{ .kind = .ancient_priest, .tip = "No melee. Raises skitterers from bare earth far off, breathes cold up close. Weak to fire" },
+    .{ .kind = .tolling_hollow, .tip = "High HP, no armour, feeble bite. Rings the bell on its back and the camp comes; weak to lightning" },
+    .{ .kind = .mourner, .tip = "A shade twice over, slower. Its grip leaves a STUPOR: thin focus and dragged feet. Stand off it" },
+    .{ .kind = .slumber_bloom, .tip = "Never moves, never strikes. Swells, then vents SLEEP over 5 m. Walk out of the ring" },
+    .{ .kind = .cinder_wake, .tip = "The ground it walks over stays BURNING. Slower than your run. Fireproof; cold is the answer" },
+    .{ .kind = .rotgorger, .tip = "EATS THE DEAD to heal, its own kin included. Head down it is wide open. Weak to fire" },
+    .{ .kind = .birchwight, .tip = "Slow, high poise. SET IT ALIGHT and it dies in 15 s - half again as fast, and it lights the next one" },
+    .{ .kind = .salt_husk, .tip = "Frail, feeble. Killing it lights a 0.85 s fuse and it SHATTERS over 3.2 m. They chain" },
+    .{ .kind = .fish_spearman, .tip = "Two-handed trident. The longest common reach in the game; one slow thrust down a line" },
+    .{ .kind = .fish_netter, .tip = "Throws a NET that takes your feet for 1.35 s - exactly one thrust. Cannot throw it up close" },
+    .{ .kind = .fish_shaman, .tip = "No blow at all. Heals the whole band off its own bars. Softest body, biggest purse: kill it first" },
+    .{ .kind = .blinkbat, .tip = "Blinks onto your flank, one bite, gone. A bite that LANDS heals it - block it, or stagger the drink off it" },
+    .{ .kind = .fungal_swordsman, .tip = "Half of the DUO. Fast, lunges to close, poisoned longsword, and he jumps back to come at you again" },
+    .{ .kind = .fungal_magus, .tip = "The other half. Keeps its distance, sprouts BUNCHES that swell and burst, throws chaos orbs, and DISSOLVES when pressed" },
+    .{ .kind = .owlbear, .tip = "A carving until you walk close. It wakes, rakes and slams, and hops back to fan stone quills down its own bearing" },
+    .{ .kind = .druidess, .tip = "BOSS. Keeps away: vines that snare where you stood, vines that whip, a vine SPEAR down the line as you close. Leaps clear, sidesteps a rush. At half health she calls a wave and jumps off to HEAL - go and hit her" },
+    .{ .kind = .bone_mimic, .tip = "A chest, glowing BLUE, until you open it: then a bone stalk on small legs with the box for a head. Lunging bite, a full-circle head swing. Dangerous" },
+    .{ .kind = .mastodon, .tip = "LARGE beast, horns over head and shoulders. Headbutt and bite up close, a CHARGE from a distance, a jump-lunge with a long recovery, and a tail swipe that turns him if you get behind" },
+};
+
+const foeTips = blk: {
+    var out: [NFOE_KIND][:0]const u8 = undefined;
+    for (FOE_TIPS, 0..) |row, i| out[i] = row.tip;
+    break :blk out;
 };
 const npcTips = [NNPC_KIND][:0]const u8{
     "Talks. Roams its own leash, carries a staff. Give it a `dlg=` in the file to say anything",
@@ -495,6 +504,7 @@ comptime {
     for (0..NFOE_KIND) |i| {
         const tag = @tagName(@as(wf.FoeKind, @enumFromInt(i)));
         std.debug.assert(std.mem.eql(u8, @tagName(unitIcons[i]), tag));
+        std.debug.assert(std.mem.eql(u8, @tagName(FOE_TIPS[i].kind), tag));
     }
     for (0..NNPC_KIND) |i| {
         const tag = @tagName(@as(wf.NpcKind, @enumFromInt(i)));
@@ -762,6 +772,9 @@ fn nameField(ed: *Editor, ctx: *ui.Ctx, x: i32, y: i32, w: i32, buf: []u8, len: 
     }
     if (!focused) return null;
     const typed = buf[0..len.*];
+    // The map format writes a name as a BARE POSITIONAL TOKEN, so an empty one drops a field and the record
+    // reloads shifted — a zone or arena panics on load and a trigger silently takes `pri=3` for its id.
+    if (typed.len == 0) return null;
     if (std.mem.eql(u8, typed, cur)) return null;
     return typed;
 }
@@ -5391,6 +5404,8 @@ fn mixAdd(z: *wf.Zone, k: Kind) void {
 }
 
 fn mixRemove(z: *wf.Zone, k: Kind) void {
+    // A zone keeps at least one kind: `writeMix` emits an empty mix as nothing at all and `parseZone` refuses it.
+    if (z.nmix <= 1) return;
     var i: u8 = 0;
     while (i < z.nmix) : (i += 1) {
         if (z.mix[i] != k) continue;
@@ -5992,8 +6007,10 @@ fn npcRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, slot: *u16, x: i32, y: i32, w: 
     var labels: [MAX_SLOT_ROWS][:0]const u8 = undefined;
     for (0..shown) |i| {
         const nm = wf.npcName(m.npcs[i].kind);
-        const txt = std.fmt.bufPrint(&ed.slotLabels[i], "{d} {s}", .{ i, nm }) catch nm;
+        var lb: [wf.ID_CAP + 16]u8 = undefined;
+        const txt = std.fmt.bufPrint(&lb, "{d} {s}", .{ i, nm }) catch nm;
         const cap = @min(txt.len, wf.ID_CAP - 1);
+        @memcpy(ed.slotLabels[i][0..cap], txt[0..cap]);
         ed.slotLabels[i][cap] = 0;
         labels[i] = ed.slotLabels[i][0..cap :0];
     }
@@ -6459,6 +6476,17 @@ test "the rate gate paces a sweep, and an empty sweep costs no undo step" {
     try std.testing.expect(!idle.dirty);
 }
 
+
+test "A ZONE KEEPS ITS LAST KIND — an empty mix writes a file `parseZone` refuses" {
+    var z = wf.Zone{};
+    mixAdd(&z, .bush);
+    mixAdd(&z, .fern);
+    mixRemove(&z, .fern);
+    try std.testing.expectEqual(@as(u8, 1), z.nmix);
+    mixRemove(&z, .bush);
+    try std.testing.expectEqual(@as(u8, 1), z.nmix);
+    try std.testing.expectEqual(Kind.bush, z.mix[0]);
+}
 
 test "THE UNITS PALETTE SPLITS AT `NFOE_KIND` — a creature on one side, a body that talks on the other" {
     try std.testing.expectEqual(unitBrushes.len, NFOE_KIND + NNPC_KIND + 1);

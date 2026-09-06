@@ -6,6 +6,8 @@ const heromod = @import("../play/hero.zig");
 const wf = @import("../world/worldfmt.zig");
 const art = @import("../props/propart.zig");
 const forge = @import("../props/propforge.zig");
+const envmod = @import("../world/env.zig");
+const foe = @import("foe.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -1025,8 +1027,11 @@ pub const Folk = struct {
         return out[0..n];
     }
 
-    pub fn draw(self: *const Folk) void {
-        for (self.liveConst()) |*p| self.model.draw(p);
+    pub fn draw(self: *const Folk, cull: envmod.Cull, reach: f32) void {
+        for (self.liveConst()) |*p| {
+            if (!envmod.bodyDrawn(cull, p.pos, foe.DRAW_BOUND + p.bodyR(), reach)) continue;
+            self.model.draw(p);
+        }
     }
 
     pub fn drawOne(self: *const Folk, i: usize) void {

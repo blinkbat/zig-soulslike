@@ -897,6 +897,9 @@ pub fn writeTalk(m: *Map, dlg: u16, t: *const Talk) !void {
     compactText(m);
     var nodes: [MAX_NODES]Node = undefined;
     var acts: [MAX_DACTS]Act = undefined;
+    // STAGED, LIKE THE NODES: a cap or a full text arena returns out of the middle of the walk, and a dialog
+    // whose run was already re-based over the OLD `m.nodes` reads another conversation's lines from then on.
+    var runs: [MAX_DIALOGS]struct { at: u16, n: u16 } = undefined;
     var nn: u16 = 0;
     var na: u16 = 0;
 
@@ -938,10 +941,13 @@ pub fn writeTalk(m: *Map, dlg: u16, t: *const Talk) !void {
         } else {
             try rebaseDialog(m, d, &nodes, &acts, &nn, &na);
         }
-        d.node0 = at;
-        d.nnodes = nn - at;
+        runs[di] = .{ .at = at, .n = nn - at };
     }
 
+    for (m.dialogs[0..m.ndialogs], 0..) |*d, di| {
+        d.node0 = runs[di].at;
+        d.nnodes = runs[di].n;
+    }
     @memcpy(m.nodes[0..nn], nodes[0..nn]);
     @memcpy(m.dacts[0..na], acts[0..na]);
     m.nnodes = nn;
@@ -1116,6 +1122,7 @@ pub fn addTalk(m: *Map, name: []const u8, t: *const Talk) !u16 {
     m.dialogs[m.ndialogs] = d;
     const at: u16 = @intCast(m.ndialogs);
     m.ndialogs += 1;
+    errdefer m.ndialogs -= 1;
     try writeTalk(m, at, t);
     return at;
 }
@@ -1755,10 +1762,6 @@ pub const Map = struct {
     pub fn findCounter(self: *const Map, name: []const u8) ?u16 {
         return found(self.counterNames[0..self.ncounters], name);
     }
-    pub fn findTimer(self: *const Map, name: []const u8) ?u16 {
-        return found(self.timerNames[0..self.ntimers], name);
-    }
-
     pub fn isFallbackZone(self: *const Map, i: usize) bool {
         return self.nzones > 0 and i + 1 == self.nzones;
     }

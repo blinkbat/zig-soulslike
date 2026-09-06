@@ -17,12 +17,12 @@ pub const ROW_H: i32 = hud.monoLineH(hud.MONO) + 6;
 
 pub const DRAG_PX: f32 = 4.0;
 
-pub const INK = rgba(10, 9, 8, 232);
+pub const INK = mathx.withAlpha(uiart.INK, 232);
 pub const PANEL_FILL = rgba(16, 15, 13, 235);
 pub const TRIM = uiart.GILT_DIM;
 pub const LABEL = uiart.TEXT_DIM;
-pub const VALUE = rgba(228, 216, 194, 255);
-pub const TITLE = rgba(236, 226, 202, 255);
+pub const VALUE = uiart.TEXT_VALUE;
+pub const TITLE = uiart.TEXT_TITLE;
 pub const HOT = uiart.HOT;
 pub const LIVE = rgba(110, 178, 168, 255);
 pub const ACTIVE_FILL = rgba(96, 74, 40, 235);

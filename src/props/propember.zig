@@ -178,7 +178,6 @@ pub fn cinderConeMesh(shader: rl.Shader) rl.Model {
         const y = 2.85 * t;
         b.addBlob(v3(rng.signed() * 0.10, y * 0.92 + 0.10, rng.signed() * 0.10), v3(rr, 0.40, rr * rng.range(0.92, 1.08)), 4, 12, if (@mod(i, 2) == 0) BASALT_DK else CRUST);
     }
-    // The crater lip, and the vent glowing inside it.
     var k: i32 = 0;
     while (k < 9) : (k += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(k)) / 9.0 + rng.signed() * 0.2;
@@ -187,7 +186,6 @@ pub fn cinderConeMesh(shader: rl.Shader) rl.Model {
     }
     b.addBlob(v3(0, CONE_VENT_Y + 0.02, 0), v3(0.62, 0.08, 0.60), 3, 10, SEAM);
     b.addBlob(v3(0, CONE_VENT_Y + 0.06, 0), v3(0.34, 0.07, 0.32), 3, 8, SEAM_HOT);
-    // Six seams running down the flank from the lip, like spilt light.
     var s: i32 = 0;
     while (s < 6) : (s += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(s)) / 6.0 + rng.signed() * 0.3;
@@ -223,7 +221,6 @@ pub fn fireSpireMesh(shader: rl.Shader) rl.Model {
         y += bh;
     }
     const top = v3(mathx.sinf(lean) * y, y, 0);
-    // The long fissure: one seam from the vent down the flank, hottest at the top where the fire is.
     var p = v3(top.x + 0.30, top.y - 0.30, 0.32);
     var k: i32 = 0;
     while (k < 8) : (k += 1) {
@@ -300,7 +297,6 @@ pub fn emberArchMesh(shader: rl.Shader) rl.Model {
         b.addCylinder(v3(x, 0, 0), v3(x + sx * 0.06, legH, 0.04), ARCH_LEG_R, ARCH_LEG_R * 0.88, 6, if (sx < 0) BASALT else BASALT_LT);
         b.addCylinder(v3(x, legH * 0.5 - 0.03, 0), v3(x, legH * 0.5 + 0.03, 0), ARCH_LEG_R * 0.97, ARCH_LEG_R * 0.97, 6, heatCol(0.6));
     }
-    // The span: five voussoirs on a circular arc, the keystone's joints the hottest.
     const N = 5;
     var i: i32 = 0;
     while (i < N) : (i += 1) {
@@ -319,7 +315,6 @@ pub fn emberArchMesh(shader: rl.Shader) rl.Model {
             b.addBox(v3(jx, jy, 0), v3(mathx.sinf(ja) * 0.03, -mathx.cosf(ja) * 0.03, 0), v3(-mathx.cosf(ja) * 0.32, -mathx.sinf(ja) * 0.32, 0), v3(0, 0, 0.44), heatCol(heat));
         }
     }
-    // A crack down the left leg, and rubble where the arch has shed.
     var p = v3(-ARCH_HALF - ARCH_LEG_R * 0.90, legH - 0.30, 0.10);
     var k: i32 = 0;
     while (k < 5) : (k += 1) {
@@ -340,7 +335,6 @@ pub fn basaltColumnsMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xE0B7);
     b.setMat(.stone);
-    // Hexagonal packing: one at the centre, six round it, then a broken outer few.
     const SPACING: f32 = 0.86;
     const COL_R: f32 = 0.44;
     var cells: [13][2]f32 = undefined;
@@ -365,7 +359,6 @@ pub fn basaltColumnsMesh(shader: rl.Shader) rl.Model {
         b.addCylinder(v3(c[0], 0, c[1]), v3(c[0] + rng.signed() * 0.03, h, c[1] + rng.signed() * 0.03), COL_R, COL_R * 0.96, 6, tone);
         b.addCylinder(v3(c[0], h - 0.02, c[1]), v3(c[0], h + 0.04, c[1]), COL_R * 0.94, COL_R * 0.80, 6, if (rng.float() < 0.5) BASALT_LT else BASALT);
     }
-    // The light is UNDER them: seams in the gaps between neighbouring columns, glowing from below.
     for (cells[0..n], 0..) |c, i| {
         for (cells[i + 1 .. n]) |o| {
             const dx = o[0] - c[0];
@@ -389,7 +382,6 @@ pub fn crackedSlabMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xE0B8);
     b.setMat(.stone);
-    // Four plates of one broken slab, each heaved a little differently, the seams between them the light.
     const Plate = struct { x: f32, z: f32, hw: f32, hd: f32, lift: f32, tilt: f32 };
     const plates = [_]Plate{
         .{ .x = -0.80, .z = -0.55, .hw = 0.72, .hd = 0.62, .lift = 0.18, .tilt = 0.10 },
@@ -452,7 +444,6 @@ pub fn lavaCrustMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xE0BA);
     b.setMat(.stone);
-    // Plates on a jittered grid, the gaps between them glowing: the crust of a flow that has skinned over.
     const PITCH: f32 = 0.46;
     var cells: [16][3]f32 = undefined;
     var n: usize = 0;

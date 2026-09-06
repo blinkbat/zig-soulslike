@@ -857,11 +857,7 @@ pub const Necro = struct {
                 self.enter(.drift);
             },
             .hold => {
-                if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
-                    self.homing = true;
-                    self.moveDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
-                    self.enter(.drift);
-                } else self.enter(.idle);
+                if (foe.headHome(self)) self.enter(.drift) else self.enter(.idle);
             },
         }
     }
@@ -921,6 +917,7 @@ pub const Necro = struct {
     }
 
     pub fn pose(self: *Necro) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.scale, self.fade);
         const sink = foe.rigSink(foe.SINK_HUMANOID, self.scale, self.fade);
         const facingDeg = mathx.degrees(self.facing);

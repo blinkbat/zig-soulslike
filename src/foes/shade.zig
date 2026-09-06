@@ -898,6 +898,7 @@ pub const Shade = struct {
     }
 
     pub fn pose(self: *Shade) void {
+        if (!foe.posed(self)) return;
         const fs = self.scale * (1.0 - 0.82 * self.thin);
         const facingDeg = mathx.degrees(self.facing);
         const bob = IDLE_BOB * mathx.sinf(self.elapsed * BOB_HZ * (1.0 + 0.16 * (self.seed - 0.5)) * std.math.tau + self.seed * 6.28);

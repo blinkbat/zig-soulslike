@@ -707,6 +707,7 @@ pub const Owlbear = struct {
     }
 
     pub fn pose(self: *Owlbear) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.scale, self.fade);
         const sink = foe.rigSink(foe.SINK_HUMANOID, self.scale, self.fade);
         const facingDeg = mathx.degrees(self.facing);

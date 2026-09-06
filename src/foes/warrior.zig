@@ -929,10 +929,7 @@ pub const Warrior = struct {
                 self.enter(.idle);
             },
             .hold => {
-                if (mathx.distXZ(self.pos, foe.homeFor(self)) > foe.LEASH_HOME_R) {
-                    self.homing = true;
-                    self.enter(.approach);
-                } else self.enter(.idle);
+                if (foe.headHome(self)) self.enter(.approach) else self.enter(.idle);
             },
         }
     }
@@ -1453,6 +1450,7 @@ pub const Warrior = struct {
     }
 
     pub fn pose(self: *Warrior) void {
+        if (!foe.posed(self)) return;
         const fs = self.rigScale();
         const sink = foe.rigSink(foe.SINK_HUMANOID, self.scale, self.fade);
         const facingDeg = mathx.degrees(self.facing);

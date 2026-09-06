@@ -858,5 +858,6 @@ test "AND THE LOOK IS PAID FOR ONCE A CELL, so the cold disc is the whole bill" 
     const step = @as(f64, @floatFromInt(t.read())) / 1000.0;
     std.debug.print("\n  chart cost over {d} solids: {d:.0} us for the cold disc ({d} cells), {d:.0} us for a step ({d} more)\n", .{ e.solidCount(), cold, first, step, seen.count() - first });
     try std.testing.expect(cold < 8000.0);
-    try std.testing.expect(step < cold);
+    // In CELLS, not microseconds: since the look walks the segment rather than its box (`env.eachSolidAlong`) both timings sit near the clock's own noise, and the crescent is what this is about.
+    try std.testing.expect(seen.count() - first < first);
 }

@@ -368,39 +368,7 @@ pub const Game = struct {
         phase(&initTimer, "world");
         g.hero = heromod.Hero.init(g.scene.shader);
         phase(&initTimer, "hero");
-        g.warren = frogmod.Knot.init(g.scene.shader);
-        g.line = archermod.Line.init(g.scene.shader);
-        g.grief = ogremod.Grief.init(g.scene.shader);
-        g.band = koboldmod.Warband.init(g.scene.shader);
-        g.brood = broodmod.Brood.init(g.scene.shader);
-        g.muster = warriormod.Muster.init(g.scene.shader);
-        g.grove = rootedmod.Grove.init(g.scene.shader);
-        g.cluster = shroommod.Cluster.init(g.scene.shader);
-        g.warrens = delvermod.Warrens.init(g.scene.shader);
-        g.rite = necromod.Rite.init(g.scene.shader);
-        g.herd = deermod.Herd.init(g.scene.shader);
-        g.ring = magemod.Ring.init(g.scene.shader);
-        g.host = golemmod.Host.init(g.scene.shader);
-        g.marsh = fenmod.Marsh.init(g.scene.shader);
-        g.clatter = skittermod.Clatter.init(g.scene.shader);
-        g.crypt = priestmod.Crypt.init(g.scene.shader);
-        g.belfry = hollowmod.Belfry.init(g.scene.shader);
-        g.bed = bloommod.Bed.init(g.scene.shader);
-        g.scorch = cindermod.Scorch.init(g.scene.shader);
-        g.gorge = gorgermod.Gorge.init(g.scene.shader);
-        g.stand = birchmod.Stand.init(g.scene.shader);
-        g.pan = huskmod.Pan.init(g.scene.shader);
-        g.shoal = fishmod.Shoal.init(g.scene.shader);
-        g.roost = batmod.Roost.init(g.scene.shader);
-        g.perch = owlbearmod.Perch.init(g.scene.shader);
-        g.coven = druidmod.Coven.init(g.scene.shader);
-        g.hoard = mimicmod.Hoard.init(g.scene.shader);
-        g.drove = mastodonmod.Drove.init(g.scene.shader);
-        g.vigil = knightmod.Vigil.init(g.scene.shader);
-        g.vanguard = duomod.Vanguard.init(g.scene.shader);
-        g.conclave = duomod.Conclave.init(g.scene.shader);
-        g.swarm = leechmod.Swarm.init(g.scene.shader);
-        g.haunt = shademod.Haunt.init(g.scene.shader);
+        inline for (FOE_GROUPS) |gr| @field(g, gr.field) = @FieldType(Game, gr.field).init(g.scene.shader);
         g.chests = chestmod.Chests.init(g.scene.shader);
         g.folk = npcmod.Folk.init(g.scene.shader);
         g.pack = .{};
@@ -760,25 +728,52 @@ fn aggroRing(comptime M: type) *const fn () f32 {
     }.f;
 }
 
+/// WHICH OF A GROUP'S BLOWS IS THE BIG ONE — the second argument `heroTakes` bills the reaction off. `.heavy` is the house answer; the rest name the group's own signature move, so the threshold sits beside the group instead of inside the run.
+const Big = union(enum) {
+    heavy,
+    launch,
+    stance: *const fn () f32,
+    poise: *const fn () f32,
+
+    fn of(b: Big, h: combat.Hit) bool {
+        return switch (b) {
+            .heavy => h.heavy(),
+            .launch => h.launch > 0,
+            .stance => |at| h.stance >= at(),
+            .poise => |at| h.poise >= at(),
+        };
+    }
+};
+
+/// The named blow is ASKED FOR, never copied — `SLAM_HIT` and `BURST_HIT` are bench `var`s, and a threshold baked at comptime goes stale against a dial.
+fn blowAt(comptime M: type, comptime blow: []const u8, comptime part: []const u8) *const fn () f32 {
+    return struct {
+        fn f() f32 {
+            return @field(@field(M, blow), part);
+        }
+    }.f;
+}
+
 const FoeGroup = struct {
     field: []const u8,
     kind: ?FoeKind,
     aggro: *const fn () f32,
     vsHero: bool = true,
     vs: []const []const u8 = &.{},
+    big: Big = .heavy,
 };
 pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "warren", .kind = .toad, .aggro = aggroRing(frogmod), .vs = &.{"herd"} },
     .{ .field = "line", .kind = .archer, .aggro = aggroRing(archermod), .vs = &.{"warren"} },
-    .{ .field = "grief", .kind = .ogre, .aggro = aggroRing(ogremod), .vsHero = false },
-    .{ .field = "band", .kind = null, .aggro = aggroRing(koboldmod) },
+    .{ .field = "grief", .kind = .ogre, .aggro = aggroRing(ogremod), .vsHero = false, .big = .{ .stance = blowAt(ogremod, "SLAM_HIT", "stance") } },
+    .{ .field = "band", .kind = null, .aggro = aggroRing(koboldmod), .big = .{ .poise = blowAt(koboldmod, "ZERK_HIT", "poise") } },
     .{ .field = "brood", .kind = null, .aggro = aggroRing(broodmod) },
     .{ .field = "muster", .kind = null, .aggro = aggroRing(warriormod), .vs = &.{"line"} },
     .{ .field = "haunt", .kind = null, .aggro = aggroRing(shademod), .vs = &.{ "warren", "line", "muster" } },
     .{ .field = "swarm", .kind = .leechfly, .aggro = aggroRing(leechmod) },
     .{ .field = "grove", .kind = .rooted, .aggro = aggroRing(rootedmod), .vsHero = false },
     .{ .field = "cluster", .kind = .shroom, .aggro = aggroRing(shroommod), .vs = &.{"herd"} },
-    .{ .field = "warrens", .kind = .delver, .aggro = aggroRing(delvermod) },
+    .{ .field = "warrens", .kind = .delver, .aggro = aggroRing(delvermod), .big = .{ .stance = blowAt(delvermod, "BURST_HIT", "stance") } },
     .{ .field = "rite", .kind = .necromancer, .aggro = aggroRing(necromod), .vs = &.{ "line", "muster" } },
     .{ .field = "herd", .kind = .fungal_deer, .aggro = aggroRing(deermod) },
     .{ .field = "ring", .kind = .mushroom_mage, .aggro = aggroRing(magemod) },
@@ -797,10 +792,10 @@ pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "perch", .kind = .owlbear, .aggro = aggroRing(owlbearmod) },
     .{ .field = "coven", .kind = .druidess, .aggro = aggroRing(druidmod), .vs = &WAVE_FIELDS },
     .{ .field = "hoard", .kind = .bone_mimic, .aggro = aggroRing(mimicmod) },
-    .{ .field = "drove", .kind = .mastodon, .aggro = aggroRing(mastodonmod), .vsHero = false, .vs = &.{ "warren", "line", "band" } },
-    .{ .field = "vigil", .kind = .bone_knight, .aggro = aggroRing(knightmod), .vsHero = false, .vs = &.{ "line", "muster" } },
-    .{ .field = "vanguard", .kind = .fungal_swordsman, .aggro = aggroRing(duomod), .vs = &.{ "cluster", "ring" } },
-    .{ .field = "conclave", .kind = .fungal_magus, .aggro = aggroRing(duomod), .vs = &.{ "cluster", "ring" } },
+    .{ .field = "drove", .kind = .mastodon, .aggro = aggroRing(mastodonmod), .vsHero = false, .vs = &.{ "warren", "line", "band" }, .big = .launch },
+    .{ .field = "vigil", .kind = .bone_knight, .aggro = aggroRing(knightmod), .vsHero = false, .vs = &.{ "line", "muster" }, .big = .{ .stance = blowAt(knightmod, "CHARGE_HIT", "stance") } },
+    .{ .field = "vanguard", .kind = .fungal_swordsman, .aggro = aggroRing(duomod), .vs = &.{ "cluster", "ring" }, .big = .launch },
+    .{ .field = "conclave", .kind = .fungal_magus, .aggro = aggroRing(duomod), .vs = &.{ "cluster", "ring" }, .big = .launch },
 };
 
 comptime {
@@ -872,8 +867,11 @@ test "EVERY FOE_GROUPS ROW IS ACTUALLY UPDATED BY `run` — a row nothing drives
     inline for (FOE_GROUPS) |gr| {
         const byGroup = "g." ++ gr.field ++ ".update(";
         const byBody = "g." ++ gr.field ++ ".live()";
-        if (std.mem.indexOf(u8, src, byGroup) == null and std.mem.indexOf(u8, src, byBody) == null) {
-            std.debug.print("  FOE_GROUPS row `{s}` is never driven by run — no `{s}` and no `{s}` in game.zig\n", .{ gr.field, byGroup, byBody });
+        const byBill = "billGroup(g, \"" ++ gr.field ++ "\"";
+        if (std.mem.indexOf(u8, src, byGroup) == null and std.mem.indexOf(u8, src, byBody) == null and
+            std.mem.indexOf(u8, src, byBill) == null)
+        {
+            std.debug.print("  FOE_GROUPS row `{s}` is never driven by run — no `{s}`, no `{s}` and no `{s}` in game.zig\n", .{ gr.field, byGroup, byBody, byBill });
             missing += 1;
         }
     }
@@ -884,6 +882,8 @@ test "EVERY FOE_GROUPS ROW IS ACTUALLY UPDATED BY `run` — a row nothing drives
 /// Seated by a call that writes the WHOLE struct rather than by a plain `g.<field> =`, with the call named so the next reader can check it still does that.
 const SEATED_BY = [_]struct { field: []const u8, by: []const u8 }{
     .{ .field = "trig", .by = "armScript -> trigger.Runtime.arm, which opens with `self.* = .{}`" },
+    .{ .field = "map", .by = "worldfmt.loadOrPanic(startMap(), &g.map), which fills the whole record" },
+    .{ .field = "env", .by = "g.env.build(&g.scene), then g.env.replay(&g.map)" },
 };
 
 comptime {
@@ -892,31 +892,38 @@ comptime {
     }
 }
 
-test "EVERY DEFAULTED FIELD ON `Game` IS ASSIGNED — `= .{}` never runs on an `alloc.create`" {
+test "EVERY FIELD ON `Game` IS ASSIGNED — `= .{}` never runs on an `alloc.create`, and a field nothing names is the fill byte" {
     // It has bitten twice: `pack.n` came up as the fill byte, and `g.day` was never assigned (rate 0 is a held clock, and a NaN hour renders as the anchor hour).
     const src = try worldfmt.readForTest(std.testing.allocator, "src/game.zig", 1 << 22);
     defer std.testing.allocator.free(src);
     var defaulted: usize = 0;
+    var grouped: usize = 0;
     var missing: usize = 0;
     inline for (@typeInfo(Game).@"struct".fields) |f| {
-        if (f.default_value_ptr != null) {
-            defaulted += 1;
-            const plain = "g." ++ f.name ++ " =";
-            const indexed = "g." ++ f.name ++ "[";
-            var seated = std.mem.indexOf(u8, src, plain) != null or std.mem.indexOf(u8, src, indexed) != null;
-            for (SEATED_BY) |row| {
-                if (std.mem.eql(u8, row.field, f.name)) seated = true;
+        if (f.default_value_ptr != null) defaulted += 1;
+        const plain = "g." ++ f.name ++ " =";
+        const indexed = "g." ++ f.name ++ "[";
+        var seated = std.mem.indexOf(u8, src, plain) != null or std.mem.indexOf(u8, src, indexed) != null;
+        for (SEATED_BY) |row| {
+            if (std.mem.eql(u8, row.field, f.name)) seated = true;
+        }
+        // The group fields are seated by the `inline for (FOE_GROUPS)` in `init`, so no literal `g.<name> =` exists for them.
+        for (FOE_GROUPS) |gr| {
+            if (std.mem.eql(u8, gr.field, f.name)) {
+                seated = true;
+                grouped += 1;
             }
-            if (!seated) {
-                std.debug.print("\n  `Game.{s}` has a default and nothing in game.zig assigns it — it comes up as the fill byte\n", .{f.name});
-                missing += 1;
-            }
+        }
+        if (!seated) {
+            std.debug.print("\n  `Game.{s}` is assigned nowhere in game.zig — it comes up as the fill byte\n", .{f.name});
+            missing += 1;
         }
     }
     try std.testing.expectEqual(@as(usize, 0), missing);
-    std.debug.print("\n  {d} of Game's {d} fields carry a default, all assigned — {d} through a call ({s})\n", .{
-        defaulted,
+    std.debug.print("\n  all {d} of Game's fields assigned — {d} carry a default, {d} seated off FOE_GROUPS, {d} through a call ({s})\n", .{
         @typeInfo(Game).@"struct".fields.len,
+        defaulted,
+        grouped,
         SEATED_BY.len,
         SEATED_BY[0].by,
     });
@@ -2097,9 +2104,12 @@ fn shows(g: *const Game, l: editormod.Layer) bool {
 }
 
 fn drawCasters(g: *Game, cull: envmod.Cull) void {
+    // Bodies have no cell to be culled by, so the pass they are drawn for is the gate — set for the whole call and cleared at its end, because the object viewer draws the same groups under a lens of its own.
+    foemod.setCull(cull, drawFar(g));
+    defer foemod.setCull(null, 0);
     if (shows(g, .props)) g.env.drawProps(cull);
     if (shows(g, .interact)) {
-        g.chests.draw();
+        g.chests.draw(cull, drawFar(g));
         if (cull == .view) g.chests.drawGlow(&g.scene);
     }
     g.hero.drawRoots();
@@ -2120,7 +2130,7 @@ fn drawCasters(g: *Game, cull: envmod.Cull) void {
     if (cull == .view) g.scene.setFlash(0);
     const flashPass: ?*gfx.Scene = if (cull == .view) &g.scene else null;
     inline for (FOE_GROUPS) |f| @field(g, f.field).draw(flashPass);
-    g.folk.draw();
+    g.folk.draw(cull, drawFar(g));
     if (cull == .view) {
         g.scene.setFade(wolfmod.SPIRIT_FADE);
         g.pack.draw();
@@ -4651,6 +4661,8 @@ pub fn drawScene(g: *Game) void {
     const aspect = @as(f32, @floatFromInt(rl.getScreenWidth())) / @as(f32, @floatFromInt(rl.getScreenHeight()));
     var view = envmod.View.fromCamera(cam, aspect);
     view.floor = viewFloorOf(g);
+    // For NEXT frame's updates: `pose` runs before any of this, so the gate a rig asks is always one frame old.
+    foemod.setPoseLens(sunFocus(g), view, drawFar(g));
 
     rl.beginMode3D(cam);
     g.scene.bind(cam.position);
@@ -5464,12 +5476,8 @@ pub fn run(mode: Mode) void {
         markFlock(g);
         const bladeNow = heroBlade(g);
         revealIllusions(g, bladeNow);
-        if (g.warren.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
-        if (g.grief.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.stance >= ogremod.SLAM_HIT.stance, true);
-        }
+        _ = billGroup(g, "warren", dt, bladeNow);
+        _ = billGroup(g, "grief", dt, bladeNow);
         for (g.line.live()) |*a| {
             if (a.update(dt, a.threat.aim(g.hero.pos), PLAY_HALF, bladeNow)) {
                 spawnArrow(g, a.nockWorld(), heroAimPoint(g));
@@ -5479,9 +5487,7 @@ pub fn run(mode: Mode) void {
         if (g.band.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnClump)) |b| {
             _ = heroTakes(g, b, b.hit.poise >= koboldmod.ZERK_HIT.poise, true);
         }
-        if (g.muster.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
+        _ = billGroup(g, "muster", dt, bladeNow);
         if (g.haunt.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnWisp)) |b| {
             _ = heroTakes(g, b, b.hit.heavy(), true);
         }
@@ -5492,12 +5498,8 @@ pub fn run(mode: Mode) void {
         if (g.grove.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, noteYank)) |b| {
             applyYank(g, heroTakes(g, b, b.hit.heavy(), true));
         }
-        if (g.cluster.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
-        if (g.warrens.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.stance >= delvermod.BURST_HIT.stance, true);
-        }
+        _ = billGroup(g, "cluster", dt, bladeNow);
+        _ = billGroup(g, "warrens", dt, bladeNow);
         for (g.warrens.live()) |*d| {
             if (d.threw) {
                 sfx.world(.delver_claw, d.throwFrom);
@@ -5508,12 +5510,8 @@ pub fn run(mode: Mode) void {
             g.rumble.play(rumblemod.hit_heavy);
             g.rig.addShake(SHAKE_SURGE);
         }
-        if (g.rite.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
-        if (g.herd.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
+        _ = billGroup(g, "rite", dt, bladeNow);
+        _ = billGroup(g, "herd", dt, bladeNow);
         for (g.herd.live()) |*d| {
             if (d.opened) sfx.world(.deer_bloom, d.pos);
             if (d.spat) sfx.world(.deer_spit, d.pos);
@@ -5522,9 +5520,7 @@ pub fn run(mode: Mode) void {
             if (d.yelped) sfx.world(.deer_hurt, d.pos);
             if (d.justDied) sfx.world(.deer_die, d.pos);
         }
-        if (g.ring.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
+        _ = billGroup(g, "ring", dt, bladeNow);
         for (g.ring.live()) |*k| {
             if (k.kindled) sfx.world(.mage_kindle, k.pos);
             if (k.yelped) sfx.world(.mage_hurt, k.pos);
@@ -5534,9 +5530,7 @@ pub fn run(mode: Mode) void {
                 spawnEmber(g, k.lobFrom);
             }
         }
-        if (g.host.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
+        _ = billGroup(g, "host", dt, bladeNow);
         for (g.host.live()) |*h| {
             if (h.burst) |at| {
                 sfx.world(.ember_burst, at);
@@ -5548,9 +5542,7 @@ pub fn run(mode: Mode) void {
                 spawnSac(g, from);
             }
         }
-        if (g.marsh.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
+        _ = billGroup(g, "marsh", dt, bladeNow);
         for (g.marsh.live()) |*l| {
             if (l.broke) sfx.world(.lurker_break, l.pos);
             if (l.lashed) sfx.world(.lurker_lash, l.pos);
@@ -5558,9 +5550,7 @@ pub fn run(mode: Mode) void {
             if (l.yelped) sfx.world(.lurker_hurt, l.pos);
             if (l.justDied) sfx.world(.lurker_die, l.pos);
         }
-        if (g.clatter.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
+        _ = billGroup(g, "clatter", dt, bladeNow);
         for (g.clatter.live()) |*sk| {
             if (sk.reared) sfx.world(.skitter_clack, sk.pos);
             if (sk.sliced) sfx.world(.skitter_slice, sk.pos);
@@ -5574,32 +5564,18 @@ pub fn run(mode: Mode) void {
             if (b.yelped) sfx.world(.shroom_hurt, b.pos);
             if (b.justDied) sfx.world(.shroom_die, b.pos);
         }
-        if (g.scorch.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
-        if (g.gorge.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
-        if (g.stand.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
-        if (g.pan.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
-        if (g.shoal.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
+        _ = billGroup(g, "scorch", dt, bladeNow);
+        _ = billGroup(g, "gorge", dt, bladeNow);
+        _ = billGroup(g, "stand", dt, bladeNow);
+        _ = billGroup(g, "pan", dt, bladeNow);
+        _ = billGroup(g, "shoal", dt, bladeNow);
         g.hero.snareFor(g.shoal.takeSnare());
-        if (g.roost.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            g.roost.fedOn(heroTakes(g, b, b.hit.heavy(), true) == .taken);
-        }
+        g.roost.fedOn(billGroup(g, "roost", dt, bladeNow) == .taken);
         if (g.roost.anyDrank()) {
             g.rumble.play(rumblemod.hurt);
             g.rig.addShake(SHAKE_HURT);
         }
-        if (g.perch.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
+        _ = billGroup(g, "perch", dt, bladeNow);
         if (g.perch.anyWoke()) g.rig.addShake(SHAKE_ROUSE);
         _ = g.crypt.update(dt, g.hero.pos, PLAY_HALF, bladeNow);
         if (g.crypt.breathDose(dt, g.hero.pos)) |b| {
@@ -5619,9 +5595,7 @@ pub fn run(mode: Mode) void {
                 g.rig.addShake(SHAKE_RAISE);
             }
         }
-        if (g.belfry.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
+        _ = billGroup(g, "belfry", dt, bladeNow);
         for (g.belfry.live()) |*h| {
             if (h.gaped) sfx.world(.toad_gape, h.pos);
             if (h.snapped) sfx.world(.toad_chomp, h.pos);
@@ -5648,27 +5622,17 @@ pub fn run(mode: Mode) void {
             g.rumble.play(rumblemod.swing_light);
             g.rig.addShake(SHAKE_SIGIL);
         }
-        if (g.vigil.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.stance >= knightmod.CHARGE_HIT.stance, true);
-        }
-        if (g.vanguard.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.launch > 0, true);
-        }
-        if (g.conclave.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.launch > 0, true);
-        }
+        _ = billGroup(g, "vigil", dt, bladeNow);
+        _ = billGroup(g, "vanguard", dt, bladeNow);
+        _ = billGroup(g, "conclave", dt, bladeNow);
         stampRooms(g);
-        if (g.coven.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
+        _ = billGroup(g, "coven", dt, bladeNow);
         g.hero.snareFor(g.coven.takeSnare());
         if (g.coven.holdDose(dt)) |b| _ = heroTakes(g, b, false, false);
         for (g.coven.live()) |*d| {
             if (d.summoned) |w| summonWave(g, d, w);
         }
-        if (g.hoard.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.heavy(), true);
-        }
+        _ = billGroup(g, "hoard", dt, bladeNow);
         for (g.hoard.live()) |*m| {
             if (m.justWoke) {
                 sfx.world(.chest_open, m.pos);
@@ -5680,9 +5644,7 @@ pub fn run(mode: Mode) void {
             if (m.swept) sfx.world(.ogre_swipe, m.headWorld());
             if (m.justDied) sfx.world(.bone_die, m.pos);
         }
-        if (g.drove.update(dt, g.hero.pos, PLAY_HALF, bladeNow)) |b| {
-            _ = heroTakes(g, b, b.hit.launch > 0, true);
-        }
+        _ = billGroup(g, "drove", dt, bladeNow);
         for (g.drove.live()) |*m| {
             if (m.bellowed) sfx.world(.ogre_roar, m.pos);
             if (m.swept) sfx.world(.ogre_swipe, m.pos);
@@ -6225,6 +6187,15 @@ fn doseRing(g: *Game, at: rl.Vector3, r: f32, a: combat.Ail, amt: f32) u32 {
         }
     }
     return n;
+}
+
+/// A group's blow billed at the group's own `Big` (`FOE_GROUPS`). Every caller stays where it stands in `run` — the sfx loops between them read what that group's update just wrote, so the order is the contract.
+fn billGroup(g: *Game, comptime field: []const u8, dt: f32, blade: foemod.Blade) combat.HitOutcome {
+    const big = comptime for (FOE_GROUPS) |gr| {
+        if (std.mem.eql(u8, gr.field, field)) break gr.big;
+    } else @compileError("game: `" ++ field ++ "` is not a FOE_GROUPS field");
+    const b = @field(g, field).update(dt, g.hero.pos, PLAY_HALF, blade) orelse return .ignored;
+    return heroTakes(g, b, Big.of(big, b.hit), true);
 }
 
 fn heroTakes(g: *Game, b: foemod.Blow, heavy: bool, voice: bool) combat.HitOutcome {

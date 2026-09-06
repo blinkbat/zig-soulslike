@@ -520,6 +520,7 @@ pub const Lurker = struct {
     }
 
     pub fn pose(self: *Lurker) void {
+        if (!foe.posed(self)) return;
         const s = self.scale;
         const react: f32 = if (self.state == .hurt) foe.stunCurve(self.t, self.heavyStun) else 0;
         const fall: f32 = if (self.state == .dead) mathx.clampF(self.t / (DEATH_DUR * 0.7), 0, 1) else 0;

@@ -645,6 +645,7 @@ pub const Shroom = struct {
         return low;
     }
     pub fn pose(self: *Shroom) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.scale, self.fade);
         const sy = self.posed[0];
         const sxz = 1.0 / @sqrt(mathx.maxF(0.5, sy));

@@ -6,6 +6,7 @@ const village = @import("../props/propvillage.zig");
 const wf = @import("../world/worldfmt.zig");
 const item = @import("item.zig");
 const sfx = @import("../core/audio.zig");
+const envmod = @import("../world/env.zig");
 
 const v3 = mathx.v3;
 
@@ -117,8 +118,14 @@ pub const Chests = struct {
         return .{ .at = c.topWorld(), .loot = loot, .gold = coin };
     }
 
-    pub fn draw(self: *const Chests) void {
+    /// The lid stands the height of the box again when it is open, so the cull sphere is twice the closed top.
+    fn cullBound(c: *const Chest) f32 {
+        return 2.0 * village.CHEST_TOP * c.scale;
+    }
+
+    pub fn draw(self: *const Chests, cull: envmod.Cull, reach: f32) void {
         for (self.liveConst()) |*c| {
+            if (!envmod.bodyDrawn(cull, c.pos, cullBound(c), reach)) continue;
             rl.drawMesh(self.lid.meshes[0], self.lid.materials[0], c.lidXf());
         }
     }

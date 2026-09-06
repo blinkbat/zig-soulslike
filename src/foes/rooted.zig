@@ -717,6 +717,7 @@ pub const Rooted = struct {
     }
 
     pub fn pose(self: *Rooted) void {
+        if (!foe.posed(self)) return;
         const fs = foe.rigScale(self.scale, self.fade);
         const root = mul3(scaleM(fs, fs, fs), ry(mathx.degrees(self.facing)), tr(self.pos.x, self.pos.y, self.pos.z));
         self.xf[ROOT] = root;

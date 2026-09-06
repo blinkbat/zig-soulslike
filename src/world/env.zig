@@ -1189,6 +1189,23 @@ pub const Env = struct {
         return out;
     }
 
+    /// False to stop the walk.
+    fn cellSolids(
+        self: *const Env,
+        c: usize,
+        ctx: anytype,
+        comptime visit: fn (@TypeOf(ctx), collision.Solid) bool,
+    ) bool {
+        var k = self.sgrid_start[c];
+        while (k < self.sgrid_start[c + 1]) : (k += 1) {
+            const sol = self.solid_buf[self.sgrid_items[k]];
+            if (sol.ward > 0 and self.wardLife[sol.ward - 1] <= 0) continue;
+            if (sol.illusion > 0 and self.illusionLife[sol.illusion - 1] < 1) continue;
+            if (!visit(ctx, sol)) return false;
+        }
+        return true;
+    }
+
     fn eachSolid(
         self: *const Env,
         x0w: f32,
@@ -1206,14 +1223,50 @@ pub const Env = struct {
         while (cz <= z1) : (cz += 1) {
             var cx = x0;
             while (cx <= x1) : (cx += 1) {
-                const c = cz * GRID_N + cx;
-                var k = self.sgrid_start[c];
-                while (k < self.sgrid_start[c + 1]) : (k += 1) {
-                    const sol = self.solid_buf[self.sgrid_items[k]];
-                    if (sol.ward > 0 and self.wardLife[sol.ward - 1] <= 0) continue;
-                    if (sol.illusion > 0 and self.illusionLife[sol.illusion - 1] < 1) continue;
-                    if (!visit(ctx, sol)) return;
-                }
+                if (!self.cellSolids(cz * GRID_N + cx, ctx, visit)) return;
+            }
+        }
+    }
+
+    /// THE CELLS A SEGMENT CROSSES, not the box it spans: a 48 m diagonal fills sixteen and walks seven.
+    /// Sufficient because a solid is indexed into every cell its OWN radius reaches (`SolidCells`), so the cell
+    /// holding the point where it meets the line is a cell the line goes through.
+    fn eachSolidAlong(
+        self: *const Env,
+        a: rl.Vector3,
+        b: rl.Vector3,
+        ctx: anytype,
+        comptime visit: fn (@TypeOf(ctx), collision.Solid) bool,
+    ) void {
+        const lim = GRID_HALF - 1e-3;
+        if (@abs(a.x) > lim or @abs(a.z) > lim or @abs(b.x) > lim or @abs(b.z) > lim) {
+            return self.eachSolid(@min(a.x, b.x), @min(a.z, b.z), @max(a.x, b.x), @max(a.z, b.z), ctx, visit);
+        }
+        const ex: isize = @intCast(cellCoord(b.x));
+        const ez: isize = @intCast(cellCoord(b.z));
+        var cx: isize = @intCast(cellCoord(a.x));
+        var cz: isize = @intCast(cellCoord(a.z));
+        const dx = b.x - a.x;
+        const dz = b.z - a.z;
+        const far: f32 = 1e30;
+        const dtx: f32 = if (@abs(dx) < 1e-6) far else CELL / @abs(dx);
+        const dtz: f32 = if (@abs(dz) < 1e-6) far else CELL / @abs(dz);
+        var tx: f32 = if (dtx == far) far else edgeT(a.x, dx, cx);
+        var tz: f32 = if (dtz == far) far else edgeT(a.z, dz, cz);
+        const stepX: isize = if (dx >= 0) 1 else -1;
+        const stepZ: isize = if (dz >= 0) 1 else -1;
+        // One cell a step in one axis, so a walk across the whole grid and back still ends.
+        var guard: usize = 2 * GRID_N + 2;
+        while (guard > 0) : (guard -= 1) {
+            if (cx < 0 or cz < 0 or cx >= GRID_N or cz >= GRID_N) return;
+            if (!self.cellSolids(@as(usize, @intCast(cz)) * GRID_N + @as(usize, @intCast(cx)), ctx, visit)) return;
+            if (cx == ex and cz == ez) return;
+            if (tx < tz) {
+                cx += stepX;
+                tx += dtx;
+            } else {
+                cz += stepZ;
+                tz += dtz;
             }
         }
     }
@@ -1246,7 +1299,7 @@ pub const Env = struct {
             }
         };
         var look = Look{ .a = from, .b = to };
-        self.eachSolid(@min(from.x, to.x), @min(from.z, to.z), @max(from.x, to.x), @max(from.z, to.z), &look, Look.one);
+        self.eachSolidAlong(from, to, &look, Look.one);
         return look.clear;
     }
 
@@ -1262,7 +1315,7 @@ pub const Env = struct {
             }
         };
         var look = Look{ .a = a, .b = b };
-        self.eachSolid(@min(a.x, b.x), @min(a.z, b.z), @max(a.x, b.x), @max(a.z, b.z), &look, Look.one);
+        self.eachSolidAlong(a, b, &look, Look.one);
         return look.slot;
     }
 
@@ -2178,9 +2231,17 @@ pub const Env = struct {
     }
 };
 
-fn castsInto(focus: rl.Vector3, pos: rl.Vector3, bound: f32, top: f32) bool {
+pub fn castsInto(focus: rl.Vector3, pos: rl.Vector3, bound: f32, top: f32) bool {
     const reach = shadowBox() + bound + top * gfx.sunReach;
     return mathx.dist2XZ(focus, pos) <= reach * reach;
+}
+
+/// `drawIndexed`'s per-prop test for a MOVING body, which has no cell to be culled by first.
+pub fn bodyDrawn(cull: Cull, at: rl.Vector3, bound: f32, reach: f32) bool {
+    return switch (cull) {
+        .view => |*vw| vw.visible(at, bound, reach),
+        .sun => |focus| castsInto(focus, at, bound, bound),
+    };
 }
 
 const cross = mathx.crossV;
@@ -2979,6 +3040,13 @@ fn cellCoord(w: f32) usize {
 
 fn cellOf(x: f32, z: f32) usize {
     return cellCoord(z) * GRID_N + cellCoord(x);
+}
+
+/// Where along a segment (0 at `a`, 1 at `b`) it first crosses out of the cell it starts in, on one axis.
+fn edgeT(w: f32, d: f32, cell: isize) f32 {
+    const lo = @as(f32, @floatFromInt(cell)) * CELL - GRID_HALF;
+    const edge = if (d >= 0) lo + CELL else lo;
+    return @abs(edge - w) / @abs(d);
 }
 
 pub const PropFrame = struct {
@@ -3888,6 +3956,57 @@ test "A WALL STOPS A LOOK, and the grid is walked far enough out to find one at 
     e.nprops = 0;
     buildSolids(e);
     try std.testing.expect(e.sees(v3(0, eye, -22), v3(0, eye, 22)));
+}
+
+test "THE SIGHT WALK FINDS EVERY WALL THE BOX SCAN FOUND, over a fraction of the solids" {
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    var rng = mathx.Rng.init(0x5EE1);
+    const NW = 240;
+    for (0..NW) |i| {
+        e.props[i] = .{ .kind = .wall, .pos = v3(rng.range(-200, 200), 0, rng.range(-200, 200)), .yaw = rng.range(0, 360), .scale = 1, .op = 0 };
+    }
+    e.nprops = NW;
+    buildSolids(e);
+
+    const Count = struct {
+        n: usize = 0,
+        fn one(c: *@This(), _: collision.Solid) bool {
+            c.n += 1;
+            return true;
+        }
+    };
+
+    const eye: f32 = 1.25;
+    var blocked: usize = 0;
+    var boxSeen: usize = 0;
+    var walkSeen: usize = 0;
+    for (0..4000) |_| {
+        const a = v3(rng.range(-200, 200), eye, rng.range(-200, 200));
+        const b = v3(rng.range(-200, 200), eye, rng.range(-200, 200));
+        var open = true;
+        for (e.solid_buf[0..e.nsolids]) |s| {
+            if (collision.blocksSight(a, b, s)) {
+                open = false;
+                break;
+            }
+        }
+        if (!open) blocked += 1;
+        try std.testing.expectEqual(open, e.sees(a, b));
+
+        var box = Count{};
+        e.eachSolid(@min(a.x, b.x), @min(a.z, b.z), @max(a.x, b.x), @max(a.z, b.z), &box, Count.one);
+        var walk = Count{};
+        e.eachSolidAlong(a, b, &walk, Count.one);
+        try std.testing.expect(walk.n <= box.n);
+        boxSeen += box.n;
+        walkSeen += walk.n;
+    }
+    try std.testing.expect(blocked > 400);
+    const share = @as(f64, @floatFromInt(walkSeen)) / @as(f64, @floatFromInt(boxSeen));
+    std.debug.print("\n  sight walk: {d} lines, {d} of them blocked; the walk offers {d:.0}% of the solids the box did\n", .{ 4000, blocked, 100.0 * share });
+    try std.testing.expect(share < 0.6);
 }
 
 fn envWithFogGate() !*Env {

@@ -2620,7 +2620,6 @@ fn battle(old: f32) f32 {
 // THE DRUIDESS'S VOICE. A woman, low, with the corruption as a second growl an octave under her and a rasp in the
 // breath — never a scream and never a hiss: every take is authored soft, warmed, and driven gently.
 
-/// The gather: an indrawn breath and a murmur held on one note, the orb ringing faintly under it.
 fn mkDruidCast(r: *Rack) void {
     r.air(0.0, 0.52, 0.24, 560, 1900, 0.42, 1.3);
     r.growl(0.06, 0.46, 182 + r.rng.signed() * 10, 208, 0.26, 0.20, 0.30);
@@ -2631,7 +2630,6 @@ fn mkDruidCast(r: *Rack) void {
     r.master(1.25, 3600);
 }
 
-/// The release: one exhaled syllable, the pitch falling, the rasp on the tail of it.
 fn mkDruidRelease(r: *Rack) void {
     r.growl(0.0, 0.24, 236 + r.rng.signed() * 14, 168, 0.50, 0.28, 0.34);
     r.growl(0.02, 0.22, 118, 84, 0.22, 0.42, 0.30);
@@ -2641,7 +2639,6 @@ fn mkDruidRelease(r: *Rack) void {
     r.master(1.5, 4000);
 }
 
-/// The lash: a wet crack — the snap of a stalk through the air and a slap of leaf at the end.
 fn mkDruidWhip(r: *Rack) void {
     r.body(0.0, 0.08, 250 + r.rng.signed() * 30, 88, 0.80, 6.0);
     r.air(0.01, 0.26, 0.48, 2700, 420, 0.58, 2.8);
@@ -2651,7 +2648,6 @@ fn mkDruidWhip(r: *Rack) void {
     r.master(1.9, 3200);
 }
 
-/// A stalk coming up through turf: soil, a low thud, the green squeak of it rising.
 fn mkDruidSprout(r: *Rack) void {
     r.body(0.0, 0.30, 64, 170, 0.70, 2.6);
     r.grit(0.0, 0.36, 0.38, 850, 0.68, 2.4);
@@ -2660,7 +2656,6 @@ fn mkDruidSprout(r: *Rack) void {
     r.master(1.4, 3000);
 }
 
-/// Roots taking hold: a grab of gravel and creaking wood, the earth heaving under it.
 fn mkDruidSnare(r: *Rack) void {
     r.grit(0.0, 0.52, 0.50, 900, 0.74, 1.8);
     r.body(0.0, 0.32, 70, 180, 0.66, 2.6);
@@ -2670,7 +2665,6 @@ fn mkDruidSnare(r: *Rack) void {
     r.master(1.6, 3000);
 }
 
-/// The spear: a tearing rush along the ground and the thud of the shaft arriving.
 fn mkDruidSpear(r: *Rack) void {
     r.air(0.0, 0.32, 0.66, 1600, 300, 0.56, 2.2);
     r.body(0.0, 0.16, 118, 46, 0.86, 3.2);
@@ -2680,7 +2674,6 @@ fn mkDruidSpear(r: *Rack) void {
     r.master(2.1, 3000);
 }
 
-/// Take-off: robes through the air and a breath out of her.
 fn mkDruidLeap(r: *Rack) void {
     r.air(0.0, 0.50, 0.34, 420, 1500, 0.40, 1.6);
     r.growl(0.02, 0.26, 262 + r.rng.signed() * 16, 330, 0.26, 0.20, 0.30);
@@ -2690,7 +2683,6 @@ fn mkDruidLeap(r: *Rack) void {
     r.master(1.35, 3600);
 }
 
-/// Landing gently: a soft thump and the robes settling on the grass.
 fn mkDruidLand(r: *Rack) void {
     r.body(0.0, 0.18, 86, 40, 0.48, 3.4);
     r.grit(0.0, 0.22, 0.26, 1100, 0.60, 3.0);
@@ -2698,14 +2690,12 @@ fn mkDruidLand(r: *Rack) void {
     r.master(1.35, 2800);
 }
 
-/// The sidestep: a scuff and a whisk of cloth.
 fn mkDruidStep(r: *Rack) void {
     r.grit(0.0, 0.12, 0.30, 1300, 0.55, 4.0);
     r.air(0.0, 0.20, 0.26, 900, 2200, 0.30, 3.0);
     r.master(1.3, 3200);
 }
 
-/// The call: a held note that climbs, the growl under it swelling, a choir of one voice ringing off the orb.
 fn mkDruidSummon(r: *Rack) void {
     r.growl(0.0, 1.15, 172, 238, 0.46, 0.24, 0.42);
     r.growl(0.10, 1.05, 86, 119, 0.30, 0.40, 0.40);
@@ -2717,7 +2707,6 @@ fn mkDruidSummon(r: *Rack) void {
     r.master(1.55, 3600);
 }
 
-/// The channel: a hum on one note, hers and the thing under her together, retriggered while she mends.
 fn mkDruidHum(r: *Rack) void {
     r.growl(0.0, 1.15, 196, 204, 0.28, 0.16, 0.50);
     r.growl(0.0, 1.15, 98, 102, 0.18, 0.30, 0.40);
@@ -2727,7 +2716,6 @@ fn mkDruidHum(r: *Rack) void {
     r.master(1.15, 3400);
 }
 
-/// A pod going off: a wet pop and the splinters ticking away.
 fn mkDruidPod(r: *Rack) void {
     r.body(0.0, 0.06, 186 + r.rng.signed() * 24, 520, 0.82, 5.5);
     r.air(0.004, 0.11, 0.24, 900, 2600, 0.34, 4.5);
@@ -2736,7 +2724,6 @@ fn mkDruidPod(r: *Rack) void {
     r.master(1.4, 3200);
 }
 
-/// Hurt: a woman's gasp, cut off, with the rasp of the other thing coming up through it.
 fn mkDruidHurt(r: *Rack) void {
     r.growl(0.0, 0.16, 296 + r.rng.signed() * 22, 212, 0.56, 0.32, 0.26);
     r.growl(0.02, 0.24, 148, 106, 0.26, 0.48, 0.30);
@@ -2746,7 +2733,6 @@ fn mkDruidHurt(r: *Rack) void {
     r.master(1.45, 3800);
 }
 
-/// Death: a long falling cry that breaks into breath, the growl outlasting the voice by a beat and then going too.
 fn mkDruidDie(r: *Rack) void {
     r.growl(0.0, 0.92, 262, 148, 0.66, 0.30, 0.40);
     r.growl(0.06, 1.15, 131, 72, 0.38, 0.50, 0.40);

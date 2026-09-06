@@ -324,7 +324,7 @@ pub const Mimic = struct {
         if (self.state != .idle and self.state != .walk) return null;
         if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
         if (foe.postAim(self)) |go| return go;
-        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
+        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) foe.tetherFor(self) else null;
     }
 
     fn faceToward(self: *Mimic, at: rl.Vector3, dt: f32) void {
@@ -349,12 +349,12 @@ pub const Mimic = struct {
     }
     fn parryable(self: *const Mimic) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return foe.hurtReach(BITE_R, self.scale) + BITE_LUNGE * self.scale;
     }
     fn takeParry(self: *Mimic) void {
-        const reach = self.parryable() orelse return;
-        if (!foe.caught(self, reach)) return;
+        const reach = self.parryable() orelse self.parry.reach() orelse return;
+        if (!foe.caught(self, reach, self.toImpact(), null)) return;
         self.biteCd = BITE_CD;
         self.chips(self.headWorld(), mathx.dirXZ(self.pos, self.parry.at), 10, 3.0);
         switch (self.vit.hit(combat.PARRY_HIT)) {
@@ -484,7 +484,7 @@ pub const Mimic = struct {
                             moved = self.travel(dt, bounds);
                             self.state = .walk;
                         } else if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) {
-                            self.faceToward(self.nav.aim(self.pos, self.home), dt);
+                            self.faceToward(self.nav.aim(self.pos, foe.tetherFor(self)), dt);
                             self.speed = approach(self.speed, WALK_SPEED, ACCEL * dt);
                             moved = self.travel(dt, bounds);
                             self.state = .walk;
@@ -1053,5 +1053,10 @@ test "IT IS DANGEROUS — the bite out-hits the ogre's swipe, and a parry drops 
     try std.testing.expect(m.parryable() != null);
     m.parry = .{ .live = true, .at = mathx.ground(0, 1.6), .facing = std.math.pi, .arc = combat.GUARD_ARC };
     m.takeParry();
+    try std.testing.expect(!m.parried and m.parry.pending != null);
+    for (0..20) |_| {
+        try std.testing.expect(m.update(1.0 / 60.0, m.parry.at, 200, .{}) == null);
+        if (m.parried) break;
+    }
     try std.testing.expect(m.parried and m.staggered());
 }

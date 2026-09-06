@@ -1250,7 +1250,6 @@ pub const Spider = struct {
         foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
         const d = foe.senseHero(&self.leash, self.pos, hero, spec(self.role).aggro);
-        self.takeParry();
         var act: Act = .none;
         switch (self.role) {
             .mother => act = self.updateMother(dt, hero, bounds, d),
@@ -1265,6 +1264,7 @@ pub const Spider = struct {
         self.gaitMoving = self.gait != gaitWas;
         self.poseStep = dt;
         self.pose();
+        self.takeParry();
         const snap: f32 = if (self.role == .mother) BITE_SNAP else B_BITE_SNAP;
         if (self.state == .strike and !self.throwing and self.t >= snap * 0.18) self.tryReach(hero, if (self.role == .mother) M_BITE_OWN else B_BITE_OWN, if (self.role == .mother) M_BITE_HIT else B_BITE_HIT);
         if (self.role == .broodling and self.state == .leap and self.t >= B_LEAP_COIL) self.tryImpact(hero, B_LEAP_HIT);
@@ -1547,21 +1547,21 @@ pub const Spider = struct {
     fn toImpact(self: *const Spider) ?f32 {
         if (self.role != .mother or self.throwing) return null;
         return switch (self.state) {
-            .windup => BITE_WINDUP - self.t,
-            .strike => -self.t,
+            .windup => BITE_WINDUP - self.t + BITE_SNAP * 0.18,
+            .strike => BITE_SNAP * 0.18 - self.t,
             .idle, .walk, .recover, .lay, .leap, .stunlight, .stunheavy, .dead => null,
         };
     }
 
     fn parryable(self: *const Spider) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return foe.hurtReach(M_BITE_OWN, self.scale);
     }
 
     fn takeParry(self: *Spider) void {
-        const reach = self.parryable() orelse return;
-        if (!foe.caught(self, reach)) return;
+        const reach = self.parryable() orelse self.parry.reach() orelse return;
+        if (!foe.caught(self, reach, self.toImpact(), null)) return;
         self.biteCd = BITE_CD;
         sfx.world(.spider_hurt, self.pos);
         switch (self.vit.hit(combat.PARRY_HIT)) {
@@ -2246,7 +2246,7 @@ test "HER BITE IS AN INSTANT FROM BEING CAUGHT, and nothing else of hers is catc
         }
     }
     try std.testing.expect(open > 0);
-    try std.testing.expectApproxEqAbs(BITE_WINDUP, shut, 2.0 * step);
+    try std.testing.expectApproxEqAbs(BITE_WINDUP + BITE_SNAP * 0.18, shut, 2.0 * step);
     try std.testing.expectApproxEqAbs(PARRY_LEAD, shut - open, 3.0 * step);
 
     m.throwing = true;
@@ -2278,6 +2278,12 @@ test "A CAUGHT BITE NEVER REACHES HIM, and the second catch is the punish window
     try std.testing.expect(!m.parried and m.state == .windup);
     m.parry = .{ .live = true, .at = hero, .facing = std.math.pi };
     m.takeParry();
+    try std.testing.expect(!m.parried and m.parry.pending != null);
+    for (0..20) |_| {
+        _ = m.update(1.0 / 60.0, hero, 200, .{});
+        try std.testing.expect(m.heroHit == null);
+        if (m.parried) break;
+    }
     try std.testing.expect(m.parried);
     try std.testing.expect(m.state == .stunlight or m.state == .stunheavy);
     try std.testing.expect(!m.heroLatch);

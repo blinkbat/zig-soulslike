@@ -1161,14 +1161,14 @@ fn mkGuardBreak(r: *Rack) void {
 }
 
 fn mkParry(r: *Rack) void {
-    r.tick(0.0, 0.58, 6000);
-    r.grit(0.0, 0.09, 0.44, 3400, 0.35, 5.0);
-    r.body(0.0, 0.15, 205, 84, 1.00, 5.0);
-    r.grit(0.05, 0.10, 0.28, 2100, 0.45, 4.2);
-    r.air(0.05, 0.15, 0.26, 1500, 6200, 0.30, 3.4);
-    r.ring(0.004, 0.17, 1240, 0.20, 5.5, 2);
-    r.ring(0.06, 0.15, 1980, 0.11, 6.0, 2);
-    r.master(1.7, 5200);
+    r.tick(0.0, 0.68, 4800);
+    r.body(0.0, 0.18, 168, 58, 1.15, 4.6);
+    r.grit(0.0, 0.055, 0.50, 2800, 0.35, 5.0);
+    r.ring(0.003, 0.24, 940, 0.40, 4.8, 4);
+    r.ring(0.006, 0.18, 1880, 0.18, 5.8, 3);
+    r.grit(0.025, 0.11, 0.26, 1800, 0.45, 4.2);
+    r.air(0.03, 0.13, 0.20, 2600, 700, 0.30, 3.4);
+    r.master(1.8, 4800);
 }
 
 fn mkRefused(r: *Rack) void {
@@ -2764,7 +2764,7 @@ const BANK = [NV]Row{
     .{ .id = .foe_guarded, .make = mkFoeGuarded, .gain = battle(0.70), .mix = .combat, .jit = 0.14, .vjit = 0.20, .vars = 5, .poly = 4, .reach = 52 },
     .{ .id = .knight_repel, .make = mkKnightRepel, .gain = battle(0.90), .mix = .combat, .jit = 0.07, .vjit = 0.12, .vars = 4, .poly = 3, .reach = 95 },
     .{ .id = .guard_break, .make = mkGuardBreak, .gain = battle(0.92), .mix = .combat, .jit = 0.05, .vjit = 0.06, .vars = 2, .poly = 1 },
-    .{ .id = .parry, .make = mkParry, .gain = battle(0.82), .mix = .combat, .jit = 0.07, .vjit = 0.09, .vars = 3, .poly = 2 },
+    .{ .id = .parry, .make = mkParry, .gain = battle(0.82), .mix = .combat, .jit = 0.025, .vjit = 0.04, .vars = 3, .poly = 2 },
     .{ .id = .refused, .make = mkRefused, .gain = 0.34, .jit = 0.06, .vjit = 0.08, .vars = 2 },
     .{ .id = .death, .make = mkDeath, .gain = battle(0.95), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },
     .{ .id = .respawn, .make = mkRespawn, .gain = battle(0.55), .mix = .combat, .jit = 0.0, .vjit = 0.0, .poly = 1 },

@@ -76,7 +76,7 @@ const BITE_FRONT_DOT: f32 = 0.55;
 const BITE_WIND: f32 = 0.38;
 const BITE_STRIKE: f32 = 0.16;
 /// The jaws are still open at the strike's first frame; they close from here.
-const BITE_IMPACT_K: f32 = 0.4;
+const BITE_IMPACT_K: f32 = 0.68;
 const BITE_RECOVER: f32 = 0.60;
 const BITE_CD: f32 = 1.9;
 pub var BITE_HIT = combat.Hit{ .dmg = 15, .poise = 13, .stance = 8, .elem = combat.elems(.{ .chaos = 9 }), .venom = true };
@@ -182,6 +182,8 @@ pub const Gorger = struct {
     heroHit: ?combat.Hit = null,
     justDied: bool = false,
     parry: foe.Parry = .{},
+    motion: foe.StrokeMotion = .{},
+    deflect: foe.Deflect = .{},
     parried: bool = false,
     fade: f32 = 0,
     gone: bool = false,
@@ -258,12 +260,9 @@ pub const Gorger = struct {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt);
     }
 
-    fn biteAmt(self: *const Gorger) f32 {
-        if (self.state != .bite) return 0;
-        if (self.t < BITE_WIND) return -mathx.smoothstep(0, BITE_WIND * 0.9, self.t);
-        const s = self.t - BITE_WIND;
-        if (s < BITE_STRIKE) return lerpF(-1.0, 1.0, foe.swingCurve(s / BITE_STRIKE));
-        return 1.0 - mathx.smoothstep(BITE_STRIKE, BITE_STRIKE + BITE_RECOVER * 0.7, s);
+    fn strokeTarget(self: *const Gorger) foe.StrokePose {
+        if (self.state != .bite) return .{};
+        return foe.strokePose(self.t, .{ .wind = BITE_WIND, .strike = BITE_STRIKE, .recover = BITE_RECOVER });
     }
 
     /// How far the head is buried, 0 up to 1 in the carcass.
@@ -276,7 +275,7 @@ pub const Gorger = struct {
 
     fn stunAmount(self: *const Gorger) f32 {
         if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.stunCurve(self.t, self.state == .stunheavy);
+        return foe.recoilPose(self.t, self.state == .stunheavy);
     }
 
     pub const Smelled = struct { at: rl.Vector3, i: usize, d: f32 };
@@ -287,6 +286,8 @@ pub const Gorger = struct {
             return null;
         }
         self.heroHit = null;
+        self.parried = false;
+        self.deflect.tick(dt);
         self.ate = null;
         self.fed = false;
         self.justDied = false;
@@ -317,8 +318,7 @@ pub const Gorger = struct {
             .bite => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t < BITE_WIND) self.faceToward(quarry, dt);
-                const s = self.t - BITE_WIND;
-                if (s >= BITE_STRIKE * BITE_IMPACT_K and s < BITE_STRIKE) self.tryBite(quarry);
+
                 if (self.t >= BITE_WIND + BITE_STRIKE + BITE_RECOVER) {
                     self.heroLatch = false;
                     self.enter(.idle);
@@ -393,7 +393,15 @@ pub const Gorger = struct {
         self.speedS = approach(self.speedS, self.speed, GAIT_BLEND * dt);
         if (moved > 0) self.phase = wolf.wrap01(self.phase + moved / (wolf.strideFor(self.speed) * self.scale));
         self.emitSpores(dt);
+        if (self.state == .bite and self.t >= BITE_WIND and self.t - dt < BITE_WIND) sfx.world(.toad_chomp, self.pos);
+        self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);
         self.pose();
+        const until: ?f32 = if (self.state == .bite) BITE_WIND + BITE_STRIKE * BITE_IMPACT_K - self.t else null;
+        if (foe.catchMelee(self, foe.hurtReach(BITE_R, self.scale), BITE_FRONT_DOT, until)) {
+            self.puff(foe.markOn(self.xf[JAW], mathx.zero3), 9);
+        } else if (self.state == .bite and self.t >= BITE_WIND + BITE_STRIKE * BITE_IMPACT_K and self.t < BITE_WIND + BITE_STRIKE) {
+            self.tryBite(quarry);
+        }
         self.tryHit(blade);
         return self.heroHit;
     }
@@ -510,30 +518,31 @@ pub const Gorger = struct {
         const ph = wolf.limbPhases(self.phase, g);
         const m = mathx.clampF(self.speedS / wolf.WALK_SPEED, 0, 1);
 
-        const react = self.stunAmount();
+        const react = self.motion.reaction;
         const dk: f32 = if (self.state == .dead) mathx.clampF(self.t / (DEATH_DUR * 0.7), 0, 1) else 0;
-        const bite = self.biteAmt();
+        const bite = self.motion.body;
         const feed = self.feedAmt();
 
         const crouch = 0.30 * feed + 0.10 * react + 0.46 * dk;
-        const pitch = 16.0 * mathx.maxF(0, bite) + 26.0 * feed - 8.0 * mathx.maxF(0, -bite);
+        const pitch = 16.0 * self.motion.drive + 26.0 * feed - 8.0 * self.motion.load;
         const breath = (mathx.sinf(self.elapsed * 1.5) * 0.007 + mathx.sinf(self.elapsed * 0.7 + self.seed * 4.0) * 0.005) * W;
 
         var wx: [N]rl.Matrix = undefined;
         wx[ROOT] = mul3(
-            mul(scaleM(fs, fs, fs), mul(rx(-pitch), rz(46.0 * mathx.smoothstep(0, 1, dk)))),
+            mul(scaleM(fs, fs, fs), rz(46.0 * mathx.smoothstep(0, 1, dk))),
             mul(tr(0, (self.rest[ROOT].y + breath - crouch * W) * fs + sink, 0), ry(mathx.degrees(self.facing))),
             heromod.rootAt(self.pos),
         );
         const flex = mathx.sinf(self.phase * std.math.tau) * m * 6.0;
-        heromod.setJoint(&wx, &self.rest, SPINE, ROOT, rx(-flex * 0.5 - 6.0 * react + 10.0 * feed));
-        heromod.setJoint(&wx, &self.rest, CHEST, SPINE, rx(-flex * 0.5 - 5.0 * react + 14.0 * feed - 10.0 * dk));
+        const deflect = self.deflect.spring.v;
+        heromod.setJoint(&wx, &self.rest, SPINE, ROOT, rx(-pitch * 0.4 - flex * 0.5 - 6.0 * react + 10.0 * feed));
+        heromod.setJoint(&wx, &self.rest, CHEST, SPINE, mul(rx(-pitch * 0.6 - flex * 0.5 - 5.0 * react + 14.0 * feed - 10.0 * dk), ry(14.0 * deflect)));
 
-        const neckPitch = flex * 0.4 + 4.0 * m - 10.0 * react - 30.0 * mathx.maxF(0, -bite) + 20.0 * mathx.maxF(0, bite) + 52.0 * feed;
-        heromod.setJoint(&wx, &self.rest, NECK, CHEST, rx(neckPitch));
+        const neckPitch = flex * 0.4 + 4.0 * m - 10.0 * react - 30.0 * self.motion.load + 20.0 * self.motion.drive + 52.0 * feed;
+        heromod.setJoint(&wx, &self.rest, NECK, CHEST, mul(rx(neckPitch - 22.0 * @abs(deflect)), ry(32.0 * deflect)));
         heromod.setJoint(&wx, &self.rest, HEAD, NECK, rx(flex * 0.2 - 4.0 * m + 18.0 * react + 12.0 * bite + 24.0 * feed - 26.0 * dk));
         const chew = if (self.feeding()) 9.0 + 9.0 * mathx.sinf(self.elapsed * 11.0) else 0;
-        heromod.setJoint(&wx, &self.rest, JAW, HEAD, rx(6.0 + 34.0 * mathx.maxF(0, -bite) + 8.0 * mathx.maxF(0, bite) + chew));
+        heromod.setJoint(&wx, &self.rest, JAW, HEAD, rx(6.0 + 34.0 * self.motion.load + 8.0 * self.motion.drive + chew + 22.0 * @abs(deflect)));
 
         const wag = mathx.sinf(self.elapsed * 3.4 + self.seed * 5.0) * (4.0 + 8.0 * m) * (1.0 - dk);
         heromod.setJoint(&wx, &self.rest, TAIL0, ROOT, mul(ry(wag), rx(-8.0 + 18.0 * dk)));
@@ -738,9 +747,9 @@ fn withersMesh() rl.Mesh {
     var i: u32 = 0;
     while (i < 7) : (i += 1) {
         const f = @as(f32, @floatFromInt(i)) / 6.0;
-        const side: f32 = if (i % 2 == 0) 1.0 else -1.0;
+        const side: f32 = if (rng.float() < 0.5) 1.0 else -1.0;
         const cx = side * rng.range(0.02, 0.09) * W;
-        const cy = (0.115 - 0.020 * f) * W;
+        const cy = (0.164 - 0.020 * f) * W;
         const cz = (-0.110 + 0.180 * f) * W;
         const r = (0.070 - 0.032 * f) * W * rng.range(0.85, 1.15);
         b.addBlob(v3(cx, cy + r * 0.30, cz), v3(r, r * 0.42, r * 0.92), 7, 6, CAP_COL);
@@ -820,7 +829,8 @@ fn earMesh(side: f32) rl.Mesh {
 fn upperLegMesh(side: f32, len: f32, r: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(side * 0.004 * W, -len * W, 0), r * W, r * 0.78 * W, 8, HIDE);
+    b.addCapsule(v3(0, 0, 0), v3(side * 0.004 * W, -len * W, 0), r * W, r * 0.78 * W, 12, HIDE);
+    b.addBlob(mathx.zero3, v3(r * W, r * W, r * W), 10, 8, HIDE);
     return b.toMesh();
 }
 

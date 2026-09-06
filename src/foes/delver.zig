@@ -545,7 +545,7 @@ pub const Delver = struct {
                 self.leash.noteCombat();
             }
         }
-        self.takeParry(swung != null and self.parry.live and self.clawTouches(self.clawWas, self.parry.at));
+        self.takeParry(swung != null and self.clawTouches(self.clawWas, self.parry.at));
         self.clawWas = now;
         self.tryHit(blade);
         if (self.staggered()) {
@@ -984,13 +984,13 @@ pub const Delver = struct {
 
     fn parryable(self: *const Delver) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return foe.hurtReach(CLAW_BAND, self.scale);
     }
 
     fn takeParry(self: *Delver, touching: bool) void {
-        const reach = self.parryable() orelse if (touching) foe.hurtReach(CLAW_BAND, self.scale) else return;
-        if (!foe.caught(self, reach)) return;
+        const reach = self.parryable() orelse self.parry.reach() orelse if (touching) foe.hurtReach(CLAW_BAND, self.scale) else return;
+        if (!foe.caught(self, reach, self.toImpact(), touching)) return;
         self.clawCd = CLAW_CD;
         self.heroLatch = false;
         sfx.world(.delver_hurt, self.pos);
@@ -1773,6 +1773,9 @@ test "A CAUGHT CLAW NEVER ARRIVES" {
     try std.testing.expect(!d.parried and d.state == .claw);
     d.parry = .{ .live = true, .at = hero, .facing = std.math.pi };
     d.takeParry(false);
+    try std.testing.expect(!d.parried and d.parry.pending != null);
+    d.t = CLAW_WIND + CLAW_STRIKE * 0.5;
+    d.takeParry(true);
     try std.testing.expect(d.parried);
     try std.testing.expect(d.state == .stunlight or d.state == .stunheavy);
     try std.testing.expect(d.clawCd > 0);

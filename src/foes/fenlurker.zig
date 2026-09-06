@@ -291,13 +291,13 @@ pub const Lurker = struct {
 
     fn parryable(self: *const Lurker) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return foe.hurtReach(LASH_R, self.scale);
     }
 
     fn takeParry(self: *Lurker) void {
-        const reach = self.parryable() orelse return;
-        if (!foe.caught(self, reach)) return;
+        const reach = self.parryable() orelse self.parry.reach() orelse return;
+        if (!foe.caught(self, reach, self.toImpact(), null)) return;
         self.heroLatch = true;
         self.splash(foe.markOn(self.xf[HEAD], mathx.zero3), 8);
         self.enterStun(false);

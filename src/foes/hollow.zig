@@ -482,13 +482,13 @@ pub const Hollow = struct {
 
     fn parryable(self: *const Hollow) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return foe.hurtReach(BITE_R, self.scale);
     }
 
     fn takeParry(self: *Hollow) void {
-        const reach = self.parryable() orelse return;
-        if (!foe.caught(self, reach)) return;
+        const reach = self.parryable() orelse self.parry.reach() orelse return;
+        if (!foe.caught(self, reach, self.toImpact(), null)) return;
         self.biteCool = BITE_COOL;
         self.chips(self.jawWorld(), mathx.dirXZ(self.pos, self.parry.at), 10, 3.0);
         switch (self.vit.hit(combat.PARRY_HIT)) {
@@ -1579,6 +1579,11 @@ test "A PARRIED BITE IS DROPPED AND PAID FOR" {
     try std.testing.expect(h.parryable() != null);
     h.parry = .{ .live = true, .at = mathx.ground(0, 1.2), .facing = std.math.pi, .arc = combat.GUARD_ARC };
     h.takeParry();
+    try std.testing.expect(!h.parried and h.parry.pending != null);
+    for (0..20) |_| {
+        try std.testing.expect(h.update(1.0 / 60.0, h.parry.at, 200, .{}) == null);
+        if (h.parried) break;
+    }
     try std.testing.expect(h.parried);
     try std.testing.expect(h.staggered());
     try std.testing.expect(h.biteCool > 0);

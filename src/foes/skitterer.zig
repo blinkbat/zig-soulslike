@@ -361,13 +361,15 @@ pub const Skitterer = struct {
 
     fn parryable(self: *const Skitterer) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return foe.hurtReach(SLICE_R, self.scale);
     }
 
     fn takeParry(self: *Skitterer) void {
-        const reach = self.parryable() orelse return;
-        if (!foe.caught(self, reach)) return;
+        const reach = self.parryable() orelse self.parry.reach() orelse return;
+        const touching = self.state == .slice and self.t >= SLICE_WIND and self.t < SLICE_WIND + SLICE_STRIKE and
+            foe.weaponReaches(self.tipWas, self.tipSeg(), self.parry.at, TIP_R * self.scale + foe.HERO_R);
+        if (!foe.caught(self, reach, self.toImpact(), touching)) return;
         self.sliceCool = SLICE_COOL;
         self.chips(self.tipSeg()[1], mathx.dirXZ(self.pos, self.parry.at), 9, 3.0);
         switch (self.vit.hit(combat.PARRY_HIT)) {
@@ -1015,6 +1017,11 @@ test "A PARRIED SLICE IS DROPPED AND PAID FOR" {
     try std.testing.expect(s.parryable() != null);
     s.parry = .{ .live = true, .at = mathx.ground(0, 1.0), .facing = std.math.pi, .arc = combat.GUARD_ARC };
     s.takeParry();
+    try std.testing.expect(!s.parried and s.parry.pending != null);
+    for (0..20) |_| {
+        try std.testing.expect(s.update(1.0 / 60.0, s.parry.at, 200, .{}) == null);
+        if (s.parried) break;
+    }
     try std.testing.expect(s.parried);
     try std.testing.expect(s.staggered());
     try std.testing.expect(s.sliceCool > 0);

@@ -879,6 +879,40 @@ test "EVERY FOE_GROUPS ROW IS ACTUALLY UPDATED BY `run` — a row nothing drives
     std.debug.print("\n  all {d} foe groups are driven from run\n", .{FOE_GROUPS.len});
 }
 
+/// A creature whose rig may NOT skip its chain, and why. `foe.posed` is a per-file line rather than
+/// something the standard calls for it, so nothing but this reads whether a new creature took it.
+const NO_POSE_CULL = [_]struct { field: []const u8, why: []const u8 }{};
+
+fn foeFileOf(comptime T: type) []const u8 {
+    const tn = @typeName(T);
+    const lastDot = std.mem.lastIndexOfScalar(u8, tn, '.') orelse return "";
+    const rest = tn[0..lastDot];
+    const name = if (std.mem.lastIndexOfScalar(u8, rest, '.')) |p| rest[p + 1 ..] else rest;
+    return "src/foes/" ++ name ++ ".zig";
+}
+
+test "EVERY CREATURE'S RIG IS CULLABLE — `foe.posed` at the head of its `pose`, or a reason in NO_POSE_CULL" {
+    var missing: usize = 0;
+    var culled: usize = 0;
+    inline for (FOE_GROUPS) |gr| {
+        var excused = false;
+        for (NO_POSE_CULL) |x| {
+            if (std.mem.eql(u8, x.field, gr.field)) excused = true;
+        }
+        if (!excused) {
+            const path = comptime foeFileOf(memberOf(gr.field));
+            const src = try worldfmt.readForTest(std.testing.allocator, path, 1 << 22);
+            defer std.testing.allocator.free(src);
+            if (std.mem.indexOf(u8, src, "foe.posed(") == null) {
+                std.debug.print("  `{s}` ({s}) never asks `foe.posed` — its rig runs its whole chain for a body nothing can see or touch\n", .{ gr.field, path });
+                missing += 1;
+            } else culled += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 0), missing);
+    std.debug.print("  {d} of {d} foe groups skip the chain when nothing can see them ({d} excused)\n", .{ culled, FOE_GROUPS.len, NO_POSE_CULL.len });
+}
+
 /// Seated by a call that writes the WHOLE struct rather than by a plain `g.<field> =`, with the call named so the next reader can check it still does that.
 const SEATED_BY = [_]struct { field: []const u8, by: []const u8 }{
     .{ .field = "trig", .by = "armScript -> trigger.Runtime.arm, which opens with `self.* = .{}`" },
@@ -982,6 +1016,78 @@ fn callUpdate(f: anytype, dt: f32, hero: rl.Vector3, bounds: f32) void {
     } else {
         _ = f.update(dt, hero, bounds, .{}, if (P[5].type.? == bool) false else null);
     }
+}
+
+test "SEVEN MELEE FAMILIES KEEP THEIR SWING UNTIL THE PARRY CONTACT" {
+    var c = cindermod.Cinder.spawn(mathx.zero3, 0, 1, 0.37); c.debugRake();
+    var w = birchmod.Wight.spawn(mathx.zero3, 0, 1, 0.37); w.debugBough();
+    var h = huskmod.Husk.spawn(mathx.zero3, 0, 1, 0.37); h.state = .clout;
+    var r = gorgermod.Gorger.spawn(mathx.zero3, 0, 1, 0.37); r.debugBite();
+    var f = fishmod.Fishman.spawnAs(.spearman, mathx.zero3, 0, 1, 0.37); f.debugAct();
+    var b = batmod.Bat.spawn(mathx.zero3, 0, 1, 0.37); b.debugBite();
+    var o = owlbearmod.Owlbear.spawn(mathx.zero3, 0, 1, 0.37); o.debugRake();
+    var slam = o; slam.debugSlam();
+    var burning = w; burning.debugLight(); burning.debugBough();
+    inline for (.{ c, w, h, r, f, b, o, slam, burning }) |initial| {
+        for ([_]f32{ 30, 60, 144 }) |fps| {
+            for ([_]f32{ 0.75, 1, 1.5 }) |scale| {
+                var seeded = initial;
+                seeded.scale = scale;
+                seeded.pose();
+                try verifyMeleeContact(seeded, 1.0 / fps);
+            }
+        }
+    }
+}
+
+fn verifyMeleeContact(initial: anytype, dt: f32) !void {
+    const at = v3(0, 0, 1.2 * initial.scale);
+    var probe = initial;
+    var impact: f32 = 0;
+    while (impact < 2) {
+        impact += dt;
+        callUpdate(&probe, dt, at, 200);
+        if (probe.heroHit != null) break;
+    }
+    try std.testing.expect(impact < 2);
+    var body = initial;
+    var control = initial;
+    var away = initial;
+    var behind = initial;
+    var caughtAt: ?f32 = null;
+    var reserved = false;
+    var gap: f32 = 0;
+    var clock: f32 = 0;
+    while (clock < impact + 0.20) {
+        clock += dt;
+        body.parry.live = clock >= impact - 0.14 and clock < impact - 0.015;
+        body.parry.active = clock >= impact - 0.24 and clock < impact + 0.22;
+        body.parry.at = at;
+        body.parry.facing = std.math.pi;
+        away.parry = .{ .live = true, .active = true, .at = at, .facing = 0 };
+        behind.parry = .{ .live = true, .active = true, .at = mathx.scaleV(at, -1), .facing = 0 };
+        callUpdate(&control, dt, at, 200);
+        callUpdate(&body, dt, at, 200);
+        callUpdate(&away, dt, at, 200);
+        callUpdate(&behind, dt, at, 200);
+        try std.testing.expect(!away.parried and !behind.parried);
+        try std.testing.expect(body.heroHit == null);
+        reserved = reserved or body.parry.pending != null;
+        if (body.parried) {
+            try std.testing.expect(caughtAt == null);
+            try std.testing.expectApproxEqAbs(impact, clock, dt * 0.1);
+            caughtAt = clock;
+            try std.testing.expect(body.motion.drive > 0.3);
+        }
+        if (caughtAt == null) {
+            try std.testing.expectEqual(control.state, body.state);
+            try std.testing.expectApproxEqAbs(control.motion.body, body.motion.body, 0.0001);
+        } else {
+            gap = @max(gap, mathx.lenV(mathx.subV(foemod.markOn(control.xf[4], mathx.zero3), foemod.markOn(body.xf[4], mathx.zero3))));
+        }
+    }
+    try std.testing.expect(reserved and caughtAt != null);
+    try std.testing.expect(gap > 0.02 * initial.scale);
 }
 
 comptime {
@@ -4191,7 +4297,7 @@ fn rouseAll(g: *Game, at: rl.Vector3, r: f32) void {
 }
 
 fn markParry(g: *Game) void {
-    const p = foemod.Parry{ .live = g.hero.parryLive(), .at = g.hero.pos, .facing = g.hero.facing, .arc = g.hero.guardArc() };
+    const p = foemod.Parry{ .live = g.hero.parryLive(), .active = g.hero.parrying, .sweep = if (g.hero.shieldLeft()) 1 else -1, .at = g.hero.pos, .facing = g.hero.facing, .arc = g.hero.guardArc() };
     inline for (FOE_GROUPS) |f| {
         if (comptime @hasDecl(@FieldType(Game, f.field), "setParry")) @field(g, f.field).setParry(p);
     }

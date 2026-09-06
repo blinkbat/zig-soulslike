@@ -7,6 +7,7 @@ const heromod = @import("../play/hero.zig");
 const foe = @import("foe.zig");
 const wf = @import("../world/worldfmt.zig");
 const sfx = @import("../core/audio.zig");
+const propart = @import("../props/propart.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -164,7 +165,7 @@ const THRUST_HALF_W: f32 = (THRUST_R + foe.HERO_REACH) * @sqrt(1.0 - THRUST_FRON
 const THRUST_WIND: f32 = 0.52;
 const THRUST_STRIKE: f32 = 0.16;
 /// The point is still couched at the strike's first frame; it arrives from here.
-const THRUST_IMPACT_K: f32 = 0.4;
+const THRUST_IMPACT_K: f32 = 0.68;
 const THRUST_RECOVER: f32 = 0.86;
 const THRUST_CD: f32 = 2.6;
 pub const THRUST_HIT = combat.Hit{ .dmg = 32, .poise = 26, .stance = 16 };
@@ -343,6 +344,8 @@ pub const Fishman = struct {
     heroHit: ?combat.Hit = null,
     justDied: bool = false,
     parry: foe.Parry = .{},
+    motion: foe.StrokeMotion = .{},
+    deflect: foe.Deflect = .{},
     parried: bool = false,
     rollCd: f32 = 0,
     rollDir: rl.Vector3 = mathx.zero3,
@@ -427,25 +430,21 @@ pub const Fishman = struct {
     }
 
     /// -1 gathered, +1 driven through, easing home across the recovery.
-    fn actAmt(self: *const Fishman, wind: f32, strike: f32, recover: f32) f32 {
-        if (self.t < wind) return -mathx.smoothstep(0, wind * 0.92, self.t);
-        const s = self.t - wind;
-        if (s < strike) return lerpF(-1.0, 1.0, foe.swingCurve(s / strike));
-        return 1.0 - mathx.smoothstep(strike, strike + recover * 0.7, s);
-    }
 
-    fn moveAmt(self: *const Fishman) f32 {
-        return switch (self.state) {
-            .thrust => self.actAmt(THRUST_WIND, THRUST_STRIKE, THRUST_RECOVER),
-            .cast => self.actAmt(NET_WIND, 0.10, NET_RECOVER),
-            .rite => self.actAmt(RITE_WIND, RITE_DUR, RITE_RECOVER),
-            else => 0,
+
+    fn strokeTarget(self: *const Fishman) foe.StrokePose {
+        const clock: foe.Clock = switch (self.state) {
+            .thrust => .{ .wind = THRUST_WIND, .strike = THRUST_STRIKE, .recover = THRUST_RECOVER },
+            .cast => .{ .wind = NET_WIND, .strike = 0.10, .recover = NET_RECOVER },
+            .rite => .{ .wind = RITE_WIND - 0.14, .strike = 0.20, .recover = RITE_DUR + RITE_RECOVER - 0.06 },
+            else => return .{},
         };
+        return foe.strokePose(self.t, clock);
     }
 
     fn stunAmount(self: *const Fishman) f32 {
         if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.stunCurve(self.t, self.state == .stunheavy);
+        return foe.recoilPose(self.t, self.state == .stunheavy);
     }
 
     pub fn netMat(self: *const Fishman) rl.Matrix {
@@ -464,6 +463,8 @@ pub const Fishman = struct {
             return null;
         }
         self.heroHit = null;
+        self.parried = false;
+        self.deflect.tick(dt);
         self.threw = false;
         self.rang = false;
         self.snared = 0;
@@ -515,8 +516,7 @@ pub const Fishman = struct {
             .thrust => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t < THRUST_WIND) self.faceToward(quarry, dt);
-                const s = self.t - THRUST_WIND;
-                if (s >= THRUST_STRIKE * THRUST_IMPACT_K and s < THRUST_STRIKE) self.tryThrust(quarry);
+
                 if (self.t >= THRUST_WIND + THRUST_STRIKE + THRUST_RECOVER) {
                     self.heroLatch = false;
                     self.enter(.idle);
@@ -525,7 +525,6 @@ pub const Fishman = struct {
             .cast => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t < NET_WIND) self.faceToward(quarry, dt);
-                if (self.t >= NET_WIND and (self.t - dt) < NET_WIND) self.loose(quarry);
                 if (self.t >= NET_WIND + NET_RECOVER) self.enter(.idle);
             },
             .rite => {
@@ -579,7 +578,16 @@ pub const Fishman = struct {
         }
 
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.rigSize(), moveSpeed, moveYaw, self.facing);
+        if (self.state == .thrust and self.t >= THRUST_WIND and self.t - dt < THRUST_WIND) sfx.world(.swing_light, self.pos);
+        self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);
         self.pose();
+        if (self.state == .cast and self.t >= NET_WIND + 0.068 and self.t - dt < NET_WIND + 0.068) self.loose(quarry);
+        const until: ?f32 = if (self.state == .thrust) THRUST_WIND + THRUST_STRIKE * THRUST_IMPACT_K - self.t else null;
+        if (foe.catchMelee(self, foe.hurtReach(THRUST_R, self.rigSize()), THRUST_FRONT_DOT, until)) {
+            self.spray(foe.markOn(self.xf[HELD], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), 9);
+        } else if (self.state == .thrust and self.t >= THRUST_WIND + THRUST_STRIKE * THRUST_IMPACT_K and self.t < THRUST_WIND + THRUST_STRIKE) {
+            self.tryThrust(quarry);
+        }
         self.tryHit(blade);
         return self.heroHit;
     }
@@ -722,12 +730,12 @@ pub const Fishman = struct {
         const hipY = self.rest[ROOT].y;
         const dead = self.state == .dead;
         const dk = if (dead) mathx.smoothstep(0, 0.5, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
-        const stun = self.stunAmount();
+        const stun = self.motion.reaction;
         const m = self.moving * (1.0 - dk);
         const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);
-        const act = self.moveAmt();
+        const act = self.motion.body;
 
-        const bodyPitch = 9.0 + 14.0 * mathx.maxF(0, act) - 8.0 * mathx.maxF(0, -act) - 22.0 * stun + 42.0 * dk;
+        const bodyPitch = 9.0 + 14.0 * self.motion.drive - 8.0 * self.motion.load - 22.0 * stun + 42.0 * dk;
         const leanX = bodyPitch / 6.0;
         const waist = bodyPitch - leanX;
         const lumber = 3.0 * mathx.sinf(std.math.tau * self.phase) * m;
@@ -746,6 +754,25 @@ pub const Fishman = struct {
             heromod.deadLegs(&wx, self.rest, dk);
         }
         self.poseUpper(&wx, waist, act, stun, dk, pel.prot, lumber, gulp);
+        heromod.deflectUpper(&wx, self.deflect.spring.v, self.facing, false);
+        if (self.role == .spearman and fs > 0.0001) {
+            const held = wx[HELD];
+            const origin = foe.markOn(held, mathx.zero3);
+            const target = foe.markOn(held, v3(0, 0.14 * H, 0));
+            const down = mathx.subV(foe.markOn(held, v3(0, -1, 0)), origin);
+            const palm = mathx.subV(foe.markOn(held, v3(0, 0, 1)), origin);
+            const hint = foe.markOn(ry(mathx.degrees(self.facing)), v3(1, -0.3, -0.2));
+            const right = foe.markOn(wx[WRR], mathx.zero3);
+            const rightDown = mathx.subV(foe.markOn(wx[WRR], v3(0, -1, 0)), right);
+            const rightPalm = mathx.subV(foe.markOn(wx[WRR], v3(0, 0, 1)), right);
+            const shoulders = [2]rl.Vector3{ foe.markOn(wx[SHR], mathx.zero3), foe.markOn(wx[SHL], mathx.zero3) };
+            const low = @min(foe.markOn(held, v3(0, -0.60 * H, 0)).y, foe.markOn(held, v3(0, 0.50 * H, 0)).y);
+            const shift = heromod.gripShift(.{ right, target }, shoulders, @abs(heromod.SEG_UPARM - heromod.SEG_FOREARM) * H * fs + 0.002,
+                (heromod.SEG_UPARM + heromod.SEG_FOREARM) * H * fs * 0.985, if (dead) -std.math.inf(f32) else self.pos.y + 0.035 - low);
+            heromod.armTo(&wx, self.rest, SHR, ELR, WRR, mathx.addV(right, shift), mathx.scaleV(hint, -1), rightDown, rightPalm);
+            heromod.armTo(&wx, self.rest, SHL, ELL, WRL, mathx.addV(target, shift), hint, down, palm);
+            wx[HELD] = mul(held, tr(shift.x, shift.y, shift.z));
+        }
         self.xf = wx;
     }
 
@@ -754,9 +781,9 @@ pub const Fishman = struct {
         const m = self.moving * (1.0 - dk);
         const wonk = (self.seed - 0.5) * 5.0;
         const nod = 1.6 * mathx.cosf(2.0 * std.math.tau * self.phase) * m;
-        const twist: f32 = switch (self.state) {
-            .thrust => 22.0 * act,
-            .cast => 30.0 * act,
+        const twist: f32 = switch (self.role) {
+            .spearman => 22.0 * act,
+            .netter => 30.0 * act,
             else => 0,
         };
 
@@ -764,7 +791,7 @@ pub const Fishman = struct {
         setLocal(wx, CHEST, rest, mul3(rx(waist * 0.58 + nod * 0.6 + 1.4 * gulp), ry(-0.45 * prot + twist * 0.55), rz(-wonk * 0.3 - 0.2 * lumber)));
         setLocal(wx, NECK, rest, rx(-8.0 * act + 6.0 * dk - 5.0 * stun));
         setLocal(wx, SKULL, rest, mul3(
-            rx(-12.0 * act + 12.0 * dk - 22.0 * stun + 2.0 * gulp - (if (self.state == .rite) 26.0 * mathx.maxF(0, act) else 0)),
+            rx(-12.0 * act + 12.0 * dk - 22.0 * stun + 2.0 * gulp - (if (self.state == .rite) 26.0 * self.motion.drive else 0)),
             ry(-0.4 * prot - twist * 0.2),
             rz(wonk),
         ));
@@ -773,37 +800,37 @@ pub const Fishman = struct {
         const swing = -11.0 * heromod.armSwing(self.phase) * m * @abs(self.fwdB);
         switch (self.role) {
             .spearman => {
-                const drive = 74.0 * mathx.maxF(0, act);
-                const haul = -30.0 * mathx.maxF(0, -act);
+                const drive = 42.0 * self.motion.drive;
+                const haul = 12.0 * self.motion.load;
                 setLocal(wx, SHR, rest, mul3(rx(-40.0 + haul - drive * 0.5 + armStun - 18.0 * dk), ry(0), rz(-16.0)));
-                setLocal(wx, ELR, rest, rx(-(66.0 - 44.0 * mathx.maxF(0, act))));
+                setLocal(wx, ELR, rest, rx(-(66.0 - 44.0 * self.motion.drive)));
                 setLocal(wx, WRR, rest, rz(-6.0));
                 setLocal(wx, SHL, rest, mul3(rx(-58.0 + haul - drive * 0.7 + armStun - 18.0 * dk), ry(-14.0), rz(24.0)));
-                setLocal(wx, ELL, rest, rx(-(48.0 - 34.0 * mathx.maxF(0, act))));
+                setLocal(wx, ELL, rest, rx(-(48.0 - 34.0 * self.motion.drive)));
                 setLocal(wx, WRL, rest, rz(6.0));
             },
             .netter => {
-                const throw_ = 96.0 * mathx.maxF(0, act);
-                const haul = -74.0 * mathx.maxF(0, -act);
-                setLocal(wx, SHR, rest, mul3(rx(-14.0 + haul - throw_ + armStun - 18.0 * dk), ry(0), rz(-10.0 - 18.0 * mathx.maxF(0, -act))));
-                setLocal(wx, ELR, rest, rx(-(40.0 + 40.0 * mathx.maxF(0, -act) - 30.0 * mathx.maxF(0, act))));
+                const throw_ = 96.0 * self.motion.drive;
+                const haul = -74.0 * self.motion.load;
+                setLocal(wx, SHR, rest, mul3(rx(-14.0 + haul - throw_ + armStun - 18.0 * dk), ry(0), rz(-10.0 - 18.0 * self.motion.load)));
+                setLocal(wx, ELR, rest, rx(-(40.0 + 40.0 * self.motion.load - 30.0 * self.motion.drive)));
                 setLocal(wx, WRR, rest, rz(-6.0));
                 setLocal(wx, SHL, rest, mul3(rx(-(8.0 - swing) + armStun - 18.0 * dk), ry(0), rz(14.0)));
                 setLocal(wx, ELL, rest, rx(-26.0));
                 setLocal(wx, WRL, rest, rz(6.0));
             },
             .shaman => {
-                const up = 128.0 * mathx.maxF(0, act) + 40.0 * mathx.maxF(0, -act);
-                setLocal(wx, SHR, rest, mul3(rx(-(10.0 - swing) - up + armStun - 18.0 * dk), ry(0), rz(-12.0 - 20.0 * mathx.maxF(0, act))));
-                setLocal(wx, ELR, rest, rx(-(30.0 - 22.0 * mathx.maxF(0, act))));
+                const up = 128.0 * self.motion.drive + 40.0 * self.motion.load;
+                setLocal(wx, SHR, rest, mul3(rx(-(10.0 - swing) - up + armStun - 18.0 * dk), ry(0), rz(-12.0 - 20.0 * self.motion.drive)));
+                setLocal(wx, ELR, rest, rx(-(30.0 - 22.0 * self.motion.drive)));
                 setLocal(wx, WRR, rest, rz(-6.0));
                 setLocal(wx, SHL, rest, mul3(rx(-(8.0 + swing) - up * 0.35 + armStun - 18.0 * dk), ry(0), rz(12.0)));
-                setLocal(wx, ELL, rest, rx(-(34.0 - 10.0 * mathx.maxF(0, act))));
+                setLocal(wx, ELL, rest, rx(-(34.0 - 10.0 * self.motion.drive)));
                 setLocal(wx, WRL, rest, rz(6.0));
             },
         }
         // ONLY THE TRIDENT OWES THE KIT FIT (`hero.staffFit`, the warriors' 180-is-plumb convention): at a bare `ry(0)` the mesh keeps its authored +Y, which off a hanging wrist points back up the forearm.
-        heromod.setJoint(wx, &rest, HELD, WRR, if (self.role == .spearman) heromod.staffFit(TRIDENT_TILT) else ry(0));
+        heromod.setJoint(wx, &rest, HELD, WRR, if (self.role == .spearman) heromod.staffFit(TRIDENT_TILT + 32.0 * self.motion.drive) else ry(0));
     }
 };
 
@@ -934,18 +961,18 @@ fn fatOf(role: Role) f32 {
 
 fn pelvisMesh(role: Role) rl.Mesh {
     var b = Builder.init();
-    var rng = mathx.Rng.init(0x5A17 + @as(u64, @intFromEnum(role)));
+
     const fat = fatOf(role);
     b.setMat(.skin);
     b.addBlob(v3(0, 0, 0), v3(0.086 * H * fat, 0.068 * H, 0.074 * H * fat), 9, 6, SCALE);
     b.addBlob(v3(0, -0.020 * H, 0.030 * H * fat), v3(0.070 * H * fat, 0.044 * H, 0.052 * H * fat), 8, 5, BELLY);
     if (role != .shaman) return b.toMesh();
     b.setMat(.cloth);
-    const hip = -0.010 * H;
-    const knee = -0.150 * H;
-    const bot = -0.300 * H;
-    b.addSkirt(v3(0, hip, 0), 0.098 * H, hip - knee, 0.132 * H, 0.009 * H, 11, ROBE, &rng);
-    b.addSkirt(v3(0, knee, 0), 0.132 * H, knee - bot, 0.182 * H, 0.009 * H, 13, ROBE_DK, &rng);
+    propart.clothInto(&b, &.{
+        .{ 0.004, -0.300, 0, 0.182, 0.156 },
+        .{ -0.003, -0.150, 0, 0.132, 0.114 },
+        .{ 0, -0.010, 0, 0.098, 0.090 },
+    }, 0x5A17, ROBE_DK, ROBE, .{ .scale = H, .ragged = true, .sides = 22 });
     b.setMat(.plain);
     b.addCapsule(v3(-0.088 * H, 0.012 * H, 0), v3(0.088 * H, 0.012 * H, 0), 0.011 * H, 0.011 * H, 6, CORD);
     b.addBlob(v3(0, 0.010 * H, 0.086 * H), v3(0.022 * H, 0.020 * H, 0.018 * H), 5, 5, SALT);
@@ -957,19 +984,26 @@ fn lumbarMesh(role: Role) rl.Mesh {
     var rng = mathx.Rng.init(0xB311 + @as(u64, @intFromEnum(role)));
     const fat = fatOf(role);
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(0, 0.076 * H, 0), 0.062 * H * fat, 0.074 * H * fat, 9, SCALE);
+    b.addCapsule(v3(0, -0.035 * H, 0), v3(0, 0.076 * H, 0), 0.062 * H * fat, 0.074 * H * fat, 9, SCALE);
     b.addBlob(v3(0, 0.034 * H, 0.038 * H * fat), v3(0.056 * H * fat, 0.040 * H * fat, 0.036 * H * fat), 7, 5, BELLY);
     if (role != .shaman) return b.toMesh();
     b.addBlob(v3(0, 0.014 * H, 0.052 * H), v3(0.106 * H, 0.078 * H, 0.086 * H), 9, 7, BELLY);
     b.addBlob(v3(rng.range(-0.012, 0.012) * H, -0.014 * H, 0.058 * H), v3(0.092 * H, 0.052 * H, 0.070 * H), 8, 6, BELLY);
     b.setMat(.cloth);
-    b.addSkirt(v3(0, 0.070 * H, 0), 0.086 * H, 0.082 * H, 0.104 * H, 0.009 * H, 11, ROBE, &rng);
+    propart.clothInto(&b, &.{
+        .{ 0, -0.028, 0, 0.104, 0.094 },
+        .{ 0.002, 0.036, 0, 0.096, 0.086 },
+        .{ 0, 0.070, 0, 0.086, 0.076 },
+    }, 0xB311, ROBE_DK, ROBE, .{ .scale = H, .sides = 22 });
     return b.toMesh();
 }
 
 fn chestMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
+    inline for (.{ -1.0, 1.0 }) |side| {
+        b.addCapsule(v3(side * 0.042 * H, 0.058 * H, 0), v3(side * SHOULDER_HALF * H, 0.058 * H, 0), 0.042 * H, 0.034 * H, 12, SCALE);
+    }
     b.addBlob(v3(0, 0.040 * H, 0), v3(0.104 * H, 0.082 * H, 0.082 * H), 10, 7, SCALE);
     b.addBlob(v3(0, -0.004 * H, 0.020 * H), v3(0.086 * H, 0.052 * H, 0.062 * H), 9, 6, BELLY);
     b.addBlob(v3(0, 0.086 * H, -0.008 * H), v3(0.090 * H, 0.034 * H, 0.076 * H), 8, 6, SCALE_DK);
@@ -1363,6 +1397,23 @@ test "THE TRIDENT IS CARRIED POINT-FIRST — measured off the posed bone, never 
     std.debug.print("\n  trident at tilt {d:.0}: leads {d:.2} along his facing, pitch {d:.0} deg\n", .{ TRIDENT_TILT, lead, pitch });
     try std.testing.expect(lead > 0.55);
     try std.testing.expect(pitch > -30.0 and pitch < 45.0);
+}
+
+test "THE SUPPORT HAND HOLDS THE TRIDENT THROUGH THE THRUST" {
+    for ([_]f32{ 0.75, 1, 1.5 }) |scale| {
+        var f = Fishman.spawnAs(.spearman, mathx.zero3, 0, scale, 0.37);
+        f.debugAct();
+        var t: f32 = 0;
+        var worst: f32 = 0;
+        while (t < THRUST_WIND + THRUST_STRIKE + THRUST_RECOVER) : (t += 1.0 / 60.0) {
+            _ = f.update(1.0 / 60.0, v3(0, 0, 1.2 * scale), 200, .{}, false);
+            const target = foe.markOn(f.xf[HELD], v3(0, 0.14 * H, 0));
+            const wrist = foe.markOn(f.xf[WRL], mathx.zero3);
+            worst = @max(worst, mathx.lenV(mathx.subV(target, wrist)));
+        }
+        std.debug.print("\n  trident support hand scale {d:.2}: {d:.3} m\n", .{ scale, worst });
+        try std.testing.expect(worst < 0.04 * scale);
+    }
 }
 
 test "the thrust is a LINE down his facing, not a fan across his front" {

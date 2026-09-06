@@ -467,6 +467,7 @@ pub const Warrior = struct {
     hop: f32 = 0,
     leapt: bool = false,
     parried: bool = false,
+    deflect: foe.Deflect = .{},
     covered: bool = false,
     shieldGone: bool = false,
     blocks: u32 = 0,
@@ -639,6 +640,7 @@ pub const Warrior = struct {
         if (grip.downed) self.stagger(true);
         self.leapt = false;
         self.parried = false;
+        self.deflect.tick(dt);
         self.live = false;
         self.elapsed += dt;
         self.t += dt;
@@ -660,7 +662,6 @@ pub const Warrior = struct {
         var moveYaw: ?f32 = null;
         var moveSpeed: f32 = 0;
 
-        self.takeParry();
         switch (self.state) {
             .idle => {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
@@ -764,6 +765,7 @@ pub const Warrior = struct {
         self.poseSprings.chase(&target, if (self.state == .swing) 14000 else 6500, 0.76, 0.96, dt);
         self.applyPoseChannels(target);
         self.pose();
+        self.takeParry();
         if (self.live) self.tryReach(hero);
         if (self.state == .swing) self.crashIn();
         if (self.state == .swing and self.move().lunge > 0) {
@@ -962,13 +964,15 @@ pub const Warrior = struct {
 
     fn parryable(self: *const Warrior) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return self.parryReach(self.move());
     }
 
     fn takeParry(self: *Warrior) void {
-        const reach = self.parryable() orelse return;
-        if (!foe.caught(self, reach)) return;
+        const reach = self.parryReach(self.move());
+        const touching = self.state == .swing and self.t > 0.03 and !self.dealt and
+            foe.weaponReaches(self.wpnWas, self.wpnHere(), self.parry.at, foe.hurtReach(KIT_R[@intFromEnum(self.role)], self.scale));
+        if (!foe.caught(self, reach, self.toImpact(), touching)) return;
         self.cds[self.atk] = self.move().cd;
         self.sparks(self.wpnHere()[1], mathx.dirXZ(self.pos, self.parry.at), 16);
         sfx.world(.bone_hurt, self.pos);
@@ -1487,6 +1491,7 @@ pub const Warrior = struct {
             heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, runB, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, solePatches);
         }
         self.poseUpper(&wx, dk, stun, kn, dead, prot);
+        heromod.deflectUpper(&wx, self.deflect.spring.v, self.facing, false);
         if (self.role == .greatsword) self.poseTwoHanded(&wx, fs);
         self.xf = wx;
         const seg = self.weaponSeg();
@@ -1516,23 +1521,7 @@ pub const Warrior = struct {
         const edge = KIT_SEG[@intFromEnum(Role.greatsword)];
         const low = @min(foe.markOn(held, edge[0]).y, foe.markOn(held, edge[1]).y) - KIT_R[@intFromEnum(Role.greatsword)] * fs;
         const floor = if (self.dying()) -std.math.inf(f32) else self.pos.y + 0.01 - low;
-        var shift = mathx.zero3;
-        for (0..24) |_| {
-            var correction: f32 = 0;
-            for (targets, shoulders) |target, shoulder| {
-                const d = mathx.subV(mathx.addV(target, shift), shoulder);
-                const length = mathx.lenV(d);
-                if (length > reach or length < near) {
-                    const fit = mathx.clampF(length, near, reach);
-                    correction = @max(correction, @abs(length - fit));
-                    shift = mathx.addV(shift, mathx.scaleV(d, fit / @max(length, 0.00001) - 1));
-                }
-            }
-            const lift = @max(0, floor - shift.y);
-            shift.y += lift;
-            correction = @max(correction, lift);
-            if (correction < 0.00001) break;
-        }
+        const shift = heromod.gripShift(targets, shoulders, near, reach, floor);
         const rightDown = mathx.subV(foe.markOn(wx[WRR], v3(0, -1, 0)), rightOrigin);
         const rightPalm = mathx.subV(foe.markOn(wx[WRR], v3(0, 0, 1)), rightOrigin);
         const facing = ry(mathx.degrees(self.facing));
@@ -2095,6 +2084,11 @@ test "A CAUGHT STROKE NEVER LANDS, and HYPER ARMOUR is no defence against the bo
     try std.testing.expect(!w.parried and w.state == .swing);
     w.parry = .{ .live = true, .at = hero, .facing = std.math.pi };
     w.takeParry();
+    try std.testing.expect(!w.parried and w.parry.pending != null);
+    for (0..45) |_| {
+        try std.testing.expect(w.update(1.0 / 60.0, hero, 200, .{}) == null);
+        if (w.parried) break;
+    }
     try std.testing.expect(w.parried);
     try std.testing.expectEqual(State.stunlight, w.state);
     try std.testing.expect(!w.live);
@@ -2104,8 +2098,49 @@ test "A CAUGHT STROKE NEVER LANDS, and HYPER ARMOUR is no defence against the bo
     w.t = a.swingDur * a.impactK - PARRY_LEAD * 0.5;
     w.parried = false;
     w.takeParry();
+    for (0..45) |_| {
+        try std.testing.expect(w.update(1.0 / 60.0, hero, 200, .{}) == null);
+        if (w.parried) break;
+    }
     try std.testing.expect(w.parried);
     try std.testing.expectEqual(State.stunheavy, w.state);
+}
+
+test "parry lets both warriors swing into contact at 30, 60 and 144 Hz" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        for ([_]Role{ .shieldman, .greatsword }) |role| {
+            var w = Warrior.spawnAs(role, mathx.zero3, 0, 1, 0.37);
+            const hero = v3(0, 0, 1.5);
+            w.debugSwing(0);
+            w.parry = .{ .live = true, .active = true, .at = hero, .facing = std.math.pi };
+            var moved = false;
+            var pending = false;
+            for (0..@as(usize, @intFromFloat(hz * 3))) |_| {
+                var uncaught = w;
+                uncaught.parry = .{};
+                _ = uncaught.update(1 / hz, hero, 200, .{});
+                const was = w.weaponSeg();
+                try std.testing.expect(w.update(1 / hz, hero, 200, .{}) == null);
+                if (w.parry.pending != null) {
+                    pending = true;
+                    // The successful timing must leave the incoming animation alone.
+                    try std.testing.expectEqual(uncaught.state, w.state);
+                    try std.testing.expectApproxEqAbs(uncaught.armSh, w.armSh, 0.0001);
+                }
+                if (w.state == .swing and mathx.lenV(mathx.subV(was[1], w.weaponSeg()[1])) > 0.03) moved = true;
+                if (!w.parried) continue;
+                try std.testing.expect(pending and moved);
+                try std.testing.expect(foe.weaponReaches(w.wpnWas, w.wpnHere(), hero, foe.hurtReach(KIT_R[@intFromEnum(role)], w.scale)));
+                const ankle = w.xf[ANKL];
+                var twisted = w;
+                twisted.deflect.spring.v = 1;
+                twisted.pose();
+                try std.testing.expectApproxEqAbs(ankle.m13, twisted.xf[ANKL].m13, 0.001);
+                break;
+            }
+            try std.testing.expect(w.parried);
+        }
+    }
 }
 
 test "the two movesets differ in every column that matters" {

@@ -21,6 +21,13 @@ const warriormod = @import("foes/warrior.zig");
 const shademod = @import("foes/shade.zig");
 const leechmod = @import("foes/leechfly.zig");
 const rootedmod = @import("foes/rooted.zig");
+const fishmod = @import("foes/fishman.zig");
+const birchmod = @import("foes/birchwight.zig");
+const saltmod = @import("foes/salthusk.zig");
+const cindermod = @import("foes/cinderwake.zig");
+const rotmod = @import("foes/rotgorger.zig");
+const batmod = @import("foes/blinkbat.zig");
+const owlmod = @import("foes/owlbear.zig");
 const npcmod = @import("foes/npc.zig");
 const foemod = @import("foes/foe.zig");
 const countermod = @import("play/counter.zig");
@@ -71,8 +78,17 @@ const STAMP_EPS: f32 = 0.0001;
 fn runTo(body: anytype, clock: *f32, at: f32, quarry: rl.Vector3, bounds: f32) void {
     while (clock.* + STAMP_EPS < at) {
         const dt = @min(SHOT_DT, at - clock.*);
-        _ = body.update(dt, quarry, bounds, .{});
+        studyStep(body, dt, quarry, bounds);
         clock.* += dt;
+    }
+}
+
+fn studyStep(body: anytype, dt: f32, quarry: rl.Vector3, bounds: f32) void {
+    const params = @typeInfo(@TypeOf(@TypeOf(body.*).update)).@"fn".params;
+    if (params.len == 5) {
+        _ = body.update(dt, quarry, bounds, .{});
+    } else {
+        _ = body.update(dt, quarry, bounds, .{}, if (params[5].type.? == bool) false else null);
     }
 }
 
@@ -2155,6 +2171,8 @@ pub fn runShots(g: *Game) void {
 fn runUnitStudies(g: *Game, directOnly: bool) bool {
     game.pinHourForShot(g, game.daynight.SHOT_HOUR);
     const studies = [_]struct { tag: []const u8, run: *const fn (*Game) void }{
+        .{ .tag = "foes_study", .run = broadFoeShots },
+        .{ .tag = "parry_study", .run = parryStudyShots },
         .{ .tag = "frog_study", .run = frogStudyShots },
         .{ .tag = "archer_study", .run = archerStudyShots },
         .{ .tag = "shield_study", .run = shieldStudyShots },
@@ -2184,6 +2202,194 @@ fn runUnitStudies(g: *Game, directOnly: bool) bool {
     return ran;
 }
 const StudyView = struct { offset: rl.Vector3, dist: f32 };
+
+fn broadFoeShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("foe study target");
+    defer rl.unloadRenderTexture(rt);
+    const yaw = mathx.radians(LIT_YAW);
+    for ([_]fishmod.Role{ .spearman, .netter, .shaman }) |role| {
+        const initial = fishmod.Fishman.spawnAs(role, mathx.zero3, yaw, 1, 0.37);
+        var act = initial;
+        act.debugAct();
+        broadFoeStudy(g, rt, initial, act, &g.shoal.model, @tagName(role), if (role == .spearman) 0.52 else if (role == .netter) 0.58 else 0.54, if (role == .spearman) 0.16 else if (role == .netter) 0.10 else 0.20, 3.8, 1.6);
+    }
+    const c = cindermod.Cinder.spawn(mathx.zero3, yaw, 1, 0.37);
+    var ca = c; ca.debugRake();
+    broadFoeStudy(g, rt, c, ca, &g.scorch.model, "cinderwake", 0.44, 0.20, 3.1, 1.25);
+    const w = birchmod.Wight.spawn(mathx.zero3, yaw, 1, 0.37);
+    var wa = w; wa.debugBough();
+    broadFoeStudy(g, rt, w, wa, &g.stand.model, "birchwight", 0.86, 0.22, 3.4, 1.35);
+    const h = saltmod.Husk.spawn(mathx.zero3, yaw, 1, 0.37);
+    var ha = h; ha.state = .clout;
+    broadFoeStudy(g, rt, h, ha, &g.pan.model, "salthusk", 0.42, 0.18, 2.9, 1.2);
+    const r = rotmod.Gorger.spawn(mathx.zero3, yaw, 1, 0.37);
+    var ra = r; ra.debugBite();
+    broadFoeStudy(g, rt, r, ra, &g.gorge.model, "rotgorger", 0.38, 0.16, 2.3, 0.65);
+    const b = batmod.Bat.spawn(mathx.zero3, yaw, 1, 0.37);
+    var ba = b; ba.debugBite();
+    broadFoeStudy(g, rt, b, ba, &g.roost.model, "blinkbat", 0.44, 0.13, 6.4, 3.0);
+    var o = owlmod.Owlbear.spawn(mathx.zero3, yaw, 1, 0.37); o.debugWake();
+    var oa = o; oa.debugRake();
+    broadFoeStudy(g, rt, o, oa, &g.perch.model, "owlbear", owlmod.MOVES[0].windDur, owlmod.MOVES[0].strikeDur, 5.0, 2.0);
+    oa = o; oa.debugSlam();
+    broadFoeStudy(g, rt, o, oa, &g.perch.model, "owlbear_slam", owlmod.MOVES[1].windDur, owlmod.MOVES[1].strikeDur, 5.0, 2.0);
+}
+
+fn broadFoeStudy(g: *Game, rt: rl.RenderTexture2D, initial: anytype, attack: @TypeOf(initial), model: anytype, name: []const u8, wind: f32, strike: f32, height: f32, focus: f32) void {
+    for (0..4) |side| {
+        const yaw = mathx.radians(LIT_YAW + 90 * @as(f32, @floatFromInt(side)));
+        const quarry = mathx.scaleV(mathx.headingDir(yaw), 1.2);
+        var body = initial;
+        body.facing = yaw;
+        body.pose();
+        var clock: f32 = 0;
+        for (0..8) |frame| {
+            switch (frame) {
+                0 => {},
+                1 => { body = attack; body.facing = yaw; clock = 0; runTo(&body, &clock, wind * 0.90, quarry, 200); },
+                2 => runTo(&body, &clock, wind + strike * 0.70, quarry, 200),
+                3 => runTo(&body, &clock, wind + strike + 0.12, quarry, 200),
+                4 => { body.stagger(true); clock = 0; runTo(&body, &clock, 0.12, quarry, 200); },
+                5 => runTo(&body, &clock, 0.36, quarry, 200),
+                6 => { body.debugKill(); clock = 0; runTo(&body, &clock, 0.45, quarry, 200); },
+                7 => { body = initial; body.facing = yaw; clock = 0; runTo(&body, &clock, 1.0, mathx.scaleV(mathx.headingDir(yaw), 8), 200); },
+                else => unreachable,
+            }
+            var tag: [100]u8 = undefined;
+            unitStudyFrame(g, rt, &body, model, std.fmt.bufPrint(&tag, "foes_study_{s}_{d}_{d}", .{ name, frame, side }) catch unreachable, height, focus);
+        }
+    }
+}
+
+fn parryStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("parry target");
+    defer rl.unloadRenderTexture(rt);
+    const saved = g.hero;
+    defer g.hero = saved;
+    for ([_]f32{ 90, -90 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        for ([_]warriormod.Role{ .shieldman, .greatsword }) |role| {
+            var w = warriormod.Warrior.spawnAs(role, mathx.zero3, yaw, 1, 0.37);
+            w.debugSwing(0);
+            parryStudyPair(g, rt, w, &g.muster.model, @tagName(role), side, 1.5, 6.5);
+        }
+        var k = knightmod.Knight.spawn(mathx.zero3, yaw, 1, 0.37);
+        k.debugSweep();
+        parryStudyPair(g, rt, k, &g.vigil.model, "knight", side, 3.2, 10.0);
+        var a = archermod.Archer.spawn(mathx.zero3, yaw, 1, 0.37);
+        a.state = .buttwind;
+        a.backstepCd = 10;
+        parryStudyPair(g, rt, a, &g.line.model, "archer", side, 1.1, 5.8);
+        var z = koboldmod.Kobold.spawnAs(.berserker, mathx.zero3, yaw, 1, 0.37);
+        z.state = .chop;
+        parryStudyPair(g, rt, z, &g.band.model, "berserker", side, z.hurtReach() - 0.03, 6.5);
+        var s = duomod.Swordsman.spawn(mathx.zero3, yaw, 1, 0.37);
+        s.state = .slash_wind;
+        parryStudyPair(g, rt, s, &g.vanguard.model, "swordsman", side, 1.5, 6.5);
+        var o = ogremod.Ogre.spawn(mathx.zero3, yaw, 1, 0.37);
+        o.debugSlam();
+        parryStudyPair(g, rt, o, &g.grief.model, "ogre", side, 2.2, 10.5);
+        var c = cindermod.Cinder.spawn(mathx.zero3, yaw, 1, 0.37); c.debugRake();
+        parryStudyPair(g, rt, c, &g.scorch.model, "cinderwake", side, 1.1, 6.0);
+        var w = birchmod.Wight.spawn(mathx.zero3, yaw, 1, 0.37); w.debugBough();
+        parryStudyPair(g, rt, w, &g.stand.model, "birchwight", side, 1.1, 6.0);
+        var h = saltmod.Husk.spawn(mathx.zero3, yaw, 1, 0.37); h.state = .clout;
+        parryStudyPair(g, rt, h, &g.pan.model, "salthusk", side, 1.0, 6.0);
+        var r = rotmod.Gorger.spawn(mathx.zero3, yaw, 1, 0.37); r.debugBite();
+        parryStudyPair(g, rt, r, &g.gorge.model, "rotgorger", side, 1.5, 6.0);
+        var f = fishmod.Fishman.spawnAs(.spearman, mathx.zero3, yaw, 1, 0.37); f.debugAct();
+        parryStudyPair(g, rt, f, &g.shoal.model, "fishman", side, 1.5, 7.0);
+        var b = batmod.Bat.spawn(mathx.zero3, yaw, 1, 0.37); b.debugBite();
+        parryStudyPair(g, rt, b, &g.roost.model, "blinkbat", side, 1.1, 9.0);
+        var owl = owlmod.Owlbear.spawn(mathx.zero3, yaw, 1, 0.37); owl.debugRake();
+        parryStudyPair(g, rt, owl, &g.perch.model, "owlbear", side, 1.6, 9.0);
+        owl.debugSlam();
+        parryStudyPair(g, rt, owl, &g.perch.model, "owlbear_slam", side, 1.6, 9.0);
+    }
+}
+
+fn parryStudyPair(g: *Game, rt: rl.RenderTexture2D, initial: anytype, model: anytype, name: []const u8, side: usize, distance: f32, boom: f32) void {
+    const at = mathx.scaleV(mathx.headingDir(initial.facing), distance);
+    var probe = initial;
+    var hitAt: f32 = 0;
+    while (hitAt < 4) {
+        hitAt += SHOT_DT;
+        studyStep(&probe, SHOT_DT, at, 200);
+        if (comptime @hasField(@TypeOf(probe), "heroHit")) {
+            if (probe.heroHit != null) break;
+        } else if (probe.hurtOpen()) break;
+    }
+    must(hitAt < 4, "parry study attack never reached its subject");
+    var body = initial;
+    g.hero.parrying = false;
+    g.hero.parryCatch = .{};
+    g.hero.blockT = mathx.LONG_AGO;
+    g.hero.stam.reset();
+    g.hero.fx = @splat(.{});
+    g.hero.pos = at;
+    g.hero.facing = initial.facing + std.math.pi;
+    for (0..20) |_| { g.hero.update(SHOT_DT, 0, 0, null); g.hero.pose(); }
+    var clock: f32 = 0;
+    var caughtAt: ?f32 = null;
+    var started = false;
+    var frame: usize = 0;
+    const after = [_]f32{ 0, 0.05, 0.12, 0.28 };
+    while (clock < hitAt + 0.65) {
+        clock += SHOT_DT;
+        if (!started and clock >= hitAt - 0.23) {
+            must(g.hero.requestParry(), "parry study refused the shield");
+            started = true;
+        }
+        if (g.hero.parrying) g.hero.updateParry(SHOT_DT, null) else { g.hero.update(SHOT_DT, 0, 0, null); g.hero.pose(); }
+        body.parry.live = g.hero.parryLive();
+        body.parry.active = g.hero.parrying;
+        body.parry.at = g.hero.pos;
+        body.parry.facing = g.hero.facing;
+        studyStep(&body, SHOT_DT, at, 200);
+        if (comptime @hasField(@TypeOf(body), "heroHit")) must(body.heroHit == null, "a parried study blow also dealt damage");
+        if (body.parried) {
+            caughtAt = clock;
+            g.hero.noteParry();
+        }
+        var shootNow = false;
+        if (frame < 2 and clock >= hitAt - (if (frame == 0) @as(f32, 0.18) else 0.065)) {
+            shootNow = true;
+        } else if (frame >= 2 and frame < 6) {
+            if (caughtAt) |caught| shootNow = clock >= caught + after[frame - 2] - STAMP_EPS;
+        }
+        if (!shootNow) continue;
+        parryStudyFrame(g, rt, &body, model, name, side, frame, clock, boom);
+        frame += 1;
+        if (frame == 6) break;
+    }
+    must(caughtAt != null and frame == 6, "parry study never delivered its catch");
+}
+
+fn parryStudyFrame(g: *Game, rt: rl.RenderTexture2D, body: anytype, model: anytype, name: []const u8, side: usize, frame: usize, clock: f32, boom: f32) void {
+    var path: [160]u8 = undefined;
+    const file = std.fmt.bufPrintZ(&path, "shots/parry_study_{s}_{d}_{d}.png", .{ name, side, frame }) catch unreachable;
+    if (!stageOn(file)) return;
+    const Plate = struct {
+        body: @TypeOf(body), model: @TypeOf(model), hero: *const heromod.Hero,
+        fn draw(ctx: *const anyopaque) void {
+            const p: *const @This() = @ptrCast(@alignCast(ctx));
+            rl.drawGrid(32, 0.5);
+            p.body.draw(p.model);
+            p.hero.draw(true);
+            p.hero.drawTrail();
+            foemod.drawParticles(&p.body.parts);
+        }
+    };
+    const plate = Plate{ .body = body, .model = model, .hero = &g.hero };
+    hudmod.renderIntoTarget(rt, .{ .scene = &g.scene, .focus = mathx.addV(mathx.lerpV(body.pos, g.hero.pos, 0.5), v3(0, 1.4, 0)),
+        .yaw = mathx.radians(LIT_YAW), .pitch = 0.12, .dist = boom, .fov = camera.FOVY, .ctx = &plate, .drawFn = Plate.draw });
+    rl.beginDrawing();
+    rl.clearBackground(rl.Color.black);
+    rl.drawTextureRec(rt.texture, .{ .x = 0, .y = 0, .width = game.SCREEN_W, .height = -game.SCREEN_H }, .{ .x = 0, .y = 0 }, rl.Color.white);
+    var label: [160]u8 = undefined;
+    hudmod.text(std.fmt.bufPrintZ(&label, "{s}  {s}  {d:.3}s  {s}", .{ name, @tagName(body.state), clock, if (body.parried) "CONTACT" else if (body.parry.pending != null) "TIMED / INCOMING" else "" }) catch unreachable, 24, 24, hudmod.BODY, rl.Color.white);
+    snap(file);
+}
 
 fn unitStudyFrame(g: *Game, rt: rl.RenderTexture2D, body: anytype, model: anytype, tag: []const u8, height: f32, focusY: f32) void {
     unitStudyViewFrame(g, rt, body, model, tag, .{

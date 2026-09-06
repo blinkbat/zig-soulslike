@@ -49,7 +49,7 @@ const WRL = heromod.WRL;
 const SHR = heromod.SHR;
 const ELR = heromod.ELR;
 const WRR = heromod.WRR;
-/// The boughs ARE the arms. Bone 17 is never posed and never drawn — `Model.draw` walks `0..HELD`.
+/// The boughs are the arms; the held slot is a shared-rig placeholder.
 const HELD = heromod.HELD;
 
 const solePatches = [_]heromod.SolePatch{
@@ -89,7 +89,7 @@ const BOUGH_FRONT_DOT: f32 = 0.34;
 const BOUGH_WIND: f32 = 0.86;
 const BOUGH_STRIKE: f32 = 0.22;
 /// The bough is still back at the strike's first frame; it arrives from here.
-const BOUGH_IMPACT_K: f32 = 0.4;
+const BOUGH_IMPACT_K: f32 = 0.68;
 const BOUGH_RECOVER: f32 = 0.95;
 const BOUGH_CD: f32 = 3.0;
 pub var BOUGH_HIT = combat.Hit{ .dmg = 22, .poise = 22, .stance = 14 };
@@ -196,6 +196,8 @@ pub const Wight = struct {
     heroHit: ?combat.Hit = null,
     justDied: bool = false,
     parry: foe.Parry = .{},
+    motion: foe.StrokeMotion = .{},
+    deflect: foe.Deflect = .{},
     parried: bool = false,
     fade: f32 = 0,
     gone: bool = false,
@@ -291,20 +293,14 @@ pub const Wight = struct {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE * self.haste(), dt);
     }
 
-    /// -1 hauled overhead, +1 driven into the ground, easing back to 0 across the recovery.
-    fn boughAmt(self: *const Wight) f32 {
-        if (self.state != .bough) return 0;
-        const wind = self.windDur();
-        if (self.t < wind) return -mathx.smoothstep(0, wind * 0.94, self.t);
-        const s = self.t - wind;
-        const str = self.strikeDur();
-        if (s < str) return lerpF(-1.0, 1.0, foe.swingCurve(s / str));
-        return 1.0 - mathx.smoothstep(str, str + self.recoverDur() * 0.7, s);
+    fn strokeTarget(self: *const Wight) foe.StrokePose {
+        if (self.state != .bough) return .{};
+        return foe.strokePose(self.t, .{ .wind = self.windDur(), .strike = self.strikeDur(), .recover = self.recoverDur() });
     }
 
     fn stunAmount(self: *const Wight) f32 {
         if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.stunCurve(self.t, self.state == .stunheavy);
+        return foe.recoilPose(self.t, self.state == .stunheavy);
     }
 
     pub fn update(self: *Wight, dt: f32, quarry: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
@@ -313,6 +309,8 @@ pub const Wight = struct {
             return null;
         }
         self.heroHit = null;
+        self.parried = false;
+        self.deflect.tick(dt);
         self.justDied = false;
         self.justCaught = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
@@ -346,8 +344,7 @@ pub const Wight = struct {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 const wind = self.windDur();
                 if (self.t < wind) self.faceToward(quarry, dt);
-                const s = self.t - wind;
-                if (s >= self.strikeDur() * BOUGH_IMPACT_K and s < self.strikeDur()) self.tryBough(quarry);
+
                 if (self.t >= wind + self.strikeDur() + self.recoverDur()) {
                     self.heroLatch = false;
                     self.enter(.idle);
@@ -381,7 +378,15 @@ pub const Wight = struct {
 
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, moveSpeed, moveYaw, self.facing);
         self.emitFire(dt);
+        if (self.state == .bough and self.t >= self.windDur() and self.t - dt < self.windDur()) sfx.world(.wood_swing, self.pos);
+        self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);
         self.pose();
+        const until: ?f32 = if (self.state == .bough) self.windDur() + self.strikeDur() * BOUGH_IMPACT_K - self.t else null;
+        if (foe.catchMelee(self, foe.hurtReach(BOUGH_R, self.scale), BOUGH_FRONT_DOT, until)) {
+            self.chips(foe.markOn(self.xf[WRR], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), 9);
+        } else if (self.state == .bough and self.t >= self.windDur() + self.strikeDur() * BOUGH_IMPACT_K and self.t < self.windDur() + self.strikeDur()) {
+            self.tryBough(quarry);
+        }
         self.tryHit(blade);
         return self.heroHit;
     }
@@ -509,13 +514,13 @@ pub const Wight = struct {
         const hipY = self.rest[ROOT].y;
         const dead = self.state == .dead;
         const dk = if (dead) mathx.smoothstep(0, 0.6, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
-        const stun = self.stunAmount();
+        const stun = self.motion.reaction;
         const m = self.moving * (1.0 - dk);
         const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);
-        const bough = self.boughAmt();
+        const bough = self.motion.body;
 
         const creak = SWAY * mathx.gutter(self.elapsed * 0.42 + self.seed * 6.28, self.seed * 4.3) * (1.0 - m);
-        const bodyPitch = 20.0 * mathx.maxF(0, bough) - 12.0 * mathx.maxF(0, -bough) - 18.0 * stun + 74.0 * dk;
+        const bodyPitch = 20.0 * self.motion.drive - 12.0 * self.motion.load - 18.0 * stun + 74.0 * dk;
         const leanX = PELVIS_SHARE * bodyPitch;
         const waist = (1.0 - PELVIS_SHARE) * bodyPitch;
         const lumber = 2.4 * mathx.sinf(std.math.tau * self.phase) * m;
@@ -533,6 +538,8 @@ pub const Wight = struct {
             heromod.deadLegs(&wx, self.rest, dk);
         }
         self.poseUpper(&wx, waist, bough, stun, dk, pel.prot, lumber, creak);
+        wx[HELD] = wx[WRR];
+        heromod.deflectUpper(&wx, self.deflect.spring.v, self.facing, false);
         self.xf = wx;
     }
 
@@ -548,8 +555,8 @@ pub const Wight = struct {
 
         const armStun = -34.0 * stun;
         const swing = -7.0 * heromod.armSwing(self.phase) * m * @abs(self.fwdB);
-        const haul = -128.0 * mathx.maxF(0, -bough);
-        const drive = 84.0 * mathx.maxF(0, bough);
+        const haul = -128.0 * self.motion.load;
+        const drive = 84.0 * self.motion.drive;
         const boughLate = std.math.pow(f32, @abs(bough), 1.5);
         inline for (.{ SHL, SHR }, .{ ELL, ELR }, .{ WRL, WRR }, .{ 1.0, -1.0 }) |sh, el, wr, side| {
             const s = if (side > 0) swing else -swing;
@@ -653,9 +660,9 @@ pub const Stand = struct {
 fn buildBones() [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
     mesh[ROOT] = boleMesh(0.086, 0.078, 0.090, 0x8100);
-    mesh[SPINE] = boleMesh(0.078, 0.070, 0.128, 0x8101);
+    mesh[SPINE] = boleMesh(0.078, 0.070, -0.128, 0x8101);
     mesh[CHEST] = trunkMesh();
-    mesh[NECK] = boleMesh(0.038, 0.034, 0.062, 0x8103);
+    mesh[NECK] = boleMesh(0.038, 0.034, -0.070, 0x8103);
     mesh[CROWN] = crownMesh();
     mesh[HIPL] = limbMesh(1.0, heromod.SEG_THIGH, 0.046, 0.036, 0x8104);
     mesh[KNEEL] = limbMesh(1.0, heromod.SEG_SHANK, 0.034, 0.026, 0x8105);
@@ -683,8 +690,8 @@ fn lenticels(b: *Builder, rng: *mathx.Rng, len: f32, r: f32, n: u32) void {
         b.addCapsule(
             v3(cx - mathx.sinf(a) * w, y, cz + mathx.cosf(a) * w),
             v3(cx + mathx.sinf(a) * w, y + rng.range(-0.002, 0.002) * H, cz - mathx.cosf(a) * w),
-            0.0090 * H,
-            0.0075 * H,
+            0.0024 * H,
+            0.0018 * H,
             4,
             LENTICEL,
         );
@@ -705,6 +712,9 @@ fn trunkMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x8102);
     b.setMat(.skin);
+    inline for (.{ -1.0, 1.0 }) |side| {
+        b.addCapsule(v3(side * 0.042 * H, 0.058 * H, 0), v3(side * SHOULDER_HALF * H, 0.058 * H, 0), 0.042 * H, 0.034 * H, 12, BARK);
+    }
     b.addCapsule(v3(0, -0.010 * H, 0), v3(0, 0.078 * H, 0), 0.082 * H, 0.092 * H, 11, BARK);
     b.addBlob(v3(0, 0.062 * H, -0.010 * H), v3(0.086 * H, 0.032 * H, 0.078 * H), 9, 6, BARK_LT);
     b.setMat(.plain);
@@ -724,14 +734,11 @@ fn crownMesh() rl.Mesh {
         const a = rng.angle();
         const up = rng.range(0.045, 0.098) * H;
         const out = rng.range(0.028, 0.072) * H;
-        b.addCapsule(
-            v3(0, 0.022 * H, 0),
-            v3(mathx.cosf(a) * out, 0.022 * H + up, mathx.sinf(a) * out),
-            0.008 * H,
-            0.0025 * H,
-            5,
-            ROT,
-        );
+        const elbow = v3(mathx.cosf(a) * out * 0.58, 0.022 * H + up, mathx.sinf(a) * out * 0.58);
+        const tip = v3(mathx.cosf(a + 0.2) * out, 0.022 * H + up * 0.56, mathx.sinf(a + 0.2) * out);
+        b.addCapsule(v3(0, 0.022 * H, 0), elbow, 0.009 * H, 0.006 * H, 7, ROT);
+        b.addCapsule(elbow, tip, 0.006 * H, 0.0045 * H, 7, ROT);
+        b.addBlob(tip, v3(0.0045 * H, 0.004 * H, 0.0045 * H), 6, 5, HEARTWOOD);
     }
     b.setMat(.plain);
     b.addBlob(v3(0.012 * H, 0.030 * H, 0.026 * H), v3(0.011 * H, 0.010 * H, 0.009 * H), 5, 5, EMBER_EYE);

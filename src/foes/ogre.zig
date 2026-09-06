@@ -531,7 +531,6 @@ pub const Ogre = struct {
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         const bearing = self.bearingTo(hero);
         self.trackHead(hero, d, dt);
-        self.takeParry();
         var live: ?combat.Hit = null;
         switch (self.state) {
             .idle => {
@@ -707,7 +706,8 @@ pub const Ogre = struct {
         self.poseSprings.chase(&target, if (striking or live != null) 18000 else 6500, 0.78, 0.97, dt);
         inline for (POSE_FIELDS, 0..) |field, i| @field(self, field) = target[i];
         self.pose();
-        if (live) |hit| {
+        self.takeParry();
+        if (if (self.parried) null else live) |hit| {
             switch (self.blowKind) {
                 .slam, .drive => self.tryImpact(hero, hit),
                 .swipe => self.trySwipe(hero, hit),
@@ -871,14 +871,15 @@ pub const Ogre = struct {
 
     fn parryable(self: *const Ogre) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         if (self.driveMove()) return self.slamReach() + DRIVE_SPEED * left;
         return if (self.slamMove()) self.slamReach() else self.swipeReach();
     }
 
     fn takeParry(self: *Ogre) void {
-        const reach = self.parryable() orelse return;
-        if (!foe.caught(self, reach)) return;
+        const reach = self.parryable() orelse self.parry.reach() orelse return;
+        const swinging = self.state == .slam or self.state == .swipe or self.state == .backswipe or self.state == .drive;
+        if (!foe.caught(self, reach, self.toImpact(), swinging and self.t > 0.03 and self.clubReaches(self.parry.at))) return;
         self.judder = 1.0;
         if (self.slamMove()) {
             self.slamCd = SLAM_CD;
@@ -886,13 +887,6 @@ pub const Ogre = struct {
             self.driveCd = DRIVE_CD;
         } else {
             self.swipeCd = SWIPE_CD;
-        }
-        switch (self.state) {
-            .windup => self.setSlam(0.30),
-            .swipewind => self.setSwipe(0.35),
-            .backwind => self.setBackswipe(0.35),
-            .drivewind => self.setDrive(0.25),
-            else => {},
         }
         const low = self.clubLowWorld();
         self.dustBurst(v3(low.x, self.pos.y + 0.05, low.z), 10, 1.8, 0.18);
@@ -2232,6 +2226,11 @@ test "A CAUGHT SLAM NEVER LANDS, and the second catch is the punish window" {
     try std.testing.expect(!o.parried and o.state == .slam);
     o.parry = .{ .live = true, .at = hero, .facing = std.math.pi };
     o.takeParry();
+    try std.testing.expect(!o.parried and o.parry.pending != null);
+    for (0..20) |_| {
+        try std.testing.expect(o.update(1.0 / 60.0, hero, 60, .{}) == null);
+        if (o.parried) break;
+    }
     try std.testing.expect(o.parried);
     try std.testing.expectEqual(State.stunlight, o.state);
     try std.testing.expect(o.slamCd > 0);
@@ -2245,6 +2244,10 @@ test "A CAUGHT SLAM NEVER LANDS, and the second catch is the punish window" {
     o.parried = false;
     o.parry = .{ .live = true, .at = hero, .facing = std.math.pi };
     o.takeParry();
+    for (0..20) |_| {
+        try std.testing.expect(o.update(1.0 / 60.0, hero, 60, .{}) == null);
+        if (o.parried) break;
+    }
     try std.testing.expect(o.parried);
     try std.testing.expectEqual(State.stunheavy, o.state);
     try std.testing.expect(combat.FOE_HEAVY_STUN_DUR > combat.FOE_LIGHT_STUN_DUR);

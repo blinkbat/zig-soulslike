@@ -8,6 +8,7 @@ const foestat = @import("foestat.zig");
 const props = @import("../props/props.zig");
 const fen = @import("fenlurker.zig");
 const env = @import("../world/env.zig");
+const anim = @import("../core/anim.zig");
 
 const v3 = mathx.v3;
 
@@ -254,7 +255,11 @@ pub fn inParryWindow(left: f32) bool {
 }
 
 pub fn setParry(foes: anytype, p: Parry) void {
-    for (foes) |*f| f.parry = p;
+    for (foes) |*f| {
+        const pending = f.parry.pending;
+        f.parry = p;
+        f.parry.pending = pending;
+    }
 }
 pub fn anyParried(foes: anytype) bool {
     for (foes) |*f| {
@@ -717,6 +722,75 @@ pub const Push = struct { light: f32, heavy: f32 };
 
 pub const Clock = struct { wind: f32, strike: f32, recover: f32 };
 
+pub const StrokePose = struct {
+    load: f32 = 0,
+    drive: f32 = 0,
+
+    pub fn chan(self: StrokePose) [2]f32 { return .{ self.load, self.drive }; }
+};
+
+pub fn strokePose(t: f32, clock: Clock) StrokePose {
+    const Track = anim.Pose(StrokePose);
+    const end = clock.wind + clock.strike;
+    const keys = [_]Track.PoseKey{
+        .{ .t = 0, .p = .{} },
+        .{ .t = clock.wind * 0.62, .p = .{ .load = 0.88 } },
+        .{ .t = clock.wind * 0.84, .p = .{ .load = 1 } },
+        .{ .t = clock.wind, .p = .{ .load = 1 }, .ease = .hold },
+        .{ .t = clock.wind + clock.strike * 0.55, .p = .{ .drive = 1 }, .ease = .accel },
+        .{ .t = end + clock.recover * 0.12, .p = .{ .drive = 1.08 }, .ease = .decel },
+        .{ .t = end + clock.recover * 0.65, .p = .{ .load = 0.06 } },
+        .{ .t = end + clock.recover, .p = .{} },
+    };
+    const p = Track.sample(&keys, t);
+    return .{ .load = p[0], .drive = p[1] };
+}
+
+pub const StrokeMotion = struct {
+    bank: anim.SpringBank(4) = .{},
+    body: f32 = 0,
+    load: f32 = 0,
+    drive: f32 = 0,
+    reaction: f32 = 0,
+
+    pub fn seat(self: *StrokeMotion, target: StrokePose, stun: f32) void {
+        self.bank.seat(.{ target.drive - target.load, target.load, target.drive, stun });
+        self.body = target.drive - target.load;
+        self.load = target.load;
+        self.drive = target.drive;
+        self.reaction = stun;
+    }
+
+    pub fn tick(self: *StrokeMotion, target: StrokePose, stun: f32, dt: f32) void {
+        var channels = [_]f32{ target.drive - target.load, target.load, target.drive, stun };
+        self.bank.chase(&channels, 6500, 0.72, 0.82, dt);
+        self.body = channels[0];
+        self.load = @max(0, channels[1]);
+        self.drive = @max(0, channels[2]);
+        self.reaction = channels[3];
+    }
+};
+
+pub fn recoilPose(t: f32, heavy: bool) f32 {
+    const end = combat.foeStunDur(heavy);
+    const keys = [_]anim.Key{
+        .{ .t = 0, .v = 0 },
+        .{ .t = 0.09, .v = if (heavy) 1.25 else 1, .ease = .decel },
+        .{ .t = 0.23, .v = if (heavy) 0.88 else 0.58 },
+        .{ .t = end * 0.63, .v = if (heavy) 0.80 else 0.30 },
+        .{ .t = end * 0.90, .v = -0.08 },
+        .{ .t = end, .v = 0 },
+    };
+    return anim.keyAt(&keys, t);
+}
+
+pub fn catchMelee(self: anytype, reach: f32, frontDot: f32, until: ?f32) bool {
+    const aimed = inFront(self.pos, self.facing, self.parry.at, reach, frontDot);
+    if (!caught(self, reach, if (self.heroLatch or !aimed) null else until, null)) return false;
+    self.stagger(self.vit.hit(combat.PARRY_HIT) == .heavy);
+    return true;
+}
+
 pub fn moveClock(row: anytype) Clock {
     return .{ .wind = row.windDur, .strike = row.strikeDur, .recover = row.recoverDur };
 }
@@ -827,22 +901,129 @@ pub fn grip(root: *combat.Root, chill: *combat.Chill, vit: *combat.Vitals, dt: f
 
 pub const Parry = struct {
     live: bool = false,
+    active: bool = false,
+    sweep: f32 = 1,
     at: rl.Vector3 = mathx.zero3,
     facing: f32 = 0,
     arc: f32 = combat.GUARD_ARC,
+    pending: ?struct { reach: f32, left: f32 } = null,
 
-    pub fn catches(self: *const Parry, at: rl.Vector3, reach: f32) bool {
+    pub fn catches(self: *const Parry, at: rl.Vector3, radius: f32) bool {
         if (!self.live) return false;
-        return inArc(self.at, self.facing, at, reach, self.arc);
+        return inArc(self.at, self.facing, at, radius, self.arc);
+    }
+
+    pub fn reach(self: *const Parry) ?f32 {
+        return if (self.pending) |p| p.reach else null;
+    }
+
+    pub fn window(self: *const Parry, left: f32) bool {
+        return inParryWindow(left) or (self.live and left < 0 and left >= -1.0 / 30.0);
+    }
+
+    // Timing earns the catch; the moving blow delivers it. No attack clock is changed.
+    pub fn contact(self: *Parry, from: rl.Vector3, radius: f32, until: ?f32, touching: ?bool) bool {
+        const left = until orelse {
+            self.pending = null;
+            return false;
+        };
+        if (self.pending) |p| {
+            if (left > p.left + 0.001 or left < -PARRY_LEAD) self.pending = null;
+        }
+        if (!(self.live or self.active) or !inArc(self.at, self.facing, from, radius, self.arc)) {
+            self.pending = null;
+            return false;
+        }
+        const arrives = if (touching) |hit| hit else left <= 0 and left >= -1.0 / 30.0;
+        if (self.live and (inParryWindow(left) or arrives)) self.pending = .{ .reach = radius, .left = left };
+        if (self.pending == null) return false;
+        self.pending.?.left = left;
+        if (!arrives) return false;
+        self.pending = null;
+        return true;
     }
 };
 
-pub fn caught(self: anytype, reach: f32) bool {
-    if (!self.parry.catches(self.pos, reach)) return false;
+pub fn caught(self: anytype, reach: f32, until: ?f32, touching: ?bool) bool {
+    if (!self.parry.contact(self.pos, reach, until, touching)) return false;
     self.parried = true;
     self.flash = FLASH_DUR;
     self.leash.noteCombat();
+    if (comptime @hasField(@TypeOf(self.*), "heroHit")) self.heroHit = null;
+    if (comptime @hasField(@TypeOf(self.*), "deflect")) self.deflect.kick(self.parry.sweep);
     return true;
+}
+
+pub const Deflect = struct {
+    spring: anim.Spring = .{},
+
+    pub fn kick(self: *Deflect, side: f32) void {
+        self.spring.vel += 52 * side;
+    }
+
+    pub fn tick(self: *Deflect, dt: f32) void {
+        _ = self.spring.step(0, 650, 0.48, dt);
+    }
+};
+
+test "parry timing waits for contact and survives the shield's active window" {
+    const from = v3(0, 0, 1.5);
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        var p = Parry{ .live = true, .active = true };
+        var left: f32 = PARRY_LEAD * 0.8;
+        try std.testing.expect(!p.contact(from, 2, left, false));
+        p.live = false;
+        while (left > 0) {
+            try std.testing.expect(!p.contact(from, 2, left, false));
+            left -= 1 / hz;
+        }
+        try std.testing.expect(p.contact(from, 2, left, true));
+        try std.testing.expect(!p.contact(from, 2, left, true));
+    }
+}
+
+test "parry reservations expire on interruption, a new move, lost facing or lost reach" {
+    const from = v3(0, 0, 1.5);
+    for (0..5) |mode| {
+        var p = Parry{ .live = true, .active = true };
+        try std.testing.expect(!p.contact(from, 2, 0.12, false));
+        p.live = false;
+        var left: ?f32 = 0;
+        switch (mode) {
+            0 => left = null,
+            1 => left = 0.7,
+            2 => p.active = false,
+            3 => p.facing = std.math.pi,
+            else => p.at.z = -8,
+        }
+        try std.testing.expect(!p.contact(from, 2, left, false));
+        p.active = true;
+        p.facing = 0;
+        p.at = mathx.zero3;
+        try std.testing.expect(!p.contact(from, 2, 0, true));
+    }
+    var early = Parry{ .live = true, .active = true };
+    try std.testing.expect(!early.contact(from, 2, PARRY_LEAD + 0.1, false));
+    early.live = false;
+    try std.testing.expect(!early.contact(from, 2, 0, true));
+}
+
+test "parry deflection moves continuously, overshoots and settles at every frame rate" {
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        var d = Deflect{};
+        d.kick(1);
+        try std.testing.expectEqual(@as(f32, 0), d.spring.v);
+        var peak: f32 = 0;
+        var low: f32 = 0;
+        for (0..@as(usize, @intFromFloat(hz))) |_| {
+            d.tick(1 / hz);
+            peak = @max(peak, d.spring.v);
+            low = @min(low, d.spring.v);
+        }
+        try std.testing.expect(peak > 0.8 and peak < 1.4);
+        try std.testing.expect(low < -0.05);
+        try std.testing.expect(@abs(d.spring.v) < 0.001);
+    }
 }
 
 /// Stamped every frame (`game.markWade`) — only `game.zig` sees the creature and `env`'s water at once. `quarry` is the depth where the HERO IS STANDING: a fact about the ground, so NO INPUT READING holds.
@@ -2746,7 +2927,7 @@ pub fn setCull(cull: ?env.Cull, reach: f32) void {
     drawReach = reach;
 }
 
-fn boundOf(f: anytype) f32 {
+pub fn boundOf(f: anytype) f32 {
     const r = if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "bodyR")) f.bodyR() else 0;
     return DRAW_BOUND + r;
 }

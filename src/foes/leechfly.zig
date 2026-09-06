@@ -501,13 +501,13 @@ pub const Leechfly = struct {
 
     fn parryable(self: *const Leechfly) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return self.stabReach();
     }
 
     fn takeParry(self: *Leechfly) bool {
-        const reach = self.parryable() orelse return false;
-        if (!foe.caught(self, reach)) return false;
+        const reach = self.parryable() orelse self.parry.reach() orelse return false;
+        if (!foe.caught(self, reach, self.toImpact(), null)) return false;
         self.dealt = false;
         switch (self.vit.hit(combat.PARRY_HIT)) {
             .death => self.enterDeath(),

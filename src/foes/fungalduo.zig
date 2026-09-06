@@ -671,6 +671,7 @@ pub const Swordsman = struct {
 
     parry: foe.Parry = .{},
     parried: bool = false,
+    deflect: foe.Deflect = .{},
 
     xf: [N]rl.Matrix = undefined,
     rest: [N]rl.Vector3 = undefined,
@@ -779,6 +780,7 @@ pub const Swordsman = struct {
     pub fn update(self: *Swordsman, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         self.justDied = false;
         self.parried = false;
+        self.deflect.tick(dt);
         self.heroHit = null;
         if (self.gone) {
             foe.tickParticles(&self.parts, dt, self.pos.y);
@@ -786,6 +788,7 @@ pub const Swordsman = struct {
         }
         self.stateStep(dt, hero, bounds);
         self.takeParry();
+        switch (self.state) { .slash, .slash2, .heavy, .lunge => self.tryReach(hero), else => {} }
         self.tryHit(blade);
         return self.heroHit;
     }
@@ -847,7 +850,6 @@ pub const Swordsman = struct {
             .slash => {
                 self.faceToward(hero, dt * 0.33);
                 self.chanSet(samplePose(&SW_SLASH_KEYS, mathx.clampF(self.t / SW_SLASH_DUR, 0, 1)));
-                self.tryReach(hero);
                 if (self.t >= SW_SLASH_DUR) {
                     if (self.doubling) {
                         sfx.world(.swing_light, self.pos);
@@ -860,7 +862,6 @@ pub const Swordsman = struct {
             },
             .slash2 => {
                 self.chanSet(samplePose(&SW_SLASH2_KEYS, mathx.clampF(self.t / SW_SLASH_DUR, 0, 1)));
-                self.tryReach(hero);
                 if (self.t >= SW_SLASH_DUR) {
                     self.doubling = false;
                     self.slashCd = SW_SLASH_CD;
@@ -877,7 +878,6 @@ pub const Swordsman = struct {
             },
             .heavy => {
                 self.chanSet(samplePose(&SW_HEAVY_KEYS, mathx.clampF(self.t / SW_HEAVY_DUR, 0, 1)));
-                self.tryReach(hero);
                 if (self.t >= SW_HEAVY_DUR) {
                     self.heavyCd = SW_HEAVY_CD;
                     self.recoverAfter(.heavy);
@@ -899,7 +899,6 @@ pub const Swordsman = struct {
                 mathx.stepXZ(&self.pos, self.hopDir, want - self.hopDone, bounds);
                 self.hopDone = want;
                 self.hop = SW_LUNGE_UP * mathx.sinf(u * std.math.pi) * self.scale;
-                self.tryReach(hero);
                 if (self.t >= SW_LUNGE_DUR) {
                     self.hop = 0;
                     self.lungeCd = SW_LUNGE_CD;
@@ -982,7 +981,7 @@ pub const Swordsman = struct {
     fn toImpact(self: *const Swordsman) ?f32 {
         return switch (self.state) {
             .slash_wind => SW_SLASH_WIND - self.t + SW_SLASH_DUR * 0.46,
-            .slash => SW_SLASH_DUR * 0.46 - self.t,
+            .slash, .slash2 => SW_SLASH_DUR * 0.46 - self.t,
             .heavy_wind => SW_HEAVY_WIND - self.t + SW_HEAVY_DUR * 0.42,
             .heavy => SW_HEAVY_DUR * 0.42 - self.t,
             .lunge_wind => SW_LUNGE_WIND - self.t + SW_LUNGE_DUR * 0.30,
@@ -993,13 +992,16 @@ pub const Swordsman = struct {
 
     fn parryable(self: *const Swordsman) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return foe.hurtReach(SW_KIT_R, self.scale) + SW_BLADE_LEN * self.scale * 0.5;
     }
 
     pub fn takeParry(self: *Swordsman) void {
-        const reach = self.parryable() orelse return;
-        if (!foe.caught(self, reach)) return;
+        const reach = foe.hurtReach(SW_KIT_R, self.scale) + SW_BLADE_LEN * self.scale * 0.5;
+        const swinging = switch (self.state) { .slash, .slash2, .heavy, .lunge => true, else => false };
+        const touching = swinging and self.t > 0.03 and !self.dealt and
+            foe.weaponReaches(self.wpnWas, self.bladeSeg(), self.parry.at, foe.hurtReach(SW_KIT_R, self.scale));
+        if (!foe.caught(self, reach, self.toImpact(), touching)) return;
         self.slashCd = SW_SLASH_CD;
         self.heavyCd = SW_HEAVY_CD;
         self.lungeCd = SW_LUNGE_CD;
@@ -1082,6 +1084,7 @@ pub const Swordsman = struct {
     pub fn pose(self: *Swordsman) void {
         if (!foe.posed(self)) return;
         poseBody(self, SW_DEATH_DUR);
+        heromod.deflectUpper(&self.xf, self.deflect.spring.v, self.facing, false);
     }
 
     pub fn draw(self: *const Swordsman, model: *const SwModel) void {

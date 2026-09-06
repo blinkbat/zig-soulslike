@@ -49,7 +49,7 @@ const WRL = heromod.WRL;
 const SHR = heromod.SHR;
 const ELR = heromod.ELR;
 const WRR = heromod.WRR;
-/// The wings ARE the arms. Bone 17 is never posed and never drawn — `Model.draw` walks `0..HELD`.
+/// The wings are the arms; the held slot is a shared-rig placeholder.
 const HELD = heromod.HELD;
 
 const solePatches = [_]heromod.SolePatch{
@@ -143,7 +143,7 @@ const MOVES_BANK = [_]Attack{
 };
 pub var MOVES = MOVES_BANK;
 
-const IMPACT_K: f32 = 0.42;
+const IMPACT_K: f32 = 0.68;
 
 comptime {
     const named = .{ .{ RAKE, RAKE_HIT }, .{ SLAM, SLAM_HIT } };
@@ -275,6 +275,9 @@ pub const Owlbear = struct {
     heroHit: ?combat.Hit = null,
     justDied: bool = false,
     parry: foe.Parry = .{},
+    motion: foe.StrokeMotion = .{},
+    strokeSlam: bool = false,
+    deflect: foe.Deflect = .{},
     parried: bool = false,
     fade: f32 = 0,
     gone: bool = false,
@@ -371,14 +374,9 @@ pub const Owlbear = struct {
         return MOVES[if (self.state == .slam) SLAM else RAKE];
     }
 
-    /// -1 hauled back, +1 driven through, easing off across the recovery. One curve for both close moves —
-    fn strokeAmt(self: *const Owlbear) f32 {
-        if (self.state != .rake and self.state != .slam) return 0;
-        const mv = self.row();
-        if (self.t < mv.windDur) return -mathx.smoothstep(0, mv.windDur * 0.94, self.t);
-        const s = self.t - mv.windDur;
-        if (s < mv.strikeDur) return lerpF(-1.0, 1.0, foe.swingCurve(s / mv.strikeDur));
-        return 1.0 - mathx.smoothstep(mv.strikeDur, mv.strikeDur + mv.recoverDur * 0.7, s);
+    fn strokeTarget(self: *const Owlbear) foe.StrokePose {
+        if (self.state != .rake and self.state != .slam) return .{};
+        return foe.strokePose(self.t, foe.moveClock(self.row()));
     }
 
     /// 0..1 of the hop's own flight, which is what the lift and the loose are both read off.
@@ -389,7 +387,7 @@ pub const Owlbear = struct {
 
     fn stunAmount(self: *const Owlbear) f32 {
         if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.stunCurve(self.t, self.state == .stunheavy);
+        return foe.recoilPose(self.t, self.state == .stunheavy);
     }
 
     fn toImpact(self: *const Owlbear) ?f32 {
@@ -401,9 +399,7 @@ pub const Owlbear = struct {
         };
     }
 
-    pub fn parryable(self: *const Owlbear) ?f32 {
-        return self.toImpact();
-    }
+
 
     pub fn update(self: *Owlbear, dt: f32, quarry: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         if (self.gone) {
@@ -411,6 +407,8 @@ pub const Owlbear = struct {
             return null;
         }
         self.heroHit = null;
+        self.parried = false;
+        self.deflect.tick(dt);
         self.justDied = false;
         self.justWoke = false;
         self.threw = false;
@@ -464,9 +462,7 @@ pub const Owlbear = struct {
                 const mv = self.row();
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t < mv.windDur) self.faceToward(quarry, dt);
-                const s = self.t - mv.windDur;
-                // Billed from the IMPACT the parry window names, not the strike's first frame — at s 0 the paws are still up.
-                if (s >= mv.strikeDur * IMPACT_K and s < mv.strikeDur) self.tryStroke(quarry, mv);
+
                 if (self.t >= mv.windDur + mv.strikeDur + mv.recoverDur) {
                     self.heroLatch = false;
                     self.enter(.idle);
@@ -527,7 +523,15 @@ pub const Owlbear = struct {
         }
 
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, moveSpeed, moveYaw, self.facing);
+        if ((self.state == .rake or self.state == .slam) and self.t >= self.row().windDur and self.t - dt < self.row().windDur) sfx.world(.stone_grind, self.pos);
+        self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);
         self.pose();
+        const mv = self.row();
+        if (foe.catchMelee(self, foe.hurtReach(mv.maxR, self.scale), mv.frontDot, self.toImpact())) {
+            self.chips(foe.markOn(self.xf[WRR], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), 12);
+        } else if ((self.state == .rake or self.state == .slam) and self.t >= mv.windDur + mv.strikeDur * IMPACT_K and self.t < mv.windDur + mv.strikeDur) {
+            self.tryStroke(quarry, mv);
+        }
         self.tryHit(blade);
         return self.heroHit;
     }
@@ -600,6 +604,7 @@ pub const Owlbear = struct {
     }
 
     fn enter(self: *Owlbear, s: State) void {
+        if (s == .rake or s == .slam) self.strokeSlam = s == .slam;
         self.state = s;
         self.t = 0;
     }
@@ -642,6 +647,7 @@ pub const Owlbear = struct {
         self.burstYaw = self.facing;
         self.enter(.burst);
         self.t = (BURST_GATHER + BURST_FLIGHT * BURST_LOOSE_K) * mathx.clampF(u, 0, 1);
+        self.motion.seat(self.strokeTarget(), 0);
         self.pose();
     }
     pub fn debugKill(self: *Owlbear) void {
@@ -714,18 +720,18 @@ pub const Owlbear = struct {
         const hipY = self.rest[ROOT].y;
         const dead = self.state == .dead;
         const dk = if (dead) mathx.smoothstep(0, 0.6, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
-        const stun = self.stunAmount();
+        const stun = self.motion.reaction;
         const w = self.woke();
         const m = self.moving * (1.0 - dk) * w;
         const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);
-        const stroke = self.strokeAmt();
+        const stroke = self.motion.body;
         const u = self.leapU();
         const tuck = if (self.state == .burst) mathx.sinf(u * std.math.pi) else 0;
 
         // THE CARVING'S OWN POSE IS A CROUCH, and `w` is what lets it out: hunched over its feet at 0, standing at 1.
         const settle = (1.0 - w) * (1.0 - dk);
         const sway = SWAY_DEG * mathx.gutter(self.elapsed * SWAY_HZ + self.seed * 6.28, self.seed * 3.7) * (1.0 - m) * w;
-        const bodyPitch = 26.0 * mathx.maxF(0, stroke) - 15.0 * mathx.maxF(0, -stroke) - 20.0 * stun + 68.0 * dk + 30.0 * settle - 22.0 * tuck;
+        const bodyPitch = 26.0 * self.motion.drive - 15.0 * self.motion.load - 20.0 * stun + 68.0 * dk + 30.0 * settle - 22.0 * tuck;
         const leanX = PELVIS_SHARE * bodyPitch;
         const waist = (1.0 - PELVIS_SHARE) * bodyPitch;
 
@@ -743,13 +749,15 @@ pub const Owlbear = struct {
             heromod.deadLegs(&wx, self.rest, dk);
         }
         self.poseUpper(&wx, waist, stroke, stun, dk, pel.prot, sway, settle, tuck);
+        wx[HELD] = wx[WRR];
+        heromod.deflectUpper(&wx, self.deflect.spring.v * 0.72, self.facing, false);
         self.xf = wx;
     }
 
     fn poseUpper(self: *Owlbear, wx: *[N]rl.Matrix, waist: f32, stroke: f32, stun: f32, dk: f32, prot: f32, sway: f32, settle: f32, tuck: f32) void {
         const rest = self.rest;
         const m = self.moving * (1.0 - dk);
-        const slam = self.state == .slam;
+        const slam = self.strokeSlam;
 
         setLocal(wx, SPINE, rest, mul3(rx(waist * 0.38), ry(-0.25 * prot), rz(sway * 0.5)));
         setLocal(wx, CHEST, rest, mul3(rx(waist * 0.62), ry(-0.4 * prot), rz(sway * 0.4)));
@@ -759,18 +767,18 @@ pub const Owlbear = struct {
         const armStun = -30.0 * stun;
         const swing = -9.0 * heromod.armSwing(self.phase) * m * @abs(self.fwdB);
         const gainUp: f32 = if (slam) 140.0 else 96.0;
-        const gainDown: f32 = if (slam) 96.0 else 68.0;
-        const haul = -gainUp * mathx.maxF(0, -stroke);
-        const drive = gainDown * mathx.maxF(0, stroke);
+        const gainDown: f32 = if (slam) 54.0 else 68.0;
+        const haul = -gainUp * self.motion.load;
+        const drive = gainDown * self.motion.drive;
         const late = std.math.pow(f32, @abs(stroke), 1.5);
         const fold = 26.0 * settle;
         const flare = 44.0 * tuck;
         inline for (.{ SHL, SHR }, .{ ELL, ELR }, .{ WRL, WRR }, .{ 1.0, -1.0 }) |sh, el, wr, side| {
             const s = if (side > 0) swing else -swing;
-            const gain: f32 = if (side > 0) 0.96 else 1.04;
+            const gain: f32 = if (side > 0) (if (slam) @as(f32, 0.96) else 0.22) else 1.04;
             setLocal(wx, sh, rest, mul3(
                 rx(-(8.0 + s) + (haul - drive) * gain + armStun - 12.0 * dk + 10.0 * settle),
-                ry(0),
+                ry(if (!slam and side < 0) 46.0 * stroke else 0),
                 rz(side * (14.0 - fold + flare)),
             ));
             setLocal(wx, el, rest, rx(-(18.0 + 20.0 * late * (if (side > 0) @as(f32, 0.92) else @as(f32, 1.1))) - 16.0 * settle));
@@ -983,6 +991,9 @@ fn blockMesh(rx0: f32, rz0: f32, ry0: f32, rng: *mathx.Rng) rl.Mesh {
 fn chestMesh(rng: *mathx.Rng) rl.Mesh {
     var b = Builder.init();
     b.setMat(.stone);
+    inline for (.{ -1.0, 1.0 }) |side| {
+        b.addCapsule(v3(side * 0.11 * H, 0.058 * H, 0), v3(side * SHOULDER_HALF * H, 0.058 * H, 0), 0.076 * H, 0.064 * H, 10, STONE);
+    }
     b.addBlob(v3(0, 0.010 * H, 0), v3(0.176 * H, 0.150 * H, 0.140 * H), 5, 8, STONE);
     b.addBlob(v3(0, 0.086 * H, -0.018 * H), v3(0.166 * H, 0.062 * H, 0.120 * H), 4, 7, STONE_DK);
     var k: u32 = 0;
@@ -1122,10 +1133,10 @@ fn lichen(b: *Builder, rx0: f32, ry0: f32, rng: *mathx.Rng, n: u32) void {
     var k: u32 = 0;
     while (k < n) : (k += 1) {
         const a = rng.angle();
-        const rr = rng.range(0.14, 0.34) * rx0;
+        const rr = rng.range(0.12, 0.24) * rx0;
         b.addBlob(
-            v3(mathx.cosf(a) * rx0 * 0.86, rng.signed() * ry0 * 0.62, mathx.sinf(a) * rx0 * 0.86),
-            v3(rr, rr * 0.62, rr),
+            v3(mathx.cosf(a) * rx0 * 0.76, rng.signed() * ry0 * 0.62, mathx.sinf(a) * rx0 * 0.76),
+            v3(rr, rr * 0.28, rr),
             3,
             6,
             if (rng.float() < 0.45) LICHEN_LT else LICHEN,

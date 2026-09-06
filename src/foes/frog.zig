@@ -362,13 +362,13 @@ pub const Frog = struct {
 
     fn parryable(self: *const Frog) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return foe.hurtReach(LUNGE_IMPACT_OWN, self.scale);
     }
 
     fn takeParry(self: *Frog) void {
-        const reach = self.parryable() orelse return;
-        if (!foe.caught(self, reach)) return;
+        const reach = self.parryable() orelse self.parry.reach() orelse return;
+        if (!foe.caught(self, reach, self.toImpact(), null)) return;
         self.lungeCd = LUNGE_CD;
         self.dustBurst(self.pos, 14, 2.2, 0.20);
         sfx.world(.toad_hurt, self.pos);
@@ -1231,6 +1231,12 @@ test "A CAUGHT LEAP NEVER ARRIVES, and the toad comes straight down out of the a
     try std.testing.expect(!f.parried and f.state == .lunge);
     f.parry = .{ .live = true, .at = hero, .facing = std.math.pi };
     f.takeParry();
+    try std.testing.expect(!f.parried and f.parry.pending != null);
+    for (0..20) |_| {
+        _ = f.update(1.0 / 60.0, hero, 60, .{});
+        try std.testing.expect(f.heroHit == null);
+        if (f.parried) break;
+    }
     try std.testing.expect(f.parried);
     try std.testing.expect(f.state == .stunlight or f.state == .stunheavy);
     try std.testing.expect(!f.heroLatch);

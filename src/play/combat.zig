@@ -176,7 +176,7 @@ pub const Doses = struct {
 };
 
 const REGEN_DELAY = 0.8;
-const POISE_REFILL = 1.3;
+pub const POISE_REFILL = 1.3;
 const STANCE_REFILL = 4.6;
 /// The share of STANCE one flinch bills, so at 0.40 the third flinch inside the stance window IS the break. Per body (`Vitals.breakShare`): 0 is a creature flinches alone will never take down.
 pub const LIGHT_BREAK_STANCE: f32 = 0.40;

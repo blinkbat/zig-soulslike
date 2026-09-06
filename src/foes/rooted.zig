@@ -393,7 +393,7 @@ pub const Rooted = struct {
         self.poseStep(dt);
         self.pose();
         const contact = striking and self.branchTouches(limbWas, hero);
-        const stopped = self.takeParry(striking and self.parry.live and self.branchTouches(limbWas, self.parry.at));
+        const stopped = self.takeParry(striking and self.branchTouches(limbWas, self.parry.at));
         self.tryHit(blade);
         if (stopped or self.staggered()) return .none;
         if (contact) {
@@ -419,14 +419,14 @@ pub const Rooted = struct {
 
     fn parryable(self: *const Rooted) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return foe.hurtReach(self.move().maxR, self.scale);
     }
 
     fn takeParry(self: *Rooted, touching: bool) bool {
         if (self.atk == SLAM) return false;
-        const reach = self.parryable() orelse if (touching) foe.hurtReach(self.move().maxR, self.scale) else return false;
-        if (!foe.caught(self, reach)) return false;
+        const reach = self.parryable() orelse self.parry.reach() orelse if (touching) foe.hurtReach(self.move().maxR, self.scale) else return false;
+        if (!foe.caught(self, reach, self.toImpact(), touching)) return false;
         self.cds[self.atk] = self.move().cd;
         self.dealt = true;
         switch (self.vit.hit(combat.PARRY_HIT)) {
@@ -1178,7 +1178,10 @@ test "THE SWEEP AND THE HOOK CAN BE CAUGHT, AND THE SLAM CANNOT — the launcher
         const reach = r.parryable() orelse return error.TestUnexpectedResult;
         try std.testing.expectApproxEqAbs(foe.hurtReach(a.maxR, r.scale), reach, 1e-5);
         r.parry = .{ .live = true, .at = mathx.ground(0, a.maxR * 0.5), .facing = std.math.pi, .arc = combat.GUARD_ARC };
-        try std.testing.expect(r.takeParry(false));
+        try std.testing.expect(!r.takeParry(false));
+        try std.testing.expect(r.parry.pending != null);
+        r.t = a.strikeDur * IMPACT_K;
+        try std.testing.expect(r.takeParry(true));
         try std.testing.expect(r.parried);
         try std.testing.expect(r.cds[mv] > 0);
         try std.testing.expect(r.state == .stunlight or r.state == .stunheavy);

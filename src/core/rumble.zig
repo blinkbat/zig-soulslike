@@ -24,7 +24,7 @@ pub const hurt_heavy = Event{ .low = 0.90, .high = 0.45, .dur = 0.34 };
 pub const guard_block = Event{ .low = 0.30, .high = 0.42, .dur = 0.09 };
 pub const guard_block_heavy = Event{ .low = 0.62, .high = 0.55, .dur = 0.18 };
 pub const guard_break = Event{ .low = 0.95, .high = 0.52, .dur = 0.42 };
-pub const parry = Event{ .low = 0.52, .high = 0.92, .dur = 0.15 };
+pub const parry = Event{ .low = 0.72, .high = 0.95, .dur = 0.18 };
 pub const roll = Event{ .low = 0.16, .high = 0.40, .dur = 0.10 };
 pub const land = Event{ .low = 0.34, .high = 0.14, .dur = 0.12 };
 pub const cast_throw = Event{ .low = 0.28, .high = 0.50, .dur = 0.14 };

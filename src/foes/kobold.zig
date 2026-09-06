@@ -312,6 +312,7 @@ pub const Kobold = struct {
     dealt: bool = false,
     parry: foe.Parry = .{},
     parried: bool = false,
+    deflect: foe.Deflect = .{},
 
     phase: f32 = 0,
     moving: f32 = 0,
@@ -478,6 +479,7 @@ pub const Kobold = struct {
         }
         self.justDied = false;
         self.parried = false;
+        self.deflect.tick(dt);
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -607,13 +609,13 @@ pub const Kobold = struct {
     fn parryable(self: *const Kobold) ?f32 {
         if (self.dealt) return null;
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return self.hurtReach();
     }
 
     fn takeParry(self: *Kobold) void {
-        const reach = self.parryable() orelse return;
-        if (!foe.caught(self, reach)) return;
+        const touching = !self.dealt and self.hurtOpen() and self.weaponTouches(self.parry.at);
+        if (!foe.caught(self, self.hurtReach(), self.toImpact(), touching)) return;
         if (self.state == .bite) self.biteCd = BITE_CD;
         switch (self.vit.hit(combat.PARRY_HIT)) {
             .death => self.enterDeath(),
@@ -963,6 +965,7 @@ pub const Kobold = struct {
             heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, solePatches);
         }
         self.poseUpper(&wx, dk, stunAmt, prot, o);
+        heromod.deflectUpper(&wx, self.deflect.spring.v, self.facing, self.chopLeftHand);
         self.xf = wx;
         self.poseJaw();
         self.poseTail(dk, stunAmt);
@@ -1983,8 +1986,14 @@ test "BOTH KOBOLD STROKES CAN BE CAUGHT, and the DASH cannot — a leap is not a
         k.t = c.at - foe.PARRY_LEAD * 0.5;
         const reach = k.parryable() orelse return error.TestUnexpectedResult;
         try std.testing.expectApproxEqAbs(c.reach * k.scale + (if (c.st == .bite) foe.HERO_R else foe.HERO_REACH), reach, 1e-5);
-        k.parry = .{ .live = true, .at = mathx.ground(0, c.reach * 0.5), .facing = std.math.pi, .arc = combat.GUARD_ARC };
+        k.parry = .{ .live = true, .at = mathx.ground(0, k.hurtReach() - 0.03), .facing = std.math.pi, .arc = combat.GUARD_ARC };
         k.takeParry();
+        try std.testing.expect(!k.parried and k.parry.pending != null);
+        k.t = 0;
+        for (0..90) |_| {
+            _ = k.update(1.0 / 60.0, k.parry.at, 200, .{});
+            if (k.parried) break;
+        }
         try std.testing.expect(k.parried);
         try std.testing.expect(k.state == .stunlight or k.state == .stunheavy);
         try std.testing.expect(!k.hurtOpen());

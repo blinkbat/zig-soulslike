@@ -4299,17 +4299,7 @@ test "a SLIGHT STEP is always taken, however steep the face carrying it" {
 }
 
 fn envWithBeach(fall: f32) !*Env {
-    const e = try std.testing.allocator.create(Env);
-    e.* = .{ .ground = undefined, .models = undefined };
-    e.heightHalf = wf.DEFAULT_HALF;
-    e.heightAny = true;
-    const step = 2 * e.heightHalf / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
-    for (0..wf.HEIGHT_N) |iz| {
-        for (0..wf.HEIGHT_N) |ix| {
-            const x = -e.heightHalf + @as(f32, @floatFromInt(ix)) * step;
-            e.heightField[iz * wf.HEIGHT_N + ix] = wf.heightByte(-x * fall);
-        }
-    }
+    const e = try envWithRamp(-fall);
     e.waterAny = true;
     e.waterHalf = wf.DEFAULT_HALF;
     @memset(&e.waterField, 255);

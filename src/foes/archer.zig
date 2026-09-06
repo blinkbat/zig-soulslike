@@ -613,6 +613,7 @@ pub const Archer = struct {
     heroLatch: bool = false,
     parry: foe.Parry = .{},
     parried: bool = false,
+    deflect: foe.Deflect = .{},
 
     phase: f32 = 0,
     moving: f32 = 0,
@@ -713,6 +714,7 @@ pub const Archer = struct {
         self.justDied = false;
         self.heroHit = null;
         self.parried = false;
+        self.deflect.tick(dt);
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
@@ -887,7 +889,7 @@ pub const Archer = struct {
         const gaitSpeed: f32 = if (movedDist > 0) WALK_SPEED else 0;
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, gaitSpeed, moveYaw, self.facing);
         self.pose();
-        self.takeParry();
+        self.takeParry(wasBow);
         self.tryHit(blade);
         if (jabLive and !self.staggered()) self.tryButt(hero, wasBow);
         return loosed;
@@ -904,13 +906,14 @@ pub const Archer = struct {
 
     fn parryable(self: *const Archer) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return foe.hurtReach(BUTT_R, self.scale);
     }
 
-    fn takeParry(self: *Archer) void {
-        const reach = self.parryable() orelse return;
-        if (!foe.caught(self, reach)) return;
+    fn takeParry(self: *Archer, was: [2]rl.Vector3) void {
+        const touching = self.state == .butt and self.t > 0.03 and !self.heroLatch and
+            foe.weaponReaches(was, self.bowEdge(), self.parry.at, foe.hurtReach(0.035, self.scale));
+        if (!foe.caught(self, foe.hurtReach(BUTT_R, self.scale), self.toImpact(), touching)) return;
         self.buttCd = BUTT_CD;
         self.heroLatch = true;
         self.chips(foe.markOn(self.xf[BOW], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), 9, 2.8);
@@ -1102,6 +1105,7 @@ pub const Archer = struct {
         }
         self.poseUpper(&wx, dk, stunAmt, dead, prot);
         self.poseAim(&wx, fs);
+        heromod.deflectUpper(&wx, self.deflect.spring.v, self.facing, true);
         self.xf = wx;
         self.poseString();
     }
@@ -1765,7 +1769,14 @@ test "A PARRIED JAB IS DROPPED AND PAID FOR — and there is a window to catch i
 
     a.t = BUTT_WIND + BUTT_STRIKE * BUTT_IMPACT_K - foe.PARRY_LEAD * 0.5;
     a.parry = .{ .live = true, .at = mathx.ground(0, 1.0), .facing = std.math.pi, .arc = combat.GUARD_ARC };
-    a.takeParry();
+    a.takeParry(a.bowEdge());
+    try std.testing.expect(!a.parried and a.parry.pending != null);
+    a.enterButt();
+    for (0..90) |_| {
+        _ = a.update(1.0 / 60.0, a.parry.at, 200, .{});
+        try std.testing.expect(a.heroHit == null);
+        if (a.parried) break;
+    }
     try std.testing.expect(a.parried);
     try std.testing.expect(a.state == .stunlight or a.state == .stunheavy);
     try std.testing.expect(a.buttCd > 0);

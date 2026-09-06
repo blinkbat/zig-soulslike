@@ -874,13 +874,13 @@ pub const Druidess = struct {
 
     fn parryable(self: *const Druidess) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return foe.hurtReach(SLASH_R, self.scale);
     }
 
     fn takeParry(self: *Druidess) void {
-        const reach = self.parryable() orelse return;
-        if (!foe.caught(self, reach)) return;
+        const reach = self.parryable() orelse self.parry.reach() orelse return;
+        if (!foe.caught(self, reach, self.toImpact(), null)) return;
         self.slashCd = SLASH_CD;
         self.heroLatch = true;
         self.chips(self.clawWorld(), mathx.dirXZ(self.pos, self.parry.at), 9, 2.8);
@@ -905,7 +905,7 @@ pub const Druidess = struct {
     /// Inside her reach rings she leaves before she casts. The leap is a jump and the roots refuse it (`foe.canLeap`); the sidestep is a step and needs no leave.
     fn dodgeNow(self: *Druidess, d: f32, hero: rl.Vector3) bool {
         // The innermost ring first: a man in her face is raked before she thinks about leaving, and the cooldown is spent at the COMMIT, so a stagger through the wind still spends it.
-        if (d <= SLASH_R and self.slashCd <= 0) {
+        if (d <= foe.triggerBand(SLASH_R, SCALE, self.scale) and self.slashCd <= 0) {
             self.slashCd = SLASH_CD;
             self.enter(.slash_wind);
             return true;
@@ -2616,6 +2616,36 @@ test "A MAN IN HER FACE IS RAKED — inside SLASH_R, on its own short cooldown, 
         _ = far.update(dt, mathx.ground(0, SLASH_R + 0.5), 400.0, .{});
         try std.testing.expect(far.state != .slash_wind and far.state != .slash_cast);
     }
+}
+
+test "THE RAKE'S BAND NEVER OUTRUNS ITS BOX — at every scale a placement can carry, thrown for real at the edge" {
+    const dt: f32 = 1.0 / 120.0;
+    std.debug.print("\n", .{});
+    for ([_]f32{ wf.FOE_SCALE_LO, 1.0, wf.FOE_SCALE_HI }) |scale| {
+        const probe = Druidess.spawn(mathx.zero3, 0, scale, 0.3);
+        const band = foe.triggerBand(SLASH_R, SCALE, probe.scale);
+        const box = foe.hurtReach(SLASH_R, probe.scale);
+        std.debug.print("  druidess x{d:.2}: rakes out to {d:.2} m, box reaches {d:.2} m\n", .{ scale, band, box });
+        try std.testing.expect(band <= box);
+
+        var d = Druidess.spawn(mathx.zero3, 0, scale, 0.3);
+        d.leapCd = 99;
+        d.stepCd = 99;
+        d.vineCd = 99;
+        d.whipCd = 99;
+        d.spearCd = 99;
+        const hero = mathx.ground(0, band - 0.02);
+        var hits: u32 = 0;
+        var t: f32 = 0;
+        while (t < SLASH_WIND + SLASH_STRIKE + SLASH_RECOVER) : (t += dt) {
+            d.leash.noteSeen();
+            if (d.update(dt, hero, 400.0, .{})) |b| {
+                if (b.dmg == SLASH_HIT.dmg) hits += 1;
+            }
+        }
+        try std.testing.expectEqual(@as(u32, 1), hits);
+    }
+    try std.testing.expectApproxEqAbs(SLASH_R, foe.triggerBand(SLASH_R, SCALE, SCALE), 1e-4);
 }
 
 test "THE RAKE IS PARRYABLE, AND ONLY IN THE LEAD BEFORE IT ARRIVES" {

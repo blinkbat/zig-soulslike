@@ -694,7 +694,10 @@ const TRAIL_ROOT = 0.35;
 const TRAIL_PEAK = 84.0;
 
 pub const HP_MAX = statsmod.hpFor(statsmod.START);
-pub const POISE_MAX = 55.0;
+/// MEASURED against every foe blow: at 44 the real strokes (22+ poise — bough, whip, rake, lash) flinch him on
+/// the SECOND, while the fast cheap ones stay 4 or more (spark and clout 8, leechfly stab 9, arrow 10, blinkbat
+/// bite 13), so a flinch is never something chip damage spams. It was 55, which put those strokes at three.
+pub const POISE_MAX = 44.0;
 pub const STANCE_MAX = 90.0;
 pub var ATK_LIGHT_HIT = combat.Hit{ .dmg = 13, .poise = 10 };
 pub var ATK_HEAVY_HIT = combat.Hit{ .dmg = 27, .poise = 22, .stance = 14 };
@@ -918,7 +921,7 @@ const PARRY_SPARK_HOT = rgba(255, 250, 232, 250);
 const PARRY_SPARK_COOL = rgba(224, 118, 40, 210);
 const SPARK_STRETCH = 0.055;
 const SPARK_BOUNCE = 0.45;
-const PARRY_SPARKS = 34;
+const PARRY_SPARKS = 42;
 const PARRY_SPARK_FAN = 9.0;
 const PARRY_SPARK_OUT_LO = 1.0;
 const PARRY_SPARK_OUT_HI = 3.2;
@@ -926,9 +929,9 @@ const PARRY_SPARK_R0_LO = 0.009;
 const PARRY_SPARK_R0_HI = 0.019;
 const PARRY_SPARK_GRAV = 9.0;
 const SPARK_PROUD: f32 = 0.02;
-const PARRY_FLASH_R = 0.05;
-const PARRY_FLASH_LIFE = 0.06;
-const PARRY_GLINT = 18;
+const PARRY_FLASH_R = 0.12;
+const PARRY_FLASH_LIFE = 0.075;
+const PARRY_GLINT = 8;
 const PARRY_GLINT_FAN = 4.5;
 const PARRY_GLINT_SPAN = 0.22;
 const PARRY_GLINT_TRAIL = 0.55;
@@ -1441,6 +1444,19 @@ pub fn swingSocket(arm: Armament, off: Armament) item.Wear {
 
 pub const Queued = union(enum) { attack: Attack, roll: rl.Vector3 };
 
+pub fn deflectUpper(wx: *[N]rl.Matrix, amount: f32, facing: f32, left: bool) void {
+    if (@abs(amount) < 0.00001) return;
+    const yaw = mathx.degrees(facing);
+    const pivot = foemod.markOn(wx[SPINE], mathx.zero3);
+    const turn = mul3(tr(-pivot.x, -pivot.y, -pivot.z),
+        mul3(ry(-yaw), mul(rx(-10 * @abs(amount)), ry(24 * amount)), ry(yaw)), tr(pivot.x, pivot.y, pivot.z));
+    for ([_]usize{ SPINE, CHEST, NECK, HEAD, SHL, ELL, WRL, SHR, ELR, WRR, HELD }) |i| wx[i] = mul(wx[i], turn);
+    const arm = armSide(left, false);
+    const shoulder = foemod.markOn(wx[arm.sh], mathx.zero3);
+    const fling = mul3(tr(-shoulder.x, -shoulder.y, -shoulder.z), ry(28 * amount), tr(shoulder.x, shoulder.y, shoulder.z));
+    for ([_]usize{ arm.sh, arm.el, arm.wr, HELD }) |i| wx[i] = mul(wx[i], fling);
+}
+
 pub const Hero = struct {
     mesh: [N]rl.Mesh,
     bow: rl.Mesh,
@@ -1584,6 +1600,7 @@ pub const Hero = struct {
     blockT: f32 = mathx.LONG_AGO,
     parrying: bool = false,
     parryT: f32 = 0,
+    parryCatch: foemod.Deflect = .{},
     parries: u32 = 0,
     held: bool = false,
     /// Seconds. Takes ONE thing, the FEET (`foe.grip`); a roll is travel, so it is refused with the walk.
@@ -1702,6 +1719,7 @@ pub const Hero = struct {
         self.aimB = mathx.approach(self.aimB, if (self.aiming) 1.0 else 0.0, dt * BOW_BLEND_RATE);
         self.aimLean = mathx.approach(self.aimLean, self.aimLeanWant, dt * AIM_LEAN_RATE);
         self.blockT = @min(self.blockT + dt, mathx.LONG_AGO);
+        self.parryCatch.tick(dt);
         self.landT = @min(self.landT + dt, mathx.LONG_AGO);
         self.tickAir(dt);
         self.souls.tick(dt);
@@ -2252,7 +2270,7 @@ pub const Hero = struct {
     }
 
     pub fn noteParry(self: *Hero) void {
-        self.blockT = 0;
+        self.parryCatch.kick(1);
         self.parrySparks();
     }
 
@@ -3745,8 +3763,8 @@ pub const Hero = struct {
     fn poseParry(self: *Hero) void {
         const u = mathx.clampF(self.parryT / PARRY_DUR, 0, 1);
         const k = parryDrive(u);
-        const s = parrySweep(u);
-        const rec = self.blockRecoil();
+        const s = parrySweep(u) + 0.32 * self.parryCatch.spring.v;
+        const rec = self.blockRecoil() + 0.35 * self.parryCatch.spring.v;
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
         const brd = armSide(self.shieldLeft(), true);
@@ -4769,6 +4787,28 @@ fn axesM(x: rl.Vector3, y: rl.Vector3, z: rl.Vector3) rl.Matrix {
     m.m9 = z.y;
     m.m10 = z.z;
     return m;
+}
+
+/// Fit the held object inside both arms' reach, preserving the grip spacing and the floor.
+pub fn gripShift(targets: [2]rl.Vector3, shoulders: [2]rl.Vector3, near: f32, reach: f32, floor: f32) rl.Vector3 {
+    var shift = mathx.zero3;
+    for (0..24) |_| {
+        var correction: f32 = 0;
+        for (targets, shoulders) |target, shoulder| {
+            const d = mathx.subV(mathx.addV(target, shift), shoulder);
+            const length = mathx.lenV(d);
+            if (length > reach or length < near) {
+                const fit = mathx.clampF(length, near, reach);
+                correction = @max(correction, @abs(length - fit));
+                shift = mathx.addV(shift, mathx.scaleV(d, fit / @max(length, 0.00001) - 1));
+            }
+        }
+        const lift = @max(0, floor - shift.y);
+        shift.y += lift;
+        correction = @max(correction, lift);
+        if (correction < 0.00001) break;
+    }
+    return shift;
 }
 
 /// TWO-BONE ARM SOLVE, in the world. The bones' lengths are the rest chain's, so nothing stretches.
@@ -5805,6 +5845,44 @@ test "the shield is a DIRECTION: it catches the front and not the flank" {
     try std.testing.expect(!h.guardCovers(fromAngle(0)));
 }
 
+test "WHAT IT TAKES TO FLINCH HIM — unblocked blows straight to the pool, counted, weakest first" {
+    const Row = struct { name: []const u8, poise: f32 };
+    const blows = [_]Row{
+        .{ .name = "hollow spark", .poise = 8 },
+        .{ .name = "salthusk clout", .poise = 8 },
+        .{ .name = "leechfly stab", .poise = 9 },
+        .{ .name = "archer arrow", .poise = 10 },
+        .{ .name = "blinkbat bite", .poise = 13 },
+        .{ .name = "wolf bite", .poise = 16 },
+        .{ .name = "shroom fling", .poise = 20 },
+        .{ .name = "birchwight bough", .poise = 22 },
+        .{ .name = "druidess rake", .poise = 24 },
+        .{ .name = "ogre swipe", .poise = 30 },
+        .{ .name = "ogre slam", .poise = 44 },
+        .{ .name = "mastodon charge", .poise = 60 },
+    };
+    std.debug.print("\n  hero poise pool {d:.0}, refills whole in {d:.2} s\n", .{ POISE_MAX, combat.POISE_REFILL });
+    var cheapest: u32 = 0;
+    var dearest: u32 = 999;
+    for (blows) |row| {
+        var h = testHero();
+        h.facing = 0;
+        var n: u32 = 0;
+        while (n < 12) {
+            n += 1;
+            if (h.takeHit(.{ .dmg = 1, .poise = row.poise }, fromAngle(180)) == .ignored) break;
+            if (h.staggered()) break;
+        }
+        std.debug.print("    {s: <18} {d: >2} poise -> flinches him on blow {d}\n", .{ row.name, @as(u32, @intFromFloat(row.poise)), n });
+        if (row.poise <= 13) cheapest = @max(cheapest, n);
+        if (row.poise >= 22) dearest = @min(dearest, n);
+    }
+    // The split he asked for: real strokes land a flinch early, chip attacks may not spam one.
+    std.debug.print("    cheap blows need at most {d}; every stroke of 22+ flinches by {d}\n", .{ cheapest, dearest });
+    try std.testing.expect(dearest <= 2);
+    try std.testing.expect(cheapest >= 4);
+}
+
 test "a blocked blow costs STAMINA and chip, and never poise" {
     var h = testGuarded();
     const club = combat.Hit{ .dmg = 36, .poise = 44, .stance = 20 };
@@ -5818,7 +5896,8 @@ test "a blocked blow costs STAMINA and chip, and never poise" {
     const hp0 = h.vit.hp;
     try std.testing.expectEqual(combat.HitOutcome.taken, h.takeHit(club, fromAngle(140)));
     try std.testing.expectApproxEqAbs(hp0 - club.dmg, h.vit.hp, 1e-3);
-    try std.testing.expectApproxEqAbs(POISE_MAX - club.poise, h.vit.poise, 1e-3);
+    // The pool is this club's own poise, so the flank blow spends all of it — the bill lands as the flinch.
+    try std.testing.expect(h.staggered());
     try std.testing.expect(h.vit.stance < STANCE_MAX);
 }
 

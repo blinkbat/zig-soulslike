@@ -367,7 +367,7 @@ pub const Mastodon = struct {
             .idle, .walk => blk: {
                 if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) break :blk hero;
                 if (foe.postAim(self)) |go| break :blk go;
-                break :blk if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
+                break :blk if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) foe.tetherFor(self) else null;
             },
             else => null,
         };
@@ -389,12 +389,12 @@ pub const Mastodon = struct {
     }
     fn parryable(self: *const Mastodon) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return foe.hurtReach(if (self.state == .butt) BUTT_R else BITE_R, self.scale);
     }
     fn takeParry(self: *Mastodon) void {
-        const reach = self.parryable() orelse return;
-        if (!foe.caught(self, reach)) return;
+        const reach = self.parryable() orelse self.parry.reach() orelse return;
+        if (!foe.caught(self, reach, self.toImpact(), null)) return;
         self.buttCd = BUTT_CD;
         self.biteCd = BITE_CD;
         self.dust(self.noseWorld(), 8, 2.4);
@@ -628,7 +628,7 @@ pub const Mastodon = struct {
                             moved = self.travel(dt, bounds);
                             self.state = .walk;
                         } else if (homeGap > HOME_R) {
-                            self.faceToward(self.nav.aim(self.pos, self.home), dt);
+                            self.faceToward(self.nav.aim(self.pos, foe.tetherFor(self)), dt);
                             self.speed = approach(self.speed, WALK_SPEED, ACCEL * dt);
                             moved = self.travel(dt, bounds);
                             self.state = .walk;

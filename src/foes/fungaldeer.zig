@@ -703,13 +703,13 @@ pub const Deer = struct {
 
     fn parryable(self: *const Deer) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return foe.hurtReach(BUTT_R, self.scale);
     }
 
     fn takeParry(self: *Deer) void {
-        const reach = self.parryable() orelse return;
-        if (!foe.caught(self, reach)) return;
+        const reach = self.parryable() orelse self.parry.reach() orelse return;
+        if (!foe.caught(self, reach, self.toImpact(), null)) return;
         self.buttCool = BUTT_COOL;
         self.pinned = 0;
         self.heroLatch = true;

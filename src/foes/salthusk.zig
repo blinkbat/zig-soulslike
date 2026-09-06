@@ -86,7 +86,7 @@ const CLOUT_FRONT_DOT: f32 = 0.45;
 const CLOUT_WIND: f32 = 0.42;
 const CLOUT_STRIKE: f32 = 0.18;
 /// The arm is still back at the strike's first frame; the clout arrives from here.
-const CLOUT_IMPACT_K: f32 = 0.4;
+const CLOUT_IMPACT_K: f32 = 0.68;
 const CLOUT_RECOVER: f32 = 0.66;
 const CLOUT_CD: f32 = 2.2;
 pub var CLOUT_HIT = combat.Hit{ .dmg = 9, .poise = 8 };
@@ -195,6 +195,8 @@ pub const Husk = struct {
     heroHit: ?combat.Hit = null,
     justDied: bool = false,
     parry: foe.Parry = .{},
+    motion: foe.StrokeMotion = .{},
+    deflect: foe.Deflect = .{},
     parried: bool = false,
     fade: f32 = 0,
     gone: bool = false,
@@ -270,17 +272,14 @@ pub const Husk = struct {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt);
     }
 
-    fn cloutAmt(self: *const Husk) f32 {
-        if (self.state != .clout) return 0;
-        if (self.t < CLOUT_WIND) return -mathx.smoothstep(0, CLOUT_WIND * 0.9, self.t);
-        const s = self.t - CLOUT_WIND;
-        if (s < CLOUT_STRIKE) return lerpF(-1.0, 1.0, foe.swingCurve(s / CLOUT_STRIKE));
-        return 1.0 - mathx.smoothstep(CLOUT_STRIKE, CLOUT_STRIKE + CLOUT_RECOVER * 0.7, s);
+    fn strokeTarget(self: *const Husk) foe.StrokePose {
+        if (self.state != .clout) return .{};
+        return foe.strokePose(self.t, .{ .wind = CLOUT_WIND, .strike = CLOUT_STRIKE, .recover = CLOUT_RECOVER });
     }
 
     fn stunAmount(self: *const Husk) f32 {
         if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.stunCurve(self.t, self.state == .stunheavy);
+        return foe.recoilPose(self.t, self.state == .stunheavy);
     }
 
     pub fn update(self: *Husk, dt: f32, quarry: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
@@ -289,6 +288,8 @@ pub const Husk = struct {
             return null;
         }
         self.heroHit = null;
+        self.parried = false;
+        self.deflect.tick(dt);
         self.burstAt = null;
         self.justDied = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
@@ -325,8 +326,7 @@ pub const Husk = struct {
             .clout => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t < CLOUT_WIND) self.faceToward(quarry, dt);
-                const s = self.t - CLOUT_WIND;
-                if (s >= CLOUT_STRIKE * CLOUT_IMPACT_K and s < CLOUT_STRIKE) self.tryClout(quarry);
+
                 if (self.t >= CLOUT_WIND + CLOUT_STRIKE + CLOUT_RECOVER) {
                     self.heroLatch = false;
                     self.enter(.idle);
@@ -359,7 +359,15 @@ pub const Husk = struct {
         }
 
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, moveSpeed, moveYaw, self.facing);
+        if (self.state == .clout and self.t >= CLOUT_WIND and self.t - dt < CLOUT_WIND) sfx.world(.swing_light, self.pos);
+        self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);
         self.pose();
+        const until: ?f32 = if (self.state == .clout) CLOUT_WIND + CLOUT_STRIKE * CLOUT_IMPACT_K - self.t else null;
+        if (foe.catchMelee(self, foe.hurtReach(CLOUT_R, self.scale), CLOUT_FRONT_DOT, until)) {
+            self.grit(foe.markOn(self.xf[WRR], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), 9);
+        } else if (self.state == .clout and self.t >= CLOUT_WIND + CLOUT_STRIKE * CLOUT_IMPACT_K and self.t < CLOUT_WIND + CLOUT_STRIKE) {
+            self.tryClout(quarry);
+        }
         self.tryHit(blade);
         return self.heroHit;
     }
@@ -496,17 +504,17 @@ pub const Husk = struct {
         const hipY = self.rest[ROOT].y;
         const dead = self.state == .dead;
         const dk = if (dead) mathx.smoothstep(0, 0.4, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
-        const stun = self.stunAmount();
+        const stun = self.motion.reaction;
         const m = self.moving * (1.0 - dk);
         const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);
-        const clout = self.cloutAmt();
+        const clout = self.motion.body;
         const fuse = self.fuseAmt();
         const swell = 1.0 + 0.26 * fuse * fuse;
 
         var wx: [N]rl.Matrix = undefined;
         const pelvY = if (dead) lerpF(hipY, 0.30 * H, dk) else hipY + pel.bob - pel.dip + 0.10 * H * fuse;
         wx[ROOT] = mul(scaleM(fs * swell, fs * swell, fs * swell), mul3(
-            mul3(rz(8.0 * dk), rx(PELVIS_SHARE * (HUNCH + 12.0 * mathx.maxF(0, clout) - 20.0 * stun - 26.0 * fuse + 40.0 * dk)), ry(pel.prot)),
+            mul3(rz(8.0 * dk), rx(PELVIS_SHARE * (HUNCH + 12.0 * self.motion.drive - 20.0 * stun - 26.0 * fuse + 40.0 * dk)), ry(pel.prot)),
             mul(tr(pel.sway * fs, pelvY * fs + sink, 0), ry(facingDeg)),
             heromod.rootAt(self.pos),
         ));
@@ -515,8 +523,10 @@ pub const Husk = struct {
         } else {
             heromod.deadLegs(&wx, self.rest, dk);
         }
-        const waist = (1.0 - PELVIS_SHARE) * (HUNCH + 12.0 * mathx.maxF(0, clout) - 20.0 * stun - 26.0 * fuse + 40.0 * dk);
+        const waist = (1.0 - PELVIS_SHARE) * (HUNCH + 12.0 * self.motion.drive - 20.0 * stun - 26.0 * fuse + 40.0 * dk);
         self.poseUpper(&wx, waist, clout, stun, dk, fuse, pel.prot);
+        wx[HELD] = wx[WRR];
+        heromod.deflectUpper(&wx, self.deflect.spring.v, self.facing, false);
         self.xf = wx;
     }
 
@@ -528,23 +538,23 @@ pub const Husk = struct {
         const settle = mathx.gutter(self.elapsed * 0.30 + self.seed * 8.1, self.seed * 3.7) * idleAmt;
         const settleLag = mathx.gutter(self.elapsed * 0.30 - 0.7 + self.seed * 8.1, self.seed * 3.7) * idleAmt;
 
-        setLocal(wx, SPINE, rest, mul3(rx(waist * 0.44), ry(-0.3 * prot), rz(wonk * 0.5 + 1.7 * settle)));
-        setLocal(wx, CHEST, rest, mul3(rx(waist * 0.56 + 0.6 * settleLag), ry(-0.45 * prot), rz(-wonk * 0.3 - 1.2 * settleLag)));
+        setLocal(wx, SPINE, rest, mul3(rx(waist * 0.44), ry(-0.3 * prot + 5.0 * self.motion.body), rz(wonk * 0.5 + 1.7 * settle)));
+        setLocal(wx, CHEST, rest, mul3(rx(waist * 0.56 + 0.6 * settleLag), ry(-0.45 * prot + 7.0 * self.motion.body), rz(-wonk * 0.3 - 1.2 * settleLag)));
         setLocal(wx, NECK, rest, rx(-8.0 * clout + 6.0 * dk - 4.0 * stun - 18.0 * fuse));
         setLocal(wx, SKULL, rest, mul3(rx(-14.0 * clout + 12.0 * dk - 20.0 * stun - 26.0 * fuse + 0.9 * settle), ry(-0.4 * prot), rz(wonk + 1.5 * settleLag)));
 
         const armStun = -40.0 * stun;
         const swing = -10.0 * heromod.armSwing(self.phase) * m * @abs(self.fwdB);
-        const haul = -70.0 * mathx.maxF(0, -clout);
-        const drive = 48.0 * mathx.maxF(0, clout);
+        const haul = -70.0 * self.motion.load;
+        const drive = 48.0 * self.motion.drive;
         inline for (.{ SHL, SHR }, .{ ELL, ELR }, .{ WRL, WRR }, .{ 1.0, -1.0 }) |sh, el, wr, side| {
             const s = if (side > 0) swing else -swing;
             setLocal(wx, sh, rest, mul3(
-                rx(-(5.0 + s) + haul - drive + armStun - 26.0 * fuse - 18.0 * dk),
-                ry(0),
+                rx(-(5.0 + s) + (haul - drive) * (if (side > 0) @as(f32, 0.18) else 1.0) + armStun - 26.0 * fuse - 18.0 * dk),
+                ry(if (side < 0) 32.0 * self.motion.body else -14.0 * self.motion.drive),
                 rz(side * (10.0 + 3.0 * @abs(wonk) + 44.0 * fuse)),
             ));
-            setLocal(wx, el, rest, rx(-(28.0 + 18.0 * @abs(clout)) * (1.0 - 0.7 * fuse)));
+            setLocal(wx, el, rest, rx(-(28.0 + 34.0 * self.motion.load - 14.0 * self.motion.drive) * (1.0 - 0.7 * fuse)));
             setLocal(wx, wr, rest, rz(side * 5.0));
         }
     }
@@ -687,7 +697,7 @@ fn lumbarMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5A01);
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(0, 0.074 * H, 0), 0.058 * H, 0.070 * H, 9, FLESH_DK);
+    b.addCapsule(v3(0, -0.035 * H, 0), v3(0, 0.074 * H, 0), 0.058 * H, 0.070 * H, 9, FLESH_DK);
     crustOn(&b, &rng, v3(0, 0.036 * H, 0), v3(0.064 * H, 0.038 * H, 0.058 * H), 5);
     return b.toMesh();
 }
@@ -696,6 +706,9 @@ fn chestMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5A02);
     b.setMat(.skin);
+    inline for (.{ -1.0, 1.0 }) |side| {
+        b.addCapsule(v3(side * 0.042 * H, 0.058 * H, 0), v3(side * SHOULDER_HALF * H, 0.058 * H, 0), 0.042 * H, 0.034 * H, 12, FLESH);
+    }
     b.addBlob(v3(0, 0.038 * H, 0), v3(0.098 * H, 0.080 * H, 0.080 * H), 10, 7, FLESH);
     b.addBlob(v3(0, -0.004 * H, 0.008 * H), v3(0.086 * H, 0.050 * H, 0.072 * H), 9, 6, FLESH_DK);
     var i: u32 = 0;

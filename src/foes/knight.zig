@@ -1508,6 +1508,7 @@ pub const Knight = struct {
     poseDt: f32 = 1.0 / 60.0,
 
     parried: bool = false,
+    deflect: foe.Deflect = .{},
     covered: bool = false,
     blocks: u32 = 0,
     blockT: f32 = mathx.LONG_AGO,
@@ -1858,6 +1859,7 @@ pub const Knight = struct {
         self.heroHit = null;
         self.justDied = false;
         self.parried = false;
+        self.deflect.tick(dt);
         self.live = false;
         self.quake = 0;
         self.gasAt = null;
@@ -1905,7 +1907,6 @@ pub const Knight = struct {
             else => true,
         });
 
-        self.takeParry();
         switch (self.state) {
             .idle => {
                 self.setCarry();
@@ -2232,6 +2233,7 @@ pub const Knight = struct {
         self.footfalls();
         self.tickDoor(dt);
         self.pose();
+        self.takeParry();
         if (self.live) self.tryReach(hero);
         switch (self.state) {
             .sweep, .sweep2, .over, .thrust => {
@@ -2690,7 +2692,7 @@ pub const Knight = struct {
 
     fn parryable(self: *const Knight) ?f32 {
         const left = self.toImpact() orelse return null;
-        if (!foe.inParryWindow(left)) return null;
+        if (!self.parry.window(left)) return null;
         return self.parryReach(self.move());
     }
     fn parryReach(self: *const Knight, a: Attack) f32 {
@@ -2698,14 +2700,11 @@ pub const Knight = struct {
     }
 
     fn takeParry(self: *Knight) void {
-        const reach = self.parryable() orelse return;
-        if (!foe.caught(self, reach)) return;
+        const reach = self.parryReach(self.move());
+        const swinging = switch (self.state) { .sweep, .sweep2, .over, .thrust, .bash => true, else => false };
+        const touching = swinging and self.t > 0.03 and !self.dealt and self.kitTouches(self.parry.at, self.state == .bash);
+        if (!foe.caught(self, reach, self.toImpact(), touching)) return;
         self.cds[self.cdSlot()] = self.move().cd;
-        switch (self.state) {
-            .bashwind, .thrustwind => self.setStrike(0.32),
-            .sweepwind, .chainwind, .overwind => self.setStrike(0.28),
-            else => {},
-        }
         const far = if (self.state == .bash or self.state == .bashwind) self.shieldHere()[1] else self.wpnHere()[1];
         self.sparks(far, mathx.dirXZ(self.parry.at, self.pos), 18);
         sfx.world(.knight_hurt, self.pos);
@@ -3218,6 +3217,7 @@ pub const Knight = struct {
                 mathx.normV(v3(-hand.m4, -hand.m5, -hand.m6)), mathx.normV(v3(hand.m8, hand.m9, hand.m10)));
             setLocal(&wx, WPN, self.rest, wpnFit(self.wpnTilt));
         }
+        heromod.deflectUpper(&wx, self.deflect.spring.v, self.facing, false);
         self.xf = wx;
         self.shXf = shieldXf(self, self.poseDt);
         const seg = self.weaponSeg();

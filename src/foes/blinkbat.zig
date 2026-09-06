@@ -303,6 +303,9 @@ pub const Bat = struct {
     heroHit: ?combat.Hit = null,
     justDied: bool = false,
     parry: foe.Parry = .{},
+    motion: foe.StrokeMotion = .{},
+    biteDip: f32 = 0,
+    deflect: foe.Deflect = .{},
     parried: bool = false,
     fade: f32 = 0,
     gone: bool = false,
@@ -329,7 +332,7 @@ pub const Bat = struct {
     }
 
     fn lift(self: *const Bat) f32 {
-        return self.hover * self.scale;
+        return (self.hover - 0.55 * H * self.biteDip) * self.scale;
     }
     pub fn centerWorld(self: *const Bat) rl.Vector3 {
         return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, self.lift());
@@ -392,6 +395,8 @@ pub const Bat = struct {
             return null;
         }
         self.heroHit = null;
+        self.parried = false;
+        self.deflect.tick(dt);
         self.bit = false;
         self.drank = false;
         self.startled = false;
@@ -485,7 +490,7 @@ pub const Bat = struct {
             .strike => {
                 self.hoverTo = HOVER_BITE;
                 self.jawOpen = 1.0 - foe.swingCurve(mathx.clampF(self.t / BITE_STRIKE, 0, 1));
-                self.tryBite(quarry);
+
                 if (self.t >= BITE_STRIKE) self.enter(.recover);
             },
             .recover => {
@@ -539,7 +544,7 @@ pub const Bat = struct {
                         }
                     },
                     .hold => {
-                        self.faceToward(self.home, dt);
+                        self.faceToward(foe.tetherFor(self), dt);
                         self.speed = approach(self.speed, DRIFT_SPEED, ACCEL * dt);
                         self.travel(dt, bounds);
                     },
@@ -567,7 +572,19 @@ pub const Bat = struct {
         self.wingPhase += dt * (if (beating) WING_HZ_BEAT else WING_HZ_HOVER);
         self.wingPhase -= @floor(self.wingPhase);
         if (self.state != .wind and self.state != .strike) self.jawOpen = approach(self.jawOpen, 0, 5.0 * dt);
+        self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);
+        self.biteDip = approach(self.biteDip, if (self.state == .feed) 1 else self.motion.drive, 8.0 * dt);
         self.pose();
+        const until: ?f32 = switch (self.state) {
+            .wind => BITE_WIND - self.t + BITE_STRIKE * 0.68,
+            .strike => BITE_STRIKE * 0.68 - self.t,
+            else => null,
+        };
+        if (foe.catchMelee(self, foe.hurtReach(BITE_R, self.scale), BITE_FRONT_DOT, until)) {
+            self.chips(foe.markOn(self.xf[JAW], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), 9, 2.4);
+        } else if (self.state == .strike and self.t >= BITE_STRIKE * 0.68) {
+            self.tryBite(quarry);
+        }
         self.tryHit(blade);
         return self.heroHit;
     }
@@ -705,6 +722,8 @@ pub const Bat = struct {
         self.jawOpen = mathx.smoothstep(0, BITE_WIND, self.t);
         self.hover = HOVER_BITE;
         self.hoverTo = HOVER_BITE;
+        self.biteDip = 0;
+        self.motion.seat(self.strokeTarget(), 0);
         self.pose();
     }
 
@@ -768,10 +787,10 @@ pub const Bat = struct {
         const facingDeg = mathx.degrees(self.facing);
         const dead = self.state == .dead;
         const dk = if (dead) mathx.smoothstep(0, 0.62, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
-        const stun = self.stunAmount();
+        const stun = self.motion.reaction;
         const hipY = self.rest[ROOT].y;
 
-        const bite = self.biteAmt();
+        const bite = self.motion.body;
         const feed = if (self.state == .feed) mathx.smoothstep(0, 0.18, self.t) else 0;
         const run = self.retreatAmt();
         const beat = mathx.sinf(self.wingPhase * std.math.tau);
@@ -791,18 +810,19 @@ pub const Bat = struct {
         ));
 
         setLocal(&wx, SPINE, self.rest, rx(waist * 0.55));
-        setLocal(&wx, CHEST, self.rest, rx(waist * 0.45));
+        const deflect = self.deflect.spring.v;
+        setLocal(&wx, CHEST, self.rest, mul(rx(waist * 0.45 - 18.0 * @abs(deflect)), ry(24.0 * deflect)));
         const neckPitch = -6.0 + 34.0 * bite + 48.0 * feed - 16.0 * stun + 22.0 * run;
         setLocal(&wx, NECK, self.rest, rx(neckPitch * 0.45));
-        setLocal(&wx, SKULL, self.rest, mul(rx(neckPitch * 0.55), rz(4.0 * mathx.sinf(self.elapsed * 0.7 + self.seed))));
+        setLocal(&wx, SKULL, self.rest, mul3(rx(neckPitch * 0.55 - 20.0 * @abs(deflect)), ry(24.0 * deflect), rz(4.0 * mathx.sinf(self.elapsed * 0.7 + self.seed))));
 
-        setLocal(&wx, JAW, self.rest, rx((6.0 + 42.0 * self.jawOpen - 30.0 * feed) * (1.0 - furl)));
+        setLocal(&wx, JAW, self.rest, rx((6.0 + 42.0 * self.motion.load + 24.0 * @abs(deflect) - 30.0 * feed) * (1.0 - furl)));
         const flick = mathx.sinf(self.elapsed * 2.3 + self.seed * 6.28) * 5.0;
         setLocal(&wx, EARL, self.rest, mul(rz(-16.0 - 10.0 * bite + flick), rx(-10.0)));
         setLocal(&wx, EARR, self.rest, mul(rz(16.0 + 10.0 * bite - flick), rx(-10.0)));
 
         // Wrapped: the wings come DOWN the body it is hanging from and the elbows shut over it.
-        const sweep = 62.0 + 26.0 * wing - 34.0 * bite + 18.0 * dk - 46.0 * furl;
+        const sweep = 62.0 + 26.0 * wing - 34.0 * bite + 18.0 * dk - 46.0 * furl + 32.0 * @abs(deflect);
         const fold = 34.0 - 22.0 * wing + 40.0 * bite + 30.0 * feed - 44.0 * dk + 62.0 * furl;
         const cam = 12.0 + 16.0 * wing;
         inline for (.{ .{ SHL, ELL, WRL, 1.0 }, .{ SHR, ELR, WRR, -1.0 } }) |w| {
@@ -833,19 +853,20 @@ pub const Bat = struct {
         return mathx.smoothstep(0, 0.16, self.t) * (1.0 - mathx.smoothstep(RETREAT_MAX - 0.30, RETREAT_MAX, self.t));
     }
 
-    fn biteAmt(self: *const Bat) f32 {
-        return switch (self.state) {
-            .wind => -mathx.smoothstep(0, BITE_WIND * 0.9, self.t),
-            .strike => lerpF(-1.0, 1.0, foe.swingCurve(mathx.clampF(self.t / BITE_STRIKE, 0, 1))),
-            .recover => 1.0 - mathx.smoothstep(0, BITE_RECOVER * 0.7, self.t),
-            else => 0,
+    fn strokeTarget(self: *const Bat) foe.StrokePose {
+        const t = switch (self.state) {
+            .wind => self.t,
+            .strike => BITE_WIND + self.t,
+            .recover => BITE_WIND + BITE_STRIKE + self.t,
+            else => return .{},
         };
+        return foe.strokePose(t, .{ .wind = BITE_WIND, .strike = BITE_STRIKE, .recover = BITE_RECOVER });
     }
 
     fn stunAmount(self: *const Bat) f32 {
         if (self.state == .repelled) return 0.6 * (1.0 - mathx.smoothstep(0, BITE_WIND, self.t));
         if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.stunCurve(self.t, self.state == .stunheavy);
+        return foe.recoilPose(self.t, self.state == .stunheavy);
     }
 };
 
@@ -942,6 +963,21 @@ pub const Roost = struct {
 };
 
 
+fn membrane(b: *Builder, root: rl.Vector3, a: rl.Vector3, z: rl.Vector3, col: rl.Color) void {
+    const normal = mathx.normV(mathx.crossV(mathx.subV(a, root), mathx.subV(z, root)));
+    var prev = a;
+    for (1..9) |i| {
+        const u = @as(f32, @floatFromInt(i)) / 8.0;
+        const notch = @sin(u * std.math.pi);
+        const edge = mathx.lerpV(mathx.lerpV(a, z, u), root, 0.19 * notch);
+        const p = mathx.addV(edge, mathx.scaleV(normal, 0.012 * H * notch));
+        b.triSmooth(root, prev, p, normal, normal, normal, col);
+        const back = mathx.scaleV(normal, -1);
+        b.triSmooth(root, p, prev, back, back, back, col);
+        prev = p;
+    }
+}
+
 fn buildBones() [N]rl.Mesh {
     var out: [N]rl.Mesh = undefined;
     for (0..N) |i| out[i] = boneMesh(i);
@@ -982,13 +1018,7 @@ fn boneMesh(i: usize) rl.Mesh {
             b.setMat(.cloth);
             inline for (.{ 1.0, -1.0 }) |sgn| {
                 const sx: f32 = sgn;
-                b.addBox(
-                    v3(sx * 0.148 * H, up * 0.02, 0.004 * H),
-                    v3(sx * 0.056 * H, -0.030 * H, 0),
-                    v3(sx * 0.020 * H, -0.132 * H, -0.008 * H),
-                    v3(0, 0, 0.0038 * H),
-                    MEMBRANE,
-                );
+                membrane(&b, v3(sx * 0.096 * H, 0.05 * H, 0), v3(sx * 0.180 * H, 0.05 * H, 0), v3(sx * 0.066 * H, -0.12 * H, 0), MEMBRANE);
             }
         },
         NECK => {
@@ -1035,13 +1065,7 @@ fn boneMesh(i: usize) rl.Mesh {
             b.setMat(.hide);
             b.addCapsule(v3(0, 0, 0), v3(side * 0.030 * H, 0.150 * H, -0.006 * H), 0.013 * H, 0.005 * H, 7, HIDE);
             b.setMat(.cloth);
-            b.addBox(
-                v3(side * 0.018 * H, 0.076 * H, -0.004 * H),
-                v3(side * 0.030 * H, 0.010 * H, 0),
-                v3(0, 0.076 * H, 0),
-                v3(0, 0, 0.0035 * H),
-                MEMBRANE,
-            );
+            membrane(&b, mathx.zero3, v3(side * 0.048 * H, 0.068 * H, 0), v3(side * 0.030 * H, 0.150 * H, -0.006 * H), MEMBRANE);
         },
         SHL, SHR => {
             const side: f32 = if (i == SHL) 1.0 else -1.0;
@@ -1050,13 +1074,7 @@ fn boneMesh(i: usize) rl.Mesh {
             b.addCapsule(v3(0, 0, 0), v3(0, down, 0), 0.052 * H, 0.040 * H, 9, HIDE);
             b.addBlob(v3(side * 0.014 * H, -0.012 * H, 0), v3(0.048 * H, 0.044 * H, 0.044 * H), 5, 8, HIDE_DK);
             b.setMat(.cloth);
-            b.addBox(
-                v3(side * -0.050 * H, down * 0.48, 0.004 * H),
-                v3(side * 0.050 * H, 0, 0),
-                v3(0, down * 0.48, 0),
-                v3(0, 0, 0.0040 * H),
-                MEMBRANE,
-            );
+            membrane(&b, mathx.zero3, v3(side * -0.11 * H, down * 0.72, 0.004 * H), v3(0, down, 0), MEMBRANE);
         },
         ELL, ELR => {
             const side: f32 = if (i == ELL) 1.0 else -1.0;
@@ -1064,13 +1082,7 @@ fn boneMesh(i: usize) rl.Mesh {
             b.setMat(.hide);
             b.addCapsule(v3(0, 0, 0), v3(0, down, 0), 0.040 * H, 0.028 * H, 9, HIDE);
             b.setMat(.cloth);
-            b.addBox(
-                v3(side * -0.052 * H, down * 0.5, 0.004 * H),
-                v3(side * 0.052 * H, 0, 0),
-                v3(0, down * 0.5, 0),
-                v3(0, 0, 0.0040 * H),
-                MEMBRANE,
-            );
+            membrane(&b, mathx.zero3, v3(side * -0.105 * H, down * 0.64, 0.004 * H), v3(0, down, 0), MEMBRANE);
         },
         WRL, WRR => {
             const side: f32 = if (i == WRL) 1.0 else -1.0;
@@ -1094,14 +1106,7 @@ fn boneMesh(i: usize) rl.Mesh {
                 );
                 if (prev) |p| {
                     b.setMat(.cloth);
-                    const mid = mathx.lerpV(p, tip, 0.5);
-                    b.addBox(
-                        v3(mid.x * 0.62, mid.y * 0.62, mid.z * 0.62),
-                        mathx.scaleV(mathx.subV(tip, p), 0.5),
-                        mathx.scaleV(mid, 0.30),
-                        v3(0, 0, 0.0035 * H),
-                        if (k == 1) MEMBRANE else MEMBRANE_DK,
-                    );
+                    membrane(&b, mathx.zero3, p, tip, if (side > 0) MEMBRANE else MEMBRANE_DK);
                 }
                 prev = tip;
             }

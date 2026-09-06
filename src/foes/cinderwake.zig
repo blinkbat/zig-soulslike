@@ -48,7 +48,7 @@ const WRL = heromod.WRL;
 const SHR = heromod.SHR;
 const ELR = heromod.ELR;
 const WRR = heromod.WRR;
-/// The rake is its own two hands. Bone 17 is never posed and never drawn — `Model.draw` walks `0..HELD`.
+/// The rake uses its own hands; the held slot is a shared-rig placeholder.
 const HELD = heromod.HELD;
 
 const solePatches = [_]heromod.SolePatch{
@@ -89,7 +89,7 @@ const RAKE_FRONT_DOT: f32 = 0.42;
 const RAKE_WIND: f32 = 0.44;
 const RAKE_STRIKE: f32 = 0.20;
 /// The hands are still up at the strike's first frame; the rake arrives from here.
-const RAKE_IMPACT_K: f32 = 0.4;
+const RAKE_IMPACT_K: f32 = 0.68;
 const RAKE_RECOVER: f32 = 0.72;
 const RAKE_CD: f32 = 2.4;
 pub var RAKE_HIT = combat.Hit{ .dmg = 13, .poise = 12, .stance = 9, .elem = combat.elems(.{ .fire = 11 }) };
@@ -194,6 +194,8 @@ pub const Cinder = struct {
     justDied: bool = false,
     parried: bool = false,
     parry: foe.Parry = .{},
+    motion: foe.StrokeMotion = .{},
+    deflect: foe.Deflect = .{},
     fade: f32 = 0,
     gone: bool = false,
 
@@ -261,18 +263,14 @@ pub const Cinder = struct {
         foe.faceToward(self.pos, &self.facing, target, TURN_RATE, dt);
     }
 
-    /// Where the rake is in its own clock, 0 gathered to 1 driven through, and back to 0 across the recovery.
-    fn rakeAmt(self: *const Cinder) f32 {
-        if (self.state != .rake) return 0;
-        if (self.t < RAKE_WIND) return -mathx.smoothstep(0, RAKE_WIND * 0.92, self.t);
-        const s = self.t - RAKE_WIND;
-        if (s < RAKE_STRIKE) return lerpF(-1.0, 1.0, foe.swingCurve(s / RAKE_STRIKE));
-        return 1.0 - mathx.smoothstep(RAKE_STRIKE, RAKE_STRIKE + RAKE_RECOVER * 0.7, s);
+    fn strokeTarget(self: *const Cinder) foe.StrokePose {
+        if (self.state != .rake) return .{};
+        return foe.strokePose(self.t, .{ .wind = RAKE_WIND, .strike = RAKE_STRIKE, .recover = RAKE_RECOVER });
     }
 
     fn stunAmount(self: *const Cinder) f32 {
         if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.stunCurve(self.t, self.state == .stunheavy);
+        return foe.recoilPose(self.t, self.state == .stunheavy);
     }
 
     pub fn update(self: *Cinder, dt: f32, quarry: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
@@ -281,6 +279,8 @@ pub const Cinder = struct {
             return null;
         }
         self.heroHit = null;
+        self.parried = false;
+        self.deflect.tick(dt);
         self.dropAt = null;
         self.justDied = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
@@ -312,8 +312,7 @@ pub const Cinder = struct {
             .rake => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t < RAKE_WIND) self.faceToward(quarry, dt);
-                const s = self.t - RAKE_WIND;
-                if (s >= RAKE_STRIKE * RAKE_IMPACT_K and s < RAKE_STRIKE) self.tryRake(quarry);
+
                 if (self.t >= RAKE_WIND + RAKE_STRIKE + RAKE_RECOVER) {
                     self.heroLatch = false;
                     self.enter(.idle);
@@ -349,7 +348,15 @@ pub const Cinder = struct {
 
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, moveSpeed, moveYaw, self.facing);
         self.emitSeams(dt);
+        if (self.state == .rake and self.t >= RAKE_WIND and self.t - dt < RAKE_WIND) sfx.world(.swing_heavy, self.pos);
+        self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);
         self.pose();
+        const until: ?f32 = if (self.state == .rake) RAKE_WIND + RAKE_STRIKE * RAKE_IMPACT_K - self.t else null;
+        if (foe.catchMelee(self, foe.hurtReach(RAKE_R, self.scale), RAKE_FRONT_DOT, until)) {
+            self.ashBurst(foe.markOn(self.xf[WRR], mathx.zero3), 9);
+        } else if (self.state == .rake and self.t >= RAKE_WIND + RAKE_STRIKE * RAKE_IMPACT_K and self.t < RAKE_WIND + RAKE_STRIKE) {
+            self.tryRake(quarry);
+        }
         self.tryHit(blade);
         return self.heroHit;
     }
@@ -466,10 +473,10 @@ pub const Cinder = struct {
         const hipY = self.rest[ROOT].y;
         const dead = self.state == .dead;
         const dk = if (dead) mathx.smoothstep(0, 0.55, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
-        const stun = self.stunAmount();
+        const stun = self.motion.reaction;
         const m = self.moving * (1.0 - dk);
         const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);
-        const rake = self.rakeAmt();
+        const rake = self.motion.body;
 
         const bodyPitch = HUNCH + 14.0 * rake - 24.0 * stun + 44.0 * dk;
         const leanX = PELVIS_SHARE * bodyPitch;
@@ -491,6 +498,8 @@ pub const Cinder = struct {
             heromod.deadLegs(&wx, self.rest, dk);
         }
         self.poseUpper(&wx, waist, rake, stun, dk, pel.prot, lumber, bellows);
+        wx[HELD] = wx[WRR];
+        heromod.deflectUpper(&wx, self.deflect.spring.v, self.facing, false);
         self.xf = wx;
     }
 
@@ -501,20 +510,20 @@ pub const Cinder = struct {
         const wonk = (self.seed - 0.5) * 6.0;
         const nod = 1.6 * mathx.cosf(2.0 * twoPi * self.phase) * m;
 
-        setLocal(wx, SPINE, rest, mul3(rx(waist * 0.42 + nod), ry(-0.32 * prot), rz(wonk * 0.5 - 0.3 * lumber)));
-        setLocal(wx, CHEST, rest, mul3(rx(waist * 0.58 + nod * 0.6 + 1.0 * bellows), ry(-0.48 * prot), rz(-wonk * 0.3 - 0.2 * lumber)));
+        setLocal(wx, SPINE, rest, mul3(rx(waist * 0.42 + nod), ry(-0.32 * prot + 6.0 * self.motion.body), rz(wonk * 0.5 - 0.3 * lumber)));
+        setLocal(wx, CHEST, rest, mul3(rx(waist * 0.58 + nod * 0.6 + 1.0 * bellows), ry(-0.48 * prot + 8.0 * self.motion.body), rz(-wonk * 0.3 - 0.2 * lumber)));
         setLocal(wx, NECK, rest, rx(-10.0 * rake + 7.0 * dk - 5.0 * stun));
         setLocal(wx, SKULL, rest, mul3(rx(-18.0 * rake + 14.0 * dk - 22.0 * stun + 2.5 * bellows), ry(-0.4 * prot), rz(wonk)));
 
         const armStun = -44.0 * stun;
         const swing = -12.0 * heromod.armSwing(self.phase) * m * @abs(self.fwdB);
-        const haul = -96.0 * mathx.maxF(0, -rake);
-        const drive = 62.0 * mathx.maxF(0, rake);
+        const haul = -96.0 * self.motion.load;
+        const drive = 62.0 * self.motion.drive;
         inline for (.{ SHL, SHR }, .{ ELL, ELR }, .{ WRL, WRR }, .{ 1.0, -1.0 }) |sh, el, wr, side| {
             const s = if (side > 0) swing else -swing;
-            setLocal(wx, sh, rest, mul3(rx(-(6.0 + s) + haul - drive + armStun - 20.0 * dk), ry(0), rz(side * (12.0 + 3.0 * @abs(wonk)))));
-            setLocal(wx, el, rest, rx(-(30.0 + 22.0 * @abs(rake))));
-            setLocal(wx, wr, rest, rz(side * (5.0 + 14.0 * mathx.maxF(0, rake))));
+            setLocal(wx, sh, rest, mul3(rx(-(6.0 + s) + (haul - drive) * (if (side > 0) @as(f32, 0.22) else 1.0) + armStun - 20.0 * dk), ry(if (side < 0) 26.0 * self.motion.body else -10.0 * self.motion.drive), rz(side * (12.0 + 3.0 * @abs(wonk)))));
+            setLocal(wx, el, rest, rx(-(24.0 + 40.0 * self.motion.load - 10.0 * self.motion.drive)));
+            setLocal(wx, wr, rest, rz(side * (5.0 + 14.0 * self.motion.drive)));
         }
     }
 };
@@ -734,7 +743,7 @@ fn pelvisMesh() rl.Mesh {
 fn lumbarMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.skin);
-    b.addCapsule(v3(0, 0, 0), v3(0, 0.078 * H, 0), 0.070 * H, 0.082 * H, 9, CRUST);
+    b.addCapsule(v3(0, -0.035 * H, 0), v3(0, 0.078 * H, 0), 0.070 * H, 0.082 * H, 9, CRUST);
     b.addBlob(v3(0, 0.030 * H, -0.020 * H), v3(0.058 * H, 0.046 * H, 0.040 * H), 7, 5, CHAR);
     b.setMat(.plain);
     seamStripe(&b, v3(0.006 * H, 0.004 * H, 0.066 * H), v3(-0.010 * H, 0.070 * H, 0.070 * H), 0.008 * H, SEAM);
@@ -745,6 +754,9 @@ fn chestMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x0C1D);
     b.setMat(.skin);
+    inline for (.{ -1.0, 1.0 }) |side| {
+        b.addCapsule(v3(side * 0.042 * H, 0.058 * H, 0), v3(side * SHOULDER_HALF * H, 0.058 * H, 0), 0.042 * H, 0.034 * H, 12, CRUST);
+    }
     b.addBlob(v3(0, 0.040 * H, 0), v3(0.108 * H, 0.086 * H, 0.088 * H), 10, 7, CRUST);
     b.addBlob(v3(0, -0.006 * H, 0.010 * H), v3(0.096 * H, 0.054 * H, 0.080 * H), 9, 6, CRUST_LT);
     b.addBlob(v3(0, 0.086 * H, -0.008 * H), v3(0.092 * H, 0.036 * H, 0.080 * H), 8, 6, CHAR);

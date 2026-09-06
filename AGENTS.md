@@ -1287,7 +1287,7 @@ where the head would have been.
   shove plays a quarter second after it shuts, and `canGuard` refuses the whole time. That tail IS the price.
 - **IT IS SLOW OFF THE MARK** (`PARRY_OPEN` 0.10 of 0.52). Widening `foe.PARRY_LEAD` makes catches easier;
   this makes STARTING one a commitment. Separate dials on purpose.
-- **THE ATTACK ALWAYS DIES; THE HEAVY STUN IS EARNED.** `combat.PARRY_HIT` is STANCE and nothing else — no
+- **THE ATTACK DIES AT CONTACT; THE HEAVY STUN IS EARNED.** `combat.PARRY_HIT` is STANCE and nothing else — no
   damage, no poise, so a catch can never resolve as a flinch: it breaks the stance or it does not.
 - **THE CREATURE READS THE SHIELD, IT NEVER REACHES FOR IT** (`foe.Parry`, stamped by `game.markParry`). Each
   MOVE answers for its own frames and reach (`ogre.parryable`). **MOST OF THE FIELD CARRIES WINDOWS NOW** —
@@ -1307,7 +1307,10 @@ where the head would have been.
   creature and move, and it IS the difficulty. **It is 0.18**, and every creature's tests BRACKET it from
   above: a window may never be more than a fraction of the tell in front of it. Written as fractions of each
   state's own clock instead, the total was emergent and unreadable.
-- **SO IT SHUTS AT THE IMPACT FRAME BY CONSTRUCTION** (`toImpact` counts across the state boundary).
+- **TIMING EARNS THE CATCH; CONTACT DELIVERS IT** (`foe.Parry.contact`). `pending` preserves a valid early
+  timing while the attack continues unchanged. `setParry` preserves it across shield stamps; losing the shield,
+  facing, reach or attack cancels it. Swept weapons resolve after posing, before damage; other blows use
+  `toImpact`. `Parry.window` includes the impact-crossing frame so 30 Hz cannot skip a catch.
 - **IT IS A SWIPE, AND THE SWIPE COMES FROM THE WAIST** (`parrySweep` — coil, whip across, settle). A shoulder
   yaw turns the boards' FACE with it, because `shieldFit` is the inverse of that yaw; the TRUNK turns arm and
   boards together. `PARRY_ARM_LEAD` adds a few degrees so the boards outrun the chest.
@@ -1318,8 +1321,13 @@ where the head would have been.
   the shoulders driving over in the pose.
 - **JUDGE IT FROM ABOVE.** A lateral arc foreshortens to nothing head-on, so the harness shoots the coil, the
   crossing and the follow-through straight down (`20o`/`20p`/`20q`).
-- **A CATCH IS A BLOCK'S RECOIL PLUS SPARKS** — `noteParry` stamps `blockT`, the same channel. Sparks separate
-  on HUE (hot amber on pale tan) and their FAN outruns their forward throw.
+- **A CATCH KICKS A SPRING** (`foe.Deflect`, `hero.deflectUpper`). The warrior, knight, archer, berserker and
+  fungal swordsman share a sideways weapon deflection with overshoot; the legs stay planted and two-hand
+  grips are solved afterwards. `hero.parryCatch` gives the shield its own follow-through. Contact gets the
+  large flash, sparks, clang and rumble. The empty swipe's glint stays small.
+- **VERIFY BOTH BODIES TOGETHER** with `--shot --shot-only parry_study`: two sides of each encounter, incoming
+  weapon, contact and recoil. It asserts the real attack reaches, the parry catches, and the caught blow deals
+  no damage. The timing and warrior contact tests also run at 30, 60 and 144 Hz.
 - **THE SWIPE ITSELF THROWS A GLINT, CAUGHT OR NOT** (`parryGlint`), ONCE on the whip's peak frame. **LAID
   ALONG THE ARC, NOT THROWN FROM A POINT** (`PARRY_GLINT_SPAN`), so it is a STREAK from the first frame. Count
   buys brightness; a TIGHT fan and SHORT lives keep it a glint. Always less than a catch, never a different
@@ -3048,11 +3056,12 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   second culler is the empty-world bug. A pool the lens is standing INSIDE always draws.
   - **AND IT IS NOT GATED ON THE EMITTER BEING ALIVE.** A cloud ticks its motes past its own death, so a puff
     laid on the last frame still fades out; `shroom`'s own test pins that.
-  - **IT IS ON THE TWO CLOUDS AND NOTHING ELSE** — 2 of the 40 `drawParticles` call sites (`knight.Gas`,
-    `shroom.Cloud`), which is where the COUNT bites. A creature's own `parts` is 20..176 motes and its two
-    draw passes are 2x a walk `tickParticles` already pays ungated every frame for every body (and always
-    must — a mote off screen has to keep moving). Gating those 38 needs a REACH per creature, and a reach
-    guessed too tight clips a mote you could see, which is the one thing this gate may not do.
+  - **IT IS ASKED OF THE MOTE, SO IT IS ON ALL 40 CALL SITES** — `drawParticles` scans for one visible mote
+    before it binds anything, and `drawPass` asks again per mote. The two clouds (`knight.Gas`, `shroom.Cloud`)
+    are still where the COUNT bites — 132 motes each against a creature's own 20..176 — but a per-CREATURE
+    reach was never the way in: guessed too tight it clips a mote you could see, which is the one thing this
+    gate may not do, and the mote's own position and radius cannot be wrong. `tickParticles` stays ungated
+    every frame for every body and always must — a mote off screen has to keep moving.
 - **A RING THAT OVERWRITES ITS OLDEST DOES IT SILENTLY**, so its size is arithmetic over what feeds it (every
   emitter's worst frame), asserted at comptime — never a round number that looked big enough.
 - **A cylinder is CAPLESS** — an open end shows its culled interior. Cap with `addDome` or an axis-flattened

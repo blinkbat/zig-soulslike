@@ -1029,7 +1029,7 @@ pub const Folk = struct {
 
     pub fn draw(self: *const Folk, cull: envmod.Cull, reach: f32) void {
         for (self.liveConst()) |*p| {
-            if (!envmod.bodyDrawn(cull, p.pos, foe.DRAW_BOUND + p.bodyR(), reach)) continue;
+            if (!envmod.bodyDrawn(cull, p.pos, foe.boundOf(p), reach)) continue;
             self.model.draw(p);
         }
     }

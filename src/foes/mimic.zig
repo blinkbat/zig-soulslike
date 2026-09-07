@@ -549,6 +549,7 @@ pub const Mimic = struct {
 
     pub fn tryHit(self: *Mimic, blade: foe.Blade) void {
         if (self.state == .dead) return;
+        const poiseWas = self.vit.poise;
         const s = foe.reachedPart(self, &self.vit, blade, .{ .center = self.headWorld(), .r = HEAD_R * self.scale }) orelse
             foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, .{ .light = 0.5, .heavy = 1.1 });
@@ -560,8 +561,8 @@ pub const Mimic = struct {
                 self.chips(s.contact, s.dir, CHIP_DEATH, 2.8);
                 self.enterDeath();
             },
-            .heavy => if (self.state != .rise) self.enterStun(.stunheavy),
-            .light => if (self.state != .rise) self.enterStun(.stunlight),
+            .heavy => if (self.state == .rise) self.vit.refuseFlinch(poiseWas) else self.enterStun(.stunheavy),
+            .light => if (self.state == .rise) self.vit.refuseFlinch(poiseWas) else self.enterStun(.stunlight),
             .none => {},
         }
     }

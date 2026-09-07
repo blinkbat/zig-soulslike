@@ -321,7 +321,7 @@ fn blend(base: [CH]f32, to: [CH]f32, amt: f32) [CH]f32 {
 }
 
 /// THE BODY AS THE BLADE FINDS IT — ten posed volumes down the whole 2.85 m, because a chest-centred sphere on a body this thin misses the skull and the shins and lands in the air beside the robe.
-const Hull = struct { bone: usize, center: rl.Vector3, radii: rl.Vector3 };
+const Hull = foe.Hull;
 const HULL_MID = v3(0, 0.020 * H, 0);
 const HULLS = [_]Hull{
     .{ .bone = SKULL, .center = v3(0, 0.014 * H, 0.006 * H), .radii = v3(0.052 * H, 0.080 * H, 0.058 * H) },
@@ -553,7 +553,7 @@ pub const Necro = struct {
             const xf = self.xf[hull.bone];
             const c = foe.markOn(xf, hull.center);
             const r = hull.radii;
-            top.y = @max(top.y, c.y + @sqrt(r.x * r.x * xf.m1 * xf.m1 + r.y * r.y * xf.m5 * xf.m5 + r.z * r.z * xf.m9 * xf.m9));
+            top.y = @max(top.y, c.y + foe.hullHalfY(xf, r));
         }
         return top;
     }

@@ -208,7 +208,16 @@ const SPIDER_PARTS = 68;
 /// SAC: its one burst (`burstFx`, 14) plus `foe.wounded`'s 3.
 const SAC_PARTS = 20;
 /// POOL: nothing but its own rise, 30/s at its strongest against a 0.75 s life.
+const POOL_RATE: f32 = 26.0;
+const POOL_FLOOR: f32 = 4.0;
+const POOL_LIFE_MAX: f32 = 0.75;
 const POOL_PARTS = 26;
+comptime {
+    // The ring law, and the only pool here whose worst frame is a STEADY STATE rather than a burst: resident is
+    // the whole rate over a mote's longest life, plus the one frame the cap can pay on top of it.
+    std.debug.assert(@as(f32, POOL_PARTS) >= (POOL_RATE + POOL_FLOOR) * POOL_LIFE_MAX +
+        @as(f32, @floatFromInt(foe.emitCap(POOL_RATE + POOL_FLOOR))));
+}
 const Particle = foe.Particle;
 const DUST = foe.DUST;
 const MOTE = foe.MOTE;
@@ -786,7 +795,7 @@ pub const Pool = struct {
             self.live = false;
             return;
         }
-        const emitRate = (26.0 * self.strength() + 4.0);
+        const emitRate = POOL_RATE * self.strength() + POOL_FLOOR;
         var owed = foe.emitDue(&self.fxAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const a = self.fxRng.angle();
@@ -794,7 +803,7 @@ pub const Pool = struct {
             foe.emitPart(&self.parts, &self.fxHead, .{
                 .p = v3(self.pos.x + mathx.cosf(a) * rr, self.pos.y + 0.02, self.pos.z + mathx.sinf(a) * rr),
                 .v = v3(self.fxRng.signed() * 0.14, self.fxRng.range(0.25, 0.85), self.fxRng.signed() * 0.14),
-                .life = self.fxRng.range(0.35, 0.75),
+                .life = self.fxRng.range(0.35, POOL_LIFE_MAX),
                 .r0 = self.fxRng.range(0.03, 0.07),
                 .r1 = 0.004,
                 .col = VENOM,

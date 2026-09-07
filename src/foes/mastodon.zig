@@ -773,7 +773,9 @@ pub const Mastodon = struct {
         foe.spray(&self.parts, &self.fxHead, &self.fxRng, v3(at.x, self.pos.y, at.z), v3(0, 1, 0), n, spd, self.scale, DUST_SPRAY);
     }
     fn blood(self: *Mastodon, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, BLOOD_SPRAY);
+        var s = BLOOD_SPRAY;
+        if (!foe.onDryGround(self)) s.splat = 0;
+        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, s);
     }
 
     pub fn drawFx(self: *const Mastodon) void {

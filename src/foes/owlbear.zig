@@ -802,7 +802,14 @@ pub const Quill = struct {
 pub const QUILL_N: usize = 30;
 
 const CAP_N = wf.MAX_PER_KIND;
+/// What a quill shatters into on him, and what it shatters into hitting the ground.
+const SHATTER_HIT: usize = 7;
+const SHATTER_SPENT: usize = 5;
 const PERCH_PARTS: usize = 64;
+comptime {
+    // The ring law: a whole burst arriving on one frame — the fan is thrown together, so it lands together.
+    std.debug.assert(PERCH_PARTS >= QUILLS_PER_BURST * SHATTER_HIT);
+}
 
 const AIR_THREAT = foe.Threat{};
 
@@ -884,13 +891,13 @@ pub const Perch = struct {
             const reach = QUILL_R + foe.HERO_R;
             if (foe.struckSweep(was, q.at, chest, reach)) {
                 q.live = false;
-                self.shatter(q.at, 7);
+                self.shatter(q.at, SHATTER_HIT);
                 foe.worseBlow(worst, QUILL_HIT, q.at, &AIR_THREAT);
                 continue;
             }
             if (q.t >= QUILL_LIFE or foe.landed(q.at.y, q.floor, hero.y)) {
                 q.live = false;
-                self.shatter(q.at, 5);
+                self.shatter(q.at, SHATTER_SPENT);
             }
         }
     }

@@ -811,6 +811,14 @@ pub fn hullTouches(xf: rl.Matrix, center: rl.Vector3, radii: rl.Vector3, a: rl.V
     const p = mathx.closestOnSegV(mathx.zero3, v3(la.x / r.x, la.y / r.y, la.z / r.z), v3(lb.x / r.x, lb.y / r.y, lb.z / r.z));
     return mathx.dotV(p, p) <= 1;
 }
+/// One ellipsoid of a body's hull set, in its bone's local space — what `hullTouches` and `hullHalfY` are both asked about.
+pub const Hull = struct { bone: usize, center: rl.Vector3, radii: rl.Vector3 };
+
+/// Half the world-space HEIGHT of one `hullTouches` ellipsoid under its bone: the support of `radii` along +Y, which is the second column of the transform weighted by each radius. Add it to the hull's centre for a crown, subtract it for a sole.
+pub fn hullHalfY(xf: rl.Matrix, radii: rl.Vector3) f32 {
+    return @sqrt(radii.x * radii.x * xf.m1 * xf.m1 + radii.y * radii.y * xf.m5 * xf.m5 + radii.z * radii.z * xf.m9 * xf.m9);
+}
+
 pub fn reached(self: anytype, blade: Blade) ?Strike {
     return reachedPart(self, &self.vit, blade, .{ .center = self.centerWorld(), .r = self.hurtRadius() });
 }
@@ -1103,6 +1111,39 @@ test "A CREATURE THAT NEVER SEES WATER IS DRY BY CONSTRUCTION, and a wading one 
     try std.testing.expect(onDryGround(&w));
     w.wade.here = SPLAT_DRY_MAX + 0.01;
     try std.testing.expect(!onDryGround(&w));
+}
+
+test "THE WATER GATE IS BOTH HALVES OR NEITHER — the field alone stamps a fact nothing reads, and the call alone answers DRY forever" {
+    // It has failed BOTH ways: `fishman` asked the gate with no field, so the shoal stained the fen on every hit;
+    // `mastodon` carried the field and never asked, so `markWade` paid for a fact its own blood ignored.
+    var dir = std.fs.cwd().openDir("src/foes", .{ .iterate = true }) catch return error.SkipZigTest;
+    defer dir.close();
+    var carriers: usize = 0;
+    var it = dir.iterate();
+    while (try it.next()) |ent| {
+        if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, ".zig")) continue;
+        if (std.mem.eql(u8, ent.name, "foe.zig")) continue;
+        var buf: [128]u8 = undefined;
+        const path = try std.fmt.bufPrint(&buf, "src/foes/{s}", .{ent.name});
+        const src = try wf.readForTest(std.testing.allocator, path, 1 << 22);
+        defer std.testing.allocator.free(src);
+        const field = std.mem.indexOf(u8, src, "wade: foe.Wade") != null;
+        const asks = std.mem.indexOf(u8, src, "onDryGround(self)") != null or
+            std.mem.indexOf(u8, src, "self.wade.") != null;
+        if (field != asks) std.debug.print("\n  {s}: carries `wade` {}, asks the gate {}\n", .{ ent.name, field, asks });
+        try std.testing.expectEqual(field, asks);
+        if (field) carriers += 1;
+    }
+    // AND EVERY WETLAND KIND IS ONE OF THEM, off the table that classifies it — a new one arrives with neither half.
+    const wetland = comptime blk: {
+        var n: usize = 0;
+        for (std.enums.values(wf.FoeKind)) |k| {
+            if (homeOf(k) == .wetland) n += 1;
+        }
+        break :blk n;
+    };
+    try std.testing.expect(carriers >= 3);
+    std.debug.print("\n  water gate: {d} bodies carry it and ask it; {d} wetland kinds live in the water\n", .{ carriers, wetland });
 }
 
 /// `dt` is the slice of THIS frame that fell inside the flight window, so the arc lands on `hopTo` exactly at every frame rate.

@@ -102,6 +102,9 @@ const DISS_DUR: f32 = 1.0;
 const DISSOLVE = foe.Dissolve{ .rate = 54.0, .spread = 0.8, .rise = 0.95, .flake = WART };
 /// THE RING LAW, EXECUTABLE (see the assert below), AND SOLVED RATHER THAN GUESSED: a `foe.Particle` is 80 B, a `Mage` 7 kB, and `Ring` holds `wf.MAX_PER_KIND` = 512, so every slot over the assert's own floor of 57 costs 40 kB of `Game`.
 const NPART = 64;
+/// NOT IN THE ASSERT BELOW, and deliberately: a wound landing mid-flick puts `hitParts(HIT_PUFF_HEAVY)` + `foe.WOUND_PARTS` over the floor of 57, and buying those slots costs 40 kB of `Game` each. The overflow drops the oldest motes of a flame that is a fifth of a second long.
+const HIT_PUFF_LIGHT: i32 = 4;
+const HIT_PUFF_HEAVY: i32 = 9;
 const SHOVE_DECAY: f32 = 6.5;
 const A_PROT: f32 = 3.2;
 
@@ -654,7 +657,7 @@ pub const Mage = struct {
         if (self.state == .dead) return;
         const s = foe.reached(self, blade_) orelse return;
         const heavy = foe.wounded(self, s, blade_, SHOVE);
-        self.puff(s.contact, if (heavy) 9 else 4);
+        self.puff(s.contact, if (heavy) HIT_PUFF_HEAVY else HIT_PUFF_LIGHT);
         switch (s.reaction) {
             .death => self.enterDeath(),
             .heavy => self.enterStun(true),
@@ -1061,10 +1064,14 @@ pub fn emberMesh(shader: rl.Shader) rl.Model {
 
 const CAP_N = wf.MAX_PER_KIND;
 
-/// Sized off what feeds it: at most a handful of balls in the air at once, `BURST_PUFF` on the last touch of each and `BOUNCE_PUFF` on the ones before, against a fire mote's ~0.5 s life.
+/// Sized off what feeds it: at most a handful of balls in the air at once, `BURST_PUFF` on the last touch of each and `BOUNCE_PUFF` on the ones before, against a fire mote's ~0.5 s life. NOT a comptime assert like the per-body pools, because what feeds it is `game.quivers` — every shot in flight from every source, which is not a compile-time quantity here.
 const EMBER_PARTS = 120;
 const BOUNCE_PUFF: usize = 10;
 const BURST_PUFF: usize = 26;
+comptime {
+    // What IS pinnable: four balls ending together still fit, which is more than a ring of mages puts in the air.
+    std.debug.assert(EMBER_PARTS >= 4 * BURST_PUFF);
+}
 
 pub const Ring = struct {
     model: Model,

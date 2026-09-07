@@ -6166,3 +6166,26 @@ test "A FEN LURKER IS SUBMERGED WHEREVER IT IS POSTED, on every map but the benc
     std.debug.print("\n  fen lurkers submerged on the shipped maps: {d}\n", .{checked});
 }
 
+
+test "EVERY FIELD ON `Env` IS ASSIGNED — `Game` is `alloc.create`d and `Env` sits inside it, so `= .{}` never runs here either" {
+    // The Game-side twin of this lives in game.zig. It has bitten here too: every counter `build` reads before the props exist came up as the fill byte.
+    const src = try wf.readForTest(std.testing.allocator, "src/world/env.zig", 1 << 22);
+    defer std.testing.allocator.free(src);
+    var defaulted: usize = 0;
+    var missing: usize = 0;
+    inline for (@typeInfo(Env).@"struct".fields) |f| {
+        if (f.default_value_ptr != null) defaulted += 1;
+        const plain = "self." ++ f.name ++ " =";
+        const indexed = "self." ++ f.name ++ "[";
+        const taken = "&self." ++ f.name;
+        const seated = std.mem.indexOf(u8, src, plain) != null or
+            std.mem.indexOf(u8, src, indexed) != null or
+            std.mem.indexOf(u8, src, taken) != null;
+        if (!seated) {
+            std.debug.print("\n  `Env.{s}` is assigned nowhere in env.zig — it comes up as the fill byte\n", .{f.name});
+            missing += 1;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 0), missing);
+    std.debug.print("\n  all {d} of Env's fields assigned — {d} carry a default that never runs\n", .{ @typeInfo(Env).@"struct".fields.len, defaulted });
+}

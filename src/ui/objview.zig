@@ -384,41 +384,12 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
     if (charSet) |cs| return cs;
     const cs = std.heap.c_allocator.create(CharSet) catch @panic("objview: character roster");
     charSet = cs;
-    cs.warren = frogmod.Knot.init(scene.shader);
-    cs.line = archermod.Line.init(scene.shader);
-    cs.grief = ogremod.Grief.init(scene.shader);
-    cs.band = koboldmod.Warband.init(scene.shader);
-    cs.brood = broodmod.Brood.init(scene.shader);
-    cs.muster = warriormod.Muster.init(scene.shader);
-    cs.haunt = shademod.Haunt.init(scene.shader);
-    cs.swarm = leechmod.Swarm.init(scene.shader);
-    cs.grove = rootedmod.Grove.init(scene.shader);
-    cs.cluster = shroommod.Cluster.init(scene.shader);
-    cs.warrens = delvermod.Warrens.init(scene.shader);
-    cs.rite = necromod.Rite.init(scene.shader);
-    cs.vigil = knightmod.Vigil.init(scene.shader);
-    cs.herd = deermod.Herd.init(scene.shader);
-    cs.ring = magemod.Ring.init(scene.shader);
-    cs.host = golemmod.Host.init(scene.shader);
-    cs.marsh = fenmod.Marsh.init(scene.shader);
-    cs.clatter = skittermod.Clatter.init(scene.shader);
-    cs.crypt = priestmod.Crypt.init(scene.shader);
-    cs.belfry = hollowmod.Belfry.init(scene.shader);
-    cs.bed = bloommod.Bed.init(scene.shader);
-    cs.scorch = cindermod.Scorch.init(scene.shader);
-    cs.gorge = gorgermod.Gorge.init(scene.shader);
-    cs.stand = birchmod.Stand.init(scene.shader);
-    cs.pan = huskmod.Pan.init(scene.shader);
-    cs.shoal = fishmod.Shoal.init(scene.shader);
-    cs.roost = batmod.Roost.init(scene.shader);
-    cs.perch = owlbearmod.Perch.init(scene.shader);
-    cs.vanguard = duomod.Vanguard.init(scene.shader);
-    cs.conclave = duomod.Conclave.init(scene.shader);
-    cs.coven = druidmod.Coven.init(scene.shader);
-    cs.hoard = mimicmod.Hoard.init(scene.shader);
-    cs.drove = mastodonmod.Drove.init(scene.shader);
-    cs.copse = entmod.Copse.init(scene.shader);
-    inline for (@typeInfo(CharSet).@"struct".fields) |f| @field(cs, f.name).n = 0;
+    // ONE LIST, NOT TWO: `init(shader)` is every group's own contract, so a creature added to `CharSet`
+    // (which `game`'s comptime check against `FOE_GROUPS` forces) is seated here without a line of its own.
+    inline for (@typeInfo(CharSet).@"struct".fields) |f| {
+        @field(cs, f.name) = f.type.init(scene.shader);
+        @field(cs, f.name).n = 0;
+    }
     return cs;
 }
 

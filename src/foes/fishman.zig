@@ -359,6 +359,7 @@ pub const Fishman = struct {
     fxAccum: f32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(1),
     aiRng: mathx.Rng = mathx.Rng.init(2),
+    wade: foe.Wade = .{},
 
     xf: [N]rl.Matrix = undefined,
     rest: [N]rl.Vector3 = REST,

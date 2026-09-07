@@ -110,7 +110,15 @@ const CREAK_EVERY: f32 = 4.4;
 const EYES_RATE: f32 = 0.7;
 const LID_SWING: f32 = 96.0;
 
+const HIT_CHIP_LIGHT = 9;
+const HIT_CHIP_HEAVY = 16;
+/// What the tip throws off the ground it lands its own blow on.
+const STRIKE_SPLINTERS: i32 = 15;
 const PARTS = 56;
+comptime {
+    // Its tip landing a blow on the same frame a heavy of his wounds the trunk.
+    std.debug.assert(PARTS >= STRIKE_SPLINTERS + foe.hitParts(HIT_CHIP_HEAVY) + foe.WOUND_PARTS);
+}
 
 const N = 16;
 const ROOT = 0;
@@ -400,7 +408,7 @@ pub const Rooted = struct {
             self.dealt = true;
             self.leash.noteCombat();
             sfx.world(.wood_hit, self.tipWorld());
-            self.splinters(self.tipWorld(), 15);
+            self.splinters(self.tipWorld(), STRIKE_SPLINTERS);
             return .{ .struck = .{ .hit = self.move().hit, .pull = if (self.atk == HOOK) DRAG_PULL else 0 } };
         }
         return .none;
@@ -548,7 +556,7 @@ pub const Rooted = struct {
         self.facing = face;
         if (self.state == .dormant or self.state == .sleep) self.beginWake();
         const heavy = foe.wounded(self, s, blade, .{ .light = 0, .heavy = 0 });
-        self.splinters(s.contact, foe.hitParts(if (heavy) 16 else 9));
+        self.splinters(s.contact, foe.hitParts(if (heavy) HIT_CHIP_HEAVY else HIT_CHIP_LIGHT));
         sfx.world(.wood_hurt, s.contact);
         switch (s.reaction) {
             .death => {

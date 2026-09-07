@@ -115,7 +115,7 @@ const REST = [N]rl.Vector3{
     v3(-0.24, 0.36 * H, 0.03),
 };
 
-const Hull = struct { bone: usize, center: rl.Vector3, radii: rl.Vector3 };
+const Hull = foe.Hull;
 const HULLS = [_]Hull{
     .{ .bone = BODY, .center = v3(0, 0.26 * H, 0), .radii = v3(0.27, 0.24 * H, 0.25) },
     .{ .bone = CAP, .center = v3(0.02, 0.055, 0), .radii = v3(0.46, 0.225, 0.43) },
@@ -633,7 +633,7 @@ pub const Shroom = struct {
             const xf = self.xf[hull.bone];
             const c = foe.markOn(xf, hull.center);
             const r = hull.radii;
-            low = @min(low, c.y - @sqrt(r.x * r.x * xf.m1 * xf.m1 + r.y * r.y * xf.m5 * xf.m5 + r.z * r.z * xf.m9 * xf.m9));
+            low = @min(low, c.y - foe.hullHalfY(xf, r));
         }
         for ([_]usize{ ARML, ARMR, FOOTL, FOOTR }) |bone| {
             const xf = self.xf[bone];

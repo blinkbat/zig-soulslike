@@ -46,7 +46,6 @@ const BODY_R: f32 = 0.62;
 const HURT_R: f32 = 0.95;
 const CENTER_F: f32 = 0.42;
 const BODY_HALF: f32 = 0.80;
-const TOP_F: f32 = 0.66;
 
 const HP_MAX: f32 = 118.0;
 const POISE_MAX: f32 = 26.0;
@@ -174,8 +173,19 @@ const DISS_DUR: f32 = 1.05;
 const SHOVE_DECAY: f32 = 7.0;
 const DISSOLVE = foe.Dissolve{ .rate = 58.0, .spread = 0.9, .rise = 0.75, .flake = CLOD };
 
-/// ARITHMETIC over the worst frame (the ring law), and it is the PLOUGH'S LAST frame: the furrow can land its blow as the run ends, so the 12-clod hit burst and `burstDirt`'s 40 go in together, on the ~22 `emitWake` and `emitSpray` leave resident at 0.3-0.7 s lives.
+const HIT_CHIP_LIGHT = 5;
+const HIT_CHIP_HEAVY = 9;
+/// The furrow's own burst as it takes him, the heave that ends the run, and `burstDirt` at the surface.
+const PLOUGH_CLODS: i32 = 18;
+const HEAVE_CLODS: i32 = 21;
+const BURST_CLODS: i32 = 26;
+
+/// ARITHMETIC over the worst frame (the ring law), and it is the PLOUGH'S LAST frame: the furrow lands its blow as the run ends, so all three clod bursts go in together, over the one mote `emitWake`/`emitSpray` share out of `fxAccum`, under a heavy landing on the same frame.
 const PARTS = 96;
+comptime {
+    std.debug.assert(PARTS >= 1 + PLOUGH_CLODS + BURST_CLODS + HEAVE_CLODS +
+        foe.hitParts(HIT_CHIP_HEAVY) + foe.WOUND_PARTS);
+}
 
 const N = 16;
 const BODY = 0;
@@ -199,7 +209,7 @@ const WAIST = v3(0, 0.34, -0.04);
 const HIND_UPPER = v3(0, -0.19, -0.015);
 const HIND_LOWER = v3(0, -0.17, 0.04);
 
-const Hull = struct { bone: usize, center: rl.Vector3, radii: rl.Vector3 };
+const Hull = foe.Hull;
 const HULLS = [_]Hull{
     .{ .bone = BODY, .center = v3(0, 0.26 * H, -0.28), .radii = v3(0.42, 0.17 * H, 0.59) },
     .{ .bone = CHEST, .center = mathx.subV(v3(0, 0.30 * H, 0.28), WAIST), .radii = v3(0.40, 0.15 * H, 0.42) },
@@ -380,7 +390,7 @@ pub const Delver = struct {
             const xf = self.xf[hull.bone];
             const c = foe.markOn(xf, hull.center);
             const r = hull.radii;
-            top.y = @max(top.y, c.y + @sqrt(r.x * r.x * xf.m1 * xf.m1 + r.y * r.y * xf.m5 * xf.m5 + r.z * r.z * xf.m9 * xf.m9));
+            top.y = @max(top.y, c.y + foe.hullHalfY(xf, r));
         }
         return top;
     }
@@ -749,7 +759,7 @@ pub const Delver = struct {
             self.heroLatch = true;
             self.heroHit = PLOUGH_HIT;
             self.leash.noteCombat();
-            self.dirtBurst(v3(hero.x, self.pos.y + 0.08, hero.z), 18, 3.0, 0.20);
+            self.dirtBurst(v3(hero.x, self.pos.y + 0.08, hero.z), PLOUGH_CLODS, 3.0, 0.20);
         }
         if (u >= 1.0) {
             sfx.world(.delver_burst, self.pos);
@@ -1012,7 +1022,7 @@ pub const Delver = struct {
         if (blade.active and !self.hullTouches(blade.a, blade.b, blade.r) and !self.hullTouches(blade.a0, blade.b0, blade.r)) return;
         const s = foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, .{ .light = 0.7, .heavy = 1.15 });
-        self.dirtBurst(s.contact, foe.hitParts(if (heavy) 9 else 5), 2.0, 0.13);
+        self.dirtBurst(s.contact, foe.hitParts(if (heavy) HIT_CHIP_HEAVY else HIT_CHIP_LIGHT), 2.0, 0.13);
         sfx.world(.delver_hurt, self.pos);
         switch (s.reaction) {
             .death => {
@@ -1039,7 +1049,7 @@ pub const Delver = struct {
     }
     fn burstDirt(self: *Delver) void {
         var i: i32 = 0;
-        while (i < 26) : (i += 1) {
+        while (i < BURST_CLODS) : (i += 1) {
             const a = self.fxRng.angle();
             const sp = self.fxRng.range(0.5, 1.0) * 4.2;
             foe.emitPart(&self.parts, &self.fxHead, .{
@@ -1056,7 +1066,7 @@ pub const Delver = struct {
                 .drag = CLOD_DRAG,
             });
         }
-        self.dirtBurst(v3(self.pos.x, self.pos.y + 0.06, self.pos.z), 21, 3.4, 0.24);
+        self.dirtBurst(v3(self.pos.x, self.pos.y + 0.06, self.pos.z), HEAVE_CLODS, 3.4, 0.24);
     }
     fn emitWake(self: *Delver, dt: f32) void {
         const emitRate = 22.0;

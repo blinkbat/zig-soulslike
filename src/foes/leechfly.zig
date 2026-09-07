@@ -105,7 +105,13 @@ const PHRASE_MAX: f32 = 0.95;
 const HUSH_MIN: f32 = 1.30;
 const HUSH_MAX: f32 = 4.20;
 
+const HIT_CHIP_LIGHT = 8;
+const HIT_CHIP_HEAVY = 14;
 const PARTS = 40;
+comptime {
+    // A heavy blow wounding it on the frame its beak is still drinking.
+    std.debug.assert(PARTS >= 1 + foe.hitParts(HIT_CHIP_HEAVY) + foe.WOUND_PARTS);
+}
 
 const N = 15;
 const ROOT = 0;
@@ -702,7 +708,7 @@ pub const Leechfly = struct {
         const s = foe.reached(self, blade) orelse return;
         self.spookLeft = SPOOK_DUR;
         const heavy = foe.wounded(self, s, blade, .{ .light = 1.6, .heavy = 2.6 });
-        self.splatter(s.contact, s.dir, if (heavy) 14 else 8);
+        self.splatter(s.contact, s.dir, if (heavy) HIT_CHIP_HEAVY else HIT_CHIP_LIGHT);
         sfx.world(.leech_hurt, self.centerWorld());
         switch (s.reaction) {
             .death => {

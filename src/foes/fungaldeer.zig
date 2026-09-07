@@ -48,7 +48,17 @@ const DISS_DUR: f32 = 1.05;
 const DISSOLVE = foe.Dissolve{ .rate = 58.0, .spread = 0.9, .rise = 0.85, .flake = PETAL_LT };
 const SINK_DEPTH: f32 = 0.34;
 
+const HIT_PETALS_LIGHT: i32 = 3;
+const HIT_PETALS_HEAVY: i32 = 7;
+/// What a flower torn fully open adds on top of the wound's own petals.
+const OPEN_PETALS: i32 = 6;
+
 const PARTS = 58;
+comptime {
+    // The ring law: a heavy wounding a deer whose flower is all the way open, over the dissolve.
+    std.debug.assert(PARTS >= HIT_PETALS_HEAVY + OPEN_PETALS + foe.WOUND_PARTS +
+        @as(i32, @intCast(foe.emitCap(DISSOLVE.rate))));
+}
 
 
 const SPIT_WIND: f32 = 0.95;
@@ -683,8 +693,8 @@ pub const Deer = struct {
         }
         const s = foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, SHOVE);
-        const torn: i32 = if (heavy) 7 else 3;
-        self.emitPetals(s.contact, torn + @as(i32, @intFromFloat(6.0 * mathx.clampF(self.openAmt(), 0, 1))));
+        const torn: i32 = if (heavy) HIT_PETALS_HEAVY else HIT_PETALS_LIGHT;
+        self.emitPetals(s.contact, torn + @as(i32, @intFromFloat(@as(f32, OPEN_PETALS) * mathx.clampF(self.openAmt(), 0, 1))));
         switch (s.reaction) {
             .death => self.enterDeath(),
             .heavy => self.enterStun(true),
@@ -883,7 +893,14 @@ pub const Spore = struct {
 pub const SPORE_N: usize = 32;
 
 const CAP_N = wf.MAX_PER_KIND;
+/// What a spore throws off when it takes him, and what it throws off dying on the ground.
+const SPORE_PUFF_HIT: usize = 8;
+const SPORE_PUFF_SPENT: usize = 6;
 const HERD_PARTS: usize = 72;
+comptime {
+    // The ring law: one deer's whole volley reaching him on the same frame — they are thrown together, so they land together.
+    std.debug.assert(HERD_PARTS >= SPORES_PER_VOLLEY * SPORE_PUFF_HIT);
+}
 
 const AIR_THREAT = foe.Threat{};
 
@@ -982,13 +999,13 @@ pub const Herd = struct {
             }
             if (foe.struckSweep(was, s.at, chest, SPORE_R + foe.HERO_R)) {
                 s.live = false;
-                self.puff(s.at, 8);
+                self.puff(s.at, SPORE_PUFF_HIT);
                 foe.worseBlow(worst, SPORE_HIT, s.at, &AIR_THREAT);
                 continue;
             }
             if (s.t >= SPORE_LIFE or foe.landed(s.at.y, s.floor, hero.y)) {
                 s.live = false;
-                self.puff(s.at, 6);
+                self.puff(s.at, SPORE_PUFF_SPENT);
             }
         }
     }

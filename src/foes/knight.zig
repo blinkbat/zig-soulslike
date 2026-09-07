@@ -683,7 +683,21 @@ comptime {
     std.debug.assert(PARRY_STANCE * 2 >= STANCE_MAX and PARRY_STANCE < STANCE_MAX);
 }
 
+const HIT_CHIP_LIGHT: i32 = 13;
+const HIT_CHIP_HEAVY: i32 = 22;
+const CHIP_DEATH: i32 = 26;
+/// `slamGround`, which is the biggest single frame this body has: the crater, its grit, and the ring that runs out to `fallWaveR`.
+const SLAM_DUST: i32 = 48;
+const SLAM_GRIT: i32 = 20;
+const SLAM_RING: i32 = 30;
+
 const NPART = 208;
+comptime {
+    // The ring law: the slam landing on the frame a killing heavy of his lands too, over the wind's own gather.
+    std.debug.assert(NPART >= SLAM_DUST + SLAM_GRIT + SLAM_RING +
+        HIT_CHIP_HEAVY + CHIP_DEATH + foe.WOUND_PARTS +
+        @as(i32, @intCast(foe.emitCap(6.0 + 28.0 * GATHER_FALL))));
+}
 
 const PELVIS_SHARE = 0.14;
 const STUN_EASE_DEG = 240.0;
@@ -2747,16 +2761,19 @@ pub const Knight = struct {
         }
         const heavyBlow = foe.wounded(self, s, blade, .{ .light = 0.30, .heavy = 0.55 });
         self.sense.hurt(b.hit.dmg);
-        self.chips(s.contact, s.dir, if (heavyBlow) 22 else 13, if (heavyBlow) 3.6 else 2.5);
+        self.chips(s.contact, s.dir, if (heavyBlow) HIT_CHIP_HEAVY else HIT_CHIP_LIGHT, if (heavyBlow) 3.6 else 2.5);
         sfx.world(.knight_hurt, self.pos);
         switch (s.reaction) {
             .death => {
-                self.chips(s.contact, s.dir, 26, 3.2);
+                self.chips(s.contact, s.dir, CHIP_DEATH, 3.2);
                 sfx.world(.knight_die, self.pos);
                 self.enterDeath();
             },
-            .heavy => if (!self.floored() and !self.transforming()) self.enterStun(.stunheavy),
-            .light => if (!self.floored() and !self.inString() and !self.transforming()) self.enterStun(.stunlight),
+            // REFUSING THE FLINCH HANDS THE POOL BACK: `Vitals.strike` has already latched the stun, and a latched stun
+            // discards every later pour, so a body that keeps swinging would be immune to poise AND stance for the
+            // whole stagger it never took — 2.40 s off a floored heavy, which is the punish window itself.
+            .heavy => if (self.floored() or self.transforming()) self.vit.refuseFlinch(poiseWas) else self.enterStun(.stunheavy),
+            .light => if (self.floored() or self.inString() or self.transforming()) self.vit.refuseFlinch(poiseWas) else self.enterStun(.stunlight),
             .none => self.counterFlank(s),
         }
     }
@@ -3363,11 +3380,11 @@ pub const Knight = struct {
     fn slamGround(self: *Knight) void {
         const mid = self.fallMarkOf();
         const from = self.fxHead;
-        self.dustBurst(mid, 48, 5.8, 0.52);
-        self.grit(mid, 20);
+        self.dustBurst(mid, SLAM_DUST, 5.8, 0.52);
+        self.grit(mid, SLAM_GRIT);
         const reach = fallWaveR(self.scale);
         var i: i32 = 0;
-        while (i < 30) : (i += 1) {
+        while (i < SLAM_RING) : (i += 1) {
             const a = self.fxRng.angle();
             const rr = reach * self.fxRng.range(0.80, 1.0);
             const p = v3(mid.x + mathx.cosf(a) * rr, self.pos.y + 0.05, mid.z + mathx.sinf(a) * rr);

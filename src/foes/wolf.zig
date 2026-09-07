@@ -433,6 +433,10 @@ const GROWL_EVERY: f32 = 2.6;
 const PARTS = 48;
 const RIFT_N = 12;
 const RIFT_COOL = rgba(72, 96, 128, 40);
+comptime {
+    // The ring law: `reappear` lays a rift at both ends of the blink on one frame, and it is the only thing here that emits in a burst.
+    std.debug.assert(PARTS >= 2 * RIFT_N);
+}
 
 /// How far down the jaw bone the teeth sit, as a fraction of `W` — where the bite's blade is measured from.
 const JAW_REACH: f32 = 0.10;

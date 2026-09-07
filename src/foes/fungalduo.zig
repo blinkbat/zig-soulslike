@@ -213,7 +213,17 @@ const SW_HEAVY_CD: f32 = 8.5;
 const SW_HEAVY_LAUNCH: f32 = 1.2;
 const SW_HEAVY_HIT = combat.Hit{ .dmg = 24, .poise = 58, .stance = 42, .launch = SW_HEAVY_LAUNCH, .elem = combat.elems(.{ .chaos = 14 }), .venom = true };
 
+/// Venom off the blade: what a caught stroke sheds, what a landed one sheds, and what a wound sheds.
+const SW_VENOM_PARRY: usize = 14;
+const SW_VENOM_REACH: usize = 7;
+const SW_VENOM_LIGHT: usize = 5;
+const SW_VENOM_HEAVY: usize = 10;
+
 const SW_NPART = 40;
+comptime {
+    // The ring law: his stroke caught on the frame a heavy of his own wounds it back.
+    std.debug.assert(SW_NPART >= SW_VENOM_PARRY + SW_VENOM_HEAVY + foe.WOUND_PARTS);
+}
 
 comptime {
     std.debug.assert(SW_SLASH_WIND >= foe.TELL_MIN);
@@ -423,7 +433,16 @@ pub const MIST_R: f32 = 3.4;
 pub const MIST_LIFE: f32 = 9.5;
 pub const MIST_BUILD: f32 = 16.0;
 
+/// The cap `kindle` and `shed` share out of one `fxAccum`, and what a wound sheds.
+const MG_EMIT_CAP: usize = 6;
+const MG_HURT_LIGHT: usize = 5;
+const MG_HURT_HEAVY: usize = 10;
+
 const MG_NPART = 72;
+comptime {
+    // The ring law: a heavy wounding her at the top of a cast, when the staff's gather is owed its whole cap.
+    std.debug.assert(MG_NPART >= MG_EMIT_CAP + MG_HURT_HEAVY + foe.WOUND_PARTS);
+}
 
 comptime {
     std.debug.assert(MG_ORB_WIND >= foe.TELL_MIN);
@@ -1012,7 +1031,7 @@ pub const Swordsman = struct {
         self.heavyCd = SW_HEAVY_CD;
         self.lungeCd = SW_LUNGE_CD;
         self.doubling = false;
-        self.venom(self.bladeSeg()[1], 14);
+        self.venom(self.bladeSeg()[1], SW_VENOM_PARRY);
         sfx.world(.duo_sword_hurt, self.pos);
         switch (self.vit.hit(combat.PARRY_HIT)) {
             .death => self.enterDeath(),
@@ -1032,14 +1051,14 @@ pub const Swordsman = struct {
         };
         self.dealt = true;
         self.leash.noteCombat();
-        self.venom(self.bladeSeg()[1], 7);
+        self.venom(self.bladeSeg()[1], SW_VENOM_REACH);
     }
 
     pub fn tryHit(self: *Swordsman, blade_: foe.Blade) void {
         if (self.state == .dead) return;
         const s = foe.reached(self, blade_) orelse return;
         const heavy = foe.wounded(self, s, blade_, SW_SHOVE);
-        self.venom(s.contact, if (heavy) 10 else 5);
+        self.venom(s.contact, if (heavy) SW_VENOM_HEAVY else SW_VENOM_LIGHT);
         switch (s.reaction) {
             .death => self.enterDeath(),
             .heavy => self.enterStun(true),
@@ -1546,13 +1565,13 @@ pub const Magus = struct {
     }
 
     fn kindle(self: *Magus, dt: f32, u: f32) void {
-        const n = foe.emitTicks(&self.fxAccum, dt, lerpF(6.0, 34.0, u * u), 6);
+        const n = foe.emitTicks(&self.fxAccum, dt, lerpF(6.0, 34.0, u * u), MG_EMIT_CAP);
         if (n == 0) return;
         elemfx.gather(&self.parts, &self.fxHead, &self.fxRng, self.staffHead(), .chaos, n, 0.22 * (0.4 + 0.6 * u) * self.scale, self.scale);
     }
 
     fn shed(self: *Magus, dt: f32, u: f32) void {
-        const n = foe.emitTicks(&self.fxAccum, dt, lerpF(4.0, 26.0, u), 6);
+        const n = foe.emitTicks(&self.fxAccum, dt, lerpF(4.0, 26.0, u), MG_EMIT_CAP);
         if (n == 0) return;
         elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, self.centerWorld(), v3(0, -1, 0), .chaos, n, self.scale);
     }
@@ -1561,7 +1580,7 @@ pub const Magus = struct {
         if (self.state == .dead) return;
         const s = foe.reached(self, blade_) orelse return;
         const heavy = foe.wounded(self, s, blade_, MG_SHOVE);
-        elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, s.contact, v3(0, 1, 0), .chaos, if (heavy) 10 else 5, self.scale);
+        elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, s.contact, v3(0, 1, 0), .chaos, if (heavy) MG_HURT_HEAVY else MG_HURT_LIGHT, self.scale);
         switch (s.reaction) {
             .death => self.enterDeath(),
             .heavy => self.enterStun(true),
@@ -2207,13 +2226,13 @@ pub const Conclave = struct {
             const chest = foe.heroChest(hero);
             if (foe.struckSweep(was, o.at, chest, ORB_R + foe.HERO_R)) {
                 o.live = false;
-                self.splashAt(o.at, 9);
+                self.splashAt(o.at, ORB_SPLASH);
                 foe.worseBlow(worst, ORB_HIT, o.at, &GROUND_THREAT);
                 continue;
             }
             if (o.t >= ORB_LIFE or foe.landed(o.at.y, o.floor, hero.y)) {
                 o.live = false;
-                self.splashAt(o.at, 9);
+                self.splashAt(o.at, ORB_SPLASH);
             }
         }
     }
@@ -2241,7 +2260,7 @@ pub const Conclave = struct {
             if (c.t < CAP_GROW + CAP_GLOW) continue;
             if (!c.burst) {
                 c.burst = true;
-                self.splashAt(c.at, 18);
+                self.splashAt(c.at, CAP_SPLASH);
                 sfx.world(.duo_burst, c.at);
                 if (mathx.distXZ(c.at, hero) <= CAP_BURST_R) foe.worseBlow(worst, CAP_HIT, c.at, &GROUND_THREAT);
             }
@@ -2253,7 +2272,7 @@ pub const Conclave = struct {
         for (&self.dusts) |*g| {
             if (g.live) continue;
             g.* = .{ .live = true, .at = at, .seed = self.fxRng.float() };
-            foe.spray(&self.parts, &self.fxHead, &self.fxRng, v3(at.x, at.y + 0.9, at.z), v3(0, 1, 0), 20, 2.6, 1.0, SPORE_SPRAY);
+            foe.spray(&self.parts, &self.fxHead, &self.fxRng, v3(at.x, at.y + 0.9, at.z), v3(0, 1, 0), DUST_SPRAY, 2.6, 1.0, SPORE_SPRAY);
             return;
         }
     }
@@ -2336,7 +2355,15 @@ pub const Conclave = struct {
     }
 };
 
+/// What a cap bursting throws, what an orb throws going out, and the puff a dust cloud is laid with.
+const CAP_SPLASH: usize = 18;
+const ORB_SPLASH: usize = 9;
+const DUST_SPRAY: usize = 20;
 const DUO_PARTS: usize = 96;
+comptime {
+    // The ring law: a cap bursting and laying its cloud on the frame a pair of orbs go out with it. `blow` fills at most one dust slot a frame.
+    std.debug.assert(DUO_PARTS >= CAP_SPLASH + DUST_SPRAY + 2 * ORB_SPLASH);
+}
 
 /// THE MESH IS BUILT AT A CAP RADIUS OF ONE and scaled per bunch, so a cap's world size is the one number `CAP_SIZE * Cap.r`.
 const CAP_STIPE: f32 = 0.19;

@@ -103,7 +103,7 @@ contents change together is fine.
 | `core/anim.zig` | THE KEYED-POSE KERNEL — `Ease`/`Key`/`keyAt`, `Spring`/`SpringBank`, `anim.Pose(P)` |
 | `core/camera.zig` | orbit rig, ground basis, trauma shake (live-loop only, so `--shot` stays deterministic) |
 | `core/collision.zig` · `mathx.zig` | XZ capsule/circle push-out, `blocksSight`, `box` · angles, seeded `Rng`, `gutter`, `turnToward` |
-| `core/audio.zig` · `rumble.zig` · `bake.zig` | ~190 synthesized voices through one tape `master` · XInput directly · the one-way door that emitted the first map |
+| `core/audio.zig` · `rumble.zig` · `bake.zig` | ~206 synthesized voices through one tape `master` · XInput directly · the one-way door that emitted the first map |
 | `gfx/gfx.zig` · `shaders.zig` | `Builder`, scene shader, depth pass, `Sky`, `Vignette`, `Mat` · every line of GLSL and nothing else |
 | `gfx/elemfx.zig` · `particleart.zig` | one signature per `combat.Elem` · one seeded mote atlas, four variants per style |
 | `world/env.zig` | THE WORLD — terrain, op replay, `coverField`, uniform grid, cullers, occluder fade, lights |
@@ -1112,7 +1112,7 @@ and never pin a test to a coordinate, yaw or count off `01_fallen_plain.world` �
 - **AN OP MAY NOT SPIN** (`Placer.BUDGET`, `Env.opsCapped`) — the generator loops were bounded only by AUTHORED
   numbers and a REJECTED candidate costs time without ever filling `MAX_PROPS`. One line op at 0.001 m over 400 m
   burnt **21 ms a rebuild placing NOTHING** (227 ms at the parser's floor), a rebuild fires after every edit, and
-  a map holds 20,480 ops. Every generator now spends from a per-op candidate budget. **NO SILENT CAP** —
+  a map holds 40,960 ops. Every generator now spends from a per-op candidate budget. **NO SILENT CAP** —
   `opsCapped` counts what hit it and the editor's status line shows it, because a budget that bites real content
   has made the world quietly smaller.
 - **EVERY PROP PLANTS AT THE HEIGHT UNDER IT** — `uploadHeight` must run BEFORE `materialize`, and a sculpt stroke
@@ -1184,7 +1184,7 @@ Conditions: `always`, `never`, `flag N=0|1`, `counter N <cmp> n`, `timer N=done|
   - **A HELD FACE IS COPIED BACK, NOT BLENDED BACK** — raylib blends the target's OWN alpha by `SRC_ALPHA`, so
     every translucent thing painted in drives the target's alpha below 1 and blending that over the panel
     multiplies the face a SECOND time. Blit with `rlSetBlendFactors(GL_ONE, GL_ZERO, GL_FUNC_ADD)`.
-  - **AND THE SAME LESSON REACHES A BUTTON'S LABEL** (`unfilledCount`) — "next empty (N)" walked all 20,480 ops
+  - **AND THE SAME LESSON REACHES A BUTTON'S LABEL** (`unfilledCount`) — "next empty (N)" walked all 40,960 ops
     every frame the Interact layer was open. Held against `miniGen` it is 0.002 us, and a test fills without
     banking to prove it is a CACHE and not a second walk.
 - **THE CHART IS TWO HELD SHEETS AND A LENS** (`ui/mapart.zig`) — the map painted ONCE into a 2048 texture in

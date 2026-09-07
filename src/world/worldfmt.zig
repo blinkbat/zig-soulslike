@@ -1463,8 +1463,12 @@ pub fn cliffCuts(t: Tiers, minDrop: f32) bool {
 
 /// The cell's own corners, in the order the terrain quad winds them, and the lattice step each one is.
 pub const CLIFF_RING = [4][2]f32{ .{ 0, 0 }, .{ 0, 1 }, .{ 1, 1 }, .{ 1, 0 } };
-const RING_DX = [4]usize{ 0, 0, 1, 1 };
-const RING_DZ = [4]usize{ 0, 1, 1, 0 };
+/// The same four corners as lattice steps, DERIVED — hand-kept mirrors of `CLIFF_RING` drift out of its winding order.
+const RING_STEP = blk: {
+    var s: [4][2]usize = undefined;
+    for (CLIFF_RING, 0..) |c, i| s[i] = .{ @intFromFloat(c[0]), @intFromFloat(c[1]) };
+    break :blk s;
+};
 
 
 fn hash2(a: u32, b: u32) u32 {
@@ -1573,9 +1577,9 @@ fn levelAt(field: []const u8, ix: usize, iz: usize, up: bool, minDrop: f32) f32 
 
 pub fn cliffLevels(field: []const u8, x0: usize, z0: usize, minDrop: f32, cut: CliffCut) CliffLevels {
     var out: CliffLevels = undefined;
-    for (RING_DX, RING_DZ, 0..) |dx, dz, i| {
-        const ix = @min(x0 + dx, HEIGHT_N - 1);
-        const iz = @min(z0 + dz, HEIGHT_N - 1);
+    for (RING_STEP, 0..) |step, i| {
+        const ix = @min(x0 + step[0], HEIGHT_N - 1);
+        const iz = @min(z0 + step[1], HEIGHT_N - 1);
         const own = heightOf(field[iz * HEIGHT_N + ix]);
         out.hi[i] = if (cut.high[i]) own else levelAt(field, ix, iz, true, minDrop);
         out.lo[i] = if (cut.high[i]) levelAt(field, ix, iz, false, minDrop) else own;

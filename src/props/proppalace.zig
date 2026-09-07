@@ -190,6 +190,8 @@ fn ziaInto(b: *Builder, r: *mathx.Rng, c: rl.Vector3, face: rl.Vector3, radius: 
 }
 
 /// A PECKED PANEL. Sunk FIRST: a figure proud of a flat face reads as tile, so every motif stands proud of the sinking.
+/// The motifs the pick chooses between, and the LAST one is the `else` arm — `Rng.float` is [0,1), so the cast never reaches it by rounding.
+const GLYPHS: f32 = 4.0;
 fn glyphBandInto(b: *Builder, r: *mathx.Rng, a: rl.Vector3, c: rl.Vector3, face: rl.Vector3, h: f32, out: f32) void {
     const span = mathx.subV(c, a);
     const len = mathx.lenV(span);
@@ -228,7 +230,7 @@ fn glyphBandInto(b: *Builder, r: *mathx.Rng, a: rl.Vector3, c: rl.Vector3, face:
         const col = if (r.float() < 0.30) SAND_LT else SAND;
         const e = h * 0.11;
         const oo = out * 0.62;
-        switch (@mod(@as(i32, @intFromFloat(r.float() * 4.0)), 4)) {
+        switch (@as(i32, @intFromFloat(r.float() * GLYPHS))) {
             0 => { // a body: one bar, a head, arms down and legs apart
                 dot(b, o, u, f, 0, 0, e * 0.30, h * 0.20, oo, col);
                 dot(b, o, u, f, 0, h * 0.26, e * 0.62, e * 0.55, oo, col);

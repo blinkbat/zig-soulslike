@@ -251,7 +251,8 @@ pub const Seen = struct {
         }
         const per = 2.0 * half / @as(f32, @floatFromInt(SEEN_N));
         // Capped at the sheet: uncapped, a map smaller than the radius walks (2n+1)^2 cells of nothing.
-        const reach: i32 = @min(@as(i32, @intFromFloat(@ceil(REVEAL_R / per))), @as(i32, @intCast(SEEN_N)));
+        // CLAMPED BEFORE THE CAST: `half` is only bounded above by the parser, so a hand-written `half: 0.001` makes `per` 0 and the cast an out-of-range `@intFromFloat`, which an outer `@min` runs too late to catch.
+        const reach: i32 = @intFromFloat(mathx.clampF(@ceil(REVEAL_R / per), 0, @as(f32, @floatFromInt(SEEN_N))));
         const cx: i32 = @intCast(here % SEEN_N);
         const cz: i32 = @intCast(here / SEEN_N);
         const r2 = REVEAL_R * REVEAL_R;

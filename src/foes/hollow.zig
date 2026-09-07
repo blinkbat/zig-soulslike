@@ -529,13 +529,10 @@ pub const Hollow = struct {
         self.t += dt;
         self.elapsed += dt;
         self.vit.tick(dt);
-        foe.fadeFlash(&self.flash, dt);
         self.biteCool = mathx.maxF(0, self.biteCool - dt);
         self.tollCool = mathx.maxF(0, self.tollCool - dt);
         self.sparkCool = mathx.maxF(0, self.sparkCool - dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
+        foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
 
         var moveSpeed: f32 = 0;
         var movedDist: f32 = 0;

@@ -692,10 +692,7 @@ pub const Druidess = struct {
         self.stepCd = mathx.maxF(0, self.stepCd - dt);
         self.spearCd = mathx.maxF(0, self.spearCd - dt);
         self.slashCd = mathx.maxF(0, self.slashCd - dt);
-        foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
+        foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
 
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         // CLOSING is his position over the last frame — what any body standing here could see — and never his press.

@@ -487,8 +487,7 @@ pub const Kobold = struct {
         self.t += dt * self.vit.hasteMult();
         self.vit.tick(dt);
         if (self.vit.ailEnded(.berserk) and !self.gone) self.stagger(true);
-        foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
+        foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
         self.castCd = mathx.maxF(0, self.castCd - dt);
         self.slingCd = mathx.maxF(0, self.slingCd - dt);
         self.biteCd = mathx.maxF(0, self.biteCd - dt);
@@ -499,9 +498,6 @@ pub const Kobold = struct {
         var movedDist: f32 = 0;
         var moveYaw: ?f32 = null;
         var moveSpeed: f32 = 0;
-
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
 
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         switch (self.state) {

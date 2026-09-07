@@ -242,7 +242,7 @@ const ENTRANCE_GRADE = caves.ENTRANCE_GRADE;
 const ENTRANCE_SINK = caves.ENTRANCE_SINK;
 const HEAD_MIN = caves.HEAD_MIN;
 /// Where a sparring room would be saved if he ever pressed Ctrl+S inside one. It is built in memory and never written on its own.
-const SPAR_PATH = wf.DIR ++ "/test_spar.world";
+const SPAR_PATH = spar.PATH;
 const CAVE_PICK_STEP: f32 = 0.35;
 const CAVE_PICK_REACH: f32 = 400.0;
 /// Under this much rock over a ceiling the hill is not a roof any more, and the panel says so.
@@ -4780,6 +4780,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 var fog = l.fog orelse 0;
                 var spore = l.spore orelse 0;
                 var emberv = l.ember orelse 0;
+                var soup = l.soup orelse 0;
                 var has = l.hasWeather();
                 var usedW: i32 = 0;
                 if (ui.chip(ctx, x + 8, y, "weather", has, &usedW, "Give this region its own sky. OFF is not the same as dry - it leaves the world's own storm alone")) {
@@ -4788,6 +4789,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                     l.fog = if (has) fog else null;
                     l.spore = if (has) spore else null;
                     l.ember = if (has) emberv else null;
+                    l.soup = if (has) soup else null;
                     lchanged = true;
                 }
                 y += ROW_H;
@@ -4797,7 +4799,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                         lchanged = true;
                     }
                     y += ROW_H + SLIDER_DROP;
-                    if (ui.slider(ctx, x + 8, y, w - 16, "fog", &fog, 0, 1, "How thick the air is here")) {
+                    if (ui.slider(ctx, x + 8, y, w - 16, "fog", &fog, 0, 1, "How much mist lies on the ground here")) {
                         l.fog = fog;
                         lchanged = true;
                     }
@@ -4809,6 +4811,11 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                     y += ROW_H + SLIDER_DROP;
                     if (ui.slider(ctx, x + 8, y, w - 16, "ember", &emberv, 0, 1, "How many embers rise here, and how much smoke hangs over them")) {
                         l.ember = emberv;
+                        lchanged = true;
+                    }
+                    y += ROW_H + SLIDER_DROP;
+                    if (ui.slider(ctx, x + 8, y, w - 16, "soup", &soup, 0, 1, "How far you can see here. Thickens the distance without touching its colour - 1 is the debug Fog: Soup")) {
+                        l.soup = soup;
                         lchanged = true;
                     }
                     y += ROW_H + SLIDER_DROP;

@@ -521,14 +521,10 @@ pub const Ogre = struct {
         self.slamCd = mathx.maxF(0, self.slamCd - dt);
         self.swipeCd = mathx.maxF(0, self.swipeCd - dt);
         self.driveCd = mathx.maxF(0, self.driveCd - dt);
-        foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
+        foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
         self.t += dt;
-        self.updateFx(dt);
         var movedDist: f32 = 0;
         var moveYaw: ?f32 = null;
-
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         const bearing = self.bearingTo(hero);

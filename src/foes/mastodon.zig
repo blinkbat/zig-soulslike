@@ -429,10 +429,7 @@ pub const Mastodon = struct {
         self.chargeCd = mathx.maxF(0, self.chargeCd - dt);
         self.lungeCd = mathx.maxF(0, self.lungeCd - dt);
         self.tailCd = mathx.maxF(0, self.tailCd - dt);
-        foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
+        foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
 
         var moved: f32 = 0;
         const sensed = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);

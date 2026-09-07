@@ -489,13 +489,10 @@ pub const Shade = struct {
         self.elapsed += dt;
         self.t += dt / spec(self.role).slow;
         self.vit.tick(dt);
-        foe.fadeFlash(&self.flash, dt);
         for (&self.cds) |*c| c.* = mathx.maxF(0, c.* - dt);
         self.blinkCd = mathx.maxF(0, self.blinkCd - dt);
         self.spookLeft = mathx.maxF(0, self.spookLeft - dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
+        foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
 
         var act: Act = .none;
 

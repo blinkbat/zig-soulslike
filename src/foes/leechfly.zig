@@ -357,13 +357,10 @@ pub const Leechfly = struct {
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
-        foe.fadeFlash(&self.flash, dt);
         self.feedCd = mathx.maxF(0, self.feedCd - dt);
         self.climbCd = mathx.maxF(0, self.climbCd - dt);
         self.spookLeft = mathx.maxF(0, self.spookLeft - dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
+        foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
 
         var act: Act = .none;
         var stabbing = false;

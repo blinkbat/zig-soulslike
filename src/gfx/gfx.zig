@@ -83,6 +83,21 @@ pub var shadowSpan: f32 = SHADOW_ORTHO;
 
 const HAZE_DENSITY: f32 = 0.013;
 const HAZE_STORM: f32 = 3.10;
+/// Soup is DENSITY ALONE — no palette move, no banks. 6.0 so `soup=1` lands exactly on the debug Fog: Soup override.
+pub const HAZE_SOUP_D: f32 = 6.0;
+
+pub fn hazeDensityOf(wet: f32, fogK: f32, spore: f32, ember: f32, soup: f32) f32 {
+    return HAZE_DENSITY * (1.0 + (HAZE_STORM - 1.0) * mathx.clampF(wet, 0, 1)) *
+        (1.0 + (daynight.HAZE_SPORE_D - 1.0) * mathx.clampF(spore, 0, 1)) *
+        (1.0 + (daynight.HAZE_EMBER_D - 1.0) * mathx.clampF(ember, 0, 1)) *
+        (1.0 + (HAZE_SOUP_D - 1.0) * mathx.clampF(soup, 0, 1)) * mathx.maxF(fogK, 0);
+}
+
+/// The distance at which the haze is half the sky, from the shader's `1 - exp(-d*dist)`.
+pub fn hazeHalfM(density: f32) f32 {
+    if (density <= 0) return std.math.inf(f32);
+    return @log(2.0) / density;
+}
 
 pub const MAX_LIGHTS = 16;
 comptime {
@@ -539,12 +554,12 @@ pub const Scene = struct {
             .loc_hazeD = rl.getShaderLocation(shader, "hazeDensity"),
             .loc_hazeScale = rl.getShaderLocation(shader, "hazeScale"),
         };
-        out.setHour(daynight.SHOT_HOUR, 0, 1.0, 0, 0);
+        out.setHour(daynight.SHOT_HOUR, 0, 1.0, 0, 0, 0);
         return out;
     }
 
-    /// THE STORM IS A LAYER ON TOP (`daynight.overcast`). `wet` is `weather.Weather.rain()`, 0 leaving the hour's palette untouched; `fogK` is the DEBUG haze override, 1 in the game; `spore` turns the distance PEACH and shortens it; `ember` turns it to SMOKE and shortens it less.
-    pub fn setHour(self: *Scene, hour: f32, wet: f32, fogK: f32, spore: f32, ember: f32) void {
+    /// THE STORM IS A LAYER ON TOP (`daynight.overcast`). `wet` is `weather.Weather.rain()`, 0 leaving the hour's palette untouched; `fogK` is the DEBUG haze override, 1 in the game; `spore` turns the distance PEACH and shortens it; `ember` turns it to SMOKE and shortens it less; `soup` only shortens it.
+    pub fn setHour(self: *Scene, hour: f32, wet: f32, fogK: f32, spore: f32, ember: f32, soup: f32) void {
         const p = daynight.smolder(daynight.bloom(daynight.overcast(daynight.paletteAt(hour), wet), spore), ember);
         sun = daynight.keyDir(hour);
         sunReach = daynight.shadowReach(hour);
@@ -563,9 +578,7 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_hazeBank, &hb, .vec3);
         var ka = daynight.keyAmt(p) * dim;
         rl.setShaderValue(self.shader, self.loc_keyAmt, &ka, .float);
-        var density: f32 = HAZE_DENSITY * (1.0 + (HAZE_STORM - 1.0) * mathx.clampF(wet, 0, 1)) *
-            (1.0 + (daynight.HAZE_SPORE_D - 1.0) * mathx.clampF(spore, 0, 1)) *
-            (1.0 + (daynight.HAZE_EMBER_D - 1.0) * mathx.clampF(ember, 0, 1)) * mathx.maxF(fogK, 0);
+        var density: f32 = hazeDensityOf(wet, fogK, spore, ember, soup);
         rl.setShaderValue(self.shader, self.loc_hazeD, &density, .float);
     }
 
@@ -1302,6 +1315,30 @@ fn norm3(a: rl.Vector3) rl.Vector3 {
     return mathx.normVOr(a, v3(0, 1, 0));
 }
 const cross = mathx.crossV;
+
+test "SOUP CLOSES THE DISTANCE AND NOTHING ELSE, and soup=1 is the debug Soup override" {
+    const clear = hazeDensityOf(0, 1, 0, 0, 0);
+    const soup = hazeDensityOf(0, 1, 0, 0, 1);
+    try std.testing.expectApproxEqAbs(clear * HAZE_SOUP_D, soup, 1e-9);
+    try std.testing.expectApproxEqAbs(hazeDensityOf(0, HAZE_SOUP_D, 0, 0, 0), soup, 1e-9);
+    // Off the bottom of the slider a location costs nothing, and the band is clamped, not extrapolated.
+    try std.testing.expectApproxEqAbs(clear, hazeDensityOf(0, 1, 0, 0, -3), 1e-9);
+    try std.testing.expectApproxEqAbs(soup, hazeDensityOf(0, 1, 0, 0, 4), 1e-9);
+    // The debug Fog: Off override still wins over any soup a location asks for.
+    try std.testing.expectEqual(@as(f32, 0), hazeDensityOf(1, 0, 1, 1, 1));
+    std.debug.print("\n  soup: half-veil {d:.0} m clear -> {d:.0} m at soup 0.5 -> {d:.0} m at soup 1\n", .{
+        hazeHalfM(clear),
+        hazeHalfM(hazeDensityOf(0, 1, 0, 0, 0.5)),
+        hazeHalfM(soup),
+    });
+    // A storm and a soup MULTIPLY, so the two together shut the world in harder than either.
+    const storm = hazeDensityOf(1, 1, 0, 0, 0);
+    try std.testing.expect(hazeDensityOf(1, 1, 0, 0, 1) > storm * 5.0);
+    std.debug.print("  ...and a storm alone is {d:.0} m, a storm in the soup {d:.0} m\n", .{
+        hazeHalfM(storm),
+        hazeHalfM(hazeDensityOf(1, 1, 0, 0, 1)),
+    });
+}
 
 test "THE CHAIN AND ITS INVERSE ARE ONE SOLVE — an albedo run through both comes back where it started" {
     for ([_]f32{ 8, 22, 45, 76, 95, 109, 148 }) |albedo| {

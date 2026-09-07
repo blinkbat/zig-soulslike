@@ -1899,12 +1899,9 @@ pub const Knight = struct {
         self.leapCd = mathx.maxF(0, self.leapCd - dt);
         self.counterCd = mathx.maxF(0, self.counterCd - dt);
         self.riposteCd = mathx.maxF(0, self.riposteCd - dt);
-        foe.fadeFlash(&self.flash, dt);
         self.thud = mathx.maxF(0, self.thud - dt * 2.8);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
+        foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
         self.trail.age(dt);
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
         const a = self.move();
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);

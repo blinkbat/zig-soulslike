@@ -1725,9 +1725,13 @@ is PURE (seconds and 0..1), so a test runs a day without a window. Weather does 
 - **THE STORM IS A LAYER ON THE PALETTE, NOT A RECTANGLE** (`daynight.overcast`). Cloud does four things a
   rectangle cannot: puts the KEY out (`STORM_KEY`, so shadows and every specular go with it), leaves the AMBIENT
   alone (an overcast sky is one enormous soft source), takes the WARMTH out (`slate` is luma-preserving — a hue
-  change, not a dimmer), and CLOSES THE DISTANCE (`gfx.HAZE_STORM` 2.4× density). **Every term is a factor on
+  change, not a dimmer), and CLOSES THE DISTANCE (`gfx.HAZE_STORM` 3.1× density). **Every term is a factor on
   the HOUR'S own value, never a constant.** The fog distance has a DEBUG override answering TWO questions:
   `fogK` is the haze DISTANCE, `fogAmt` how foggy it IS.
+- **SOUP IS DENSITY ALONE** (the `soup=` band on a `location:`, `gfx.HAZE_SOUP_D`) — no palette move and no mist
+  banks, so it closes the distance without touching its colour; every band MULTIPLIES, so a storm in the soup
+  shuts the world in harder than either. `soup=1` is the debug `Fog: Soup` override, and `menu.fogMulOf` reads
+  the same constant so the two cannot drift.
 - **THE FOG HAS A SHAPE: THE STRAY BANKS** (`weather.Mist`) — seven banks standing in the field, so fog is
   somewhere you walk through rather than a value. **THE GRADIENT IS IN THE GEOMETRY**: one bank is 22 lumps
   scattered with density falling off outward, so alpha compounds in the middle and thins at the rim (vertex

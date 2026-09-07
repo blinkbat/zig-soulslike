@@ -3,6 +3,9 @@ const mathx = @import("../core/mathx.zig");
 const wf = @import("worldfmt.zig");
 const NL = "\n";
 
+/// Where the cave bench is written; a test may only write .
+pub const BENCH_PATH = wf.DIR ++ "/test_caves.world";
+
 pub const N = wf.CAVE_N;
 pub const CELLS = wf.CAVE_CELLS;
 
@@ -715,9 +718,9 @@ test "the bench is written to worlds/test_caves.world" {
     defer std.testing.allocator.destroy(m);
     m.* = .{};
     bench.author(m);
-    try wf.save("worlds/test_caves.world", m);
+    try wf.save(BENCH_PATH, m);
 
-    const text = try std.fs.cwd().readFileAlloc(std.testing.allocator, "worlds/test_caves.world", 8 << 20);
+    const text = try std.fs.cwd().readFileAlloc(std.testing.allocator, BENCH_PATH, 8 << 20);
     defer std.testing.allocator.free(text);
     const back = std.testing.allocator.create(wf.Map) catch unreachable;
     defer std.testing.allocator.destroy(back);

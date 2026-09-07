@@ -420,10 +420,7 @@ pub const Bat = struct {
         self.elapsed += dt;
         self.t += dt;
         self.blinkCd = mathx.maxF(0, self.blinkCd - dt);
-        foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), quarry, AGGRO_R);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
+        foe.tickBody(self, dt, quarry, bounds, AGGRO_R, SHOVE_DECAY);
 
         switch (self.state) {
             .dead => {

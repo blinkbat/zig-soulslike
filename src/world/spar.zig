@@ -3,6 +3,9 @@ const wf = @import("worldfmt.zig");
 const env = @import("env.zig");
 const foemod = @import("../foes/foe.zig");
 
+/// Where the room is written when a test or the harness needs it on disk; the editor names the same file.
+pub const PATH = wf.DIR ++ "/test_spar.world";
+
 /// The floor's radius — 42 m across, which is room enough for the mastodon to charge and turn.
 pub const R: f32 = 21.0;
 /// The wall. Past `env.STEP_UP` and past `MAX_SLOPE` at this lattice, so neither he nor the creature can leave.
@@ -140,9 +143,9 @@ test "the room round-trips through the writer, so the shot harness can be pointe
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     author(m, .bone_knight);
-    try wf.save("worlds/test_spar.world", m);
+    try wf.save(PATH, m);
 
-    const text = try std.fs.cwd().readFileAlloc(std.testing.allocator, "worlds/test_spar.world", 8 << 20);
+    const text = try std.fs.cwd().readFileAlloc(std.testing.allocator, PATH, 8 << 20);
     defer std.testing.allocator.free(text);
     const back = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(back);

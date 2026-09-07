@@ -648,12 +648,8 @@ pub const Warrior = struct {
         self.stam.tick(dt, false, self.guardUp());
         self.blockT += dt;
         for (&self.cds) |*c| c.* = mathx.maxF(0, c.* - dt);
-        foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
+        foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
         self.trail.age(dt);
-
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
         const sp = spec(self.role);
         const a = self.move();

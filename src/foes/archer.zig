@@ -734,15 +734,11 @@ pub const Archer = struct {
         self.reloadCd = mathx.maxF(0, self.reloadCd - dt);
         self.backstepCd = mathx.maxF(0, self.backstepCd - dt);
         self.buttCd = mathx.maxF(0, self.buttCd - dt);
-        foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
+        foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
         self.t += dt;
         var loosed = false;
         var movedDist: f32 = 0;
         var moveYaw: ?f32 = null;
-
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
 
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         if (wantsBackstep(d, self.backstepCd, self.state, !foe.canLeap(&self.root))) {

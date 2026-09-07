@@ -1164,6 +1164,16 @@ pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32,
     shove.* = mathx.scaleV(shove.*, mathx.maxF(0, 1.0 - decay * dt));
 }
 
+/// THE FOUR THINGS EVERY BODY OWES ITS FRAME, IN THE ONE ORDER THEY MAY RUN — the tether is measured from where
+/// it stands NOW, the motes fly from the floor under it, and the shove is spent LAST so the step it takes is
+/// the one the state machine already decided against. A creature with its own clocks runs them either side.
+pub fn tickBody(self: anytype, dt: f32, quarry: rl.Vector3, bounds: f32, aggroR: f32, shoveDecay: f32) void {
+    fadeFlash(&self.flash, dt);
+    tickLeash(&self.leash, dt, self.pos, tetherFor(self), quarry, aggroR);
+    tickParticles(&self.parts, dt, self.pos.y);
+    applyShove(&self.pos, &self.shove, shoveDecay, bounds, dt);
+}
+
 
 pub const DUST = mathx.rgba(150, 132, 96, 175);
 pub const DUST_THIN = mathx.rgba(176, 168, 150, 96);

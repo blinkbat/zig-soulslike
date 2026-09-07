@@ -834,6 +834,15 @@ fn pageCount(n: usize) i32 {
     return @max(1, @divTrunc(total + perPage() - 1, perPage()));
 }
 
+/// Every grid's foot is the same bar; only the tally in the middle differs. False when Close was pressed.
+fn gridFooter(st: *State, ctx: *ui.Ctx, box: ui.ModalBox, pages: i32, tally: [:0]const u8) bool {
+    const by = box.y + box.h - FOOT_DROP;
+    if (ui.button(ctx, ui.rect(box.x + 16, by, 44, 24), "<", hud.MONO, false, "The page before this one")) st.page = @max(0, st.page - 1);
+    if (ui.button(ctx, ui.rect(box.x + 64, by, 44, 24), ">", hud.MONO, false, "The page after this one")) st.page = @min(pages - 1, st.page + 1);
+    hud.mono(tally, box.x + 120, by + 5, hud.MONO, ui.alpha(ui.LABEL, 210));
+    return !ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Close", hud.MONO, false, "Shut the viewer and go back to the editor (Esc)");
+}
+
 fn lineH() i32 {
     return ui.ROW_H;
 }
@@ -944,14 +953,9 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
         );
     }
 
-    const by = box.y + box.h - FOOT_DROP;
-    if (ui.button(ctx, ui.rect(box.x + 16, by, 44, 24), "<", hud.MONO, false, "The page before this one")) st.page = @max(0, st.page - 1);
-    if (ui.button(ctx, ui.rect(box.x + 64, by, 44, 24), ">", hud.MONO, false, "The page after this one")) st.page = @min(pages - 1, st.page + 1);
     var buf: [96]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "page {d}/{d}   {d} objects   drag spins, wheel zooms, click opens", .{ st.page + 1, pages, list.len }) catch "";
-    hud.mono(s, box.x + 120, by + 5, hud.MONO, ui.alpha(ui.LABEL, 210));
-    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Close", hud.MONO, false, "Shut the viewer and go back to the editor (Esc)")) return false;
-    return true;
+    return gridFooter(st, ctx, box, pages, s);
 }
 
 
@@ -1111,14 +1115,9 @@ fn galleryChars(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) b
         hud.mono(name, @as(i32, @intFromFloat(r.x)) + @divTrunc(THUMB_W - nw, 2), @as(i32, @intFromFloat(r.y + r.height)) + 3, hud.MONO, if (on) ui.HOT else ui.LABEL);
     }
 
-    const by = box.y + box.h - FOOT_DROP;
-    if (ui.button(ctx, ui.rect(box.x + 16, by, 44, 24), "<", hud.MONO, false, "The page before this one")) st.page = @max(0, st.page - 1);
-    if (ui.button(ctx, ui.rect(box.x + 64, by, 44, 24), ">", hud.MONO, false, "The page after this one")) st.page = @min(pages - 1, st.page + 1);
     var buf: [96]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "page {d}/{d}   {d} characters   drag spins, wheel zooms, click opens", .{ st.page + 1, pages, CHAR_N }) catch "";
-    hud.mono(s, box.x + 120, by + 5, hud.MONO, ui.alpha(ui.LABEL, 210));
-    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Close", hud.MONO, false, "Shut the viewer and go back to the editor (Esc)")) return false;
-    return true;
+    return gridFooter(st, ctx, box, pages, s);
 }
 
 fn bigChar(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, at: usize) bool {
@@ -1218,14 +1217,9 @@ fn galleryIcons(st: *State, ctx: *ui.Ctx) bool {
     if (ctx.wheel != 0 and hover == null) st.page = clampI(st.page + (if (ctx.wheel < 0) @as(i32, 1) else -1), 0, pages - 1);
     if (ctx.pressed and hover != null) st.openIcon = hover;
 
-    const by = box.y + box.h - FOOT_DROP;
-    if (ui.button(ctx, ui.rect(box.x + 16, by, 44, 24), "<", hud.MONO, false, "The page before this one")) st.page = @max(0, st.page - 1);
-    if (ui.button(ctx, ui.rect(box.x + 64, by, 44, 24), ">", hud.MONO, false, "The page after this one")) st.page = @min(pages - 1, st.page + 1);
     var buf: [96]u8 = undefined;
     const s = std.fmt.bufPrintZ(&buf, "page {d}/{d}   {d} glyphs + {d} pictures   click enlarges", .{ st.page + 1, pages, GLYPH_N, PICT_N }) catch "";
-    hud.mono(s, box.x + 120, by + 5, hud.MONO, ui.alpha(ui.LABEL, 210));
-    if (ui.button(ctx, ui.rect(box.x + box.w - 96, by, 80, 24), "Close", hud.MONO, false, "Shut the viewer and go back to the editor (Esc)")) return false;
-    return true;
+    return gridFooter(st, ctx, box, pages, s);
 }
 
 fn bigIcon(st: *State, ctx: *ui.Ctx, at: usize) bool {

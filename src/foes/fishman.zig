@@ -480,10 +480,7 @@ pub const Fishman = struct {
         self.elapsed += dt;
         self.t += dt;
         self.cd = mathx.maxF(0, self.cd - dt);
-        foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), quarry, AGGRO_R);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
+        foe.tickBody(self, dt, quarry, bounds, AGGRO_R, SHOVE_DECAY);
 
         if (self.net.step(dt, quarry)) self.snared = NET_HOLD;
 

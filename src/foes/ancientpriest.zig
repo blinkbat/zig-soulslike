@@ -430,10 +430,7 @@ pub const Ancient = struct {
         self.vit.tick(dt);
         self.raiseCd = mathx.maxF(0, self.raiseCd - dt);
         self.breathCd = mathx.maxF(0, self.breathCd - dt);
-        foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
+        foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
 
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         var movedDist: f32 = 0;

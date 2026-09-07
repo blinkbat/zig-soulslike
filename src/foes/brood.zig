@@ -1255,13 +1255,10 @@ pub const Spider = struct {
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
-        foe.fadeFlash(&self.flash, dt);
         self.spitCd = mathx.maxF(0, self.spitCd - dt);
         self.biteCd = mathx.maxF(0, self.biteCd - dt);
         self.layCd = mathx.maxF(0, self.layCd - dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, spec(self.role).aggro);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
+        foe.tickBody(self, dt, hero, bounds, spec(self.role).aggro, SHOVE_DECAY);
 
         const d = foe.senseHero(&self.leash, self.pos, hero, spec(self.role).aggro);
         var act: Act = .none;

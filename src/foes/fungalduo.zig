@@ -837,10 +837,7 @@ pub const Swordsman = struct {
         self.heavyCd = mathx.maxF(0, self.heavyCd - dt);
         self.lungeCd = mathx.maxF(0, self.lungeCd - dt);
         self.backCd = mathx.maxF(0, self.backCd - dt);
-        foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
+        foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
 
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         if (d <= foe.triggerBand(SW_SLASH_R, SCALE, self.scale)) self.crowd += dt else self.crowd = mathx.maxF(0, self.crowd - dt * 1.6);
@@ -1368,10 +1365,7 @@ pub const Magus = struct {
         self.sproutCd = mathx.maxF(0, self.sproutCd - dt);
         self.fadeCd = mathx.maxF(0, self.fadeCd - dt);
         self.puffCd = mathx.maxF(0, self.puffCd - dt);
-        foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
+        foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
 
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         if (d <= MG_FLEE_R and self.vit.hpFrac() < MG_PRESS_HP) {

@@ -292,6 +292,7 @@ pub const Game = struct {
     fogNow: f32 = 0,
     sporeNow: f32 = 0,
     emberNow: f32 = 0,
+    soupNow: f32 = 0,
     /// A shot's override on the location's own ember level; null in the game.
     emberForce: ?f32 = null,
     hourLit: f32 = std.math.nan(f32),
@@ -299,6 +300,7 @@ pub const Game = struct {
     fogLit: f32 = std.math.nan(f32),
     sporeLit: f32 = std.math.nan(f32),
     emberLit: f32 = std.math.nan(f32),
+    soupLit: f32 = std.math.nan(f32),
     souls: soulsmod.Souls,
     weather: weathermod.Weather,
     rainfall: weathermod.Rain,
@@ -396,12 +398,14 @@ pub const Game = struct {
         g.fogNow = 0;
         g.sporeNow = 0;
         g.emberNow = 0;
+        g.soupNow = 0;
         g.emberForce = null;
         g.hourLit = std.math.nan(f32);
         g.wetLit = std.math.nan(f32);
         g.fogLit = std.math.nan(f32);
         g.sporeLit = std.math.nan(f32);
         g.emberLit = std.math.nan(f32);
+        g.soupLit = std.math.nan(f32);
         g.souls = soulsmod.Souls.init(g.scene.shader);
         g.weather = weathermod.Weather.init(0x5701_A17E);
         g.rainfall = weathermod.Rain.build(g.scene.shader);
@@ -3616,13 +3620,15 @@ fn applyHour(g: *Game) void {
     const fog = hazeK(g);
     const spore = @round(g.sporeNow * WET_STEPS) / WET_STEPS;
     const ember = @round(g.emberNow * WET_STEPS) / WET_STEPS;
-    if (g.day.hour == g.hourLit and wet == g.wetLit and fog == g.fogLit and spore == g.sporeLit and ember == g.emberLit) return;
+    const soup = @round(g.soupNow * WET_STEPS) / WET_STEPS;
+    if (g.day.hour == g.hourLit and wet == g.wetLit and fog == g.fogLit and spore == g.sporeLit and ember == g.emberLit and soup == g.soupLit) return;
     g.hourLit = g.day.hour;
     g.wetLit = wet;
     g.fogLit = fog;
     g.sporeLit = spore;
     g.emberLit = ember;
-    g.scene.setHour(g.day.hour, wet, fog, spore, ember);
+    g.soupLit = soup;
+    g.scene.setHour(g.day.hour, wet, fog, spore, ember, soup);
     g.sky.setHour(g.day.hour, wet, spore, ember);
     sfx.setDaylight(daynight.dayAmt(g.day.hour));
 }
@@ -3646,6 +3652,7 @@ pub fn pinSkyForShot(g: *Game) void {
     g.fogNow = mathx.clampF(if (here) |l| l.fog orelse 0 else 0, 0, 1);
     g.sporeNow = mathx.clampF(if (here) |l| l.spore orelse 0 else 0, 0, 1);
     g.emberNow = mathx.clampF(g.emberForce orelse (if (here) |l| l.ember orelse 0 else 0), 0, 1);
+    g.soupNow = mathx.clampF(if (here) |l| l.soup orelse 0 else 0, 0, 1);
     if (g.sporeNow > weathermod.MIST_MIN or g.emberNow > weathermod.MIST_MIN) {
         g.mist.tick(SHOT_SETTLE, g.hero.pos, g.env.floorUnder(g.hero.pos), fogAmt(g));
     }
@@ -4754,6 +4761,7 @@ fn settleSkyAt(g: *Game, dt: f32, at: rl.Vector3) void {
         g.fogNow = 0;
         g.sporeNow = 0;
         g.emberNow = 0;
+        g.soupNow = 0;
         return;
     }
     const here = g.map.weatherAt(at.x, at.z);
@@ -4761,11 +4769,13 @@ fn settleSkyAt(g: *Game, dt: f32, at: rl.Vector3) void {
     const wantFog = if (here) |l| l.fog orelse 0 else 0;
     const wantSpore = if (here) |l| l.spore orelse 0 else 0;
     const wantEmber = g.emberForce orelse (if (here) |l| l.ember orelse 0 else 0);
+    const wantSoup = if (here) |l| l.soup orelse 0 else 0;
     if (g.editor.on) {
         g.wetNow = mathx.clampF(wantWet, 0, 1);
         g.fogNow = mathx.clampF(wantFog, 0, 1);
         g.sporeNow = mathx.clampF(wantSpore, 0, 1);
         g.emberNow = mathx.clampF(wantEmber, 0, 1);
+        g.soupNow = mathx.clampF(wantSoup, 0, 1);
         return;
     }
     const secs = if (here) |l| l.blend else SKY_SETTLE;
@@ -4774,6 +4784,7 @@ fn settleSkyAt(g: *Game, dt: f32, at: rl.Vector3) void {
     g.fogNow = mathx.approach(g.fogNow, mathx.clampF(wantFog, 0, 1), rate * dt);
     g.sporeNow = mathx.approach(g.sporeNow, mathx.clampF(wantSpore, 0, 1), rate * dt);
     g.emberNow = mathx.approach(g.emberNow, mathx.clampF(wantEmber, 0, 1), rate * dt);
+    g.soupNow = mathx.approach(g.soupNow, mathx.clampF(wantSoup, 0, 1), rate * dt);
 }
 
 const SKY_SETTLE: f32 = 6.0;

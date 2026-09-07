@@ -68,7 +68,7 @@ fn fogMulOf(f: Fog) f32 {
         .auto => 1.0,
         .off => 0.0,
         .thick => 2.5,
-        .soup => 6.0,
+        .soup => gfx.HAZE_SOUP_D,
     };
 }
 

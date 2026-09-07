@@ -387,10 +387,7 @@ pub const Ent = struct {
         self.t += dt;
         self.swipeCd = mathx.maxF(0, self.swipeCd - dt);
         self.shakeCd = mathx.maxF(0, self.shakeCd - dt);
-        foe.fadeFlash(&self.flash, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), quarry, AGGRO_R);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
+        foe.tickBody(self, dt, quarry, bounds, AGGRO_R, SHOVE_DECAY);
 
         var movedDist: f32 = 0;
         var moveSpeed: f32 = 0;

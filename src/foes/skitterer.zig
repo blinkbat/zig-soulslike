@@ -412,11 +412,8 @@ pub const Skitterer = struct {
 
         self.t += dt;
         self.vit.tick(dt);
-        foe.fadeFlash(&self.flash, dt);
         self.sliceCool = mathx.maxF(0, self.sliceCool - dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
+        foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
 
         if (self.state == .dead) {
             foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE);

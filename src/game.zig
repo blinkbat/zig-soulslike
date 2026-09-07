@@ -1119,6 +1119,22 @@ comptime {
         if (!excused) @compileError("game: `" ++ gr.field ++ "` has no `setParry`, so nothing it swings can " ++
             "ever be caught. Give it `parryable`/`takeParry` off `foe.inParryWindow`, or say why not in NO_PARRY");
     }
+    // BOTH HALVES OF THE PAIR OR NEITHER — `setParry` stamps the shield and `anyParried` is the only way a catch
+    // is ever reported, and each is reached by a bare `@hasDecl`, so one without the other fails SILENTLY: a group
+    // that stamps and never answers eats every catch on its own bodies.
+    for (FOE_GROUPS) |gr| {
+        const G = @FieldType(Game, gr.field);
+        if (@hasDecl(G, "setParry") != @hasDecl(G, "anyParried")) @compileError("game: `" ++ gr.field ++
+            "` has one of `setParry`/`anyParried` and not the other — `parryBeat` never fires for it");
+    }
+    // THE SAME PAIR ONE LEVEL DOWN, on the BODY: `partsOf` and `lockPointOf` each reach their half by a bare
+    // `@hasDecl` and fall back silently. `lockParts` alone rides every extra slot on `lockPoint`, so the flick
+    // walks points that never move; `lockPointAt` alone is offered one part, so every extra point is unreachable.
+    for (FOE_GROUPS) |gr| {
+        const B = memberOf(gr.field);
+        if (@hasDecl(B, "lockParts") != @hasDecl(B, "lockPointAt")) @compileError("game: `" ++ gr.field ++
+            "` has one of `lockParts`/`lockPointAt` and not the other — the extra lock points are dead either way");
+    }
 }
 
 pub fn inCombat(g: *const Game) bool {

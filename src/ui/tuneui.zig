@@ -105,7 +105,9 @@ fn dial(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize, c: usize) bool
     return moved;
 }
 
-const PICK_CAP: usize = 128;
+/// `pickBuf` is handed straight to `ui.dropdown`, which asserts against its own cap, so this IS that cap — held
+/// apart at its own 128 the comptime gate below passed a column the list could never show.
+const PICK_CAP: usize = ui.DD_ROWS_CAP;
 var pickBuf: [PICK_CAP][:0]const u8 = undefined;
 
 comptime {

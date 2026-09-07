@@ -46,7 +46,7 @@ pub fn main() void {
             std.process.exit(1);
         }
         // No half: the load has already put an old map on today's lattice, and this just writes it back down.
-        const half: f32 = if (argv.len >= 4 and argv[3][0] != '-')
+        const half: f32 = if (argv.len >= 4 and argv[3].len > 0 and argv[3][0] != '-')
             std.fmt.parseFloat(f32, argv[3]) catch {
                 std.debug.print("grow: {s} is not a number\n", .{argv[3]});
                 std.process.exit(1);

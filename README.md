@@ -38,7 +38,7 @@ each), bow, wand, torch. A faint, steady body light reaches 3 m; the carried tor
 block, L2 parry with a 0.16 s window, four PoE2 resistances plus an armour curve, ten status meters built the
 way poison is — poison, burning, chill, stun, bleed, sleep, confusion, charm, berserk, stupefy.
 
-**Foes.** 42 kinds in 33 groups: toad, skeletal archer, ogre, kobold warband (3 roles), brood mother + sacs +
+**Foes.** 42 kinds in 34 groups: toad, skeletal archer, ogre, kobold warband (3 roles), brood mother + sacs +
 broodlings, skeletal warriors (2), Bone Knight (boss, with boss bar and fog gate), shade + mourner, leechfly,
 rooted, sporeling, delver, necromancer, fungal deer, mushroom mage, fen lurker (a 5 m tongue that hauls you into the pool), spore homunculus, bone
 skitterer, ancient priest, tolling hollow, slumber bloom, cinder wake, rotgorger, birchwight, salt husk,

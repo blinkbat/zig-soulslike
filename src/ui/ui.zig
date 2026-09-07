@@ -492,7 +492,8 @@ var pending: ?Pending = null;
 /// The list rect `endDropdowns` actually drew, and what `Ctx.begin` tests the pointer against.
 var ddBox: ?rl.Rectangle = null;
 
-const DD_ROWS_CAP: usize = 128;
+/// A list longer than this loses its TAIL with nothing on screen saying so — the rows past it can never be picked.
+pub const DD_ROWS_CAP: usize = 128;
 var ddRows: [DD_ROWS_CAP][:0]const u8 = undefined;
 
 const Pending = struct {
@@ -539,6 +540,7 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
     }
     if (!isOpen) return null;
 
+    std.debug.assert(labels.len <= DD_ROWS_CAP);
     const nRows = @min(labels.len, DD_ROWS_CAP);
     const box = ddPanel(r, nRows);
     ctx.anyHot = true;

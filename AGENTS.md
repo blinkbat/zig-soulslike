@@ -132,6 +132,7 @@ contents change together is fine.
 | `foes/skitterer.zig` · `ancientpriest.zig` | walks ON ITS RIBS, shy of flame · never melees, claws a skitterer out of bare earth |
 | `foes/hollow.zig` · `owlbear.zig` · `mimic.zig` | second lock point (a 20 HP rider) · FIRST CONSTRUCT, stone until DARK · a CHEST until pressed or hit |
 | `foes/sporegolem.zig` · `cinderwake.zig` · `birchwight.zig` · `salthusk.zig` | `ARMOUR` is the creature · hazard laid by its own feet · caught, it escalates · its KILL is the dangerous part |
+| `foes/ent.zig` | THE CORRUPT ENT — 4.6 m on the SHARED scaffold; a bough sweep with NO inner hole, a return off the far hand, and an acorn volley whose FIRST nut is aimed exactly at him. FIRE is the answer (`-60`) |
 | `play/combat.zig` | `Vitals`, `Stamina`, `Focus`, `Regen`, guard rules, `Elem`/`Resists`, `Status`, `Quick`, `Memory`. **Retune feel here** |
 | `play/stats.zig` · `passivetree.zig` | seven attributes, bar curves, the ONE skill curve · PoE2's tree radially, `Bonus`, the wheel |
 | `play/item.zig` | item vocabulary, `Use`, **`Equip`/`Wear` (the GEAR table)**, `Bag` |

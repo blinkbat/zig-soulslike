@@ -1604,7 +1604,7 @@ pub const Env = struct {
     pub fn rockBetween(self: *const Env, from: rl.Vector3, to: rl.Vector3) bool {
         if (!self.caveAny) return false;
         const d = mathx.subV(to, from);
-        const len = @sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+        const len = mathx.lenV(d);
         if (len < 1e-3) return false;
         const steps: usize = @intFromFloat(@min(@ceil(len / ROCK_PROBE), 64));
         var i: usize = 1;

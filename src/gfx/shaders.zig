@@ -1,4 +1,6 @@
 const std = @import("std");
+const caves = @import("../world/caves.zig");
+const wf = @import("../world/worldfmt.zig");
 
 pub const EdgeK = struct { warp: f32, freq: f32, feather: f32 };
 
@@ -121,6 +123,19 @@ const EDGE_SHAPE_GLSL = blk: {
 };
 
 /// The three shapes the GLSL singles out, by name and not by number: `edgeWarp`, `waterAt` and `paintedSoil` each branch on one ordinal.
+/// `caves.shelterAt` RUNS THIS SAME ARITHMETIC and the two may not drift, so the four numbers come from there
+/// rather than being typed twice — the way `WATER_SHORE` above had to after 128 in Zig met two bare `0.5`s here.
+const CAVE_GLSL = std.fmt.comptimePrint(
+    "const float CAVE_LID = {d:.5};\nconst float CAVE_CONTOUR = {d:.5};\n" ++
+        "const float CAVE_H_BIAS = {d:.1};\nconst float CAVE_H_STEP = {d:.5};\n",
+    .{
+        caves.SHELTER_LID,
+        caves.SHELTER_CONTOUR,
+        @as(f32, @floatFromInt(wf.HEIGHT_ZERO)),
+        wf.HEIGHT_STEP,
+    },
+);
+
 const EDGE_ID_GLSL = std.fmt.comptimePrint(
     "const int E_TILED = {d};\nconst int E_SCALLOP = {d};\nconst int E_SPECKLE = {d};\n",
     .{ TILED, SCALLOP, SPECKLE },
@@ -361,7 +376,7 @@ pub const sceneFS =
     \\// **THE THREE KNOBS AN EDGE HAS** - GENERATED from `EDGE_K` at the top of this file, so the table
     \\// the CPU reads (`env.paintedDepth`) and the function the GPU runs cannot drift apart.
     \\
-++ EDGE_SHAPE_GLSL ++ EDGE_ID_GLSL ++ LIQUID_GLSL ++ BAY_GLSL ++ WATER_GLSL ++
+++ EDGE_SHAPE_GLSL ++ EDGE_ID_GLSL ++ LIQUID_GLSL ++ BAY_GLSL ++ WATER_GLSL ++ CAVE_GLSL ++
     \\// WHERE THE LOOKUP ACTUALLY READS FROM. The READ POSITION is warped per shape, never the material after it: one
     \\// fixed noise over every material wandered the BOUNDARY +/-1.7 m whatever its policy said, and `soilCovAt`'s
     \\// `snap` only ever snapped the COVERAGE.
@@ -417,10 +432,10 @@ pub const sceneFS =
     \\  float cov = texture(caveCovMap, uv).r;
     \\  if (cov < 0.02) return 0.0;
     \\  float rb = texture(caveRoofMap, uv).r;
-    \\  float roof = caveBase + (rb*255.0 - 64.0)*0.25;    // `wf.heightOf`
-    \\  // FULL AT THE WALL AND AT THE CEILING, not fading out at them: the contour runs through cov 0.5 and the
-    \\  // wall's own surface stands on it, so a falloff keyed to either one rings every chamber in daylight.
-    \\  return clamp((roof - wp.y)/0.75 + 1.0, 0.0, 1.0)*clamp(cov*2.0, 0.0, 1.0);
+    \\  float roof = caveBase + (rb*255.0 - CAVE_H_BIAS)*CAVE_H_STEP;    // `wf.heightOf`
+    \\  // FULL AT THE WALL AND AT THE CEILING, not fading out at them: the contour runs through `wf.CAVE_EDGE` and
+    \\  // the wall's own surface stands on it, so a falloff keyed to either one rings every chamber in daylight.
+    \\  return clamp((roof - wp.y)/CAVE_LID + 1.0, 0.0, 1.0)*clamp(cov*CAVE_CONTOUR, 0.0, 1.0);
     \\}
     \\int waterCellAt(vec2 w){
     \\  vec2 uv = w/(2.0*waterHalf) + 0.5;

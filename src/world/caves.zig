@@ -141,6 +141,8 @@ pub fn spaceAt(f: Fields, land: f32, px: f32, py: f32, pz: f32) Space {
 pub const SHELTER_FADE: f32 = 2.0;
 /// How far ABOVE a ceiling the shelter has faded out. Below the roof it is already full: keyed to the ceiling itself it fades out on the very surface it shades.
 pub const SHELTER_LID: f32 = 0.75;
+/// What the coverage is multiplied by before the clamp, so the shelter is FULL at the contour rather than at 1.
+pub const SHELTER_CONTOUR: f32 = 2.0;
 
 /// 1 under solid roof, 0 out under the sky. **THE FRAGMENT SHADER RUNS THIS SAME ARITHMETIC** (`shelterAt`
 /// in `shaders.zig`, off a field `env.cutShelter` has already multiplied by the rock over the ceiling), and
@@ -152,7 +154,7 @@ pub fn shelterAt(f: Fields, land: f32, px: f32, py: f32, pz: f32) f32 {
     if (thick <= 0) return 0;
     const cov = s.open * mathx.clampF(thick / SHELTER_FADE, 0, 1);
     const lid = mathx.clampF((s.roof - py) / SHELTER_LID + 1.0, 0, 1);
-    return lid * mathx.clampF(cov * 2.0, 0, 1);
+    return lid * mathx.clampF(cov * SHELTER_CONTOUR, 0, 1);
 }
 
 pub const Brush = struct {

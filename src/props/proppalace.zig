@@ -1346,7 +1346,6 @@ pub fn palaceTerraceMesh(shader: rl.Shader) rl.Model {
 
 
 
-pub const IDOL_PLINTH: f32 = 2.10;
 pub const IDOL_HALF: f32 = 2.35;
 pub const IDOL_TOP: f32 = 14.0;
 

@@ -856,7 +856,16 @@ fn nameField(ed: *Editor, ctx: *ui.Ctx, x: i32, y: i32, w: i32, buf: []u8, len: 
     return typed;
 }
 
-const MAX_SLOT_ROWS: usize = 32;
+/// Every table `slotRow`/`npcRow`/`dialogRow` lists through `slotLabels`, so it is the LARGEST of them. Held at 32
+/// it hid 16 of the 48 flags and 16 of the 48 counters a map may declare, and a trigger already on flag 40 read as
+/// "new flag..." — picking anything then coined a fresh one over its slot.
+const MAX_SLOT_ROWS: usize = @max(
+    @max(wf.MAX_FLAGS, wf.MAX_COUNTERS),
+    @max(wf.MAX_TIMERS, @max(wf.MAX_NPCS, wf.MAX_DIALOGS)),
+);
+comptime {
+    std.debug.assert(MAX_SLOT_ROWS + 1 <= ui.DD_ROWS_CAP);
+}
 const GOLD_LIM: i32 = 5000;
 const GOLD_STEP: i32 = 25;
 /// Metres of run a stacking kind may be given; `env.MAX_SECTIONS` is the hard stop behind it.

@@ -8,6 +8,15 @@ pub const CELLS = wf.CAVE_CELLS;
 
 pub const EDGE = wf.CAVE_EDGE;
 
+/// THE ENTRANCE TOOL'S OWN NUMBERS, and they live here because two things cut one: the editor's Entrance brush and
+/// `--fix-caves`. An entrance floor falls this much per metre run — well inside `wf.MAX_SLOPE`, so the grade it
+/// lays is walkable without the author solving one.
+pub const ENTRANCE_GRADE: f32 = 0.5;
+/// How far under the ground an entrance starts, so the first step in is a step and not a drop.
+pub const ENTRANCE_SINK: f32 = 0.25;
+/// The least headroom a chamber may be given, in metres.
+pub const HEAD_MIN: f32 = 2.0;
+
 /// The floor a body stands on, and WHICH world it stands in. Height alone cannot tell the hillside from the chamber under it.
 pub const Surface = enum(u8) { land, cave };
 

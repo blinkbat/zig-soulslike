@@ -27,6 +27,7 @@ const ogremod = @import("../foes/ogre.zig");
 const druidmod = @import("../foes/druidess.zig");
 const mimicmod = @import("../foes/mimic.zig");
 const mastodonmod = @import("../foes/mastodon.zig");
+const entmod = @import("../foes/ent.zig");
 const owlbearmod = @import("../foes/owlbear.zig");
 const rootedmod = @import("../foes/rooted.zig");
 const rotgorgermod = @import("../foes/rotgorger.zig");
@@ -927,6 +928,9 @@ const BLOWS = [_]Blow{
     .{ .of = .mastodon, .move = "charge", .p = &mastodonmod.CHARGE_HIT },
     .{ .of = .mastodon, .move = "lunge", .p = &mastodonmod.LUNGE_HIT },
     .{ .of = .mastodon, .move = "tail", .p = &mastodonmod.TAIL_HIT },
+    .{ .of = .corrupt_ent, .move = "sweep", .p = &entmod.SWIPE_HIT },
+    .{ .of = .corrupt_ent, .move = "return", .p = &entmod.RET_HIT },
+    .{ .of = .corrupt_ent, .move = "acorn", .p = &entmod.ACORN_HIT },
     .{ .of = null, .move = "wolf bite", .p = &wolfmod.BITE_HIT },
 };
 
@@ -1037,6 +1041,7 @@ fn foeAggro(k: wf.FoeKind) ?*f32 {
         .druidess => &druidmod.AGGRO_R,
         .bone_mimic => &mimicmod.AGGRO_R,
         .mastodon => &mastodonmod.AGGRO_R,
+        .corrupt_ent => &entmod.AGGRO_R,
     };
 }
 
@@ -1067,6 +1072,7 @@ fn foeSouls(k: wf.FoeKind) ?*u32 {
         .druidess => &druidmod.SOULS,
         .bone_mimic => &mimicmod.SOULS,
         .mastodon => &mastodonmod.SOULS,
+        .corrupt_ent => &entmod.SOULS,
         .fungal_deer => &fungaldeermod.SOULS,
         .bone_skitterer => &skitterermod.SOULS,
         .fungal_swordsman => &fungalduomod.SW_SOULS,

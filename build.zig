@@ -42,6 +42,8 @@ pub fn build(b: *std.Build) void {
         }),
         .filters = if (test_filter) |f| &.{f} else &.{},
     });
+    // The exe's, for the same reason: a `Map` is 5.4 MB and a test that round-trips one holds two of them in a frame.
+    unit_tests.stack_size = 192 * 1024 * 1024;
     unit_tests.linkLibrary(raylib_artifact);
     unit_tests.root_module.addImport("raylib", raylib);
     addAssets(b, unit_tests.root_module);

@@ -5888,7 +5888,6 @@ test "WHAT IT TAKES TO FLINCH HIM — unblocked blows straight to the pool, coun
         if (row.poise <= 13) cheapest = @max(cheapest, n);
         if (row.poise >= 22) dearest = @min(dearest, n);
     }
-    // The split he asked for: real strokes land a flinch early, chip attacks may not spam one.
     std.debug.print("    cheap blows need at most {d}; every stroke of 22+ flinches by {d}\n", .{ cheapest, dearest });
     try std.testing.expect(dearest <= 2);
     try std.testing.expect(cheapest >= 4);

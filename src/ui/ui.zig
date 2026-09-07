@@ -168,12 +168,17 @@ pub fn iconButtonW(label: [:0]const u8, size: i32) i32 {
 }
 
 pub fn iconButton(ctx: *Ctx, r: rl.Rectangle, ic: Icon, label: [:0]const u8, size: i32, active: bool, tip: [:0]const u8) bool {
+    return iconButtonIn(ctx, r, ic, label, size, active, VALUE, tip);
+}
+
+/// The same row in a colour of its own, for one whose MEANING is that colour. The active row still goes gold: what is under his hand outranks what the row is.
+pub fn iconButtonIn(ctx: *Ctx, r: rl.Rectangle, ic: Icon, label: [:0]const u8, size: i32, active: bool, tint: rl.Color, tip: [:0]const u8) bool {
     tipFor(ctx, r, tip);
     const h = ctx.hot(r);
     const face = if (active) ACTIVE_FILL else if (h) HOVER_FILL else IDLE_FILL;
     rl.drawRectangleRec(r, face);
     rl.drawRectangleLinesEx(r, 1, alpha(TRIM, if (active) 220 else if (h) 170 else 80));
-    const fg = if (active) HOT else VALUE;
+    const fg = if (active) HOT else tint;
     const isz: f32 = @floatFromInt(size);
     icons.draw(ic, r.x + @as(f32, @floatFromInt(ICON_PAD)) + isz * 0.5, r.y + r.height * 0.5, isz, fg);
     const tx: i32 = @as(i32, @intFromFloat(r.x)) + ICON_PAD + size + ICON_GAP;

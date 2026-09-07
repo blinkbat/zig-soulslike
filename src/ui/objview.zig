@@ -45,6 +45,7 @@ const duomod = @import("../foes/fungalduo.zig");
 const druidmod = @import("../foes/druidess.zig");
 const mimicmod = @import("../foes/mimic.zig");
 const mastodonmod = @import("../foes/mastodon.zig");
+const entmod = @import("../foes/ent.zig");
 const combat = @import("../play/combat.zig");
 const heromod = @import("../play/hero.zig");
 const foemod = @import("../foes/foe.zig");
@@ -372,6 +373,7 @@ pub const CharSet = struct {
     coven: druidmod.Coven,
     hoard: mimicmod.Hoard,
     drove: mastodonmod.Drove,
+    copse: entmod.Copse,
 };
 /// One group per creature, so it GROWS WITH THE ROSTER and is measured by the test at the foot of this file: as a figure it read 112.4 MB and was 150.6 by the time anyone looked.
 var charSet: ?*CharSet = null;
@@ -415,6 +417,7 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
     cs.coven = druidmod.Coven.init(scene.shader);
     cs.hoard = mimicmod.Hoard.init(scene.shader);
     cs.drove = mastodonmod.Drove.init(scene.shader);
+    cs.copse = entmod.Copse.init(scene.shader);
     inline for (@typeInfo(CharSet).@"struct".fields) |f| @field(cs, f.name).n = 0;
     return cs;
 }
@@ -442,6 +445,7 @@ fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
         .druidess => .{ .top = 2.7, .bound = 2.2 },
         .bone_mimic => .{ .top = 3.0, .bound = 1.8 },
         .mastodon => .{ .top = 3.2, .bound = 3.4 },
+        .corrupt_ent => .{ .top = 6.1, .bound = 3.2 },
         .leechfly => .{ .top = 2.9, .bound = 1.8 },
         .rooted => .{ .top = 7.2, .bound = 3.6 },
         .shroom => .{ .top = 1.2, .bound = 1.0 },
@@ -481,7 +485,7 @@ pub const CHAR_DRIVE = [_]struct { field: []const u8, drive: Drive, kinds: []con
     .{ .field = "herd", .drive = .group, .kinds = &.{.fungal_deer} },
     .{ .field = "ring", .drive = .group, .kinds = &.{.mushroom_mage} },
     .{ .field = "host", .drive = .group, .kinds = &.{.spore_golem} },
-    .{ .field = "marsh", .drive = .group, .kinds = &.{.fen_lurker} },
+    .{ .field = "marsh", .drive = .yank, .kinds = &.{.fen_lurker} },
     .{ .field = "clatter", .drive = .group, .kinds = &.{.bone_skitterer} },
     .{ .field = "crypt", .drive = .group, .kinds = &.{.ancient_priest} },
     .{ .field = "belfry", .drive = .group, .kinds = &.{.tolling_hollow} },
@@ -498,6 +502,7 @@ pub const CHAR_DRIVE = [_]struct { field: []const u8, drive: Drive, kinds: []con
     .{ .field = "coven", .drive = .group, .kinds = &.{.druidess} },
     .{ .field = "hoard", .drive = .group, .kinds = &.{.bone_mimic} },
     .{ .field = "drove", .drive = .group, .kinds = &.{.mastodon} },
+    .{ .field = "copse", .drive = .group, .kinds = &.{.corrupt_ent} },
 };
 
 comptime {
@@ -742,6 +747,10 @@ fn seedChar(cs: *CharSet, k: wf.FoeKind) void {
         .mastodon => {
             cs.drove.n = 1;
             cs.drove.live()[0] = mastodonmod.Mastodon.spawn(mathx.zero3, 0, 1.0, seed);
+        },
+        .corrupt_ent => {
+            cs.copse.n = 1;
+            cs.copse.live()[0] = entmod.Ent.spawn(mathx.zero3, 0, 1.0, seed);
         },
     }
 }

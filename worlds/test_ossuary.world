@@ -2,6 +2,7 @@ version: 1
 name: Ossuary Test
 half: 70.0
 runway: -6.00 -26.00 6.00 -14.00
+start: 0.00 4.00 180.0
 
 zone: plain -400.0 -400.0 400.0 400.0 0.520 grasstall,grasstall,patch,tuft,clover,moss,nettles,wildflowers
 clear: 0.0 0.0 30.0

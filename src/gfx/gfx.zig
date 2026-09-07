@@ -19,12 +19,12 @@ const SLOT_WATEREDGE: i32 = 17;
 const SLOT_CAVECOV: i32 = 18;
 const SLOT_CAVEROOF: i32 = 19;
 
-pub const SOIL_N: i32 = 112;
+pub const SOIL_N: i32 = 200;
 
-/// THE WATER FIELD's resolution — finer than the soil's, because a coastline is a SHAPE you read. 224 over a 560 m map is 2.5 m a cell, and the field is BILINEAR (unlike the soil's ids, which must not interpolate), so the shoreline the shader draws is smooth well under a cell.
-pub const WATER_N: i32 = 224;
+/// THE WATER FIELD's resolution — finer than the soil's, because a coastline is a SHAPE you read. 400 over a 1000 m map is 2.5 m a cell, and the field is BILINEAR (unlike the soil's ids, which must not interpolate), so the shoreline the shader draws is smooth well under a cell.
+pub const WATER_N: i32 = 400;
 
-pub const HEIGHT_N: i32 = 224;
+pub const HEIGHT_N: i32 = 400;
 /// Half the terrain's cell, sharing its lattice points.
 pub const CAVE_N: i32 = 2 * HEIGHT_N - 1;
 
@@ -1110,6 +1110,10 @@ pub const Builder = struct {
         }
     }
 
+    fn emptyNull(comptime T: type, s: []T) [*c]T {
+        return if (s.len == 0) null else s.ptr;
+    }
+
     pub fn toMesh(self: *Builder) rl.Mesh {
         const pos = self.pos.toOwnedSlice() catch @panic("oom");
         const nrm = self.nrm.toOwnedSlice() catch @panic("oom");
@@ -1119,11 +1123,13 @@ pub const Builder = struct {
         var mesh = std.mem.zeroes(rl.Mesh);
         mesh.vertexCount = @intCast(pos.len / 3);
         mesh.triangleCount = @intCast(pos.len / 9);
-        mesh.vertices = pos.ptr;
-        mesh.normals = nrm.ptr;
-        mesh.texcoords = uv.ptr;
-        mesh.texcoords2 = uv2.ptr;
-        mesh.colors = col.ptr;
+        // AN EMPTY LIST OWNS NOTHING, and `toOwnedSlice` hands back Zig's poisoned empty pointer. raylib's
+        // `UnloadMesh` skips only NULL, so anything else here is a `free()` of 0xaaaaaaaaaaaaaaaa at the drop.
+        mesh.vertices = emptyNull(f32, pos);
+        mesh.normals = emptyNull(f32, nrm);
+        mesh.texcoords = emptyNull(f32, uv);
+        mesh.texcoords2 = emptyNull(f32, uv2);
+        mesh.colors = emptyNull(u8, col);
         rl.uploadMesh(&mesh, false);
         return mesh;
     }

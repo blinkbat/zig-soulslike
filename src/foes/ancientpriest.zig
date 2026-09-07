@@ -466,16 +466,7 @@ pub const Ancient = struct {
                 } else {
                     const w = self.routine.step(dt, .{ .at = self.pos, .facing = self.facing, .quarry = hero, .quarryR = foe.HERO_R, .nav = self.nav });
                     self.faceToward(w.look orelse hero, dt);
-                    if (w.go) |g| {
-                        const way = mathx.dirXZ(self.pos, g);
-                        if (mathx.lenXZ(way) > 1e-3) {
-                            moveSpeed = WALK_SPEED;
-                            const moved = moveSpeed * dt;
-                            mathx.stepXZ(&self.pos, way, moved, bounds);
-                            movedDist = moved;
-                            moveYaw = mathx.headingXZ(way);
-                        }
-                    }
+                    if (behave.heading(w, self.pos)) |way| behave.walk(&self.pos, way, dt, bounds, WALK_SPEED, &movedDist, &moveSpeed, &moveYaw);
                     if (!self.routine.running) self.decide(d);
                 }
             },

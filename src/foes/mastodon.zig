@@ -509,7 +509,6 @@ pub const Mastodon = struct {
                 }
             },
             .charge_rec => {
-                // The skid: he keeps coming for a stride and stops.
                 self.speed = approach(self.speed, 0, ACCEL * 2.2 * dt);
                 moved = self.travel(dt, bounds);
                 if (self.t >= CHARGE_RECOVER) {

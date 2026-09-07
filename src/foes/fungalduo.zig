@@ -5,6 +5,7 @@ const mathx = @import("../core/mathx.zig");
 const combat = @import("../play/combat.zig");
 const heromod = @import("../play/hero.zig");
 const foe = @import("foe.zig");
+const behave = @import("behave.zig");
 const anim = @import("../core/anim.zig");
 const wf = @import("../world/worldfmt.zig");
 const elemfx = @import("../gfx/elemfx.zig");
@@ -356,6 +357,17 @@ const MG_SHOVE = foe.Push{ .light = 1.20, .heavy = 2.70 };
 const MG_FLEE_R: f32 = 7.0;
 const MG_KEEP_R: f32 = 16.0;
 const MG_DRIFT_DUR: f32 = 0.85;
+
+/// HIS CASTING RANGE, HELD AND CIRCLED: past `MG_KEEP_R` he comes in, inside `MG_FLEE_R` he gives ground, between the two he only circles.
+const MG_KEEP = [_]behave.Step{
+    .{ .band = .{ .min = MG_FLEE_R, .max = MG_KEEP_R, .secs = MG_DRIFT_DUR } },
+};
+
+/// Pressed inside the flee ring: break the range first, then hold it as always.
+const MG_BACK = [_]behave.Step{
+    .{ .open = .{ .to = MG_FLEE_R } },
+    .{ .run = .{ .script = &MG_KEEP } },
+};
 
 pub const ORB_SPEED: f32 = 9.5;
 pub const ORB_R: f32 = 0.32;
@@ -1123,6 +1135,7 @@ pub const Magus = struct {
     chill: combat.Chill = .{},
     threat: foe.Threat = .{},
     nav: foe.Nav = .{},
+    routine: behave.Routine = .{},
     /// TRUE FOR THE FRAME THE BODY WAS SET RATHER THAN STEPPED. `game.gateChill` bills a frame's travel, and a blink is not travel: chilled, the arrival was dragged back to 0.55 of the way to a flank it had already solved.
     warp: bool = false,
 
@@ -1270,9 +1283,9 @@ pub const Magus = struct {
     }
 
     pub fn navWant(self: *const Magus, hero: rl.Vector3) ?rl.Vector3 {
-        _ = hero;
         if (self.state != .drift) return null;
         if (self.homing) return foe.tetherFor(self);
+        if (self.routine.current() != null) return self.routine.walkTo(self.pos, hero);
         return mathx.addV(self.pos, self.moveDir);
     }
 
@@ -1355,21 +1368,27 @@ pub const Magus = struct {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
                 self.chanSet(MG_CARRY.chan());
                 _ = foe.postDrive(self, dt, bounds, MG_SPEED, d, AGGRO_R, MG_TURN_RATE, &movedDist, &moveSpeed, &moveYaw);
-                if (self.t >= 0.16) self.decide(d, hero);
+                if (self.t >= 0.16) self.decide(d);
             },
             .drift => {
                 self.faceToward(hero, dt);
-                const way = self.nav.along(self.moveDir);
-                moveSpeed = MG_SPEED;
-                const moved = moveSpeed * dt;
-                mathx.stepXZ(&self.pos, way, moved, bounds);
-                movedDist = moved;
-                moveYaw = mathx.headingXZ(way);
                 self.chanSet(MG_CARRY.chan());
-                if (self.homing and mathx.distXZ(self.pos, foe.tetherFor(self)) <= foe.LEASH_HOME_R) {
-                    self.homing = false;
-                    self.enter(.idle);
-                } else if (self.t >= MG_DRIFT_DUR) self.decide(d, hero);
+                if (self.routine.running) {
+                    const w = self.routine.step(dt, .{ .at = self.pos, .facing = self.facing, .quarry = hero, .nav = self.nav });
+                    if (behave.heading(w, self.pos)) |way| behave.walk(&self.pos, way, dt, bounds, MG_SPEED, &movedDist, &moveSpeed, &moveYaw);
+                    if (!self.routine.running) self.decide(d);
+                } else {
+                    const way = self.nav.along(self.moveDir);
+                    moveSpeed = MG_SPEED;
+                    const moved = moveSpeed * dt;
+                    mathx.stepXZ(&self.pos, way, moved, bounds);
+                    movedDist = moved;
+                    moveYaw = mathx.headingXZ(way);
+                    if (self.homing and mathx.distXZ(self.pos, foe.tetherFor(self)) <= foe.LEASH_HOME_R) {
+                        self.homing = false;
+                        self.enter(.idle);
+                    } else if (self.t >= MG_DRIFT_DUR) self.decide(d);
+                }
             },
             .orb_wind => {
                 self.faceToward(hero, dt);
@@ -1492,16 +1511,14 @@ pub const Magus = struct {
         self.pose();
     }
 
-    fn decide(self: *Magus, dist: f32, toward: rl.Vector3) void {
+    fn decide(self: *Magus, dist: f32) void {
+        self.routine.stop();
         if (self.leash.goingHome()) {
             self.homing = true;
             self.moveDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
             return self.enter(.drift);
         }
         self.homing = false;
-        const f = mathx.dirXZ(self.pos, toward);
-        const side: f32 = if (self.seed < 0.5) 1.0 else -1.0;
-        const lat = mathx.scaleV(mathx.perpXZ(f), side);
         switch (mgClassify(dist, self.orbCd <= 0, self.sproutCd <= 0, self.fadeCd <= 0, self.puffCd <= 0, self.press >= MG_PRESS_HOLD)) {
             .orb => self.enter(.orb_wind),
             .sprout => self.enter(.sprout_wind),
@@ -1515,14 +1532,11 @@ pub const Magus = struct {
                 sfx.world(.duo_fade, self.pos);
             },
             .back => {
-                self.moveDir = mathx.normV(mathx.addV(mathx.scaleV(f, -1.0), mathx.scaleV(lat, 0.5)));
+                self.routine.start(&MG_BACK, self.seed - 0.5);
                 self.enter(.drift);
             },
             .keep => {
-                self.moveDir = if (dist > MG_KEEP_R)
-                    mathx.normV(mathx.addV(f, mathx.scaleV(lat, 0.35)))
-                else
-                    lat;
+                self.routine.start(&MG_KEEP, self.seed - 0.5);
                 self.enter(.drift);
             },
             .hold => {

@@ -189,7 +189,7 @@ pub const Lens = struct {
     }
 };
 
-/// One bit a cell: 4.38 m on the default 560 m map, 16,384 characters in the save.
+/// One bit a cell: 7.81 m on the default 1000 m map, 16,384 characters in the save.
 pub const SEEN_N: usize = 128;
 pub const SEEN_CELLS: usize = SEEN_N * SEEN_N;
 
@@ -614,7 +614,7 @@ test "the lens window never leaves the sheet, and a corner is still reachable" {
     try std.testing.expect(win.x >= 0);
     try std.testing.expect(win.x + win.width <= SHEET + 1e-3);
     try std.testing.expect(win.height < 0);
-    const corner = toFlat(280, 280, 280, 0, 0, SHEET);
+    const corner = toFlat(wf.DEFAULT_HALF, wf.DEFAULT_HALF, wf.DEFAULT_HALF, 0, 0, SHEET);
     try std.testing.expect(corner.x >= win.x - 1e-3 and corner.x <= win.x + win.width + 1e-3);
 }
 
@@ -642,7 +642,7 @@ test "A MAGNIFICATION OUT OF RANGE IS THE SAME PICTURE AND THE SAME RULER — th
 }
 
 test "a point maps to the same place through the lens as it does on the sheet" {
-    const half: f32 = 280;
+    const half: f32 = wf.DEFAULT_HALF;
     const side: i32 = 700;
     const flat = toFlat(-140, 70, half, 0, 0, @floatFromInt(side));
     const lens = lensPoint(-140, 70, half, 0, 0, side, .{});
@@ -697,7 +697,7 @@ test "EVERY PLACEABLE PROP ANSWERS THE CHART, and a wall is the thing you cannot
 }
 
 test "THE SHEET STARTS BLANK, AND WALKING IT REVEALS A DISC — not a square, and not the whole map" {
-    const half: f32 = 280;
+    const half: f32 = wf.DEFAULT_HALF;
     var seen = Seen{};
     try std.testing.expectEqual(@as(usize, 0), seen.count());
 
@@ -729,7 +729,7 @@ test "THE SHEET STARTS BLANK, AND WALKING IT REVEALS A DISC — not a square, an
 }
 
 test "A REVEAL IS ASKED ONCE A CELL — sixty frames on one spot is one sweep" {
-    const half: f32 = 280;
+    const half: f32 = wf.DEFAULT_HALF;
     var seen = Seen{};
     const per = 2.0 * half / @as(f32, @floatFromInt(SEEN_N));
     var timer = try std.time.Timer.start();
@@ -753,7 +753,7 @@ test "A MAP SMALLER THAN THE RADIUS IS ONE SWEEP, NOT MILLIONS OF CELLS OF NOTHI
 }
 
 test "THE EDGE OF THE MAP IS NOT A CLIFF THE MASK FALLS OFF" {
-    const half: f32 = 280;
+    const half: f32 = wf.DEFAULT_HALF;
     var seen = Seen{};
     seen.walked(v3(-half, 0, -half), half, {});
     try std.testing.expect(seen.count() > 0);
@@ -795,7 +795,7 @@ const OneWall = struct {
 };
 
 test "A WALL IS THE EDGE OF THE CHART — the near face is drawn, the ground behind it is not" {
-    const half: f32 = 280;
+    const half: f32 = wf.DEFAULT_HALF;
     const per = 2.0 * half / @as(f32, @floatFromInt(SEEN_N));
     var wall = OneWall{ .at = 12.0 };
     var seen = Seen{};

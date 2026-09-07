@@ -5,6 +5,7 @@ const mathx = @import("../core/mathx.zig");
 const combat = @import("../play/combat.zig");
 const heromod = @import("../play/hero.zig");
 const foe = @import("foe.zig");
+const behave = @import("behave.zig");
 const wf = @import("../world/worldfmt.zig");
 const sfx = @import("../core/audio.zig");
 const elemfx = @import("../gfx/elemfx.zig");
@@ -126,6 +127,11 @@ pub const DRY_MAX: f32 = 0.3;
 const KEEP_MIN: f32 = 7.0;
 const KEEP_MAX: f32 = 13.0;
 const DRIFT_DUR: f32 = 0.8;
+
+/// HER CASTING RANGE, HELD AND CIRCLED: inside `KEEP_MIN` she gives ground, past `KEEP_MAX` she comes in, between the two she only circles.
+const KEEP = [_]behave.Step{
+    .{ .band = .{ .min = KEEP_MIN, .max = KEEP_MAX, .secs = DRIFT_DUR } },
+};
 const LEAP_R: f32 = 4.6;
 /// Seconds from TAKE-OFF to the next leap she may throw — armed the frame she leaves the ground, so a leap cut short by a stagger is still a leap spent.
 pub const LEAP_CD: f32 = 14.0;
@@ -475,6 +481,7 @@ pub const Druidess = struct {
     chill: combat.Chill = .{},
     threat: foe.Threat = .{},
     nav: foe.Nav = .{},
+    routine: behave.Routine = .{},
     facing: f32 = 0,
     scale: f32 = SCALE,
     seed: f32 = 0,
@@ -647,8 +654,8 @@ pub const Druidess = struct {
     }
 
     pub fn navWant(self: *const Druidess, hero: rl.Vector3) ?rl.Vector3 {
-        _ = hero;
         if (self.state != .drift) return null;
+        if (self.routine.current() != null) return self.routine.walkTo(self.pos, hero);
         return mathx.addV(self.pos, mathx.scaleV(self.moveDir, 3.0));
     }
 
@@ -710,17 +717,26 @@ pub const Druidess = struct {
             },
             .drift => {
                 self.faceToward(hero, dt);
-                const way = self.nav.along(self.moveDir);
-                moveSpeed = WALK_SPEED;
-                const moved = moveSpeed * dt;
-                mathx.stepXZ(&self.pos, way, moved, bounds);
-                movedDist = moved;
-                moveYaw = mathx.headingXZ(way);
                 self.setCarry(dt);
-                if (self.homing and mathx.distXZ(self.pos, foe.tetherFor(self)) <= foe.LEASH_HOME_R) {
-                    self.homing = false;
-                    self.enter(.idle);
-                } else if (!self.dodgeNow(d, hero) and self.t >= DRIFT_DUR) self.decide(d, hero);
+                if (self.routine.running) {
+                    const w = self.routine.step(dt, .{ .at = self.pos, .facing = self.facing, .quarry = hero, .nav = self.nav });
+                    if (behave.heading(w, self.pos)) |want| {
+                        self.moveDir = self.steerInRoom(want);
+                        behave.walk(&self.pos, self.moveDir, dt, bounds, WALK_SPEED, &movedDist, &moveSpeed, &moveYaw);
+                    }
+                    if (!self.dodgeNow(d, hero) and !self.routine.running) self.decide(d, hero);
+                } else {
+                    const way = self.nav.along(self.moveDir);
+                    moveSpeed = WALK_SPEED;
+                    const moved = moveSpeed * dt;
+                    mathx.stepXZ(&self.pos, way, moved, bounds);
+                    movedDist = moved;
+                    moveYaw = mathx.headingXZ(way);
+                    if (self.homing and mathx.distXZ(self.pos, foe.tetherFor(self)) <= foe.LEASH_HOME_R) {
+                        self.homing = false;
+                        self.enter(.idle);
+                    } else if (!self.dodgeNow(d, hero) and self.t >= DRIFT_DUR) self.decide(d, hero);
+                }
             },
             .vine_wind, .whip_wind => {
                 self.faceToward(hero, dt);
@@ -1028,6 +1044,7 @@ pub const Druidess = struct {
     }
 
     fn decide(self: *Druidess, d: f32, hero: rl.Vector3) void {
+        self.routine.stop();
         if (self.leash.goingHome()) {
             self.homing = true;
             self.moveDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
@@ -1051,17 +1068,7 @@ pub const Druidess = struct {
                 self.enter(.whip_wind);
             },
             .keep => {
-                const f = self.fdir();
-                const side: f32 = if (self.seed < 0.5) 1.0 else -1.0;
-                const out = mathx.scaleV(f, -1.0);
-                const lat = mathx.scaleV(mathx.perpXZ(f), side);
-                const want = if (d < KEEP_MIN)
-                    mathx.normV(mathx.addV(out, mathx.scaleV(lat, 0.5)))
-                else if (d > KEEP_MAX)
-                    mathx.normV(mathx.addV(f, mathx.scaleV(lat, 0.4)))
-                else
-                    lat;
-                self.moveDir = self.steerInRoom(want);
+                self.routine.start(&KEEP, self.seed - 0.5);
                 self.enter(.drift);
             },
             .hold => {
@@ -1962,7 +1969,6 @@ fn orbMesh() rl.Mesh {
     }
     b.setMat(.flame);
     b.addBlob(ORB_AT, v3(ORB_R * 0.46, ORB_R * 0.46, ORB_R * 0.46), 4, 8, mathx.withAlpha(CHAOS_CORE, 200));
-    // The talons of the hand it sits in.
     b.setMat(.skin);
     i = 0;
     while (i < 4) : (i += 1) {

@@ -28,18 +28,20 @@ comptime {
     std.debug.assert(MAX_HALF >= wf.MAX_DECLARED_HALF);
 }
 const CLIFF_BOUND: f32 = 18.0;
-/// The shipped 280 m map moves 4 m by this (500 → 504).
-const GROUND_APRON: f32 = 0.80;
+/// A SKIRT SO THE HORIZON IS NOT AN EDGE, and no more: floor you can see and cannot walk is the map lying about its
+/// own size. At 0.80 the shipped map drew 400 m of it. The 1000 m map keeps 60 m.
+const GROUND_APRON: f32 = 0.12;
 const GROUND_APRON_MIN: f32 = 60.0;
 
 pub fn groundOut(half: f32) f32 {
     return half + mathx.maxF(GROUND_APRON_MIN, half * GROUND_APRON);
 }
 
-const GROUND_HALF: f32 = wf.MAX_DECLARED_HALF * (1.0 + GROUND_APRON);
+const GROUND_HALF: f32 = groundOut(wf.MAX_DECLARED_HALF);
 
 comptime {
-    std.debug.assert(groundOut(wf.MAX_DECLARED_HALF) <= GROUND_HALF);
+    // The flat path draws ONE quad built at this and scaled down, so the widest map a file may declare has to fit inside it with skirt left over.
+    std.debug.assert(GROUND_HALF > wf.MAX_DECLARED_HALF);
 }
 
 const MAX_PROPS = 24576;
@@ -69,9 +71,9 @@ comptime {
 const MAX_LIGHTS = 512;
 const MAX_DRESSED = 64;
 
-// 40 a side = 640 m, covering a 280 m map's edge-standing cliffs (280 + 18 of cliff bound).
+// 66 a side = 1056 m; with the cliff bound taken off its rim that is `MAX_HALF` 526 m of map, past `wf.MAX_DECLARED_HALF`.
 const CELL: f32 = 16.0;
-const GRID_N: usize = 40;
+const GRID_N: usize = 66;
 const GRID_SPAN: f32 = CELL * @as(f32, @floatFromInt(GRID_N));
 const GRID_HALF: f32 = GRID_SPAN * 0.5;
 const NCELL: usize = GRID_N * GRID_N;
@@ -217,7 +219,7 @@ pub const WorldDeck = struct {
     halfW: f32 = 0,
     treads: u32 = 0,
 
-    /// The tread under (x, z), or null off the flight. A disc answers `y` everywhere inside it.
+    /// A disc answers `y` everywhere inside it.
     fn floorAt(d: WorldDeck, x: f32, z: f32) ?f32 {
         if (d.run <= 0) return if (inDisc(d, x, z)) d.y else null;
         const dx = x - d.x;
@@ -400,6 +402,9 @@ pub const Cull = union(enum) {
 
 var envBuilt = false;
 
+var modelStamp: [props.NK]usize = [_]usize{0} ** props.NK;
+var modelWatch = false;
+
 var terrainBuilds: usize = 0;
 var waterBuilds: usize = 0;
 var soilBuilds: usize = 0;
@@ -564,6 +569,8 @@ pub const Env = struct {
         self.tileBuilt = [_]bool{false} ** NTILES;
         self.faceBuilt = [_]bool{false} ** NTILES;
         self.casterBuilt = [_]bool{false} ** NTILES;
+        self.shellBuilt = [_]bool{false} ** NTILES;
+        self.cutawayBuilt = [_]bool{false} ** NTILES;
         self.tileRad = [_]f32{0} ** NTILES;
         self.tileH = [_]f32{0} ** NTILES;
         self.tileMid = [_]rl.Vector3{mathx.zero3} ** NTILES;
@@ -572,6 +579,7 @@ pub const Env = struct {
         self.cliffField = [_]u8{wf.CLIFF_NONE} ** wf.HEIGHT_CELLS;
         self.heightHalf = wf.DEFAULT_HALF;
         self.heightAny = false;
+        self.watchModels();
     }
 
     /// Fields first, then the props, then the tiles: `faceStamp` asks where the ladders and flights stand.
@@ -584,6 +592,7 @@ pub const Env = struct {
         self.adoptCave(m);
         self.materialize(m);
         if (fresh) self.rebuildTerrain();
+        self.checkModels("replay");
     }
 
     pub fn uploadSoil(self: *Env, m: *const wf.Map) void {
@@ -640,7 +649,6 @@ pub const Env = struct {
         if (self.scene) |sc| sc.setCave(&self.caveShelterSrc, &self.caveRoofSrc, self.caveHalf, GROUND_Y, self.caveAny);
     }
 
-    /// Only the OPEN points cost a terrain sample; solid rock is a byte compare.
     fn cutShelter(self: *Env, span: [4]usize) void {
         if (!self.caveAny) {
             @memset(&self.caveShelterSrc, 0);
@@ -693,7 +701,8 @@ pub const Env = struct {
         buildSolids(self);
     }
 
-    /// `rebuildTerrain` remakes all 225 tiles: 12.5 MB of vertices, 1350 GL objects, 27.6 ms.
+    /// `rebuildTerrain` remakes all `NTILES` tiles — 729 of them since the world grew, and the lattice under them
+    /// is 3.2x what the 12.5 MB / 1350 GL objects / 27.6 ms was measured against at `HEIGHT_N` 224.
     pub fn uploadHeight(self: *Env, m: *const wf.Map) void {
         if (!self.heightStale(m) and !self.caveStale(m)) return;
         self.adoptHeight(m);
@@ -725,6 +734,7 @@ pub const Env = struct {
         }
         if (span[0] == 0 or span[1] == 0 or span[2] >= wf.HEIGHT_N - 1 or span[3] >= wf.HEIGHT_N - 1) self.buildSkirt();
         buildSolids(self);
+        self.checkModels("a ground stroke");
     }
 
     fn rebuildTerrain(self: *Env) void {
@@ -1694,7 +1704,6 @@ pub const Env = struct {
         return i < self.nillusions and self.illusionLife[i] >= 1;
     }
 
-    /// The standing illusory wall a blade of radius `r` swung from `a` to `b` reaches, if any.
     pub fn illusionStruck(self: *const Env, a: rl.Vector3, b: rl.Vector3, r: f32) ?u8 {
         for (0..self.nillusions) |i| {
             if (self.illusionLife[i] < 1) continue;
@@ -1707,7 +1716,6 @@ pub const Env = struct {
         return null;
     }
 
-    /// The standing illusory wall a body of radius `margin` at `p` is pressed against, if any.
     pub fn illusionTouched(self: *const Env, p: rl.Vector3, margin: f32) ?u8 {
         for (0..self.nillusions) |i| {
             if (self.illusionLife[i] < 1) continue;
@@ -1855,7 +1863,6 @@ pub const Env = struct {
         return caves.shelterAt(self.caveFields(), self.groundAt(x, z), x, y, z);
     }
 
-    /// The chamber floor here, or nothing where there is no chamber.
     pub fn caveStandAt(self: *const Env, x: f32, z: f32) ?f32 {
         const s = caves.sampleAt(self.caveFields(), x, z);
         return if (s.hollow()) s.floor else null;
@@ -1869,7 +1876,6 @@ pub const Env = struct {
         return caves.sampleAt(self.caveFields(), x, z).roof;
     }
 
-    /// The rock over a body's head, or nothing where it stands under the sky.
     pub fn ceilingAt(self: *const Env, x: f32, z: f32, footY: f32) ?f32 {
         if (!self.underground(x, z, footY)) return null;
         return caves.sampleAt(self.caveFields(), x, z).roof;
@@ -2231,6 +2237,29 @@ pub const Env = struct {
         return self.veils[@intFromEnum(kind)];
     }
 
+    /// DEV SENSOR: `models` is written once, by `build`, and never again — so a prototype whose mesh has MOVED
+    /// means something walked over the `Env`, and the fault that follows lands inside raylib where the cause
+    /// is unreadable. Stamped at build and checked either side of every rebuild, so the panic names the stroke.
+    fn stampOf(m: rl.Model) usize {
+        return @intFromPtr(m.meshes) ^ (@intFromPtr(m.materials) *% 3) ^ (@intFromPtr(m.meshMaterial) *% 5) ^ @as(u32, @bitCast(m.meshCount));
+    }
+
+    fn watchModels(self: *const Env) void {
+        for (self.models, 0..) |m, k| modelStamp[k] = stampOf(m);
+        modelWatch = true;
+    }
+
+    pub fn checkModels(self: *const Env, where: []const u8) void {
+        if (!modelWatch) return;
+        for (self.models, 0..) |m, k| {
+            if (stampOf(m) == modelStamp[k]) continue;
+            std.debug.panic(
+                "env: the model table was CLOBBERED by {s} — kind {d} now meshes 0x{x}, materials 0x{x}, meshCount {d}",
+                .{ where, k, @intFromPtr(m.meshes), @intFromPtr(m.materials), m.meshCount },
+            );
+        }
+    }
+
     pub fn setShader(self: *Env, sh: rl.Shader) void {
         self.ground.materials[0].shader = sh;
         for (&self.models) |*m| m.materials[0].shader = sh;
@@ -2283,7 +2312,6 @@ pub const Env = struct {
         }
     }
 
-    /// The chambers, drawn with the cliff faces' stone rather than the ground's soil.
     pub fn drawCaveShells(self: *Env, view: ?*const View) void {
         if (!self.caveAny) return;
         for (self.shells[0..], self.shellBuilt[0..], self.tileMid[0..], self.tileRad[0..]) |s, built, mid, rad| {
@@ -2320,6 +2348,7 @@ pub const Env = struct {
     }
 
     pub fn drawProps(self: *Env, cull: Cull) void {
+        self.checkModels("something since the last rebuild");
         self.drawIndexed(&self.stx, cull);
         self.drawStows(cull);
     }
@@ -2967,7 +2996,6 @@ fn fadeQuadUp(b: *gfx.Builder, p0: rl.Vector3, p1: rl.Vector3, q1: rl.Vector3, q
 
 /// The wall is a plain sheet; the rock is `proprock.CLIFF_FACES` stamped along the run at world stations, scaled so its own top lands on the lip and bisected at the cut. Each prototype is built ONCE and stamped.
 var faceProto: [proprock.CLIFF_FACES.len]?gfx.Builder = [_]?gfx.Builder{null} ** proprock.CLIFF_FACES.len;
-/// The prototype's masses, for the colliders each stamp stands up.
 var faceMass: [proprock.CLIFF_FACES.len]proprock.Masses = [_]proprock.Masses{.{}} ** proprock.CLIFF_FACES.len;
 
 fn faceProtoOf(i: usize) *const gfx.Builder {
@@ -4909,7 +4937,8 @@ test "rayGround finds the surface of a hill, not the plane under it" {
     defer std.testing.allocator.destroy(e);
     const hit = e.rayGround(v3(40, 200, 0), v3(0, -1, 0)) orelse return error.NoHit;
     try std.testing.expectApproxEqAbs(@as(f32, 40), hit.x, 0.05);
-    try std.testing.expectApproxEqAbs(@as(f32, 20) + GROUND_Y, hit.y, 0.05);
+    // The field is quantized to `HEIGHT_STEP`, so a ramp that does not land on the quantum reads within half of one.
+    try std.testing.expectApproxEqAbs(@as(f32, 20) + GROUND_Y, hit.y, wf.HEIGHT_STEP * 0.5);
     const flatT = (GROUND_Y - 60.0) / -0.5;
     const oblique = e.rayGround(v3(-60, 60, 0), mathx.normV(v3(1, -0.5, 0))) orelse return error.NoHit;
     try std.testing.expect(oblique.x < -60 + flatT * 0.9);
@@ -5533,7 +5562,9 @@ test "a cliff stood at the map's edge is still inside the grid" {
     // CLIFF_BOUND is a hand-copied mirror of the mesh's own bound, because MAX_HALF has to be a comptime value and `props.info` is a runtime lookup.
     try std.testing.expectApproxEqAbs(CLIFF_BOUND, props.info(.cliff).bound, 1e-4);
     try std.testing.expect(wf.DEFAULT_HALF <= MAX_HALF);
-    try std.testing.expect(GROUND_HALF > wf.DEFAULT_HALF + 200);
+    try std.testing.expect(wf.MAX_DECLARED_HALF <= MAX_HALF);
+    try std.testing.expect(GROUND_HALF > wf.DEFAULT_HALF);
+    try std.testing.expect(groundOut(wf.DEFAULT_HALF) - wf.DEFAULT_HALF <= 80);
 }
 
 test "THE BROOD ARENA LOADS — a scratch map is only useful if it is known to still parse" {

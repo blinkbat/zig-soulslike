@@ -119,6 +119,7 @@ pub fn traitsOf(k: wf.FoeKind) Traits {
         .druidess => .{ .nature = .humanoid },
         .bone_mimic => .{ .nature = .undead },
         .mastodon => .{ .nature = .beast },
+        .corrupt_ent => .{ .nature = .plant },
     };
 }
 
@@ -140,6 +141,7 @@ pub fn homeOf(k: wf.FoeKind) props.Biome {
         .druidess => .forest,
         .bone_mimic => .bone,
         .mastodon => .rock,
+        .corrupt_ent => .forest,
     };
 }
 
@@ -187,7 +189,7 @@ pub fn isBoss(k: wf.FoeKind) bool {
         .bone_skitterer, .ancient_priest, .tolling_hollow => false,
         .slumber_bloom, .cinder_wake, .rotgorger, .birchwight, .salt_husk => false,
         .fish_spearman, .fish_netter, .fish_shaman, .blinkbat => false,
-        .owlbear, .bone_mimic, .mastodon => false,
+        .owlbear, .bone_mimic, .mastodon, .corrupt_ent => false,
     };
 }
 

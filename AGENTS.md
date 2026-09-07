@@ -1,99 +1,78 @@
 # AGENTS.md — zig-soulslike
 
-Third-person soulslike in **Zig 0.14.1 + raylib**, on the sibling `../zig-rts` engine (procedural-mesh
-`Builder`, single-sun shadow-map pipeline). README covers what exists.
+Third-person soulslike in **Zig 0.14.1 + raylib** on the sibling `../zig-rts` engine (procedural-mesh `Builder`,
+single-sun shadow-map pipeline). README covers what exists. `docs/ELDEN_RING.md` is **PURE Elden Ring** — real
+mechanics, nothing about this game. Ours go here, in the README, or in the code.
 
-`docs/ELDEN_RING.md` is the systems reference and is **PURE Elden Ring** — real mechanics, real numbers,
-nothing about this game. Our own mechanics and tunings go here, in the README, or in the code.
+**KEEP THIS FILE LEAN.** A rule earns a line only if an agent cannot discover it by opening the file it is about
+to edit: a law, a contract, a SILENT failure, a prohibition. Not the archaeology of how a number was tuned, not
+a restatement of a symbol name. One line each.
 
-Keep this file lean. Prefer no comments in code — succinct ones for novel/edge cases only. Reuse existing
-helpers before adding code. Don't make ad-hoc product/design decisions: ask. The owner drives the design;
-implement what's asked and nothing extra. Don't commit, push, or create branches unless explicitly asked.
+Prefer no comments in code. Reuse existing helpers. Don't make product/design decisions — ask. Don't commit,
+push or branch unless asked.
 
 ## The laws (owner's, non-negotiable)
 
-- **NO HITSTOP. EVER.** No freeze-frames, no time-dilation on impact, no dt zeroing. Impact weight comes from
-  shake + rumble + FX + huge reaction anims.
-- **NO INPUT READING. EVER.** No creature may branch on the player's INPUTS or committed actions — not the
-  flask, not a cast, not a roll, not an attack press. A decision may read POSITION, BEARING, DISTANCE and ITS
-  OWN CLOCKS — the world as any body standing in it could see it — never the hero's state machine.
-- **ZERO INPUT LAG.** The stick maps straight to ground speed every frame. Posture/gait blends may smooth the
-  VISUALS only, and only fast (~0.1 s max).
-- **REACTIONS ARE HUGE.** A flinch or stagger must be big and obvious. **A mass in motion OVERSHOOTS its rest
-  and settles back onto it** — props and geometry included; a glide to a stop reads as weightless.
-- **FLESH IS ROUND.** Organic mass = `addBlob`/`addCapsule`; `addCube`/`addBox` is for iron, blades, cloth,
-  masonry. Bare `addCylinder` leaves an open cut-pipe end.
-- **BIG BODIES HINGE AT THE WAIST, LEGS STAY PLANTED.** Route lean through SPINE/CHEST, pelvis near-upright
-  (`ogre.PELVIS_SHARE`); lean at the ROOT rotates the legs and reads as lurching. Braces take up in the knees.
-- **WABI-SABI is the house style for ALL art.** Uneven sizes, asymmetry, leans, gaps, authored with a seeded
-  `mathx.Rng` so builds stay deterministic. Reads "dumb"/fake ⇒ almost always too REGULAR. Cosmetic only.
-  **AT THE RIGHT SCALE: BETWEEN the instances, not ALONG one** — two tones alternated segment by segment band
-  a shaft like a barber's pole; the same two separating the VARIANTS read as three kinds of wood.
-- **NOTHING DEAD IS STRAIGHT, AND NOTHING ENDS IN A POINT.** A dead limb leaves the bole on its axis, rises to
-  an elbow, DROOPS off the line to a blunt snap of pale heartwood; twigs root on that outer half.
-  `propwood.deadLimbInto` is the one both leafless trees call.
-- **A ROOT IS DEEP, NOT WIDE, AND IT IS NEVER STRAIGHT** (`propwood.rootsInto`, the one every tree calls). Out of
-  a FLARE at the bole, over an arch with daylight under it, down to a toe still fat where it meets the surface,
-  and on DOWN under the tree — `deep` is the larger number, `reach` barely clears the bole, every joint kinks off
-  the bearing so a set never reads as spokes, and each bend carries a knuckle because a bare joint between two
-  tapers reads as cut pipe. Thin cones splayed out at ground level, which is what they were, read as fins.
-- **RELIEF IS SUBTLE.** A few PERCENT of the mass's radius, not a tenth. Sink the proud primitive most of the
-  way in. Prefer more SIDES on the mass over more relief on top. Judge against the ASSEMBLED thing. Cut
-  AMPLITUDE, never irregularity.
-- **CLOTH IS ONE FOLDED SURFACE** (`propart.clothInto`, shared by the kobold priest and the necromancer): rings
-  of `[x, y, z, radiusX, radiusZ]` in stature-relative units, BOTTOM ROW FIRST, every row sharing one set of
-  angular samples so a fold runs the whole drop instead of stopping at each seam. Stacked skirts read as rigid
-  sections; a second cloth implementation is how they come back.
-- **PACKED STONE HAS A CORE.** A row of blocks is only the FACING; without a substrate the joints leak sky.
-  Overlap well past the slot — `propart.courseInto`/`courseStack` do both.
-- **DENSITY VARIES.** A flat per-region density is a carpet. `env.coverField` (two octaves of value noise)
-  scales the region constant to nothing in clearings, and gates the structure belts.
-- **A REGION NEEDS THREE LAYERS** or it reads sparse: ground-hugger, understorey, canopy. Dead growth is what
-  stops it looking like a garden.
+- **NO HITSTOP. EVER.** No freeze-frames, no time-dilation, no dt zeroing. Weight = shake + rumble + FX + huge anims.
+- **NO INPUT READING. EVER.** No creature may branch on the player's inputs or committed actions. A decision reads
+  POSITION, BEARING, DISTANCE and ITS OWN CLOCKS — never the hero's state machine.
+- **ZERO INPUT LAG.** Stick maps straight to ground speed every frame. Posture blends smooth VISUALS only, ~0.1 s.
+- **REACTIONS ARE HUGE**, and **A MASS IN MOTION OVERSHOOTS ITS REST AND SETTLES BACK ONTO IT** — props and
+  geometry included. A glide to a stop reads as weightless.
+- **FLESH IS ROUND** — `addBlob`/`addCapsule` for organic mass, `addCube`/`addBox` for iron, blade, cloth, masonry.
+- **BIG BODIES HINGE AT THE WAIST, LEGS STAY PLANTED** — route lean through SPINE/CHEST (`ogre.PELVIS_SHARE`);
+  lean at the ROOT rotates the legs and lurches. Braces take up in the knees.
+- **WABI-SABI IS THE HOUSE STYLE FOR ALL ART** — uneven, asymmetric, leaning, gapped, off a seeded `mathx.Rng` so
+  builds stay deterministic; cosmetic only. Reads fake ⇒ too REGULAR. **AT THE RIGHT SCALE: BETWEEN the
+  instances, not ALONG one** — two tones alternated along a shaft is a barber's pole, the same two separating the
+  VARIANTS read as three kinds of wood.
+- **NOTHING DEAD IS STRAIGHT, AND NOTHING ENDS IN A POINT** — a dead limb leaves the bole on its axis, rises to an
+  elbow, droops off the line to a blunt snap of pale heartwood (`propwood.deadLimbInto`).
+- **A ROOT IS DEEP, NOT WIDE, AND NEVER STRAIGHT** (`propwood.rootsInto`) — out of a FLARE, over an arch with
+  daylight under it, down to a fat toe and on DOWN; every joint kinked off the bearing with a knuckle at the bend.
+- **RELIEF IS SUBTLE** — a few PERCENT of the mass's radius. Sink the proud primitive most of the way in; more
+  SIDES beats more relief; judge against the ASSEMBLED thing. Cut AMPLITUDE, never irregularity.
+- **CLOTH IS ONE FOLDED SURFACE** (`propart.clothInto`) — rings of `[x,y,z,rx,rz]` in stature-relative units,
+  BOTTOM ROW FIRST, every row sharing one set of angular samples. Stacked skirts read as rigid sections.
+- **PACKED STONE HAS A CORE** — a row of blocks is only the FACING; overlap past the slot (`propart.courseInto`).
+- **DENSITY VARIES** — `env.coverField` scales region density to nothing in clearings and gates the structure
+  belts. A flat per-region density is a carpet.
+- **A REGION NEEDS THREE LAYERS** — ground-hugger, understorey, canopy. Dead growth is what stops it looking like
+  a garden.
+- **STRAIGHT CLIFFS, NEVER JAGGED** — the cut is exact and the wall a plane; rock is shapes sunk into it. Any
+  per-cell wander is the minecraft look.
+- **LIGHT IS NEVER STEPPED** — sun, moon, key, ambient: always a ramp, never an assignment.
 
 ## Build & verify
 
-- `zig` is NOT on PATH. Build with `build.cmd` / `build-release.cmd`; toolchain is
+- `zig` is NOT on PATH. `build.cmd` / `build-release.cmd`; toolchain
   `..\.zigtoolchain\zig-x86_64-windows-0.14.1\zig.exe`. `zig build test` runs unit tests.
-- **AN ERROR LOOP DOES NOT NEED A BINARY** — `check.cmd` (`zig build check`) type-checks the exe root AND
-  the test root and stops: 2.7 s against the 10 s a build costs, because sema is 1.4 s of a build and LLVM
-  plus LLD are the other 7. Use it for every edit until it is clean, then build once.
-- Verify rendering/animation by RUNNING `zig-out\bin\zig-soulslike.exe --shot` (or `shot.cmd`) and inspecting
-  `shots\` (gitignored). Never claim a visual change works without a shot.
-- Do NOT launch the interactive window to "check" — the owner plays it himself, and while he has it open the
-  build cannot overwrite the exe. Build with `--prefix zig-out-dev` when locked.
-- `--shot-props` renders every kind alone into `shots\props\`. For ONE model the editor's object viewer is
-  faster.
-- `--shot-art` lays the whole 2D set on contact sheets in `shots\art\`: every editor glyph at its 18 px and
-  at 3x, every item picture at the 34 px bag cell and a plate, the spells, the ailments and the pad kit. A glyph
-  set is judged as a SET, and this is the only frame that shows one.
-- **AN EYE PASS IS A LOOP, SO SHOOT ONE STAGE** — `--shot --shot-only <substr>` (`shots.onlyStage`) runs the
-  named stage and skips every other frame's render and write: 32 s against 3m38s for the lot. A filtered run
-  still SIMULATES everything, so nothing a later stage stands on goes unbuilt.
-- **AND WHEN THE THING PHOTOGRAPHED IS HOW A BODY HOLDS SOMETHING, SHOOT ALL FOUR SIDES CLOSE**
-  (`shots.knightDoorShots`). The house three-quarter portrait at 12 m answers nothing: the door covered the
-  whole creature and the arm behind it was four grey pixels. Turn the SUBJECT rather than orbiting the lens,
-  so the sun stays over the camera's shoulder, and solve the boom off what is actually being held — a plank
-  that stands forward of him is NEARER the lens than his crown and overflows a boom solved off that.
-- **Framing is part of the test.** Confirm the camera SHOWS the moving part before tuning. `follow` does not
-  clamp pitch, so a small negative pitch at long `dist` puts the camera under the terrain; the camera ends at
-  `target + back*dist`, so interior framings must be DERIVED from the room's extent; the shadow ortho box
-  tracks the HERO, so `standHero` near your subject. For a world change take a steep overhead (`dist` ~55).
-- **A FRAMING THAT HAS TO SURVIVE A RE-AUTHORED MOVE IS SOLVED AND PINNED, NOT PICKED** (`shots.KNIGHT_STRIP`,
-  `STRIP_FILL`, and the test beside them). Boom off the SWEPT BOX of everything the move moves — kit, the other
-  hand's kit, and the body under them — aim at that box's middle, and let a test re-measure and re-solve. Framed
-  for the old arcs at 13–15 m the knight's four strokes filled 40% of a frame aimed a metre over the action;
-  `camera.FOVY` and `game.SCREEN_W`/`SCREEN_H` are public so the solve reads the lens instead of copying it.
-- **A SUBJECT MUST BE LIT, NOT JUST IN FRAME.** `gfx.SUN_DIR` puts the sun over the shoulder of a camera at
-  **yaw ≈ 53** and into the lens of one at **≈ 233**. A foe turns to face the hero, so "photograph its front"
-  means putting the sensed hero on the SUN's bearing and shooting from ~53; the 180–215 band shadows its front.
-- **A HOLE IN THE WORLD ONLY SHOWS AGAINST A BRIGHT BACKGROUND** — `--bright` drops the sky and clears
-  MAGENTA (`game.dbgBright`), so anything you can see through glows. Against the 17:27 sky a gap reads as one
-  more dark patch and you will walk past it: it found a full-height crack down the shipped map's cliff, a
-  hole under every stair riser, and nothing at all in the frames that looked fine. Count the magenta BELOW
-  the skyline rather than judging by eye — grass and crenellations are see-through and do not count.
-- **Thin geometry needs a CROP.** Strings, nocked arrows, flutes, setts and HUD rims are invisible at 1:1.
-  Nearby clutter can masquerade as the part you are looking for.
+- **AN ERROR LOOP DOES NOT NEED A BINARY** — `check.cmd` type-checks exe AND test roots in 2.7 s against a 10 s
+  build. Loop on it until clean, then build once.
+- **Do NOT launch the interactive window** — the owner plays it himself and holds the exe open. `--prefix
+  zig-out-dev` when locked.
+- **VERIFY WITH MATH WHERE THE CHANGE IS A NUMBER**; shoot only what is genuinely visual-novel. `--shot` (or
+  `shot.cmd`) → `shots\` (gitignored). Never claim a *visual* change works without a shot.
+- Stages: `--shot-props` (every kind alone + a `COLLIDER` audit line each), `--shot-art` (the whole 2D set on
+  contact sheets — a glyph set is judged as a SET), `--shot-land` (terrain/water/caves), `--shot --shot-only
+  <substr>` (one stage, 32 s against 3m38s; still SIMULATES everything).
+- **A SUBJECT MUST BE LIT, NOT JUST IN FRAME** — `gfx.SUN_DIR` puts the sun over the shoulder at **yaw ≈ 53** and
+  into the lens at **≈ 233**; 180–215 shadows a front. A foe turns to face the hero, so photographing its front
+  means putting the sensed hero on the SUN's bearing and shooting from ~53.
+- **FRAMING IS PART OF THE TEST, AND A FRAMING THAT MUST SURVIVE A RE-AUTHORED MOVE IS SOLVED AND PINNED**
+  (`shots.KNIGHT_STRIP`) — boom off the SWEPT BOX of everything the move moves, aim at its middle, let a test
+  re-solve; `camera.FOVY`/`game.SCREEN_W`/`SCREEN_H` are public so the solve reads the lens. `follow` does not
+  clamp pitch (a small negative pitch at long `dist` buries the eye), the camera ends at `target + back*dist` (so
+  interior framings are DERIVED from the room's extent), and the shadow ortho tracks the HERO (so `standHero`
+  near the subject). World changes want an overhead at `dist` ~55.
+- **WHEN THE SUBJECT IS HOW A BODY HOLDS SOMETHING, SHOOT ALL FOUR SIDES CLOSE** — turn the SUBJECT, not the
+  lens, so the sun stays over the camera's shoulder, and solve the boom off what is actually held.
+- **A HOLE IN THE WORLD ONLY SHOWS AGAINST A BRIGHT BACKGROUND** — `--bright` drops the sky and clears MAGENTA.
+  Count the magenta BELOW the skyline; grass and crenellations are see-through.
+- **JUDGE ALBEDO BY SAMPLING THE RENDER** — albedo × 1.72 → linear → gamma 1/2.2, so screen ∝ albedo^(1/2.2) and
+  a factor wanted on screen is that factor^2.2 on the albedo. Solve it, `GetPixel` subject AND background, and
+  separate on HUE too: everything outdoors here is warm.
+- **Thin geometry needs a CROP** — strings, nocked arrows, setts and HUD rims are invisible at 1:1:
   ```powershell
   Add-Type -AssemblyName System.Drawing
   $src=[System.Drawing.Bitmap]::FromFile("$PWD\shots\40_x.png")
@@ -101,2893 +80,1982 @@ implement what's asked and nothing extra. Don't commit, push, or create branches
   $big=New-Object System.Drawing.Bitmap 900,660; $g=[System.Drawing.Graphics]::FromImage($big)
   $g.InterpolationMode='NearestNeighbor'; $g.DrawImage($crop,0,0,900,660); $big.Save("$PWD\shots\crop.png")
   ```
-- **JUDGE ALBEDO BY SAMPLING THE RENDER, NOT BY EYE.** Chain is albedo × 1.72 → linear → gamma 1/2.2. Screen ∝
-  albedo^(1/2.2), so a factor you want on screen is that factor^2.2 on the albedo — solve, don't guess, and
-  `GetPixel` the subject AND what it stands against. Separate on HUE as well as value: everything outdoors
-  here is warm.
-- **THE SCREENSHOT GOES BEFORE `endDrawing`, NEVER AFTER** (`shots.snap`) — `endDrawing` swaps buffers, so
-  after the swap every capture is the previous frame.
-- **The harness CLOSES THE MENU first** (`runShots`); the menu opens at launch and the HUD hides behind it.
-- `--shot` PNGs are not byte-deterministic (flora wind + grain read `rl.getTime`) — verify visually, never by
-  hash-diff.
+- **THE SCREENSHOT GOES BEFORE `endDrawing`** (`shots.snap`) — after the swap every capture is last frame. The
+  harness CLOSES THE MENU first. PNGs are not byte-deterministic (wind + grain read `rl.getTime`).
+- **A TEST MAY ONLY WRITE `worlds/test_*.world`** — `wf.save` panics on any other path under `is_test`.
+- **NEVER RUN TWO TEST SUITES AT ONCE** — they share `worlds/` and the save slots; a one-off red is a race. An
+  abort (exit 3) TRUNCATES the suite, so a red at the front hides everything behind it.
 
 ## Module map
 
-`src/` is in directories: `core/` (maths, collision, the pose kernel, the camera, audio, rumble, the bake
-door), `gfx/` (builder + scene + GLSL + the element particle language), `world/` (terrain, the map format, the
-clock, the weather, triggers, dialog), `props/`, `foes/`, `play/` (the hero and his sheet), `ui/`. The loop, the
-entry, the slot and the shot harness stay at `src/` itself. An `@import` is a path from the importing file —
-`../core/mathx.zig` — and `main.zig`'s test block names each module by that same path, which `build.zig`'s
-roster check walks the tree to enforce.
-
-**How files are divided:** minimise TOKENS TO MAKE A CORRECT CHANGE, not file size. A 900-line file whose
-contents change together is fine. Splits go where concerns genuinely part company.
+`core/` maths, collision, pose kernel, camera, audio, rumble, bake door · `gfx/` builder, scene, GLSL, element
+particles · `world/` terrain, map format, clock, weather, triggers, dialog · `props/` · `foes/` · `play/` hero and
+his sheet · `ui/`. Loop, entry, slot and shot harness stay at `src/`. An `@import` is a path from the importing
+file; `main.zig`'s test block names each module by that path and `build.zig`'s roster check walks the tree to
+enforce it. **How files divide:** minimise TOKENS TO MAKE A CORRECT CHANGE, not file size — a 900-line file whose
+contents change together is fine.
 
 | file | what |
 | --- | --- |
-| `main.zig` | entry; `--shot` headless harness |
 | `game.zig` | window/loop, input, camera-relative movement, render orchestration, combat beats, YOU DIED |
+| `main.zig` · `shots.zig` | entry · the headless `--shot` harness (never in context while working on the loop) |
 | `play/hero.zig` | THE HERO — FK skeleton, every animation, swept blade capsule, guard, bow, wand. Start here |
 | `core/anim.zig` | THE KEYED-POSE KERNEL — `Ease`/`Key`/`keyAt`, `Spring`/`SpringBank`, `anim.Pose(P)` |
-| `foes/behave.zig` | `Routine` (close/open/orbit/dwell/shift) + named scripts (`DISENGAGE`/`FLANK`/`KITE`) |
 | `core/camera.zig` | orbit rig, ground basis, trauma shake (live-loop only, so `--shot` stays deterministic) |
-| `gfx/gfx.zig` | mesh `Builder`, scene shader, shadow depth pass, `Sky`, `Vignette`, `Mat` materials |
-| `gfx/shaders.zig` | every line of GLSL and nothing else; the contract with `gfx.zig` is at its top |
-| `gfx/elemfx.zig` | the elements' particle language — one signature per `combat.Elem`, `gather`/`burst`/`pour` |
-| `world/daynight.zig` | the world clock — sun/moon path, the hour's palette, the anchor hour `--shot` pins |
-| `world/weather.zig` | intermittent rain in two strengths, lightning, the one rain mesh, the mist banks, sporefall, the rising ember field |
-| `world/worldfmt.zig` | THE MAP FORMAT — ops, zone/foe/npc/trigger/dialog tables, one comptime field table |
-| `world/trigger.zig` | SC1's conditions + actions, and the switches / counters / timers they compose through |
-| `world/dialog.zig` | one conversation: the node-tree walk and the BG2-style panel, with a live portrait |
+| `core/collision.zig` · `mathx.zig` | XZ capsule/circle push-out, `blocksSight`, `box` · angles, seeded `Rng`, `gutter`, `turnToward` |
+| `core/audio.zig` · `rumble.zig` · `bake.zig` | ~190 synthesized voices through one tape `master` · XInput directly · the one-way door that emitted the first map |
+| `gfx/gfx.zig` · `shaders.zig` | `Builder`, scene shader, depth pass, `Sky`, `Vignette`, `Mat` · every line of GLSL and nothing else |
+| `gfx/elemfx.zig` · `particleart.zig` | one signature per `combat.Elem` · one seeded mote atlas, four variants per style |
 | `world/env.zig` | THE WORLD — terrain, op replay, `coverField`, uniform grid, cullers, occluder fade, lights |
-| `props/props.zig` | prop vocabulary + the `INFO` table; `displayName`/`group`/`biome` are exhaustive switches; `stock` reads the row's own `flora`/`interact`. `decks`/`stack`/`climb` are the ladder's and the deck's |
-| `prop*.zig` | meshes by family — `propart` (palette + weathering), `propruins`, `propgold`, `propbuild`, `propvillage`, `propmarket`, `propforge`, `proprock`, `propwood`, `propflora`, `propfungus`, `propcoral`, `propash`, `propbone`, `propember` (the Firelands — basalt riven by glowing seams), `proppalace` + `propdesert` (the Sun Palace — gold, emerald and sandstone over orange sand), `propfx` |
-| `foes/foestat.zig` | the pools the bench lays over a fresh body — one multiplier per kind, applied in `foe.resetGroup`/`resetRoles`, and where the authored HP is LEARNED from the first body made |
-| `foes/foe.zig` | THE FOE STANDARD — contract, `Blade`/`strike`/`weaponReaches`/`Blow`, `Trail`, particles, `Leash` |
-| `foes/npc.zig` | THE FOLK, all three on the hero's scaffold — the wanderer's staff, the caravaneer's neck and muzzle, and MOSSBEARD, the tree smith whose idle IS a hammer stroke |
-| `foes/frog.zig` | gaping toad + `Knot` |
-| `foes/archer.zig` | skeletal archer + `Line`; kite-only, arrows that stick and fade |
-| `foes/ogre.zig` | one-eyed ogre + `Grief`; 24 bones, high poise, slam / swipe / drive; never strafes. The HEAD is a second lock point, its own sphere at 2× poise |
-| `foes/kobold.zig` | warband + `Warband` — berserker/priest/slinger; the priest is why they are one group |
-| `foes/brood.zig` | brood mother, sacs, broodlings + `Brood`; guard not hunter, venom POOLS poison |
-| `foes/warrior.zig` | skeletal warriors + `Muster` — shieldman (blocks, guard-breaks) and greatsword (hyper armour) |
-| `foes/knight.zig` | THE BONE KNIGHT + `Vigil` — first boss, first boss bar |
-| `foes/shade.zig` | shades + `Haunt`; legless, hovers, 17 bones. Drains FOCUS; the one thing that TELEPORTS |
-| `foes/leechfly.zig` | first FLYER + `Swarm`; never lands, drinks HP and heals off it, zooms out of sword reach |
-| `foes/rooted.zig` | snag-mimic fixture + `Grove`; eyes open outside its reach, three limb strikes, never moves |
-| `foes/shroom.zig` | sporeling + `Cluster`; flings itself, bursts a spore cloud that poisons. Sometimes TRIPS |
-| `foes/delver.zig` | THE DELVER + `Warrens` — goes UNDER; bursts underfoot or ploughs a furrow. No lock-on while down. From range with the dive cooling it DIGS UP A ROCK and lobs it (`Shot.rock`, a 16 s clock) |
-| `foes/necro.zig` | THE NECROMANCER + `Rite` — holds a corpse open and raises it once; the only COLD source |
-| `foes/wolf.zig` | first SPIRIT + `Pack`, what the BELL calls. NOT a foe; first QUADRUPED, 27 bones |
-| `foes/fungaldeer.zig` | fungal deer + `Herd` — quadruped rig's FOURTH user + a stalk, a bloom, 7 petals and a rack. The flower stands off its back for good and OPENS to spit spores that HANG before they home; the antlers are what it does cornered |
-| `foes/shroommage.zig` | mushroom mage + `Ring` — the fireball BOUNCES, so it punishes backing off |
-| `foes/fenlurker.zig` | fen lurker + `Marsh` — never leaves the water; sunk it is unreachable. Counter is DRY LAND |
-| `foes/sporegolem.zig` | spore homunculus + `Host` — `ARMOUR` is the creature; fire and lightning pass through |
-| `foes/skitterer.zig` | bone skitterer + `Clatter` — walks ON ITS RIBS; the eye SHUTS before the spine slams. What a priest raises, and it will not walk into a flame |
-| `foes/ancientpriest.zig` | ancient priest + `Crypt` — never melees; claws a skitterer out of bare earth far off, breathes COLD close |
-| `foes/hollow.zig` | tolling hollow + `Belfry` — the BELL on its back calls every body inside `TOLL_R`; refused inside bite reach. The GREMLIN on the bell is a second lock point with its own 20 HP: shot off, it is flung down the blow and the volley goes with it |
-| `foes/slumberbloom.zig` | slumber bloom + `Bed` — a rooted FIXTURE with no blow at all; the only SLEEP source, and it cannot follow |
-| `foes/cinderwake.zig` | cinder wake + `Scorch` — the hazard is LAID by its own feet, continuously; a standing wake is safe ground |
-| `foes/rotgorger.zig` | rotgorger + `Gorge` — quadruped rig's THIRD user; EATS THE DEAD, kin included, and breaks off mid-fight to do it |
-| `foes/birchwight.zig` | birchwight + `Stand` — the only counter that is also an escalation: CAUGHT it is faster and sets you alight |
-| `foes/salthusk.zig` | salt husk + `Pan` — the weakest thing on the field and the only one whose KILL is the dangerous part |
-| `foes/fishman.zig` | fishmen + `Shoal` — the SECOND warband, held together by a NET; netter, spearman, shaman are one move in three |
-| `foes/blinkbat.zig` | blinkbat + `Roost` — a flyer that never travels: it BLINKS onto your flank, bites once, blinks out. Hangs inverted and wrapped through the day, and striking one hanging puts the whole roost on the wing |
-| `foes/fungalduo.zig` | THE FUNGAL DUO + `Vanguard`/`Conclave` — swordsman and magus, one encounter, two bars; the magus breathes spore dust at anyone in his face |
-| `foes/owlbear.zig` | owlbear + `Perch` — THE FIRST CONSTRUCT, 3.15 m of it (owner: bigger and tougher — 300 HP, poise over two heavies), and a carving until DARK and you walk inside `WAKE_R`: the eyes lead the stone by half the wake, dawn walks it back onto its own plinth, and the answer to being crowded is a hop back that fans stone quills down the bearing it left on |
-| `foes/druidess.zig` | THE CORRUPTED DRUIDESS + `Coven` — third boss, a keepaway caster under a tangle of robes: vines that SNARE where you stood and vines that WHIP (field objects, no HP), a leap that hangs and lands gently, a sidestep that answers a RUSH, and a RAKE for a man in her face. At 50, 25 and 10 percent she calls a wave off the roster and jumps off to HEAL until hit |
-| `foes/mimic.zig` | bone mimic + `Hoard` — a CHEST until you press Y on it or hit it (the seam glows blue where a real one glows gold), then a bone stalk on four short legs with the chest for a head: a lunging BITE worth a knight's overhead, and a full-circle head SWING for whoever is on its flank. Its own 17-bone rig |
-| `foes/mastodon.zig` | mastodon + `Drove` — the quadruped rig's biggest user at 2.35 m withers, walked and AMBLED (elephant gaits, never a trot): headbutt, bite, a CHARGE from range down a line it can barely bend, a jump-lunge with a 2.2 s recovery, and a TAIL SWIPE for whoever is behind it that turns it round. The bite LUNGES the whole beast and shoves; the tail loads against itself, whips past the mark and settles back, and takes him off his feet |
-| `play/combat.zig` | `Vitals`, `Stamina`, `Focus`, `Regen`, guarding rules, `HitOutcome`, `Elem`/`Resists`, spirits. THE place to retune feel |
-| `play/liquid.zig` | WHAT STANDING IN A PAINTED POOL COSTS — one `Soak` row per `wf.Liquid`, billed the way a cloud bills |
-| `play/stats.zig` | the sheet — seven attributes, the bar curves, the ONE skill curve (`scaleFor`), `inert` |
-| `play/passivetree.zig` | PoE2's tree radially: three arms out of one hub, the gates, `Bonus`, the wheel |
-| `play/item.zig` | item vocabulary, `Use`, **`Equip`/`Wear` (the GEAR table)**, the `Bag` |
-| `play/counter.zig` | THE COUNTER — shop and smithy as one `Trade`; `STOCK`, `stoneCost`/`coinCost`, and the one `take` that spends. Headless and tested |
-| `play/chest.zig` | openable boxes; contents read off the placing op (`Op.loot`) |
-| `play/rest.zig` | bonfire + campfire — phase machine, the seat, the fire's own screen; `isRestKind` |
-| `play/souls.zig` | THE DROP — what a death leaves, the gold bloom, the walk back |
-| `play/tune.zig` | THE STATS BENCH — one `Table` per sheet (spells, ailments, armaments, armour, trinkets, the bag, foes, the hero, every named blow, the passive board, drops, liquids, trade), a getter and a setter each, the base read back at `init`, and `tuning.cfg` written as the DIFFERENCE |
-| `play/drops.zig` | one row per `FoeKind`, guaranteed + rare, and **the one thing LUCK reads** (rare weight only) |
-| `play/pickup.zig` | the glow a drop stands as; `REACH`, between `chest.REACH` and `souls.REACH` (`rest.REACH` is the widest) |
-| `play/award.zig` | the FIRST-TIME card and the toast strip; `seen` is what makes a kind new, and `carding` holds the world clock |
-| `ui/hud.zig` | ER HUD, the pad-glyph kit, the day dial, the boss bar, and the ONLY path to draw/measure text |
-| `ui/ui.zig` | editor widget kit; `Ctx.anyHot` gates world clicks next frame |
-| `ui/uiart.zig` | chrome DRESSING shared by hud/menu/book/ui |
-| `ui/itemart.zig` | pictures of things — armaments and bag items as objects, sized by the caller |
-| `ui/icons.zig` | editor glyph set, drawn from primitives (vector, not an atlas) |
-| `ui/mapart.zig` | THE WORLD SEEN FROM STRAIGHT UP — the one wall/water/big-tree classification, the flat palette, the projection, the pan/zoom `Lens` and `Seen`, the walked mask. The editor's minimap and the book's MAP page are the two faces of it |
-| `ui/book.zig` | THE CHARACTER BOOK (pad START) — paper doll + ten quick sockets, the bag, the sheet, the piece-under-the-cursor card, and the MAP page |
-| `ui/counterui.zig` | the counter's panel — the DIALOG's shape over a running frame, not the book's; every number off `play/counter.zig` |
-| `ui/menu.zig` | boot screen, pause/debug menu, sound LEVELS, retro filter rack |
-| `ui/editor.zig` | THE EDITOR (Menu > Editor), layered StarEdit-style; biggest file, next split candidate |
-| `ui/tuneui.zig` | the bench's face — the dial column, drawn both in the editor's Stats sheet and beside the model in the object viewer |
-| `ui/objview.zig` | object viewer + the JUKEBOX + the FX BENCH (`elemfx`'s cells with their numbers printed). **THE RULER** — every body is fitted to the same frame, so a lone one has no scale; `charRuler` stands the hero beside it at his own 1.8 m and the fit widens to hold both (the Rooted is 4.00x him, a broodling 0.67x) |
+| `world/worldfmt.zig` | THE MAP FORMAT — ops, zone/foe/npc/trigger/dialog tables, one comptime field table |
+| `world/daynight.zig` · `weather.zig` | sun/moon path, the hour's palette, the anchor hour · rain, mist, embers, bird skeins |
+| `world/caves.zig` · `spar.zig` | a second surface UNDER the heightfield · F6, one walled room and one creature |
+| `world/trigger.zig` · `dialog.zig` | SC1's conditions + actions, switches/counters/timers · one conversation, node walk + panel |
+| `props/props.zig` | prop vocabulary + `INFO`; `displayName`/`group`/`biome` exhaustive; `decks`/`stack`/`climb` |
+| `props/prop*.zig` | meshes by family — `propart` (palette + weathering), `ruins`, `gold`, `build`, `village`, `market`, `forge`, `rock`, `wood`, `flora`, `fungus`, `coral`, `ash`, `bone`, `ember`, `palace`+`desert`, `fx` |
+| `foes/foe.zig` | THE FOE STANDARD — contract, `Blade`/`strike`/`Blow`, particles, `Leash`, `Nav`, `Post`, `grip` |
+| `foes/foestat.zig` · `behave.zig` | one stat multiplier per kind · `Routine` + named scripts (`DISENGAGE`/`FLANK`/`KITE`) |
+| `foes/npc.zig` | THE FOLK on the hero's scaffold — wanderer, caravaneer, MOSSBEARD (whose idle IS a hammer stroke) |
+| `foes/knight.zig` | BONE KNIGHT — first boss, 900 HP, tower shield, `Gas`. **The AI template for every other foe** |
+| `foes/fungalduo.zig` · `druidess.zig` | bosses two and three — abutting bands, two bars · keepaway caster, vines, three healing breaks |
+| `foes/ogre.zig` | 24 bones, high poise, never strafes; `TURN_RATE` is the class the knight is pinned into |
+| `foes/warrior.zig` · `archer.zig` | shieldman (blocks, guard-breaks) + greatsword (hyper armour) · kite-only; owns `Shot` (arrows, bolts, rock) |
+| `foes/kobold.zig` · `fishman.zig` | the two warbands — a priest is why they are one group · held together by a NET |
+| `foes/brood.zig` · `shroom.zig` · `shroommage.zig` | mother/sacs/broodlings, venom POOLS · flings itself, poison cloud · the fireball BOUNCES |
+| `foes/shade.zig` · `blinkbat.zig` | legless, drains FOCUS, the one thing that TELEPORTS · blinks onto your flank, bites once, blinks out |
+| `foes/delver.zig` · `necro.zig` | goes UNDER, bursts or ploughs, lobs a rock · holds a corpse open and raises it once; only COLD source |
+| `foes/leechfly.zig` | first FLYER; never lands, drinks HP, zooms out of sword reach |
+| `foes/wolf.zig` | first SPIRIT, what the BELL calls. NOT a foe; first QUADRUPED, 27 bones |
+| `foes/frog.zig` · `fenlurker.zig` | the two waterfaring bodies — sunk, the lurker is unreachable; the counter is DRY LAND, and a 4.96 m TONGUE is what closed the free water in between |
+| `foes/rooted.zig` · `slumberbloom.zig` | the FIXTURES — never move; the bloom has no blow at all and is the only SLEEP source |
+| `foes/fungaldeer.zig` · `mastodon.zig` · `rotgorger.zig` | the quadrupeds — flower is ARTILLERY · elephant gaits only, 2.35 m withers · EATS THE DEAD, kin included |
+| `foes/skitterer.zig` · `ancientpriest.zig` | walks ON ITS RIBS, shy of flame · never melees, claws a skitterer out of bare earth |
+| `foes/hollow.zig` · `owlbear.zig` · `mimic.zig` | second lock point (a 20 HP rider) · FIRST CONSTRUCT, stone until DARK · a CHEST until pressed or hit |
+| `foes/sporegolem.zig` · `cinderwake.zig` · `birchwight.zig` · `salthusk.zig` | `ARMOUR` is the creature · hazard laid by its own feet · caught, it escalates · its KILL is the dangerous part |
+| `play/combat.zig` | `Vitals`, `Stamina`, `Focus`, `Regen`, guard rules, `Elem`/`Resists`, `Status`, `Quick`, `Memory`. **Retune feel here** |
+| `play/stats.zig` · `passivetree.zig` | seven attributes, bar curves, the ONE skill curve · PoE2's tree radially, `Bonus`, the wheel |
+| `play/item.zig` | item vocabulary, `Use`, **`Equip`/`Wear` (the GEAR table)**, `Bag` |
+| `play/liquid.zig` · `drops.zig` | one `Soak` row per `wf.Liquid` · one drop row per `FoeKind`; **the one thing LUCK reads** |
+| `play/rest.zig` · `souls.zig` · `chest.zig` · `pickup.zig` · `award.zig` | bonfire/campfire · the drop and the walk back · boxes off `Op.loot` · the glow a drop stands as · the first-time card |
+| `play/counter.zig` · `tune.zig` | shop and smithy as one `Trade`, headless · THE STATS BENCH; `tuning.cfg` is the DIFFERENCE |
+| `ui/hud.zig` | ER HUD, pad glyphs, day dial, boss bars, and **the ONLY path to draw or measure text** |
+| `ui/uiart.zig` · `ui.zig` · `icons.zig` | chrome dressing shared by hud/menu/book · editor widget kit · editor glyphs from primitives |
+| `ui/book.zig` · `itemart.zig` | THE CHARACTER BOOK — doll, bag, sheet, MAP page · pictures of things, sized by the caller |
+| `ui/mapart.zig` | THE WORLD FROM STRAIGHT UP — one classification, `Lens`, `Seen`. Minimap and MAP page are its two faces |
+| `ui/menu.zig` · `counterui.zig` | boot screen, pause/debug, retro rack · the counter's panel, the DIALOG's shape |
+| `ui/editor.zig` · `tuneui.zig` · `objview.zig` | THE EDITOR, layered StarEdit-style; biggest file, next split candidate · the bench's face · object viewer, JUKEBOX, FX BENCH, **and `charRuler`, which stands the hero beside a body at his own 1.8 m** |
 | `save.zig` | THE SLOTS — three files in the map's own `key: value` grammar, each with its picture |
-| `core/audio.zig` | ~190 synthesized voices through one tape-style `master`; three submixes; read as recipes |
-| `core/rumble.zig` | XInput directly (raylib's GLFW backend stubs `SetGamepadVibration`); holds `PAD` |
-| `shots.zig` | the headless harness — never in context while working on the loop |
-| `core/collision.zig` | 2D XZ capsule/circle push-out, `blocksSight` |
-| `core/mathx.zig` | ground-plane + vector/angle helpers, seeded `Rng`, `gutter` |
-| `core/bake.zig` | one-way door that emitted the first map from the old code-authored regions |
 
-**A NUMBER THE BENCH CAN MOVE IS A `var`, AND ITS BANK IS THE `const` BESIDE IT** (`play/tune.zig`, on
-`core/audio.zig`'s arrangement). The pattern is one table renamed and one line added — `SPELLS_BANK` stays the
-authored const and `SPELLS` becomes the live copy every reader takes — so a row re-authored in the source flows
-through to a `tuning.cfg` that never mentioned it. What that costs: anything that read the table AT COMPTIME has
-to be pointed at the bank (`combat.ailBank`, `item.equipBank`, `item.priceBank`, `combat.bankRow`), and a
-creature's ring is asked for rather than copied (`game.aggroRing`) so a baked table cannot go stale against an
-edit. Identity — a name, a socket, which scroll a spell is on — reads the bank on purpose: it is not a tuning,
-and a comptime string is built out of it.
-
-Two things in that table are load-bearing beyond navigation:
-
-- **A DEFAULTED FIELD ON `Game` MUST BE ASSIGNED IN `init`.** It is built from `alloc.create`, so `= .{}` on the
-  field never runs and it comes up as the fill byte. Silent, and it has bitten twice: `pack.n` as garbage, and
-  the whole day/night cycle dead because `g.day` was never assigned (rate 0 is a held clock; a NaN hour renders
-  as the anchor).
-- **THE LIVE PORTRAIT IS TWO CALLS AND THE SPLIT IS LOAD-BEARING**
-  (`hud.renderPortrait`/`blitPortrait`/`livePortrait`, the one way a body is photographed into the UI).
+- **A NUMBER THE BENCH CAN MOVE IS A `var`, AND ITS BANK IS THE `const` BESIDE IT** (`play/tune.zig`). Anything
+  that read a table AT COMPTIME must be pointed at the bank (`combat.ailBank`, `item.equipBank`, `priceBank`,
+  `combat.bankRow`), and a creature's ring is ASKED for rather than copied (`game.aggroRing`). Identity — a name,
+  a socket, which scroll a spell is on — reads the bank on purpose.
+- **A DEFAULTED FIELD ON `Game` OR `Env` MUST BE ASSIGNED IN `init`.** Both are `alloc.create`d, so `= .{}` never
+  runs and the field comes up as the fill byte. Silent; it has bitten three times (`pack.n`, the whole day/night
+  cycle dead off an unassigned `g.day`, and every `Env` counter `build` reads before the props exist).
+- **THE LIVE PORTRAIT IS TWO CALLS AND THE SPLIT IS LOAD-BEARING** (`hud.renderPortrait`/`blitPortrait`) —
   `endTextureMode` restores the DEFAULT framebuffer, not the target bound before it, so a render nested inside
-  `hud.beginChrome`'s target silently sends the whole rest of the frame at the backbuffer. Render BEFORE the
-  chrome opens, blit inside. The ANGLE is the house's (`hud.PORTRAIT_*`), the DISTANCE the subject's.
-- **`elemfx`'s SIGNATURE IS THE MOTION**: fire RISES and alone leaves a residue, cold FALLS and lies about (the
-  longest life by 2×), lightning DOES NOT TRAVEL (the shortest by 3×, the only colourless one), chaos goes
-  INWARD. Tests tell the four apart with the colour taken away, and again on hue alone.
-- **A BLOW STOPPED ON A FOE'S SHIELD HAS ITS OWN VOICE** (`foe_guarded`, `knight_repel` one size up for the
-  wall). `guard_block` is the HERO's shield eating a blow — the opposite event.
+  `beginChrome`'s target sends the rest of the frame at the backbuffer. **Render BEFORE the chrome, blit inside.**
+- **`elemfx`'s SIGNATURE IS THE MOTION** — fire RISES and leaves a residue, cold FALLS and lies about (longest
+  life by 2×), lightning DOES NOT TRAVEL (shortest by 3×, the only colourless one), chaos goes INWARD. Tests tell
+  the four apart with colour taken away, and again on hue alone.
 
-## The hero rig (`hero.zig`)
+## The hero rig (`hero.zig`) — and every humanoid on it
 
-- **Anatomy is real.** Bone lengths are fixed fractions of stature `H` (=1.8), Drillis & Contini via Winter.
-- **18 bones** (`hero.N` — 17 joints plus the SWORD on the right wrist). `pose()` chains a world matrix per
-  bone ONCE per frame; `draw()` only replays them, so shadow and silhouette always match.
 - **Matrix convention (critical):** raylib `MatrixMultiply(a, b)` applies **a FIRST, then b**. Local =
-  `mul(animRot, translate(offset))`; world = `mul(local, parentWorld)`. Backwards and the skeleton explodes.
-- **Gaits are real.** Walk uses normative sagittal curves (Perry/Winter); run/sprint use Novacheck. Phase is
-  driven by DISTANCE travelled, never time, so feet never skate.
-- **THE 18-BONE SCAFFOLD IS SHARED** — `hero.N`/`PARENT`/`restHumanoid(hx, sx, stature)`, bone 17 the `HELD`
-  weapon slot. Do not transcribe the joint layout into a new creature file. Only `hx`/`sx` and stature are
-  honestly per-creature. The ogre stays off it on purpose (24 bones, three inserted ABOVE existing joints).
-- **HE HAS HIPS AND KNEES, AND THEY ARE THERE BECAUSE A CYLINDER IS CAPLESS** (owner: the tops of his legs run up
-  to the torso and just cut off). Both leg meshes were bare `addCylinder`, open at every joint — the thigh's mouth
-  sits AT the hip, so a swung leg showed a flat ring and its culled interior with nothing between it and the
-  pelvis. A ball at each joint seals the mouth and reads as the joint: wider than either cylinder there, and
-  inside the belt's own half-width (0.235 H against the hip's 0.090), so no standing silhouette changed. The ogre
-  had this right from the start (`ogre.limb` caps with a blob) — **the reference rig was the one breaking the law.**
-- **THE DEAD COLLAPSE DROPS THE PELVIS FASTER THAN `deadLegs` FOLDS THE LEGS.** Measured on the necromancer, a
-  corpse's soles finish about 1.0 m × scale under the turf during `DEATH_DUR`, on every humanoid that shares
-  `heromod.deadLegs`. Invisible — the ground is opaque and the heap above it reads right — so it is recorded,
-  not patched: lifting the rig onto the floor instead keeps the body STANDING while it sinks, which is worse.
-- **A SCALE≠1 humanoid must scale its pelvis HEIGHT** (`pelvY*fs`) or the legs sink.
-- **EITHER HAND MAY HOLD ANYTHING, AND THAT IS THREE THINGS PER ARMAMENT, NOT ONE** (`hero.Armament`): the
-  MESH (`drawHand`), the POSE of the arm, and every WORLD POINT taken off it. All three ask one question —
-  `handsHold` / `meleeLeft` / `wandLeft` / `shieldLeft` / `torchLeft` / `bellLeft` — and a pose picks its side through
-  `armSide(left, authoredLeft)`, whose `mirror` multiplies the LATERAL channels (`ry`, `rz`) and leaves
-  sagittal `rx` alone. Miss the third and it fails INVISIBLY: a rod equipped right drew and carried perfectly
-  and threw every bolt out of the empty left fist, because `wandTipWorld` was still `xf[WRL]`. Same shape on
-  the boards (`shieldFaceWorld`, guard, parry) and on the bell, mirrored.
-  **AND A TWO-HANDER CLAIMS BOTH HANDS FROM EITHER SLOT** — asked as "is the RIGHT slot two-handed", a bow in
-  the LEFT left a shield in the right blocking and parrying.
-- **THE THREE MELEE CLASSES ARE THREE ARMAMENTS, EACH WITH ITS OWN SOCKET AND ITS OWN TWO STROKES** —
-  `sword`/`dagger`/`club`, `hand_sword`/`hand_dagger`/`hand_club`, and `hero.MOVES` indexed `[Blade][heavy]`.
-  R1 and R2 are the whole kit — no strings — and the six are `slash`/`chop` (the sword's, hand-tuned),
-  `flick`/`thrust` (the dagger: DS1's rapid jabs, and the R2 that thrusts), `sweep`/`smash` (the club: DS1's
-  dashing horizontal swing, and the OVERHEAD SMASH).
-  - **THE WEAPON HAND IS ONE HAND** (`handsHold`, `offInHand`). The rig has ONE held bone, so two live melee
-    cells would draw one of them nowhere. The RIGHT cell wins, as a two-hander wins over the cell it did not
-    fill, and `offInHand` says so in words the book can print.
-  - **THE FOUR NEW STROKES ARE KEYED TRACKS** (`MK`, `anim.Pose`, `poseStroke`) — one rig function, four key
-    tables. NO SPRING BANK: `pose` takes no `dt` (every hero pose is pure in its own clock, which keeps
-    `--shot` reproducible), so load, HANG, snap, carry-past and settle are authored as KEYS.
-  - **AN ARRIVAL IS `.accel` INTO THE BLOW AND `.decel` OUT OF IT, NEVER `.snap`.** `snap` is front-loaded, so
-    on a strike key it puts the whole stroke BEHIND the capsule: measured, the dagger crossed 13° of its 84°
-    arc inside its own live window and the club was already on the ground when the window opened.
-  - **A CLASS'S ROW IS `item.DAGGER`/`item.CLUB` AND ITS WEAPON *IS* THAT ROW** — one set of numbers. Neither
-    class is offered BARE in the book; `bareArm` exists so an emptied socket is sane, not reachable.
-  - **`item.Wear` IS APPEND-ONLY, AND THAT IS NOT ENOUGH ON ITS OWN.** A save's `worn:` run is positional over
-    that enum; the KIND now names its own socket and the position is only a cursor, so a re-socketing cannot
-    make the loader throw out a real file.
-- **HUMANOID ENEMIES REUSE THE HERO'S WALK/STRAFE** — `hero.advanceGait` + `hero.legChain`. Never author a
-  bespoke walk; only the upper body is per-enemy. `legChain` is rig-size agnostic but a foe rig must keep the
-  hero's leg indices (5..10) where they are.
-- **THE UPPER BODY MUST ARTICULATE TOO — legs alone are not a gait.** Every walking humanoid owes a
-  contralateral arm swing at full amplitude, elbows flexing through the forward half only, a shoulder girdle
-  counter-rotating against the pelvis (`prot`), a trunk nod twice a stride, and a head that counter-rolls it.
-  **Stagger the LAGS** — joints peaking on the same frame read as one welded block. `ogre.poseUpper` is the
-  worked example.
-- **FEET DO NOT SINK: level the ANKLE, never lift the BODY.** `legChain` measures the deepest sole corner
-  against its `SolePatch` and rotates the ankle to clear. Also check the mesh: `addCube` takes a FULL size,
-  `addCapsule`/`addBlob` take true RADII.
-- **AN ATTACK IS A SEQUENCE OF KEY POSES CHASED BY SPRINGS, NEVER TWO CONSTANTS AND A LERP**
-  (`anim.Key`/`keyAt`/`Spring`/`SpringBank`, `anim.Pose(P)`; Overgrowth's model — Rosen, GDC 2014). A move
-  defined as A→B has nowhere to put a gather that loads, a hang that baits, a snap, a follow-through or a
-  recoil, so it reads STIFF however the constants are tuned. No dial fixes that.
-  - **THE POSE IS A TARGET, NOT THE OUTPUT.** A `Spring` output moves by velocity, so it cannot jump however
-    far its target does — which makes every interrupt (stagger, parry, cut recovery, chain link) continuous
-    for free, and retires hand-rolled cross-fades.
-  - **THE CHAIN LAG IS THE BANK'S, NOT THE MOVE'S.** `SpringBank` pulls each channel a little less hard than
-    the one before, so mass flows root→tip. The channel array's ORDER is load-bearing.
-  - **SEAT THE SPRINGS AT SPAWN** (`SpringBank.seat`). A bank comes up at 0, and 0 is a real pose — arms
-    straight down.
-  - **`.hold` IS HOW A BAIT IS WRITTEN.** A delayed downswing whose pose creeps while it waits reads as the
-    swing already starting.
-- **THE CROSSING SIDESTEP IS GEOMETRY, NOT TUNED ANGLES.** One symmetric ±`STRAFE_ABD` sweep per leg, half a
-  cycle apart. A planted foot is WORLD-FIXED (its offset sweeps back linear in distance). Ask for foot heights
-  and solve for the knee. Cadence has one dial: speed / `STRAFE_CYCLE`.
+  `mul(animRot, translate(offset))`, world = `mul(local, parentWorld)`. Backwards and the skeleton explodes.
+- **18 bones** (`hero.N` — 17 joints plus the HELD weapon on the right wrist). `pose()` chains one world matrix
+  per bone ONCE per frame and `draw()` only replays them, so shadow and silhouette always match.
+- **Anatomy and gaits are real** (Drillis & Contini; Perry/Winter walk, Novacheck run) and **phase is driven by
+  DISTANCE travelled, never time**, so feet never skate.
+- **THE 18-BONE SCAFFOLD IS SHARED** (`restHumanoid(hx, sx, stature)`) — do not transcribe the joint layout into a
+  new creature; only `hx`/`sx` and stature are honestly per-creature. **HUMANOID FOES REUSE THE HERO'S WALK**
+  (`advanceGait` + `legChain`): never author a bespoke walk, only the upper body is per-enemy, and a foe rig must
+  keep the hero's leg indices 5..10 where they are.
+- **A SCALE≠1 HUMANOID MUST SCALE ITS PELVIS HEIGHT** (`pelvY*fs`) or the legs sink.
+- **A CYLINDER IS CAPLESS, INCLUDING ON THE HERO** — a ball at each hip and knee seals the mouth and reads as the
+  joint, inside the belt's own half-width so no standing silhouette changes.
+- **FEET DO NOT SINK: LEVEL THE ANKLE, NEVER LIFT THE BODY** (`legChain` measures the deepest sole corner against
+  its `SolePatch`). Check the mesh too: `addCube` takes a FULL size, `addCapsule`/`addBlob` true RADII.
+- **THE UPPER BODY MUST ARTICULATE TOO — legs alone are not a gait.** Every walking humanoid owes a contralateral
+  arm swing at full amplitude, elbows flexing through the forward half only, a shoulder girdle counter-rotating
+  against the pelvis, a trunk nod twice a stride, and a head that counter-rolls it. **Stagger the LAGS** — joints
+  peaking on one frame read as a welded block. `ogre.poseUpper` is the worked example.
+- **AN ELBOW BENDS ONE WAY, AND THAT WAY IS `rx(NEGATIVE)`.** Either a positive constant is negated at the joint
+  or it is authored negative and passed raw — **never both**, which is how it broke three times (the folk waved
+  behind their own backs; every `ancientpriest` posture; all eight of `necro`'s `*_EL`). Gesture DELTAS carry the
+  sign too, and each file pins its own signs in a test. **A POSE AUTHORED AROUND THE BUG DOES NOT SURVIVE THE
+  FIX**: `staffFit` counter-rotates exactly, so the ANGLE never moves and the HEIGHT does.
+- **AN ATTACK IS KEY POSES CHASED BY SPRINGS, NEVER TWO CONSTANTS AND A LERP** (`anim.Key`/`keyAt`/`Spring`/
+  `SpringBank`; Overgrowth's model). A→B has nowhere to put a gather, a hang, a snap, a follow-through or a
+  recoil, so it reads STIFF however it is tuned. **No dial fixes that.**
+  - **THE POSE IS A TARGET, NOT THE OUTPUT** — a spring moves by velocity, so it cannot jump however far its
+    target does, which makes every interrupt continuous for free and retires hand-rolled cross-fades.
+  - **THE CHAIN LAG IS THE BANK'S, NOT THE MOVE'S** — each channel pulled a little less hard than the one before
+    so mass flows root→tip. **The channel array's ORDER is load-bearing.**
+  - **SEAT THE SPRINGS AT SPAWN** (`SpringBank.seat`) — a bank comes up at 0, and 0 is a real pose: arms down.
+    **ANY chased channel has to be seated** wherever a move is dropped in from nothing (debug entry, shot, test).
+  - **`.hold` IS HOW A BAIT IS WRITTEN** — a delayed downswing whose pose creeps reads as the swing starting.
+  - **AN ARRIVAL IS `.accel` INTO THE BLOW AND `.decel` OUT OF IT, NEVER `.snap`** — `snap` is front-loaded and
+    puts the whole stroke BEHIND the capsule (the dagger crossed 13° of its 84° arc inside its own live window).
+  - **THE HERO'S OWN POSES TAKE NO `dt` AND SO HAVE NO SPRING BANK** — every hero pose is pure in its own clock,
+    which is what keeps `--shot` reproducible, so load, hang, snap, carry-past and settle are authored as KEYS.
+- **EITHER HAND MAY HOLD ANYTHING, AND THAT IS THREE THINGS PER ARMAMENT** — the MESH, the POSE of the arm, and
+  every WORLD POINT taken off it. All three ask one question (`handsHold`/`meleeLeft`/`wandLeft`/`shieldLeft`/
+  `torchLeft`/`bellLeft`) and a pose picks its side through `armSide(left, authoredLeft)`, whose `mirror`
+  multiplies the LATERAL channels and leaves sagittal `rx` alone. **Miss the third and it fails INVISIBLY** — a
+  rod equipped right drew and carried perfectly and threw every bolt out of the empty left fist. **A TWO-HANDER
+  CLAIMS BOTH HANDS FROM EITHER SLOT**: ask "is the RIGHT slot two-handed", or a bow in the left leaves a shield
+  in the right blocking and parrying.
+- **THE WEAPON HAND IS ONE HAND** (`handsHold`, `offInHand`) — the rig has ONE held bone, so two live melee cells
+  would draw one nowhere. The RIGHT cell wins, and `offInHand` says so in words the book can print.
+- **THREE SHAPES ON ONE GRIP** (`hero.Blade`, `bladeOf`) — dirk and club are the SWORD bone with another mesh and
+  capsule, so pose, trail, sparks and every window are written once, LATCHED at `startAttack` with the row.
+- **ON THE LEFT ARM A POSITIVE ABDUCTION CHANNEL FOLDS IT ACROSS THE CHEST**, so "out to his left" is negative.
+- **A DRAGGING HEM IS NOT A BONE** — it rides the ROOT through a lag matrix, and it is a SPRING not an ease: the
+  lean opposes the travel, OVERSHOOTS and settles. Hand-rolled `1 - EASE*dt` damping goes NEGATIVE past 154 ms a
+  frame; use `anim.Spring`.
+- **A POLE IS ONE PATH AND EVERYTHING IS MEASURED OFF IT** (`staffPath`) — mesh, grip calibration and `staffSeg`
+  read the same deterministic curve, stepping by ARC not by height, or a bent 2.00 m pole comes out longer than
+  2.00 m of wood. It turns about the GRIP, not the bone origin (the wrist sits 0.09·H above the palm).
+  `staffTilt`/`wpnTilt` are **180-IS-PLUMB**, and **THE FIT BILLS THE ARM BUT NOT THE TRUNK**, so a pose that
+  arches the spine, throws the trunk or drops the grip pays at its own constant — unbilled, the planted pole
+  swings out flat or its ferrule goes through the turf. **A KIT AUTHORED POINTING UP OFF THE GRIP IS TURNED BY
+  `hero.staffFit`**, and the ARM'S OWN FLEX comes out of the tilt; fitted in the forearm's frame instead, a level
+  `tilt` put a point 3.73 m up over a 1.71 m hero.
+- **THE CROSSING SIDESTEP IS GEOMETRY, NOT TUNED ANGLES** — one symmetric ±`STRAFE_ABD` sweep per leg, half a
+  cycle apart, planted foot WORLD-FIXED. Ask for foot heights and solve for the knee.
+- **THE DEAD COLLAPSE DROPS THE PELVIS FASTER THAN `deadLegs` FOLDS THE LEGS** — soles finish ~1.0 m × scale under
+  the turf on every humanoid sharing `heromod.deadLegs`. Recorded, not patched: lifting the rig onto the floor
+  keeps the body STANDING while it sinks, which is worse.
+- **`item.Wear` IS APPEND-ONLY, AND THAT IS NOT ENOUGH ON ITS OWN** — a save's `worn:` run is positional over that
+  enum, so the KIND names its own socket and the position is only a cursor.
 
-### Animation art direction
-
-- **IDLE** — upright, still, alive: a slow breathing bob only.
-- **WALK** — unhurried, grounded, near-upright (~3° lean). RESTRAINED arms (never both forearms out front —
-  the "zombie arms" fail). Low hip sway, clear heel→toe stride, slight toe-out.
-- **RUN** — low and aggressive: deep lean over a crouched pelvis. Arms pumping at ~90°, not swept-back
-  "naruto" arms. Real flight phase.
-- **SPRINT** — the run dialled up: deeper, lower, longer, faster. Falling forward and catching it.
-- **ROLL** — dive into a tuck, ONE somersault over ONE shoulder about a low ball centre (banked, uneven,
-  drifting roll to roll — cosmetic only), then a spin-free rise. No float.
-- Blends: idle↔walk by a `moving` ease; walk↔run↔sprint by ground speed. Pose discontinuities cross-fade
-  ~0.09 s; stances never snap while mechanics stay instant.
-- **REST — HE PLAYS THE GUITAR HE IS HOLDING.** The instrument has ONE frame (`hero.guitarFrame`, shared by
-  the mesh and the pose) and both arms are SOLVED onto it by two-bone IK that keeps the bone lengths
-  (`hero.armTo`): the pick hand sweeps the strings over the soundhole, down fast and up slow on `REST_BEAT`,
-  the fret hand sits behind the neck and shifts position every few bars with a glance down at it, and a foot
-  taps. The test measures the pick against the strings and the fingers against the neck; a pose that
-  "looks about right" and floats a hand off the instrument fails it.
+**Animation art direction.** IDLE: upright, still, alive — a slow breathing bob only. WALK: unhurried, grounded,
+near-upright (~3°), RESTRAINED arms (never both forearms out front — the "zombie arms" fail), low hip sway, clear
+heel→toe, slight toe-out. RUN: low and aggressive, deep lean over a crouched pelvis, arms pumping at ~90° (not
+swept-back "naruto" arms), real flight phase. SPRINT is the run dialled up — falling forward and catching it.
+ROLL: dive into a tuck, ONE somersault over ONE shoulder about a low ball centre, then a spin-free rise; no float.
+Blends: idle↔walk by a `moving` ease, walk↔run↔sprint by ground speed, discontinuities cross-fade ~0.09 s.
+**Stances never snap while mechanics stay instant.** REST: he PLAYS the guitar he is holding — one frame shared by
+mesh and pose, both arms SOLVED onto it by two-bone IK keeping bone lengths (`hero.armTo`), and the test measures
+pick against strings and fingers against neck.
 
 ## Adding a foe (`foe.zig`)
 
 - **Satisfy the contract:** `pos`, an embedded `combat.Vitals` (`vit`), `hits`, `justDied`, and the accessors
-  `alive/dying/staggered/airborne/bodyR/hurtRadius/centerWorld/lockPoint/topWorld/flashFrac` +
-  `tryHit(foe.Blade)`.
-- **A BODY MAY OFFER MORE THAN ONE POINT** — `lockParts()` and `lockPointAt(i)`, found by `@hasDecl`
-  (`game.partsOf`/`lockPointOf`); part 0 is `lockPoint`. Two do: the ogre's HEAD and the hollow's RIDER. **A PART IS A
-  SPHERE TESTED BEFORE THE BODY'S, ON THE BODY'S OWN SWING LATCH** (`foe.reachedPart`, `foe.Part`) — one swing lands
-  on the head or the chest, the rider or the host, never both. What the blow is worth is the part's: `poiseK` scales
-  the poise pour alone (`Vitals.hitPoise`; the ogre's head is 2×, so one aimed arrow flinches him there and not on the
-  chest), and the pool it goes into is whoever's the caller hands over (the rider's own 20 HP). A point that GOES (the
-  rider shot off) is a count that drops, and the lock falls back onto the body that carried it.
-- **A BLOW IS BILLED FROM ITS IMPACT, NOT FROM THE STRIKE'S FIRST FRAME.** At `s = 0` of every strike the limb is
-  still where the wind left it; it arrives at `*_IMPACT_K` of the strike — 0.25 for the mastodon's tail up to 0.85
-  for the ogre's slam, and 0.68 across the seven families that keep swinging into the catch (`foe.catchMelee`) —
-  and that ONE number is what `toImpact` hands the parry window AND where the `try*` gate opens
-  (`s >= STRIKE * IMPACT_K`). Billing from `s >= 0` landed the owlbear's slam up to 0.10 s before the paws did
-  and the lurker's skull while it was still reared. A stroke judged off a SWEPT SEGMENT (`foe.weaponReaches`,
-  the delver's claw, the skitterer's tip) is exempt: it bills when the edge actually crosses him.
-- **A FRONTAL ANIMATION BILLS A FRONTAL CONE.** Jaws, horns and hands answer for what is in front of them
-  (`foe.inFront` with a `*_FRONT_DOT`), never for a radius — the toad's chomp and the brood's bites once billed a
-  man who had rolled round behind them. Only a RING (a slam's shockwave, the delver's burst, the rock) is 360°.
-- **Reuse the behaviour.** `tryHit` is TWO shared calls then what is yours: `foe.reached(self, blade) orelse
-  return` (swept test, one-hit latch, anti-cheese rouse, the facing snap a `pierce` earns) then
-  `foe.wounded(self, s, blade, .{ .light, .heavy })` (hit count, flash, shove — returning whether the BLOW was
-  heavy, which is what blood and chips are sized off, never the REACTION). Only the shieldman has anything
-  between them. Damage and the reaction live in `foe.strike` under `reached`.
-- **The shared body points.** `foe.bodyPoint(pos, h, scale, lift)` for a height on the creature's own axis;
-  `foe.markOn(bone, at)` for the reticle, which rides the POSE. `foe.stunCurve(t, heavy)` is the one reaction
-  shape in the game. (The kobold keeps its own on purpose: its flinch decays from full rather than swelling.)
-- **Build vitals with `combat.Vitals.initFoe`**, never `init` — that is the slow foe regen schedule.
-- **A CREATURE'S FLINCH IS HEALTH TAKEN IN BLOWS OVER A PERIOD, NOT A COUNT OF BLOWS** (owner: per hit isn't
-  fair to dot builds — not that dots build stun, only hits do). On the foe side `Vitals.strike` pours
-  `FOE_POISE_PER_DMG` of every point a HIT takes into the poise pool, and a blow's own `poise` is
-  ignored; a drip pours nothing. 0.82 puts his base blows on the old scale (13 → 10.7 where the light swing
-  carried 10 poise, 27 → 22.1 where the heavy carried 22), so a creature's `poiseMax`, sized between those, still
-  means what it meant — and IS the damage it shrugs off inside the refill window. His own stagger keeps the
-  blow's `poise`: the WEIGHT of what hit him. **A blow that refuses the flinch must hand the pool back** — the
-  knight's door and the greatsword's hyper armour both restore `poise` (and stance) after `foe.reached`, since
-  stripping a blow's `poise` no longer does anything; a bloomed fungal deer does NOT, so the light poke a shut body
-  shrugs off flinches an open one — the window paying out twice.
-- **NOTHING BUILDS ON A BODY ALREADY STUNNED** (owner) — neither pool, and not the lightning meter: the stagger
-  is the punish window it earned, and stacking the next one inside it is doing one thing over and over.
-- **YOU CANNOT DO ONE THING OVER AND OVER** (owner). Each flinch, break and status proc on a creature leaves WEAR
-  on that channel (`lightWear`/`heavyWear`/`ailWear`), the next taking (1 + wear × `LIGHT_WEAR`/`HEAVY_WEAR`/
-  `AIL_WEAR`, 0.6/0.6/0.7) as much; wear halves every `WEAR_HALFLIFE`. Measured: 5 blows for the first
-  flinch, 7 for the second. Creatures only — bosses do not get to learn him.
-- **`justDied` is a ONE-FRAME flag.** Reset at the TOP of `update`, set in `enterDeath`, apply the blade at the
-  END. Applying it externally without the reset latches a nonstop rumble/shake.
-- **EVERY BODY GOES OUT THE SAME WAY** (`foe.dissipate` + `foe.Dissolve`) — past its own `DEATH_DUR` the fall
-  is over and it dissipates over `DISS_DUR` into gold motes rising and flakes falling. The two DURATIONS are
-  per-creature, and so is the `Dissolve` (rate, spread, rise, flake colour); the SHAPE is not. It reads FIELDS
-  only (`fade`/`scale`/`pos`/`parts`/`fxHead`/`fxAccum`/`fxRng`), which is what lets it live in `foe.zig`.
-  **The SHADE is the one exemption, written at its own `.dead`:** nothing to shed, so it thins from frame one.
-- **A BODY GOES BY GOING TRANSPARENT, NOT BY GETTING SMALL.** `foe.rigScale(scale, fade)` is the ONE dial and
-  it is a tenth (`DEATH_SHRINK`). The vanish is an ALPHA: `drawGroup` hands the shader `1 − fade` through
-  `Scene.beginFade` (depth-mask off while it draws). VIEW PASS ONLY — the depth pass has no fade uniform, and
-  a body keeps its shadow while any of it is left.
-- **A CORPSE IS NOT A COLLIDER.** `alive()` stays true through collapse and dissipation, so every collision
-  site asks `foe.corporeal` (`alive() and !dying()`).
-- **…BUT A BODY ON THE GROUND IS A CAPSULE, NOT THE RING AT ITS FEET** (`game.bodyOf`). Floored, the knight is
-  5.15 m of armour lying behind his boots and the ring held 1.77 of it. A creature that can lie down answers
-  `bodySeg` (`?[2]rl.Vector3`, off its own posed SKULL); everything else has no such state, and `pushOut` on a
-  degenerate segment IS `pushOutCircle`.
-- **Group + register.** Wrap instances in a `Group` exposing `anyDied`/`totalHits`/`aliveCount`; its `reset`
-  and `draw` are ONE-LINE DELEGATES to `foe.resetGroup`/`foe.drawGroup`. The draw's `setFlash(0)` tail is what
-  a fourth copy would forget.
-- **CROSS-CUTTING STATE IS EMBEDDED BY THE CREATURE AND STAMPED BY THE GAME** — its eyes (`Leash`), a hold on
-  its feet (`combat.Root`). The creature reads the field; it never reaches out for the state.
-- **WHAT A CREATURE IS, AND HOW IT TRAVELS, ARE TWO AXES AND ONE TABLE** (`foe.Nature`, `foe.Gait`,
-  `foe.traitsOf` — an exhaustive switch, so a new creature cannot be added unclassified). `Nature` is
-  beast/demon/undead/humanoid/plant/construct; `Gait` is walking/waterfaring/flying/rooted and is what the
-  water gate reads. **`Gait.flying` IS NOT `airborne()`** — that one is whether a body is off the ground THIS
-  FRAME (a toad mid-hop) and it is what collision asks.
-- **DENYING MOVEMENT IS A POST-STEP GATE, NOT A GUARD AT EACH MOVER** (`foe.grip` + `defer grip.hold`,
-  `game.gateTerrain`) — taken once at the end of `update`, because a creature grows movements and a per-site
-  list is a list to forget one from. It takes ONE thing, the feet: the state machine still runs, the kit still
-  swings, blows still land. Y is left alone — `game.groundActor` owns it.
-- **A JUMP IS THE ONE THING THE GRIP REFUSES OUTRIGHT** (`foe.canLeap`) — a leap does not TRAVEL, it leaves
-  the earth. Denying only its distance leaves it hopping on the spot inside a fist of roots, so a jump skill is
-  gated where the move is CHOSEN: the archer's backstep, the kobold's dash, the broodling's pounce, the
-  greatsword's lunge, the toad's hop AND lunge. Ask it of the move's own `hop` (`warrior.decide` folds it into
-  `ready`, so `classify` cannot promise a strike the pick then refuses), never of one move by name. Already
-  airborne when the grip closes, it finishes its arc.
-- **STEERING ROUND WHAT IS IN THE WAY IS `foe.Nav`, STAMPED BY THE GAME** (`game.markWay`/`markWays`). A
-  creature owes a `nav` field and ONE method — `navWant(target)`, the point it is trying to walk at, or null.
-  `markWays` is folded over `FOE_GROUPS` and keyed off `@hasField(M, "nav")`, so gaining steering is a field
-  and a method and never an edit there — and a test pins field ⟺ method, because both halves fail SILENTLY.
-  - **It is STEERING, not a route.** No graph, nothing remembered: a heading tested for the next couple of
-    metres against `env.walkStep` and `env.resolveActor`, fan tried NEAREST-FIRST. It answers a body pressed
-    into a wall; it does not claim more.
-  - **The creature reads it in ONE place.** `Nav.aim` for one that walks where it is LOOKING (the ogre);
-    `Nav.along` for one that steps on a committed vector with its eyes on him (kobold, shade, kiting archer).
-    A hop is bent at the CHOOSE (`frog`, `shroom`), never mid-arc.
-  - **ONLY THE TRAVEL STATE.** A swing, wind, lunge, leap and pounce are committed. **The attack hop is left
-    straight on purpose** — that one is the attack.
-  - **A FLYER IS NEVER STEERED** (`gateTerrain`'s `airborne` skip): the probe is the rule for FEET.
-  - **It is asked about whoever the creature is actually FIGHTING** (`Threat.aim`), never about the hero.
+  `alive`/`dying`/`staggered`/`airborne`/`bodyR`/`hurtRadius`/`centerWorld`/`lockPoint`/`topWorld`/`flashFrac` +
+  `tryHit(foe.Blade)`. Build vitals with `Vitals.initFoe`, never `init` — that is the slow foe regen schedule.
+- **`tryHit` IS TWO SHARED CALLS THEN WHAT IS YOURS** — `foe.reached(self, blade) orelse return` (swept test,
+  one-hit latch, anti-cheese rouse, the facing snap a `pierce` earns) then `foe.wounded(self, s, blade, ...)`
+  (hit count, flash, shove — returning whether the BLOW was heavy, which is what blood and chips are sized off,
+  never the REACTION). Damage and the reaction live in `foe.strike` under `reached`.
+- **Shared points:** `foe.bodyPoint` for a height on the creature's own axis, `foe.markOn` for the reticle (which
+  rides the POSE), `foe.stunCurve` for the one reaction shape in the game.
+- **Group + register.** A `Group` exposes `anyDied`/`totalHits`/`aliveCount`, and its `reset` and `draw` are
+  ONE-LINE DELEGATES to `foe.resetGroup`/`drawGroup` — the draw's `setFlash(0)` tail is what a fourth copy would
+  forget. A multi-kind group has `kind = null` and each member exposes `kind()`; a group with anything else on the
+  field exposes `clear()`.
+- **CROSS-CUTTING STATE IS EMBEDDED BY THE CREATURE AND STAMPED BY THE GAME** — eyes (`Leash`), feet
+  (`combat.Root`), the hour (`foe.Win`), flame (`foe.Glare`), the room (`room`, `foe.Ground`), orders
+  (`foe.Post`), sight, parry (`foe.Parry`), steering (`foe.Nav`). **The creature reads the field; it never reaches
+  out for the state.** Every one is folded over `FOE_GROUPS` and keyed off `@hasField`/`@hasDecl`, so gaining one
+  is a field and a method and never an edit there — **and a test pins field ⟺ method, because both halves fail
+  SILENTLY.**
+- **WHAT A CREATURE IS AND HOW IT TRAVELS ARE TWO AXES AND ONE TABLE** (`Nature`, `Gait`, `traitsOf` — exhaustive,
+  so a creature cannot be added unclassified). `Gait` is what the water gate reads. **`Gait.flying` IS NOT
+  `airborne()`** — that one is whether a body is off the ground THIS FRAME, and it is what collision asks.
+- **Anything the map can post is a `wf.FoeKind`, APPENDED never inserted** (editor unit brushes are pinned to that
+  enum's order at comptime), plus `foeName`, a `unitTips` line, a `unitIcons` glyph and a `foeSwatch`. Several
+  kinds of one creature go in as a CONTIGUOUS RUN, pinned at comptime.
+
+**Billing a blow.**
+
+- **A BLOW IS BILLED FROM ITS IMPACT, NOT THE STRIKE'S FIRST FRAME.** At `s = 0` the limb is still where the wind
+  left it; `*_IMPACT_K` (0.25 for the mastodon's tail to 0.85 for the ogre's slam, 0.68 across the seven families
+  sharing `foe.catchMelee`) is what `toImpact` hands the parry window AND where the `try*` gate opens. A stroke
+  judged off a SWEPT SEGMENT (`weaponReaches`) is exempt: it bills when the edge actually crosses him.
+- **A FRONTAL ANIMATION BILLS A FRONTAL CONE** (`foe.inFront` + a `*_FRONT_DOT`), never a radius. Only a RING — a
+  shockwave, a burst, a thrown rock — is 360°.
+- **A RANGE GATE IS MEASURED FROM THE TARGET'S HIDE, NEVER ITS CENTRE** (add `HERO_REACH`, or the quarry's
+  `bodyR`) — `env.resolveActor` holds an attacker `bodyR + its own` out, so a flat centre-to-centre range is
+  unsatisfiable on anything broad. **HEIGHT IS A SEPARATE QUESTION FROM REACH and needs its own test**: ask for
+  CHEST height (1.12 m), not "below his crown", which passes on a blow that only touches hair.
+- **MELEE REACH IS REFUSED ACROSS A DROP** (`REACH_RISE`, 2 m of GROUND between the two, both ways). Arrows and
+  blasts fly their own path and are not gated.
+- **A BAND HELD AT A CONSTANT WHILE ITS HURT BOX SCALES ONLY AGREES AT ONE SCALE** (`foe.triggerBand`) — the
+  editor posts a body anywhere in `FOE_SCALE_LO`..`HI` and `hurtReach` tracks it, so a `classify` comparing
+  against the authored world metre commits to a blow that cannot land and, having chosen a strike over a step,
+  never closes. Where the band IS the bill's own constant, compare against `hurtReach` directly. **AND THE NEAR
+  EDGE IS THE SAME LIMB**: a `minR` left at the authored metre while `maxR` scales INVERTS the band at
+  `FOE_SCALE_LO`, and a FIXTURE cannot walk out of the ring that leaves — so a test sweeps LO/1/HI, not 1 alone,
+  and a STAND-OFF rides the band as a SHARE.
+
+**Poise, flinch and death.**
+
+- **A CREATURE'S FLINCH IS HEALTH TAKEN IN BLOWS OVER A PERIOD, NOT A COUNT OF BLOWS** — `Vitals.strike` pours
+  `FOE_POISE_PER_DMG` (0.82) of every point a HIT takes into the poise pool and a blow's own `poise` is ignored;
+  a drip pours nothing. `poiseMax` IS the damage a creature shrugs off inside the refill window. The HERO's
+  stagger keeps the blow's `poise` — the WEIGHT of what hit him. **A BLOW THAT REFUSES THE FLINCH MUST HAND THE
+  POOL BACK**, since stripping the blow's `poise` no longer does anything.
+- **NOTHING BUILDS ON A BODY ALREADY STUNNED** — neither pool, not the lightning meter. The stagger is the punish
+  window it earned. **YOU CANNOT DO ONE THING OVER AND OVER**: each flinch, break and status proc leaves WEAR on
+  that channel (`lightWear`/`heavyWear`/`ailWear`), the next taking (1 + wear × 0.6/0.6/0.7) as much and halving
+  every `WEAR_HALFLIFE`. **Creatures only — bosses do not get to learn him.**
+- **`justDied` IS A ONE-FRAME FLAG** — reset at the TOP of `update`, set in `enterDeath`, apply the blade at the
+  END. Applied externally without the reset it latches a nonstop rumble/shake.
+- **EVERY BODY GOES OUT THE SAME WAY** (`foe.dissipate` + `Dissolve`) — the DURATIONS and the `Dissolve` are
+  per-creature, the SHAPE is not, and it reads FIELDS only, which is what lets it live in `foe.zig`. **The SHADE
+  is the one exemption.** **A BODY GOES BY GOING TRANSPARENT, NOT BY GETTING SMALL** — `rigScale` is a tenth and
+  the vanish is an ALPHA through `Scene.beginFade` (depth-mask off), **VIEW PASS ONLY**: the depth pass has no
+  fade uniform, so a body keeps its shadow while any of it is left.
+- **A CORPSE IS NOT A COLLIDER** — `alive()` stays true through collapse, so every collision site asks
+  `foe.corporeal`. **…BUT A BODY ON THE GROUND IS A CAPSULE, NOT THE RING AT ITS FEET** (`game.bodyOf`): a
+  creature that can lie down answers `bodySeg`, off its posed SKULL, and `pushOut` on a degenerate segment IS
+  `pushOutCircle`.
+- **A BODY ALREADY ON THE GROUND CANNOT BE FLINCHED UPRIGHT** (`floored`) — damage, flash, chips and stance still
+  land, only the state change is refused. Death goes through.
+- **ONE CHANNEL SAYS WHERE A TOPPLING BODY IS** (`toppleAmt`/`rollAmt`, 0 standing, 1 flat, NEGATIVE forward) —
+  topple rotates the ROOT about the ground between the feet, roll is `ry(180)` inside the rig, and `turnAbout`
+  exploits `Ry(180)·Rx(θ) == Rx(−θ)·Ry(180)` so the swap is invisible on the frame it happens. **SO EVERY WORLD
+  POINT COMES OFF A POSED BONE** — a height off the feet would hang in the air over a body on the ground. **A
+  ROCK ON THE BACK RIDES THE SAME CHANNEL THE ROLLOVER TURNS**: a body cannot rock about one axis and turn about
+  another and read as one mass.
+- **A FALL IS QUADRATIC, THEN OVERSHOOTS AND SETTLES**, and the body ARRIVING is an EVENT: dust, brake, a voice on
+  that instant. **A FELLED STATUE DOES NOT CURL.**
+- **A BODY ON THE GROUND IS LOOKED AT, NOT STOOD OVER, AND IT IS NOT HIDING** — `blocksSight` takes the LOWER of
+  its two ends, so a fallen mark is stopped by knee-high rubble (`foeStaggered` holds the lock through the punish
+  window it just bought); and the mark is floored at the HERO shoulder for the PITCH only, so the reticle still
+  rides the body.
+- **A BODY THE NECROMANCER CAN USE IS A `raisable`/`reraise` PAIR AND A `heldOpen` FIELD** — nothing else, and no
+  edit to `game.markVigil`/`applyRaises`. The field is named for what it does to the BODY, not for the caster.
+
+**Deciding a move.**
+
 - **A MOVE IS JUDGED BY THROWING IT, NOT BY LOOKING AT IT.** Every blow goes through the REAL `update` at a hero
-  stood across its OWN band — the gather aiming, the strike tracking and stepping, the man shoved out to
-  `closestApproach` as `env.resolveActor` would — and must bill a hit at every stand. Two creatures carry the
-  test now (`knight`'s THE SWORD IS SWUNG AT THE MAN WHERE HE STANDS, `ogre`'s THE CLUB LANDS ON THE MAN WHERE
-  HE STANDS) and it is the judge for the third: a strip or a shot is not.
-  - **AND A BEARING THE KIT CANNOT BE BROUGHT ROUND TO IS A HARD GATE AT THE CHOOSE**, never a lower score — a
-    whiff is not a worse option, it is not an option. **The gate is SOLVED off what the wind can actually turn**
-    (`ogre.slamBearing`: the rear-back's share of `TURN_RATE` over its own duration, plus what the kit subtends
-    at that stand), so retuning either end cannot leave it behind. The ogre's slam had no gate and was handed
-    out at any bearing inside `SLAM_R`: thrown at a man 170° off he came round to 64° and billed nothing.
-  - **OFF THE GATE HE LOOMS, AND LOOMING IS THE TURN** — `.wait` is `enterIdle`, and idle faces the quarry at
-    the FULL rate. A gate is only a hole if the state it falls through does nothing.
-  - **AND A BAND HELD AT A CONSTANT WHILE ITS HURT BOX SCALES ONLY AGREES AT ONE SCALE** (`foe.triggerBand`).
-    The editor posts a body anywhere in `wf.FOE_SCALE_LO`..`HI` and `foe.hurtReach` tracks it; a `classify`
-    that compares against the authored world metre does not, so under the shipped scale the creature commits
-    to a blow that cannot land and — having chosen a strike over a step — never closes. MEASURED at `x0.5`:
-    the ogre swiped from 1.61 m outside its own club and the rooted reached 1.75 m past its hook; fourteen moves
-    across eleven creatures. `triggerBand(worldR, shipped, scale)` returns `worldR` exactly at the shipped scale,
-    so the authored fight does not move. Where the band IS the bill's own constant, compare against
-    `foe.hurtReach` directly instead (`cinderwake`, `birchwight`, `salthusk`, `owlbear`, and the rest).
-    - **AND THE NEAR EDGE IS THE SAME LIMB.** A `minR` left at the authored metre while `maxR` scales INVERTS
-      the band at `FOE_SCALE_LO` — the rooted's hook was 2.80 against a 2.57 — and a FIXTURE cannot walk out of
-      the ring that leaves. `rooted.nearR` beside `bandR`, and its test sweeps LO/1/HI rather than 1 alone.
-      A STAND-OFF rides the band as a SHARE for the same reason (`delver.CLAW_KEEP_SHARE`): a keep held at the
-      authored metre lands outside a shrunken band, and the body waits in a ring it can neither strike from nor
-      close out of.
-- **A BODY THE NECROMANCER CAN USE IS A `raisable`/`reraise` PAIR AND A `heldOpen` FIELD** — nothing else, and
-  no edit to `game.markVigil`/`applyRaises`, which key off `@hasDecl`. The field is named for what it does to
-  the BODY, not for the creature doing it: one name for both had `foe.dissipate`'s probe matching the caster.
-- **A multi-kind group answers for its own members** — `kind = null` in `FOE_GROUPS`, each member exposes
-  `kind()`. A group with anything else on the field (sacs, acid) exposes `clear()`.
-- **Anything the map can post is a `wf.FoeKind`, APPENDED never inserted** (editor unit brushes are pinned to
-  that enum's order at comptime), plus `foeName`, a `unitTips` line, a `unitIcons` glyph and a `foeSwatch`.
-  Several kinds of one creature go in as a CONTIGUOUS RUN, pinned at comptime.
+  stood across its OWN band — gather aiming, strike tracking and stepping, the man shoved out to
+  `closestApproach` as `env.resolveActor` would — and must bill a hit at every stand. `knight` and `ogre` carry
+  the worked tests. **A strip or a shot is not the judge.**
+- **REACH IS MEASURED DOWN THE FACING, WHILE LIVE, THROUGH THE REAL UPDATE** — never at the bearing the kit flies
+  furthest (a gather aims the body square, so a flank number is a distance nobody stands at), never before the
+  impact frame (that is picture, not reach), never off a keyed replay (springs lag the keys by a few frames).
+- **A BEARING THE KIT CANNOT BE BROUGHT ROUND TO IS A HARD GATE AT THE CHOOSE**, never a lower score — a whiff is
+  not a worse option, it is not an option. **The gate is SOLVED off what the wind can actually turn** (the
+  rear-back's share of `TURN_RATE` over its own duration, plus what the kit subtends at that stand), so retuning
+  either end cannot leave it behind. **Off the gate a body LOOMS** — `.wait` is `enterIdle` and idle faces the
+  quarry at the FULL rate: a gate is only a hole if the state it falls through does nothing.
+- **A MOVE THAT CANNOT LAND IS NOT A DECISION** — a choose site tests the move's OWN band, not just its outer
+  range. The ogre's swipe passes clean outside anything hugging its legs while collision holds the hero inside it.
+- **A STROKE HAS AN INNER EDGE TOO** (`reachIn`, `nearR`) — a scorer skips a stroke whose dead zone or far edge
+  holds the man. **AND A LUNGE ONLY COUNTS AS FAR AS IT HAS LANDED WHEN THE KIT CROSSES THE FRONT**
+  (`stepLands`); the rest of the lunge is reach the far stand never saw.
+- **HOW HARD A STROKE FOLLOWS YOU IS A PROPERTY OF THE STROKE** (`Attack.track`), not one global rate — HEAVY rows
+  stay under `TURN_RATE`, because commitment has to cost tracking or there is no window. **A STROKE THAT CANNOT
+  FOLLOW YOU CARRIES THE BODY AT YOU** (`Attack.step`). **AND A SWING IS ONLY AS ACCURATE AS THE THING ON THE END
+  IS WIDE**: a swing-bearing allowance may never exceed the kit's own subtended half-angle.
+- **A COMMITTED LINE IS COMMITTED AT THE LAUNCH** — a charge's wind may aim past the turn rate, because what you
+  dodge there is the travel, and the travel then steers not at all.
+- **DENYING MOVEMENT IS A POST-STEP GATE, NOT A GUARD AT EACH MOVER** (`foe.grip` + `defer grip.hold`,
+  `game.gateTerrain`) — taken once at the end of `update`, because a creature grows movements and a per-site list
+  is a list to forget one from. It takes ONE thing, the feet: the state machine still runs, the kit still swings,
+  blows still land. Y is left alone (`game.groundActor` owns it).
+- **A JUMP IS THE ONE THING THE GRIP REFUSES OUTRIGHT** (`foe.canLeap`) — a leap does not TRAVEL, it leaves the
+  earth, so it is gated where the move is CHOSEN, asked of the move's own `hop` and never of one move by name.
+  Already airborne when the grip closes, it finishes its arc; re-ask at the launch if a root can close during the
+  wind. **A TELEPORT IS A JUMP TOO**, and it is the one move that must not fire out of a STAGGER: a creature that
+  vanishes mid-flinch erases the punish window, so the blow sets a latch and the blink is spent at the next choose.
+- **STEERING ROUND WHAT IS IN THE WAY IS `foe.Nav`** — a `nav` field and ONE method, `navWant(target)`. It is
+  STEERING, not a route: no graph, nothing remembered, a heading tested for the next couple of metres against
+  `walkStep`/`resolveActor`, fan tried NEAREST-FIRST. Read in ONE place: `Nav.aim` for a body that walks where it
+  LOOKS, `Nav.along` for one stepping on a committed vector with its eyes on him; a hop is bent at the CHOOSE.
+  **ONLY THE TRAVEL STATE** — swing, wind, lunge, leap and pounce are committed, and **the attack hop is left
+  straight on purpose.** A FLYER is never steered. Asked about whoever the creature is FIGHTING (`Threat.aim`).
+- **A UNIT'S ORDERS ARE STAREDIT'S** (`wf.FoeAi`, `foe.Post`, `postStep`) — JUNKYARD DOG is `roam` (about a post,
+  leashed), `roam_free` the same dog off its chain, `patrol` walks the `wp=` legs out and back, and `hold` is the
+  DEFAULT so a map that never says `ai=` loads unchanged.
+  - **The creature owes a field and ONE call** — `postStep` from its IDLE branch, filling the same
+    `movedDist`/`moveSpeed`/`moveYaw` its chase branch fills. A helper that advanced the gait itself would run the
+    walk cycle at double speed on exactly the frames the body is walking.
+  - **"BACK TO YOUR POST" MEANS THE POST, NOT THE SPAWN PIN** (`tetherFor`, `homeFor`) — the same anchor feeds
+    `tickLeash` at every call site, or `roam_free`, unleashed by definition, is dragged back by its own tether.
+  - `postDrive` is the leg-and-gait case, `postAmble` eases a `self.speed` and steps by the speed REACHED (`accel`
+    shapes the gait blend and moves no mass), `postWant` hands back only the PLACE. A round stops at `foe.ARRIVE`.
+  - **The three FIXTURES that cannot move are named with a reason in `game.NO_ORDERS`, enforced both ways** — an
+    order the editor lets you assign that silently does nothing is the failure.
+- **A BODY MAY OFFER MORE THAN ONE LOCK POINT** — `lockParts()`/`lockPointAt(i)`, found by `@hasDecl`; part 0 is
+  `lockPoint`. **A PART IS A SPHERE TESTED BEFORE THE BODY'S, ON THE BODY'S OWN SWING LATCH** (`reachedPart`) so
+  one swing lands on the head or the chest, never both. `poiseK` scales the poise pour alone, and the pool it goes
+  into is whoever's the caller hands over. A point that GOES is a count that drops, and the lock falls back onto
+  the body that carried it.
+- **Foe pacing:** the archer's BACKSTEP is a committed jump straight back, inside sword reach, on a 7 s cooldown —
+  it buys the shot back exactly once. **An evade you can spam is a wall.**
 
-### The Bone Knight (`knight.zig`) — first boss
+### The bosses
 
-Anor Londo Sentinel (docs/GIANT_KNIGHTS.md) on the ER knight brain (ELDEN_RING.md §7). 900 HP, five strokes
-plus swat / hop / leap / shove / charge / fall. Memorization and attrition, never dice.
+**BONE KNIGHT** (`knight.zig`) — Anor Londo Sentinel (`docs/GIANT_KNIGHTS.md`) on the ER knight brain
+(`ELDEN_RING.md` §7), 900 HP. **The AI template: read this file before authoring any other creature's brain.**
+What transfers:
 
-- **THE DOOR NEVER BREAKS; THE MAN BEHIND IT DOES.** No stamina pool on the door. A share of stance passes
-  through (`TOWER_STANCE_PASS`, small) so frontal pressure earns a stagger, expensively. No poise ever — the
-  door may not flinch him (`tryHit` hands the pool back after a blocked blow, since a creature's flinch is now
-  the DAMAGE it took), and `POISE_MAX` is the damage he shrugs off inside the refill window. **TWO PARRIES
-  break the stance** (`PARRY_STANCE` over the shared `combat.PARRY_HIT` 46 — owner: good parry potential,
-  the player should feel like a badass); it was three, and the third never came.
-- **EVERY DIMENSION OF THE DOOR IS DERIVED AND COMPTIME-ASSERTED, NEVER PICKED.** `TOWER_ARC` comes from
-  `towerArc` — the widest chord against how far the face stands in front of his body axis, plus a named
-  allowance for the swept kit; the chords are asserted past his pauldrons both sides, the bow is asserted real,
-  and the height past a wall's proportion (>1.55× chord). Foot 0.24 m, top 4.75 m under a 5.11 m crown. Coverage
-  is bought by building DOOR. **THE RAM IS NOT THE WHOLE FACE** (`SH_RAM_HALF`): bash and charge bill only the
-  near-flat middle.
-- **THE STANDOFF IS MEASURED OFF THE FIST, SO IT IS ONLY EVER THE LAST FEW CENTIMETRES** — the shoulder comes
-  out of the reach and the elbow folds the forearm ACROSS his chest. The test brackets from BOTH sides and
-  measures off the CUIRASS FACE, not his footprint. **EVERY POSE THAT LERPS OFF `GUARD_*` MOVES WITH IT** —
-  `BASH_WIND_*` are those hauls re-based, and an absolute wind target silently loses its whole gather when the
-  guard moves under it.
-- **A SHIELD IS CARRIED, NOT WELDED TO THE FOREARM** (`hangUpright`, `HANG_TIP` — owner: it goes up in the air
-  like a retard, or the sword goes through it). Strapped rigidly, every roll of the forearm rolled four and a half
-  metres of oak, and NOTHING WAS ASKING: the pins were three instants of `doorNormal` and five strokes of
-  clearance. Walked across every state he has, the plank INVERTED (its own up axis at −0.82) and its foot climbed
-  to 6.87 m over a 5.11 m crown; a stagger flung it horizontal at 5.49 m; the SLAM had the hub 4.15 m off a 0.98 m
-  strap — the door left his hand, flew to 10.14 m and came back down. So the arm AIMS it and nothing else: the
-  face may tip `HANG_TIP` off his own horizontal and no further, and the plank length is then whatever is
-  left of his UP — his, not the world's, so a toppled body takes its door down with it. Inversion is impossible by
-  construction rather than by tuning a pose away from it. **The SLAM is the one exemption and it is a FRACTION,
-  not a flag** (`slamDrive`): laid flat there is no upright to solve for, so the length comes off his FORWARD and
-  the far end lies out in front. Exempting the whole move let the HAUL through, and the haul was the 7.41 m.
-  **AND THE STRAP IS A LENGTH, NOT A SUGGESTION** — a move own carry (`slamCarry`, `SHOVE_CARRY_*`) may swing the
-  hub round the fist and may not take it further off than the grip. Measured now, every state: plumb ≥ 0.86, foot
-  ≤ 2.45 m, hub 0.98 m on a 0.98 m strap, and a test walks all twenty of them.
-- **THE DOOR IS STRAPPED TO THE FOREARM** (`shieldXf`, `calibrateShield` — owner: it floated off his arm and
-  hung at bizarre angles). Position AND orientation come off the wrist bone through one fix solved at spawn, so
-  the GUARD is pixel-for-pixel what was authored (square across his front, pulled onto his centre line, foot
-  0.26 m, top 4.76 m) and from then on the arm carries the plank rigidly. Oriented off the BODY, the fist only
-  ever supplied a position: the plank stayed square to his front while the arm swung out, and left the arm
-  behind. **THE ANGLE IS THE ARM'S NOW, SO EVERY POSE THAT PRESENTS THE DOOR IS PINNED ON WHERE THE FACE
-  POINTS** (`doorNormal`): forward on guard (z 1.00), forward at the ram (0.99), down at the slam (y −0.95),
-  and the hub never further than the grip from the fist. Consequences that follow from the strap:
-  - **A shield is driven with the elbow FOLDED and the body behind it.** A straight-arm punch turned the plank
-    110° with the forearm and rammed its edge; the bash swings the upper arm 56° and OPENS the elbow by the
-    same (`BASH_HIT_SH` 62 / `BASH_HIT_EL` −70), so the forearm keeps its line, and the lean and lunge carry it.
-  - **`twist` turns the plank with the torso.** Wound to −58 the bash's door faced his own left; +22 at the
-    ram faced it 46° off the man; −16 squares it.
-  - **On the LEFT arm a positive abduction channel folds it ACROSS the chest** (the guard's pull), so "out to
-    his left" is the negative sign (`SWIPE_ABD`, and `SWIPE_SH` pitches it BACK): out left and back,
-    edge-on, behind the shoulder plane. Raised overhead instead, a 4.5 m plank hanging 3.7 m below the fist
-    swung over his head onto his sword side.
-  - The slam's pitch (`SLM_PITCH_DOWN` 30, was 66) — the arm's own drop supplies most of it now.
-- **ANY ROTATION OF THE DOOR IS ABOUT ITS OWN CENTRE, NEVER ITS GRIP** (`SH_CENTRE_Y`). Gripped high like a
-  pavise, a pitch about the hub sweeps four fifths of a four-metre plank through the knight.
-- **THE ARM CANNOT CARRY IT — THE MOVE HAS TO** (`slamCarry`): the fist travels ~1 m and the door is 4.
-- **EVERY SWORD STROKE TAKES THE DOOR OFF HIS FRONT** (`swipeOpen`) — sweep, second sweep, overhead, THRUST
-  and the sword-side flick; the bash keeps the guard because the door IS the bash, and so does the shield-side
-  flick. (The thrust used to keep it, and its point ran straight through the plank hanging on his centre line —
-  owner: the sword is going through the shield.) **THE SWORD COMES HOME FIRST, THEN THE DOOR** (`RECOVER_HOLD_K`
-  0.22, `RECOVER_BACK_K`, `SWIPE_SHUT_K0`): the End Pose is held, the arm is back at the carry by 40%
-  of the recover, and the door shuts after it — shutting earlier it met the sword still out in
-  front. **A test throws every sword stroke wind-to-recover and measures the blade's nearest approach to the
-  door's face** (`bladeDoorGap`): 0.64–0.77 m now, against a 0.36 m clearance; it was 0.05–0.16. **THE
-  MECHANIC AND THE PICTURE ARE ONE CHANNEL** — `guardUp` and where the door actually is, test-pinned together.
-- **HE TRACKS LIKE THE OGRE, AND THE WINDOW IS THE COMMIT — NOT THE FLANK** (owner: the ogre is harder, the
-  knight is dull). `TURN_RATE`, pinned into the ogre's class and under it (`ogre.TURN_RATE`,
-  public for exactly this). He was at 0.68 — slower than the 0.80 a WALKING man carries — so a stroll in
-  circles was the whole counter and most of the fight was him waiting. **YOU CANNOT OUT-CIRCLE HIM ON FOOT
-  ANY MORE**: a sprint round him is 2.40. What he gives you instead is what the ogre gives you — the heavy
-  commits. Quick rows hold you (`SWAT` 4.80, `THRUST` 4.40, `BASH` 4.00, against the ogre's swipe at 5.40);
-  the heavies let go (`SWEEP`/`SWEEP2` 2.00, test-pinned under `TURN_RATE` and under half the swat's); the
-  OVERHEAD lets go entirely at 0.
-- **BUT HE DOES NOT TURN ON THE SPOT** (owner: step-turn as needed — "oh he's not looking, OH WAIT HE IS").
-  Idle holds its facing; what moves it is the STEP-TURN (`STEPTURN`, a planted 62° pivot, taken past
-  `STEPTURN.least` 30° — over the bash's 26° gate, inside which he throws from where he stands), the hop, and
-  the GATHERS, which aim at the full `TURN_RATE`. So where he is looking is a fact you can read and be wrong
-  about: the wind coming round onto you IS the "oh wait".
-- **AND "DULL" IS A MEASUREMENT, NOT A FEELING** — 45 s of a hero walking a ring round him is 21 blows thrown,
-  93% of the fight committed, and no lull longer than 0.73 s. It was 30 blows at 91% with a 2.23 s lull when
-  he pivoted on the spot and threw strokes that could not reach; the time between blows is now hops,
-  step-turns and the fall's aftermath — MOVES, not waiting — and every blow is thrown from a stand it can land
-  on. Test-pinned, because the failure it guards is the fight going quiet rather than anything going wrong.
-- **EVERY STROKE LANDS ON THE MAN WHERE HE STANDS** (owner: "he is swinging at emotions"). Measured, none of
-  them did: the sweep was wound HIGH ACROSS his body and crossed his front 4.8 m up, un-live, coming down to a
-  man's height only out on his sword flank; the overhead and thrust ran a metre right of a squared man on the
-  shoulder's own offset; the sword swat was a flick at his right flank; the shield swat's blow was tested on
-  the SWORD, which was at his hip. Only the door connected. So:
-  - **THE ARCS ARE AUTHORED LOW AND THROUGH THE FRONT.** The sweep is a forehand cocked behind his right hip and
-    ripped across at ~1.3 m (`SWP_*`, fist brought down to ~2.4 m by `lean` 40 — at 2.7 the root cleared a man
-    at his boots); the second sweep is a SECOND FOREHAND, the blade drawn back low across his front to the right
-    hip (un-live, the whole 0.58 s a tell) and ripped across again — a backhand from the left had nowhere to
-    cock once the door stood edge-on behind his left shoulder; the overhead is
-    ADDUCTED across the chest (`OVR_HIT_ABD` — a blade pointing straight down barely answers `armSweep` or
-    `twist`); the thrust rides a near-LEVEL arm with the blade angled down off it (`THR_HIT_SH` 80, `tilt` −10)
-    so the point is out at full stretch at a man's chest, carried onto the centre line, and its lunge is a POKE
-    (0.16 — at 0.60 the fist ran PAST a man inside 4 m); the sword swat is flicked from the hip across the front
-    with the blade pointing OUT (hung near-vertical, 82° of shoulder sweep moved the tip 30°).
-  - **THE PIN IS THE REAL UPDATE**, out to `bandR` — where the AI actually picks it.
-  - **NOW THAT THEY LAND, THEY ARE SLOWER AND HEAVIER** (owner): every wind is up ~15% (sweep 1.15 s, sweep2
-    0.58, overhead 1.00, thrust 0.62, bash 0.64, swat 0.60 — more predictable), damage up ~12% (swat 16, sweep
-    33, sweep2 29, overhead 46, thrust 25, bash 30; the `Weight` rule still caps a HEAVY under 34).
-  - **EVERY GATHER ENDS IN A HANG** (owner: the swing tells could be better; `.hold` is how a bait is written).
-    The sweep, bash and thrust winds now end with the cocked pose held still for the last seventh, like the
-    overhead always did; the swat keeps its `windHold` hang; the second sweep's whole 0.58 s re-cock is drawn
-    low across his front, un-live.
-- **THE SWORD IS CARRIED HIGH — BLADE UP PAST HIS SWORD SHOULDER** (owner: the sword goes through it; use your
-  judgment of how bodies work). **WHAT THIS REPLACES:** the carry was Pflug — hilt at the hip, point presented
-  forward-down. On a body whose door covers his whole right side out to 1.54 m, the rig cannot put a point past
-  that edge without throwing the arm after it: MEASURED, the point sat 3.66 m off his centre line — 2.6 m
-  outboard of his own shoulder — and 1.37 m BELOW the hilt, which is Alber and not Pflug. PHOTOGRAPHED it read as
-  a pike carried out sideways, and it was the reason every clearance was tuned rather than structural. Nobody
-  fighting from behind a pavise presents low past its edge: the sword lives high. `CARRY_SH` / `CARRY_EL`
-  / `CARRY_ABD` −2 / `CARRY_TILT` 150 / `CARRY_SWEEP` 30 — SOLVED, not dialled, by sweeping the four channels
-  against a target and taking the best that cleared the plank. Hilt at the sword hip (1.33 m right of centre,
-  3.09 m up), point 6.09 m up: 0.98 m over his own crown, 0.63 m off the pauldron and 1.24 m off the helm. **The
-  clearance is STRUCTURAL now** — a blade overhead cannot be swung into a plank at his side — and the whole kit's
-  worst blade-to-door approach went from 0.11 m to 0.38 m against a 0.36 m clearance.
-  - **AND EVERY GATHER NOW STARTS FROM HIGH**, so the drop into the cock is the tell rather than a draw-back.
-    Raising `CARRY_SWEEP` past zero flipped the bleed into the shield arm (`SHL`'s `ry(armSweep * 0.30)`) and
-    carried the door 0.13 m further out: `BASH.reachOut` was RE-MEASURED to 0.94, and `SHOVE_BAND` came down to
-    1.18 to keep the shove's band inside where the flank answer becomes the sweep.
-  - The door owns his centre line and the sword the right of it, as before. **Head-on he is still a wall and
-    nothing else**: door top 4.78 m under a 5.11 m crown, so 0.33 m of helm shows over 4.5 m of oak, and
-    `combat.withinArc` centres the block on his facing — which is why the plank may not be slid off centre to
-    show him.
-  - **REACH IS MEASURED DOWN HIS FACING, WHILE LIVE, THROUGH THE REAL UPDATE** — never at the bearing the kit
-    flies furthest (the gather aims him square, so a flank number is a distance nobody stands at), never before
-    the impact frame (picture, not reach), and never off a keyed replay (the springs lag the keys by a few frames,
-    and a replay put the swat's crossing before its own impact and read a third of its reach). Sweep 3.72 m,
-    sweep2 4.73, thrust 4.08, over 2.83 (the kit alone — its LUNGE carries the drop out), swat 3.20, door 1.90;
-    each `reachOut` is that number and a test holds them within [−0.05, +0.65] of it.
-  - **THE LUNGE ONLY COUNTS AS FAR AS IT HAS LANDED WHEN THE KIT CROSSES HIS FRONT** (`Attack.stepLands`,
-    measured; `bandR` is trigger + step × that). A held End Pose keeps the kit out to the end (thrust, door 1.0;
-    the overhead's blade is in the earth by k 0.55, 0.90); a sweep passes the front ONCE — the forehand at k 0.64
-    with 0.87 of its step landed, the backhand at k 0.39 with 0.63 — and the rest of the lunge was reach the far
-    stand never saw.
-  - **A STROKE HAS AN INNER EDGE TOO** (`Attack.reachIn`, `nearR`) — the thrust's point rides level off a
-    near-horizontal arm and a man inside 2.65 m is under the fist. `weigh` and the string links skip a stroke
-    whose dead zone or far edge holds the man: a whiff is not a worse choice, it is not a choice. Sweep, sweep2,
-    swat and door are pinned at 0.
-  - **THE SHIELD-SIDE SWAT IS THE DOOR'S FLICK** — `doorSwings` puts the blow on the shield, and
-    `swatTriggerR`/`strokeBandR` price it at the bash's reach (2.85 m against the sword's 3.78).
-  - Every stroke, both swat sides, is thrown at a hero stood at four stands from its inner edge to 0.97 × `bandR`
-    — gather aiming, strike tracking and stepping, the man shoved out to `closestApproach` when the lunge runs
-    into him as `env.resolveActor` would — and must bill a hit at every one. Judge a stroke on this before the
-    strip; the strips showed nothing wrong.
-- **THE JUMPBACK IS A LAST RESORT** (owner: less jumpbacks). Every door to the LEAP — the rear-sector and
-  outer-flank picks in `classify`, `counterFlank`'s spine answer, the swipe-and-leap chain — asks `harried`:
-  `RETREAT_AT` of max HP banked at this spot (comptime-pinned over 1.5× `REPOSITION_AT`, which keeps
-  pricing the shove and `W_PRESS`). Pressure that only warrants a reposition never buys the leap. **One meter,
-  two tiers** (`foe.Sense.pressed` with the creature's own shares) — the pattern for any creature that must not
-  flee at the first scratch.
-- **AND HE SHUTS THE GAP RATHER THAN STANDING IN IT** — the HOP is the quickstep: 3.2 m in 0.54 s on a 2.6 s
-  clock, taken on PRESENCE (a man circling him, or the thrust band with the thrust spent). At 1.6 m on a 7.5 s
-  clock, gated on damage already banked, it fired about never and the thrust band was where you healed.
-- **A GATHER TURNS HIS SHOULDERS, NOT HIS FEET** (`GATHER_SWEEP_MAX`, `holdWindSweep` — owner: he tracks a
-  bit too much between attacks, needs a bit more room to get behind). The RATE is still his full `TURN_RATE`; what
-  is capped is the TOTAL a wind may bring round off the facing it STARTED from, so a wind-up can no longer erase
-  ground the whole recovery bought. **The step-turn was not the culprit** — measured, a walked ring drew only 6 of
-  them in 45 s; every GATHER was, each aiming at full rate for up to 1.15 s, which is 211°. Past the cap the
-  answer is the STEP-TURN, a move you can see coming. Measured after: a full gather from dead behind leaves him
-  120° off (the rear sector starts at 110, so the FALL is still the answer there), and a walked ring puts you
-  behind him 25% of it against 17% — with 20 blows still thrown and 95% of it committed, so the dullness law
-  holds. `GATHER_SWEEP_MAX` must stay under `180 − FALL_SECTOR` or the back pocket closes.
-- **THE DOOR IS A MASS, SO ITS CHANNEL IS CHASED AND NEVER ASSIGNED** (`tickDoor`, `DOOR_EASE`, `seatDoor` — owner:
-  it flies around off his hand like a kite; fix his arm motion and keep the shield held). The strap already held
-  the hub at the fist and the plank already could not invert; what was left was SPEED. `swipeOpenWant` and
-  `shoveAcrossWant` are SCHEDULES with seams in them — a state changing, `shoving` clearing — and they were read
-  STRAIGHT into the arm, outside the spring bank that smooths every other channel. Measured: the hub crossed
-  **4.3 m in ONE FRAME**, at up to 260 m/s. Both are chased now, **and `guardUp` reads the CHASED value**, so the
-  mechanic and the picture stay the one channel and neither can step. Worst frame in any move is now 1.08 m, in
-  the slam's own haul, and a test walks all fifteen.
-  - **AND THE HAUL IS SPREAD OVER THE GATHER** (`SWIPE_LEAD_K`, `SWIPE_LEAD_TO`): the whole 96° of `SWIPE_ABD`
-    plus 82 of yaw used to go in 0.126 s — 762°/s, a snap and not a motion. The plank now leads to
-    `SWIPE_LEAD_TO` through the wind, which sits UNDER `guardUp`'s own 0.5 threshold: **the picture leads the
-    flag and may never trail it.** The shut got its time back the same way — the sword's road home is UP now, so
-    `RECOVER_BACK_K` came down to 0.40 and `SWIPE_SHUT_K0` with it.
-  - **AND THE FACE ITSELF IS CHASED, WHICH IS THE LAST WORD** (`turnToward`, `DOOR_TURN_MAX`). Easing
-    every channel under it was not enough: the arm's own roll has singularities in it, and a counter yanking him
-    out of a slam re-aims the whole basis in a frame. A 120 s chaotic-fight soak caught **113° of face turn in
-    ONE FRAME, standing in idle** — a translation test cannot see that, because the hub barely moves while four
-    and a half metres of plank whips. Worst now is 14.5°, and turning the cap off puts it back to 60, so the
-    chase is doing the work. **The tip is clamped AFTER the chase, not before** (`clampTip`): a slerp runs the
-    great circle between its ends, and between two legal near-horizontal faces on opposite bearings that circle
-    goes over the POLE — clamped only on the way in, the chase itself tipped the plank to 0.62 of upright.
-  - **AND `clampTip` MAY NOT BAIL OUT.** With the face pointing straight up there is no horizontal left to aim
-    by, and returning the arm's own matrix there handed back exactly the pose the function exists to refuse —
-    the soak caught the step-turn doing it, plank at 0.20 of plumb and flat out at 0.94 m. His FORWARD is always
-    a legal bearing.
-  - **THE SOAK IS THE JUDGE, NOT THE PER-MOVE PROBES** (`MAKE DAMN SURE…`). Debug entries drop him into one
-    state from nothing; the seams live in a real fight — a stagger landing mid-swipe, a string billed under a
-    wind, a counter interrupting a slam. 120 s, 200 blows landed on him, 29 of his 33 states visited, and the
-    four invariants asked on EVERY frame: hub on the strap, no whip, never inverted, never over his head. It
-    fails with the frame, the state and the geometry printed, and it asserts its own state coverage so a soak
-    that quietly stopped reaching the fall cannot pass having proved nothing.
-  - **A CHASED CHANNEL HAS TO BE SEATED.** A move dropped in from nothing — a debug entry, a shot, a test — has
-    no previous frame to inherit the door from, so every `debug*` seats it. `.chainwind` IS a link and seats
-    `strung` with it; entered at 0 the plank was still across his front while the re-cock swept low through it.
-- **THE GATHER AIMS, THE COMMIT DOES NOT.** Every wind turns at his full `TURN_RATE` — it was 0.45 of it for
-  all but the sweep's, which is why standing in front of him and strafing was free: the overhead brought 16° round
-  across a 0.88 s gather. What still leaves the window is `Attack.track`, and the CHARGE's wind has always been
-  allowed to aim past even that (1.4×) because what you dodge there is the travel.
-- **HOW HARD A STROKE FOLLOWS YOU IS A PROPERTY OF THE STROKE** (`Attack.track`), not one global rate. HEAVY
-  rows stay under `TURN_RATE` (test-pinned) — commitment has to cost him tracking or there is no window. The
-  OVERHEAD tracks at ZERO and pays for it with `Attack.step` instead: **A STROKE THAT CANNOT FOLLOW YOU CARRIES
-  HIM AT YOU** — the lunge is one column on the table and every stroke but the swat has one. **AND A SWING IS
-  ONLY AS ACCURATE AS THE THING ON THE END IS WIDE**: `SWING_BEARING` may never exceed the kit's own subtended
-  half-angle (the ram subtends 26°), and the drift a commit sheds may not by itself carry the kit off a
-  squared-up man.
-- **THE DOOR IS OAK, AND OAK IS NOT A WARD** — `TOWER_NEGATE` against steel, `TOWER_NEGATE_ELEM`
-  against anything thrown (`combat.guardChipSplit`). A rod is the way through his front, which is what pays for
-  the front no longer being a safe place to stand. **AND IT LEAVES HIS FRONT FOR THE WHOLE COMBO**, not for each
-  swing in turn: a link's own gather holds `swipeOpen` at 1 (`strung > 0`), and a link that keeps the guard by
-  design — thrust, bash, a SHIELD swat — puts it straight back.
 - **HE IS LEARNED, NOT ROLLED — AND THAT TEST IS THE DESIGN.** Attack choice is POSITIONALLY DETERMINISTIC: each
-  band-and-side has an ORDERED PATTERN (`BOOTS_*`/`RANGE_*`) that `cursor` walks, a move on cooldown is SKIPPED
-  rather than waited for, and `classify` is pure over one `Sit` so a test pins that the same place twice gives
-  the same answer. The variety comes from the player's own feet.
-- **INSIDE A BAND HE WEIGHS, HE DOES NOT WALK A LIST** (`weigh`) — every available entry SCORED, best taken,
-  never a die. `W_ROTATION` is the biggest term and decays down the pattern from the cursor (ties to the nearer
-  entry); `W_FIT`, `W_SQUARE`, `W_SIDE`, `W_PRESS`, `W_CIRCLE` and `W_LIT` are the rest. A bearing the arc
-  cannot reach is a HARD gate, not a weight: that stroke is a guaranteed miss, not a worse choice.
-- **A COMBO IS A FIXED ROUTE HE WALKS** (`routeFor`) — one route per opener, up to four links, cut short only by
-  the player LEAVING. Nothing follows the OVERHEAD, so a route may only reach it as its LAST link (test-pinned).
-  The four openers lead four pairwise-distinct places, and the cheapest (SWAT) opens the longest.
-- **HE IS NOT MASHED OUT OF A STRING HE HAS STARTED** (`inString`) — mid-route the light flinch is refused; the
-  OPENER is interruptible, and a STANCE BREAK always stops him.
-- **A FLANK BLOW HE SHRUGS OFF IS ANSWERED** (`counterFlank`) — shoulders get a snap-and-swat, his SPINE gets
-  the FALL (the body coming round is the counter, and its aftermath is the reward for dodging it); the leap
-  only once he is `harried` and the fall is spent. It reads a blow that already landed on his own body and the
-  bearing it came from (world state, never the player's buttons), is clocked, is refused out of anything
-  committed, and is **refused outright if the blow staggered him**: an earned punish window is never taken
-  back. Same rule for the door's own guard counter (`caught` → `riposteCd`).
-- **NEITHER SHOULDER IS A FREE LAP.** The SHOVE (`shoving`, `shoveAcross`, `shoveDir`) hauls the door onto
-  whichever flank you stand on, on the bash's own row and clocks, and buys it with his FRONT. SWORD side fires
-  on presence; SHIELD side is bought with DAMAGE (`pressed`), or the door would collapse that whole flank onto
-  one move.
-- **LIGHT AND HEAVY ARE TELLABLE APART BEFORE THEY LAND** (`Weight`): the gather's FIRE says which — none on a
-  light, a rim on a heavy, a column on a crusher, and it must be WIDER THAN THE DOOR to be seen at all. A test
-  forbids tuning a move's damage up without its tell following.
-- **THE MOVES THE BOARDS CANNOT ANSWER GET THE LONGEST TELLS.** Slam, charge and fall carry no parry window
-  (`parryable`); their counter is DISTANCE, the sidestep and the roll. `FALL_WIND_DUR` is therefore bracketed
-  from BELOW by every one of his own winds rather than by `foe.TELL_MIN`, and the charge's `windDur` 0.42 is a
-  floor. **A RUN CLEARS THE SLAM'S DISC FROM THE MARK AND A WALK DELIBERATELY DOES NOT.**
-- **A COMMITTED LINE IS COMMITTED AT THE LAUNCH.** The charge's wind aims (allowed 1.4× his turn) and the travel
-  steers not at all, test-pinned frame by frame; `brakeDist` integrates to `speed × brakeDur / 2`. Leap, hop and
-  charge are all gated at the CHOOSE by `foe.canLeap`.
-- **THE DISC IS DRAWN BEFORE IT IS BILLED** (`slamRingTell`) — the blow's own circle walked during the WIND off
-  the same `slamMark`/`SLAM.r` the mechanic uses, in EMBER because tan on tan is unreadable.
-- **THE FALL IS ANSWERED WITH DISTANCE NOW, NOT WITH A SECTOR** (owner: make his fall an AoE so you have to make
-  some distance). The crush strip is still the BODY arriving; a ring off the same mark (`fallMarkOf`,
-  `FALL_WAVE_R`) is the GROUND answering, billed only where the strip missed and lighter on all three counts.
-  SOLVED against the tell it is drawn through — 4.61 m over 1.83 s, where a walk covers 3.11 m and a run 6.22 m —
-  and drawn before it is billed off the shared `ringTell`. Test-pinned by the claim itself: a man who stands there
-  is hit and the same man running is not.
-- **AND THE BODY GOES BEFORE THE BODY GOES** (`FALL_WIND_TOPPLE`, owner: tilt back slowly before he falls back).
-  The wind takes 15° of the topple at the ROOT over its back three quarters, and the drop picks up from exactly
-  there — one motion, worst one-frame step 0.016 of the topple. A giant going over backwards rotates at his heels,
-  and `FALL_WIND_LEAN` alone was a gather like every other gather.
-- **HE ROCKS ON HIS BACK UNTIL HE CAN GET UP** (`rockAmt`, owner) — ±7° about his own head-to-toe axis, which flat
-  on his back is a wallow side to side, faded in and out so entering and leaving `.downed` cannot snap him. It
-  rides the SAME channel the rollover turns: a body cannot rock about one axis and turn about another and read as
-  one mass.
-- **A BODY ON THE GROUND IS LOOKED AT, NOT STOOD OVER, AND IT IS NOT HIDING** (owner: make sure targeting works
-  well while he is on the ground). Two separate faults, both in `game.zig`: `collision.blocksSight` takes the
-  LOWER of its two ends, so a mark that has fallen to 0.4 m is stopped by any knee-high rubble on the line and the
-  lock was dropped `LOCK_BLIND_HOLD` into the punish window it had just bought — `foeStaggered` now holds it. And
-  `lockPitch` chased the fallen mark down, diving the lens to 57° at three metres and putting the hero own back
-  between the player and the window; the mark is floored at the HERO shoulder for the PITCH only, so the reticle
-  still rides the body.
-- **STOOD DEAD BEHIND HIM HE FALLS ON YOU.** `fallwind` is the one move that steers AWAY from the hero — the
-  spine coming round IS the tell. The crush is a STRIP down the line behind him, DERIVED off the rig, carrying
-  the biggest POISE and STANCE in the game (`game.blowHeaviest` is a `@max` over it and the ogre's slam) at
-  only 34 damage, because it is the hardest to read. **THE SAFE POCKET IS HIS QUARTER, NOT HIS BACK**:
-  `FALL_SECTOR` 70° is strictly outside `TOWER_ARC`, the gap between them test-pinned over 20° wide, and the
-  widening is paid for with the AIM (`FALL_AIM` 0.62 rad/s, still under `TURN_RATE`).
-- **THE AFTERMATH IS THE REWARD** — flat for `DOWN_DUR`, over onto his front, up off the shield, door down for
-  all of it, cooldown outlasting the rise. **AND A BODY ALREADY ON THE GROUND CANNOT BE FLINCHED UPRIGHT**
-  (`floored`): damage, flash, chips and stance still land, only the state change is refused. Death goes through,
-  and `enterDeath` records the topple the body was at (`deathFrom`).
-- **ONE CHANNEL SAYS WHERE HIS BODY IS** (`toppleAmt`, `rollAmt`) — 0 standing, 1 flat, NEGATIVE forward, which
-  is the only way he dies. Topple rotates the ROOT about the ground between his feet; roll is `ry(180)` inside
-  the rig, and `turnAbout` exploits `Ry(180)·Rx(θ) == Rx(−θ)·Ry(180)` so the swap is invisible on the frame it
-  happens. **SO EVERY WORLD POINT COMES OFF A POSED BONE**: `centerWorld` the pelvis, `lockPoint` the chest,
-  `topWorld` the helm. A height off his feet would hang in the air over a body on the ground.
-- **AN EFFECT'S PHASE IS ITS OWN DECAY, NOT A CLOCK BESIDE IT** — the landing ring runs off `thud`, not `self.t`,
-  which resets on every state change.
-- **HE FALLS, HE IS NOT LOWERED** (`deathTopple`) — quadratic to `DEATH_LAND` (0.62 × `DEATH_DUR`), then
-  OVERSHOOTS and settles (`DEATH_BOUNCE` 5.5°). The body arriving is an EVENT: dust, `QUAKE_BRAKE`, and
-  `audio.mkKnightDie` on that instant. **A FELLED STATUE DOES NOT CURL** — flat, both legs straight, pinned at
-  the ankles (1.11 m against a 1.51 m knee).
-- **THE ANIMATION CONTRACT IS FIVE PHASES** (ELDEN_RING.md §7): opening pose → signal → a strike of almost no
-  time → **held End Pose** → return. Every move is a KEY LIST per phase (`SWEEP_KEYS` &c) and the End Pose is
-  gained by writing no further key — the track clamps. Tests pin the seams (`wind[1.0] == strike[0.0]`) and that
-  every stroke HAS a shape. The outward lag is the spring bank's, never hand-derived curves.
-- **HE TURNS ON HIS FEET** — `legChain` is driven by GROUND COVERED and a pivot covers none, so the arc each foot
-  sweeps about his stance half-width is handed to the gait as lateral distance. `planted` holds them down through
-  a committed stroke: **a giant swings by planting.**
-- **THE GROUND HE MOVES IS FELT ON EVERY LANDING** (`quake`/`QUAKE_*`, a one-frame magnitude like `justDied`,
-  wired through `Vigil.quakeAmt`), sized to the mass that arrived — the overhead ends in the EARTH, so it is a
-  landing and not a swing.
-- **PHASE TWO FOULS THE GROUND.** Once lit, what shows FIRE and STOPS leaves a `knight.Gas` cloud, decided by
-  the `Weight` rule and laid at the IMPACT FRAME so a stroke that MISSED still denies that ground. FALL and
-  CHARGE are excluded — each is already position-denial, and fouling where it ends taxes the answer the move
-  demands. **THE LIT CHARGE FOULS THE LINE INSTEAD**: `chaosTrail` drops a cloud every `CHAOS_TRAIL_EVERY` of
-  GROUND COVERED (never on a clock, or at 12.4 m/s it lays twenty a second), spaced wider than a trail cloud's
-  own reach so the lane has crossings in it. `GAS_CAP`. **The cloud is the GROUP's, not the knight's** — it
-  must keep burning after the body that laid it has fallen — and it carries NO poise and NO stance. **THE
-  CLOUD'S EDGE IS THE MESSAGE** (owner: hard to see where it starts): over half the puffs are born ON the rim in
-  a tenth-wide band (`GAS_RIM_SHARE`), the inward drift is a whisper, puffs are small and short at a higher
-  rate, and `GAS_H` is METRES (1.3), never his scale — at 1.35 × scale it stood 4 m tall and read as fog. **AND
-  IT IS HIS EMBER, NOT CHAOS'S VIOLET** (owner: orangish like his tells, so it is never read as poison) — the
-  one call site that picks its own colour over `elemfx.sig`, because the cloud is a tell first and an element
-  second.
-- **THE BOSS BAR** (`hud.bossBarAt`): `game.zig` owns when it shows (`Vigil.boss`) and SUPPRESSES that body's
-  floating bar — one number may not be read in two places. `bossK`/`bossFrac` assigned in `init`.
-- **AND A NAMED GATE OWNS ITS BOSS'S BAR** (`game.gateEntered`). Where a ward's seal names the creature, the bar
-  waits until his own step has crossed that sheet (`env.wardIn`); where nothing names it, the bar keeps the
-  aggro ring it always had. The arena — and so where the bar comes up — is the MAP's to say, authored per gate
-  in the editor (Sealed by...), never a list in `game.zig`.
-- **Art and audio.** `PLATE` = `.plain`, `BRIGHT` = `.steel`: `Mat.steel`'s specular is catastrophic on a face
-  the size of a door, so `.steel` is for what is SMALL AND PROUD. The iron is BLUE-BLACK because everything
-  outdoors here is warm; the shield's bands are ONE substance with a few points of value on them; his rust is
-  his own, solved to ~120. Big smooth sealed masses, few of them. The sword's carry is test-pinned off the POSED
-  bone, and **the tilt is MEASURED by bisecting on the carry test's printout, never reasoned from the matrix
-  convention.** The blade's wake spans the outer HALF and lives well INSIDE the strike. Dust on this ground is
-  tan on tan, so it reads by COUNT, billow and LOFT, and both emitters are pinned by particle-count probes in
-  the soak test. **Judge a stroke on a strip** (`shots.knightStrokeStrips`) and spend the frames where the motion
-  is — the sweep is 1.10 s of wind to 0.38 s of strike. Ten `knight_*` voices, sharing only
-  `swing_light`/`swing_heavy`: **iron over bone, nothing alive inside it** — a `ring` of struck plate over dry
-  `grit`, checkable on zero-crossing rate, with every voice floored at 90 crossings/s so nothing is spent under
-  what this gets played on.
+  band-and-side has an ORDERED PATTERN a `cursor` walks, a move on cooldown is SKIPPED rather than waited for,
+  and `classify` is pure over one `Sit` so a test pins that the same place twice gives the same answer. **The
+  variety comes from the player's own feet.** **INSIDE A BAND HE WEIGHS, HE DOES NOT WALK A LIST.**
+- **A COMBO IS A FIXED ROUTE HE WALKS** (`routeFor`) — cut short only by the player LEAVING; nothing follows the
+  OVERHEAD, so a route may only reach it LAST. **HE IS NOT MASHED OUT OF A STRING HE HAS STARTED**: mid-route the
+  light flinch is refused, the OPENER is interruptible, a STANCE BREAK always stops him.
+- **THE ANIMATION CONTRACT IS FIVE PHASES** — opening pose → signal → a strike of almost no time → **held End
+  Pose** → return. Every move is a KEY LIST per phase and the End Pose is gained by writing no further key (the
+  track clamps). Tests pin the seams (`wind[1.0] == strike[0.0]`) and that every stroke HAS a shape.
+- **EVERY STROKE LANDS ON THE MAN WHERE HE STANDS** — arcs authored LOW and THROUGH THE FRONT, and **EVERY GATHER
+  ENDS IN A HANG.**
+- **THE WINDOW IS THE COMMIT — NOT THE FLANK.** You cannot out-circle him on foot; what he gives instead is the
+  heavy commits letting go of their tracking. **BUT HE DOES NOT TURN ON THE SPOT** — idle holds its facing and
+  what moves it is the STEP-TURN, the hop and the GATHERS, so where he is looking is a fact you can read and be
+  wrong about. **A GATHER TURNS HIS SHOULDERS, NOT HIS FEET**: `GATHER_SWEEP_MAX` caps the TOTAL a wind may bring
+  round off the facing it STARTED from, and must stay under `180 − FALL_SECTOR` or the back pocket closes.
+- **"DULL" IS A MEASUREMENT, NOT A FEELING** — 45 s of a hero walking a ring is 21 blows thrown, 93% committed, no
+  lull past 0.73 s. Test-pinned, because the failure it guards is the fight going quiet.
+- **LIGHT AND HEAVY ARE TELLABLE APART BEFORE THEY LAND** (`Weight`) — the gather's FIRE says which, and it must be
+  WIDER THAN THE DOOR to be seen at all. A test forbids raising a move's damage without its tell following.
+- **THE MOVES THE BOARDS CANNOT ANSWER GET THE LONGEST TELLS** — slam, charge and fall carry no parry window and
+  their counter is DISTANCE, so `FALL_WIND_DUR` is bracketed from BELOW by every one of his own winds rather than
+  by `foe.TELL_MIN`. **A RUN CLEARS THE DISC FROM THE MARK AND A WALK DELIBERATELY DOES NOT.** **A DISC IS DRAWN
+  BEFORE IT IS BILLED** (`ringTell`), off the same mark and radius the mechanic uses, in EMBER because tan on tan
+  is unreadable.
+- **A FLANK BLOW HE SHRUGS OFF IS ANSWERED** (`counterFlank`) — it reads a blow that already landed and the
+  bearing it came from (world state, never buttons), is clocked, is refused out of anything committed, and is
+  **refused outright if the blow staggered him**: an earned punish window is never taken back.
+- **THE JUMPBACK IS A LAST RESORT** — every door to the LEAP asks `harried`, a share of max HP banked at this
+  spot. **ONE METER, TWO TIERS** (`foe.Sense.pressed`) is the pattern for any creature that must not flee at the
+  first scratch. What he does instead is HOP, taken on PRESENCE.
+- **STOOD DEAD BEHIND HIM HE FALLS ON YOU** — `fallwind` is the one move that steers AWAY from the hero, the spine
+  coming round IS the tell, and **THE SAFE POCKET IS HIS QUARTER, NOT HIS BACK**: `FALL_SECTOR` is strictly
+  outside `TOWER_ARC`, the gap test-pinned over 20° wide and paid for with the AIM. **AND THE BODY GOES BEFORE
+  THE BODY GOES** — the wind takes 15° of the topple at the ROOT and the drop picks up from exactly there, one
+  motion. **THE AFTERMATH IS THE REWARD.**
+- **PHASE TWO FOULS THE GROUND** — once lit, anything that shows FIRE and STOPS leaves a `Gas` cloud, laid at the
+  IMPACT FRAME so a stroke that MISSED still denies that ground. FALL and CHARGE are excluded (each is already
+  position-denial); the lit CHARGE fouls the LINE instead, every `CHAOS_TRAIL_EVERY` of GROUND COVERED and never
+  on a clock. **The cloud is the GROUP's, not the knight's** — it must keep burning after the body falls — and it
+  carries NO poise and NO stance. **THE CLOUD'S EDGE IS THE MESSAGE**: over half the puffs born ON the rim, and
+  `GAS_H` in METRES (1.3) never his scale, or it stands 4 m tall and reads as fog. **AND IT IS HIS EMBER, NOT
+  CHAOS'S VIOLET** — the one call site that picks its own colour over `elemfx.sig`, because it is a tell first.
+- **A CARRIED MASS IS CHASED, NOT ASSIGNED** — the general law his tower shield is the worked case of. The strap
+  held the hub at the fist and the plank could not invert, and what was left was SPEED: `swipeOpenWant` and
+  `shoveAcrossWant` are SCHEDULES with seams in them (a state changing, `shoving` clearing) and were read STRAIGHT
+  into the arm, outside the spring bank, so the hub crossed **4.3 m in ONE FRAME**. Both are chased now, **and
+  `guardUp` reads the CHASED value**, so mechanic and picture stay one channel and neither can step. **THE PICTURE
+  LEADS THE FLAG AND MAY NEVER TRAIL IT.**
+  - **AND THE FACE ITSELF IS CHASED** (`turnToward`, `DOOR_TURN_MAX`) — easing every channel was not enough, since
+    the arm's own roll has singularities and a counter re-aims the whole basis in a frame: a soak caught **113° of
+    face turn in ONE FRAME, standing in idle**, which a translation test cannot see because the hub barely moves
+    while four metres of plank whips. **The tip is clamped AFTER the chase, not before** — a slerp between two
+    legal near-horizontal faces on opposite bearings runs over the POLE. **AND THE CLAMP MAY NOT BAIL OUT**: his
+    FORWARD is always a legal bearing.
+  - **A SHIELD IS CARRIED, NOT WELDED TO THE FOREARM** — the arm AIMS it and nothing else: the face may tip
+    `HANG_TIP` off his own horizontal and no further, and the plank length is whatever is left of his UP (his, not
+    the world's, so a toppled body takes its door down with it). **Inversion is impossible by construction rather
+    than by tuning a pose away from it**, and the SLAM is the one exemption — a FRACTION, not a flag. **AND THE
+    STRAP IS A LENGTH, NOT A SUGGESTION**: a move's carry may swing the hub round the fist and may not take it
+    further off than the grip.
+  - **ANY ROTATION IS ABOUT ITS OWN CENTRE, NEVER ITS GRIP** (gripped high like a pavise, a pitch about the hub
+    sweeps four fifths of a four-metre plank through the knight), and **THE ARM CANNOT CARRY IT — THE MOVE HAS
+    TO** (the fist travels ~1 m and the door is 4). **A shield is driven with the elbow FOLDED and the body behind
+    it**; a straight-arm punch turns the plank with the forearm and rams its edge.
+  - **EVERY DIMENSION IS DERIVED AND COMPTIME-ASSERTED, NEVER PICKED** (`towerArc`) — widest chord against how far
+    the face stands in front of the body axis plus a named allowance for the swept kit, chords asserted past the
+    pauldrons, height past a wall's proportion. **THE RAM IS NOT THE WHOLE FACE.** **EVERY POSE THAT LERPS OFF
+    `GUARD_*` MOVES WITH IT** — an absolute wind target silently loses its whole gather when the guard moves.
+  - **THE MECHANIC AND THE PICTURE ARE ONE CHANNEL**, test-pinned together. **EVERY SWORD STROKE TAKES THE DOOR
+    OFF HIS FRONT**, and **THE SWORD COMES HOME FIRST, THEN THE DOOR**; a test throws every stroke wind-to-recover
+    and measures the blade's nearest approach to the face. **AND IT LEAVES HIS FRONT FOR THE WHOLE COMBO**, not
+    per swing — a link's own gather holds it open.
+  - **THE SWORD IS CARRIED HIGH — BLADE UP PAST HIS SWORD SHOULDER**, SOLVED by sweeping four channels against a
+    target and taking the best that cleared the plank. On a body whose door covers his whole right side the rig
+    cannot put a point past that edge without throwing the arm after it, so **the clearance is STRUCTURAL**: a
+    blade overhead cannot be swung into a plank at his side.
+  - **THE DOOR NEVER BREAKS; THE MAN BEHIND IT DOES** — no stamina pool on it, a small share of stance passing
+    through so frontal pressure earns a stagger expensively, and **no poise ever**. **TWO PARRIES BREAK THE
+    STANCE.** **OAK IS NOT A WARD** — `TOWER_NEGATE_ELEM` against anything thrown, so a rod is the way through his
+    front. **NEITHER SHOULDER IS A FREE LAP**: the SHOVE hauls the door onto whichever flank you stand on and buys
+    it with his FRONT — sword side on presence, shield side bought with DAMAGE, or the door collapses that whole
+    flank onto one move.
+  - **THE SOAK IS THE JUDGE, NOT THE PER-MOVE PROBES.** Debug entries drop him into one state from nothing; the
+    seams live in a real fight. 120 s, 200 blows landed, 29 of 33 states visited, four invariants asked EVERY
+    frame, failing with frame/state/geometry printed, **and asserting its own state coverage** so a soak that
+    quietly stopped reaching the fall cannot pass having proved nothing.
+- **Art:** `PLATE` = `.plain`, `BRIGHT` = `.steel` — `Mat.steel`'s specular is catastrophic on a face the size of
+  a door, so `.steel` is for what is SMALL AND PROUD. The iron is BLUE-BLACK because everything outdoors here is
+  warm. Ten `knight_*` voices sharing only `swing_light`/`swing_heavy` — **iron over bone, nothing alive inside
+  it** — checkable on zero-crossing rate, every voice floored at 90 crossings/s.
 
-#### His door (`props.Info.ward`, `env.ward*`, `game.markWards`)
+**THE FUNGAL DUO** (`fungalduo.zig`) — a swordsman in your face and a magus who owns the rest of the floor.
 
-- **A FOG GATE IS A WALL UNTIL HE ASKS TO PASS IT.** The ONE crossing allowed is `enterGate`'s walk, through the
-  ward that walk is on (`env.wardRefusing`), refused on the SEGMENT rather than left to the push-out — a roll is
-  3.5 m in one step and the sheet is 0.8 m thick. A SPENT gate never answers (`eachSolid` retires it at
-  `wardLife` 0).
-- **THE LATCH AND THE DOOR ARE DELIBERATELY APART.** The latch is his own step crossing the sheet
-  (`markWardStep`); the door is only SHUT while a creature the seal names is still standing, so killing them is
-  what lets you back out. A gate may not shut on the man in it (`wardClear`). It is a wall to every FOE and
-  every LOOK regardless.
-- **THE SEAL IS A LIST, BECAUSE A DUO IS TWO** (`Op.boss`/`nboss`, `Op.sealsOn`, up to `wf.MAX_SEAL`). ANY name
-  on it holds the door; `boss=-` is a doorway that never shuts. `boss=a,b` in the file, multi-pick in the
-  editor, and one name still writes no tail when it is the default.
-- **THE SEAL IS OWED AN ANSWER** (`fog_felled`). DARK is a REGISTER and FRIGHTENING is an INTERVAL: keep the
-  seal's root (A1, 55 Hz) and its subterranean band, swap the TRITONE for the perfect FIFTH with the major third
-  landing last. One shot, off the first frame of `wardLife` leaving 1.
+- **THEY DIVIDE THE GROUND AND NEITHER COVERS THE OTHER'S.** The bands ABUT, and that is the whole of the pair:
+  backing off the blade walks into the sprouts. **NEITHER KNOWS THE OTHER EXISTS** — no shared brain, no combo
+  table; what makes them read as a pair is the geometry.
+- **TWO GROUPS, ONE FILE** — a `FOE_GROUPS` row hands back ONE slice of ONE type, and a set of strokes and a set of
+  spells are not one type. They share the file because they share rig, palette, pose and bands.
+- **THE HEIGHT IS AUTHORED AS METRES OVER THE HERO AND THE WIDTHS RIDE IT** — written as their own constants the
+  widths were `SCALE` copied by hand, and the first time the crown moved the body under it stayed the old width.
+- **THE TWO STROKES DO NOT GET THE SAME BEARING GATE, BECAUSE THEY ARE NOT THE SAME SHAPE** — the slash SWEEPS so
+  it gets the wind's turn plus its own arc; the LUNGE is a thrust down one line, so it gets the turn alone.
+- **THE VENOM IS THE CLOCK ON THE FIGHT** — a guard answers the DAMAGE and not the buildup, so blocking every
+  stroke still breaks the bar. **Both strokes carry it or the clock is on one.**
+- **THE DISSOLVE IS LONG ON PURPOSE AND A STAGGER SPENDS IT** — caught halfway out he comes back solid and owes the
+  whole cooldown, so pressure through the fade is the answer rather than a race. **A MAN IN HIS FACE GETS THE
+  DUST**, which outranks both the retreat and the blink, so pressing him costs something.
+- **A CLOUD STAYS WHERE IT WAS BLOWN**, and **it does not bill on the frame it appears** — that would be a blow
+  with no tell. **NEITHER CAST HAS A BAND INSIDE THE RING IT WALKS OUT OF**: a lower minimum is a number nothing
+  can ever reach.
+- **THE BUNCH IS A MUSHROOM, NOT A BALL ON A STICK** — built at a cap radius of ONE so the world size is a single
+  number; it comes up PAST its rest and settles back while the cap opens after it, and **the cap's COLOUR is its
+  clock, because a warning you have to remember is not a warning.**
 
-### The delver (`delver.zig`) — goes UNDER the world
+**THE CORRUPTED DRUIDESS** (`druidess.zig`) — bench her in `worlds/test_druidess.world`, never the shipped map.
 
-- **SUBMERGED IT CANNOT BE STRUCK, AND THAT IS GEOMETRY.** `depth` rides as a NEGATIVE lift through
-  `foe.bodyPoint`, so hurt sphere, bar and reticle all sink and the swept test refuses it on its own. A
-  comptime assert pins the clearance.
-- **`airborne()` IS TRUE WHILE IT IS DOWN** — it is UNDER the world's traffic: no terrain riser rule, no
-  shoulder, no steering, no jaws from the wolf, no spirit. NOT exempt from `env.resolveActor`.
-- **THE DIVE IS A LEAP AND THE ROOTS REFUSE IT** (`foe.canLeap`) — gated at the choose AND re-asked at the
-  launch, since a root closing during the wind arrives after the decision.
-- **THE ROCK IS WHAT IT DOES WITH RANGE WHEN THE DIVE IS COOLING** (owner: dig up and throw a rock at range,
-  long cd). From `ROCK_MIN` (6.5 m) out to its notice, dive on cooldown, rock off its own `ROCK_CD` (16 s): it
-  DIGS for `DIG_DUR` (0.95 s — both claws in the earth, clods flying, THE tell), heaves the stone overhead
-  (`HEAVE_DUR`, a real held bone `ROCK` between the claw tips) and lobs it at where he STANDS
-  (`threw`/`throwFrom` one-frame, `game.spawnRock` → `archer.Shot.rock`, `ROCK_GRAV` 14 so the arc is
-  watchable). It DETONATES: a ring `ROCK_SPLASH_R` (1.8 m) at the landing billed once whether it met him in
-  the air or the ground (`game.rockBurst`, `ROCK_HIT` 30 dmg, launch), and a roll's i-frames pass it. The
-  counter is to not be standing where you were.
-- **IT STAYS DOWN** (`UNDER_MIN`) whatever it finds, and never past `UNDER_MAX`.
-- **TWO WAYS OUT.** Under him it BURSTS — a ring round the hole, counter is your feet. In front of him it
-  PLOUGHS: the ridge stops turning, STRETCHES down its existing heading (`moundLong`, not a bigger `moundR`)
-  and drives a furrow at `PLOUGH_SPEED`, the only thing it owns that catches a sprint. Patience exit is the
-  plough. Lighter than the burst on all three counts, pinned by comptime assert — `game.zig` splits the felt
-  beat on `hit.stance >= BURST_HIT.stance`.
-- **THE CLAW COMES BACK** (`rake`) — FASTER than the opener, still clears `foe.TELL_MIN`, parryable on its own
-  window, ROLLED not guaranteed, and only thrown while he is still standing in it.
-- **NO LOCK-ON WHILE IT IS UNDER.** `hidden()` is the Rooted's predicate, found by `@hasDecl` in
-  `game.disguised`. It is `deep()` and not a clock of its own — the same thing `Model.draw` hides the body
-  behind.
-- **THE SPOT IS COMMITTED THE FRAME THE MOUND STOPS.** A RUN or ROLL clears the ring, a WALK deliberately does
-  not — both bracketed by comptime asserts against the hero's numbers.
-- **THE TELL IS THE LONGEST THING IT DOES** (`SURGE_DUR`), on top of a visible mound.
-- **THE BURST IS NOT PARRYABLE AND THE CLAW IS.** The blow is a RADIUS, not a swept limb, and its `from` is the
-  hole — so stood dead on it there is no bearing and boards cannot answer (the zero-`fromDir` rule).
-- **THE THIRD CHANNEL OF THE TELL IS THE PAD** (`Warrens.anySurged` → `game.SHAKE_SURGE` + rumble). This is the
-  one move that arrives from a direction the lens cannot be turned toward.
-- **THE MOUND IS NOT PART OF THE BODY** — matrix built in WORLD space at the surface. SIZED TO THE RING it
-  announces, and it comes apart across the rise.
-- **PARTICLE COLOURS ARE LITERAL SCREEN VALUES WHERE MESH COLOURS ARE ALBEDOS** (`CLOD` against `SOIL`).
-- **A ROOT PITCH ROTATES ABOUT THE POINT ON THE GROUND**, so the root is lifted by exactly what the tip sinks,
-  the lift fading out with the depth.
-- **THE HIDE IS COOL WHERE THE SOIL IS WARM**, solved off a sampled render.
-- **IT REARS TO STRIKE.** Shoulders sit at 0.40 m; held flat the rake topped out under his knee while
-  `weaponReaches` still reported a hit.
+- **THE VINES ARE THE COVEN'S, NOT HERS** — she reports `sowed`/`snared` for one frame and the group plants, ticks,
+  bills and draws them. They are not bodies: no HP, no lock, no `tryHit`.
+- **A CAST IS COMMITTED WHERE HE STOOD WHEN THE GATHER BEGAN**, and the buds drawn through the wind stand exactly
+  where the vines will. A RUN carries him clear in the gather and a walk does not, both bracketed by comptime
+  asserts against his own speeds.
+- **THE SIDESTEP READS CLOSING SPEED, NEVER THE PRESS** — a rush is his position over the last frame; a man
+  standing still in her face is not a rush and draws the drift instead.
+- **THREE HEALING BREAKS**, each ONE call and ONE channel, counted the frame she commits so a stagger through the
+  gather cannot buy a second wave off the same share. **ANY BLOW THAT LANDS ENDS THE CHANNEL, and that share is
+  spent for good** — that is the whole of "go and stop her". **AND A CHANNEL NEVER CLIMBS BACK PAST THE SHARE SHE
+  ALREADY BROKE AT** (`mendCeiling`), so the breaks come in order, each worth less, and the fight has a ceiling
+  instead of three full heals.
+- **SHE NEVER LEAVES THE ROOM, AND NEVER THE DRY GROUND** — the arena and a way to ask the world's water are
+  stamped onto her each frame (`room`, `foe.Ground`, both off `@hasField`, so any creature that grows either gets
+  it), and a drift that would cross wall or water turns along it. **OVER HIS HEAD FIRST**: the leap that gets away
+  is the same arc the other way, landing past him.
+- **A LEAP IS AN ARC WITH A HANG AND NO SLOPE AT THE GROUND** (`arcHop`/`arcAlong`) — up on a quarter sine, held,
+  down on `1 - smoothstep`, ground covered on a half-cosine so the speed is nothing at touchdown.
+- **SHE IS THE TELL, NOT THE SPEAR.** Nothing is drawn on the ground through the wind — the coil is the whole of
+  it. **Every tell of hers is a POSE first**; a mark on the ground is only ever where a thing will stand.
+- **THE TANGLE IS THREE SPRINGS ON HER HEADING**, so a turn settles in three beats, and **THE VINES ARE ALIVE, NOT
+  POSTS** — all of it draw-side off the vine's own clock; the bills do not move.
 
-### The necromancer (`necro.zig`)
+### Creature laws that came out of one body and now bind all of them
 
-Never touches you; priority target on any field. 84 HP, 5 poise, 520 souls.
-
-- **THE CORPSE IS THE MECHANIC.** A skeleton is `DEATH_DUR + DISS_DUR` = 2.05 s from killing blow to last
-  mote, which will not hold a raise with a readable tell inside it. So a body inside `RAISE_R` of a living
-  necromancer **STOPS DISSIPATING** (`heldOpen`, stamped by `game.markVigil`, read by `foe.dissipate` through
-  an `@hasField` opt-in). The held corpse is the FIRST tell and arrives before the cast.
-- **IT IS A PLACE, NOT A LIST.** Flags cleared and re-earned each frame off where bodies actually lie. **Two
-  cannot claim one body** — walked in order, an already-stamped corpse skipped.
-- **A BODY MAY BE RAISED ONCE** (`wasRaised`) at `RAISE_HP_FRAC`, full poise and stance, into a light stun so
-  it cannot swing out of the ground. **The shield does not come back** (`shieldGone`).
-- **THE CREATURE ONLY REPORTS IT** (`raised`, one-frame, and `raiseAt`) — `game.applyRaises` does the raising.
-  `foe.rekindle` is the shared re-arm and reads FIELDS ONLY; the STATE it comes up in is each creature's own.
-- **THE RAISE IS THE LONGEST TELL IN THE GAME** (`RAISE_WIND`), PLANTED for every frame. It turns to the
-  BODY, not to him. The spot is committed the frame the gather starts.
-- **THE ICE RUNE RING IS THE OTHER HALF** — committed to the ground where he stood, and it OUTLIVES THE
-  CASTER. Not parryable; its blow carries the RING as `hitFrom`, so stood on the mark there is no bearing.
-  **`FROST_FUSE` is SOLVED**: long enough that a WALK clears the rim from dead centre.
-- **THE FUSE BURNS ROUND THE RING RATHER THAN FILLING IT** — runes take one by one round the rim, the last one
-  lighting IS the blow. **Built from `drawSphereEx` and nothing else**: `drawLine3D` is one pixel however close,
-  and a `drawTriangleStrip3D` annulus came back invisible.
-- **THE MARK TAKES THE GROUND AT THE MARK — THE TARGET'S OWN `pos.y`**, never the caster's, or a ring twelve
-  metres away is depth-culled under the turf.
-- **TALL AND SKINNY IS TWO DIALS AND THE RATIO IS THE CLAIM** — stature through `SCALE`, and `restHumanoid`'s
-  `hx`/`sx` narrowed. Either alone is satisfiable by the wrong creature. A test measures stature over shoulder
-  SPAN against the archer beside it.
-- **THE DRAGGING HEM IS NOT A BONE** — it rides the ROOT through a lag matrix, and it is a SPRING not an ease:
-  the lean opposes the travel, OVERSHOOTS and settles (test-pinned, since an ease cannot overshoot). It is the
-  shared `anim.Spring` now; the hand-rolled `1 - HEM_EASE * dt` damping went NEGATIVE past 154 ms a frame.
-  **And the robe is ONE folded surface** (`propart.clothInto`), not a stack of skirts: three independently
-  generated rings of 10, 11 and 13 sides read as rigid sections however they are tuned. Its lower rows have to
-  reach past the toes, or the feet stand clean outside the front of the robe.
-- **THE STAFF ARM MUST BE THE RIGHT ONE.** `heromod.PARENT[HELD]` is `WRR`; authored on the left, the pole's
-  matrix was built against an unwritten `wx[WRR]` — undefined memory, staff transformed to the world origin.
-  `poseUpper` poses that arm LAST, with the staff after its own wrist.
-- **`staffTilt` IS 180-IS-PLUMB** (the warriors' `wpnTilt` convention). **The fit bills the ARM but not the
-  TRUNK**, so a pose that arches the spine pays at its own constant (`RAISE_LEAN` 22°) — and so does a THROW that
-  pitches the trunk 52° (`RAISE_THROW_TILT`) and a LANDING that drops the grip 0.24 m (`CROUCH_TILT`). Unbilled,
-  the planted pole swings out flat or its ferrule goes through the turf. Measured: carry 16° ferrule down,
-  raise 9° planted, frost 30° ferrule LIFTED.
-- **THE POLE IS ONE PATH, AND EVERYTHING IS MEASURED OFF IT** (`staffPath`, `STAFF_FOOT`/`STAFF_HEAD`). The mesh,
-  the grip calibration and `staffSeg` read the same deterministic curve; the curve steps by ARC, not by height,
-  or a bent 2.00 m pole comes out longer than 2.00 m of wood. It is anchored by translating the whole path so
-  its arc-length grip lands on `(0, FIST_Y, FIST_Z)`, and **it turns about that GRIP** — `staffFit` pivots on the
-  bone origin, which is the WRIST 0.09·H above the palm, so every degree of tilt swung the pole out of the hand.
-- **A FIXED STATURE FRACTION IS NOT A CROWN.** `topWorld` reads the POSED hulls; borrowing `archermod.TOP_F`
-  reported 3.28 m for a 2.78 m body and made the staff's height unmeasurable.
-- **THE BLADE FINDS A THIN BODY THROUGH TEN POSED HULLS** (`HULLS`, `foe.hullTouches`), with `centerWorld` /
-  `hurtRadius` only the enclosing broad phase. The old chest-centred 0.42 sphere missed the skull and the shins
-  and landed in the empty air beside the robe.
-- **THE RING IS A BURST, NOT A COLUMN.** `FROST_WALL_H` 2.10 m is ABSOLUTE — the ring's radius grows with the
-  caster, its height does not, because what it has to reach is the hero. It clears his 1.4 m jump apex on
-  purpose: this is not a move he hops over. XZ alone billed a hero standing on the deck above it.
-- **THE SPELL IS BILLED AFTER THE BLADE IS.** `update` holds the raise edge and the ring as `pendRaise`/`pendLay`
-  until `tryHit` has resolved, so a stroke on the release frame cancels them — and cancels NOTHING else: a ring
-  already in the ground keeps its fuse and its damage due that frame, and the cooldown stays spent.
-- **THE HOP IS INTEGRATED, NOT SAMPLED.** `LEAP_SPEED * sin(pi*u)` is integrated across the clamped slice of each
-  frame inside the window, so 30, 60 and 144 Hz all travel 0.9957 m. `airborne()` is real, the root restraint
-  yields to it, and a stagger or death in flight keeps height and vertical velocity and falls under `LEAP_GRAV`.
-- **THE POSE IS ELEVEN KEYED CHANNELS THROUGH ONE BANK** (`P`, `Poser`, `POSE_STIFF`), ordered trunk → shoulder →
-  head → elbow → hand so the pole arrives last, advanced ONCE per `update`. Landing compression, the stun brace
-  and the leg tuck have their own springs; the hem's is far softer, because cloth moves last.
-- **THE FLIGHT TUCK IS FOLDED ONTO THE GROUND SOLVE, NOT SWAPPED FOR IT** (`foldInto`) — an extra rotation at the
-  hip and knee carrying its children, so the legs cannot pop the frame the soles leave the floor and a rotation
-  cannot change a bone's length. It fades with the hop, and `levelSole` takes the tuck out of the foot exactly
-  as fast as the floor arrives.
-- **THE FROST NEEDS TWO PALETTES FOR ONE SUBSTANCE** — `RIME_ALB` goes into meshes (×1.72 → gamma); `RIME` is
-  drawn unlit and is a literal screen value.
-- **THE ROBE'S HUE HAS TO BE LAID ON THICK** — the warm key multiplies through, so blue must run at better than
-  twice red in the ALBEDO to survive to screen.
-- **NO VOICE OF ITS OWN YET** — borrows `shade_reach`/`shade_gather`/`shade_touch`, `wand_charge`/`wand_cast`,
-  `bone_hurt`/`bone_die`.
-
-### The leechfly (`leechfly.zig`) — the first flyer
-
-`pos.y` is the ground under it and `hover` is what it flies above that by; every world point (`centerWorld`,
-`lockPoint`, `topWorld`, hurt sphere) is measured off `pos.y + hover`.
-
-- **IT ZOOMS OUT OF SWORD REACH.** Threatened, it climbs to `HOVER_HIGH` in a third of a second, works
-  round behind him, and dives back. The blade cannot reach that; an arrow and a bolt can. That trade IS the
-  fight.
-- **THE CLIMB IS A LEAP AND THE ROOTS REFUSE IT** (`wantsClimb` → `foe.canLeap`).
-- **ALWAYS `airborne()`** — terrain gate never applies, nothing on the ground shoulders it. NOT exempt from
-  `env.resolveActor`.
-- **THE FEED IS A BLOW AND THEN A HOLD, DOWN DIFFERENT CHANNELS.** The beak is a real `foe.Blow` — blockable,
-  carries where it came from. The swallow is a DRIP (`game.leechSip` → `hero.burn`), billed per SECOND, scaled
-  by `dt`. A shield answers the first, only the ROLL the second: `holds()` is re-asked every frame and tests
-  height as well as bearing.
-- **IT HEALS OFF WHAT IT TAKES** (`LEECH_SHARE`, some not all). The belly (`gorge`) fills and STAYS full.
-- **THE EYES COME ALIGHT WHILE IT DRINKS** — drawn in `drawFx` as unlit spheres over the opaque pass, because
-  vertex alpha is a FIXED emissive channel and cannot brighten.
-- **THE WHINE IS A RETRIGGER, NOT A LOOP** (`WHINE_EVERY`) — raylib cannot loop a synthesized take. Cut a hair
-  LONGER than its own period so takes overlap; gapped, it chatters at 4 Hz and reads as a helicopter.
-- **A SWATTED FLY DROPS.** Stun states pull `hoverTo` down. Death is the hover running out before
-  `foe.dissipate` takes it.
-
-### The fungal deer (`fungaldeer.zig`) — the flower is ARTILLERY, the antlers are the corner
-
-Owner's creature, owner's name, and it REPLACED the florid ravager on the ravager's own bones. A leggy stag
-with a large flower growing out of its BACK: `wolf.zig`'s 27 bones plus eleven — a stalk off the withers, the
-bloom on it, seven petals, and a beam of antler each side of a head this one actually kept. `wolf.legs` still
-takes `wx[0..wolf.N]` as its own array, so no bone it solves has moved.
-
-- **THE FLOWER IS NOT ITS FACE, IT IS ITS ARTILLERY — AND THE TELL IS THE COROLLA, NOT A RISE** (owner: no
-  stalk rise; open/close on the spore, bigger instead). The bloom stands off the withers the animal's whole
-  life at ONE stance (`STALK_UP` seats it, `BLOOM_TILT` leans it), a bud the size of its own barrel; for the
-  volley it OPENS — blades built as midrib + membrane lenses, never bare quills (owner: seven spokes read as a
-  whisk) — and spits five
-  spores straight up. A heavy stun still blows the bud open (`openAmt`'s hurt branch); nothing moves its seat.
-- **THE HANG IS THE MOVE** (owner: they hover for a bit before homing in). `SPORE_HANG` of drifting and
-  bobbing before they turn over, then `SPORE_HOME` — under `hero.SPRINT_SPEED`, asserted at comptime,
-  so a spore cannot run him down in a straight line. **THE BOB'S RATE HAS TO BE IN THE STEP OR IT IS NOT ONE**:
-  added as `A·cos(wt)·dt` this is the integral of the wave, and 0.16 m authored arrived as 0.02 m of wobble.
-- **THE STEER IS CAPPED, NOT LERPED** (`mathx.turnToward`, `SPORE_TURN`). `normV(from + k·(want −
-  from))` stalls as the angle grows and at dead opposite is a fixed point: measured, 5.15 s to reverse against
-  the 1.43 s a cap gives, on a post-hang life of 5.90 s — so the one bearing the hang exists for was the one
-  that did not work.
-- **AND A THING IN FLIGHT LANDS ON EARTH, NOT ON WHATEVER HE IS STANDING ON** (`foe.landed`, and the magus's
-  orb is its other caller). Nothing in `foes/` can reach `env.groundAt`, so the shot carries the floor it was
-  thrown from and is spent on the LOWER of that and his own. Asked against HIS alone, a deer three metres below
-  him lost every spore of a volley on the frame it left the throat — the throat rides 2.33 m over its own feet.
-- **OPEN, IT TAKES MORE DAMAGE** (`frailty`, `BLOOM_FRAIL`) — 1.9x wide, on the BLADE in `tryHit` so the cull,
-  the threat and the shield all see the blow that landed. **DAMAGE ONLY**: `poise` and `stance` ride through
-  untouched, because `POISE_MAX` is solved to sit between his light (10) and his heavy (22) and a multiplier
-  there would quietly put a light poke through it. The window is a punish, not a second stagger.
-- **IT DOES NOT WANT TO BE NEAR YOU.** Inside `FLEE_R` it walks away and QUARTERS while it does — a
-  straight backpedal is a thing you keep pace with; past `KEEP_R` it closes enough to throw. `FLEE_SPEED` is
-  a gallop and `CLOSE_SPEED` a trot: the flight is the animal, the approach is only bookkeeping.
-- **THE ANTLERS ARE WHAT IT DOES CORNERED, AND CORNERED IS TWO DISTANCES AND A CLOCK** (the LAW). He is inside
-  `CORNER_R` — the ring the flower is useless in — AND the gap did not open this frame, held for `CORNER_HOLD`
-  1.15 s, draining at `CORNER_DECAY`. Never a read of what he is holding or pressing. The charge commits to
-  the line it loaded on and does not steer inside the drop.
-- **HAND-LAID PETALS, AND THE UNEVENNESS IS BOUNDED BOTH WAYS.** Gaps of 34 to 64 degrees against an even
-  ring's 51: pushed at the bottom because `k/7 * 360` reads as a gear, capped at the top or the open corolla
-  comes back with a bald sector in it.
-- **THE FOLD BUYS RADIUS UP TO 67 DEGREES AND SELLS IT AFTER.** A tip's distance off the bloom's axis goes as
-  `(BOW+RECURVE)·cos f + sin f`, so `PETAL_WIDE` dialled UP past the peak makes the flower NARROWER. 95 puts
-  the ring at 86..108 — straddling flat, so the throat faces OUT, which is what a flower spitting UP needs.
-  `PETAL_SHUT` is NEGATIVE and solved from the same radial: a bud's petals converge PAST parallel.
-- **THE BLADE IS ONE SURFACE, AND THE RIB STOPS SHORT OF THE MEMBRANE IT SITS IN.** `buildPetal` runs the
-  midrib to `RIB_END` (0.86) and lets the outer lens run past 1.0 on `bladeHalfW`; a rib that outran its own
-  membrane read as a pin with a bead on the end of it, and that fringe is what made a mop of the corolla.
-- **THE STANCE IS RELATIVE TO THE STALK'S OWN REST LEAN, NOT ABSOLUTE** — STALK→BLOOM is already 26 deg off
-  plumb, and an absolute angle folds the flower the WRONG WAY (the old furl at +74 laid it over the animal's
-  head, 1.65 m in front of its own hip).
-- **THE HURT SPHERE HOLDS THE BLOOM AND THE BARREL** — a weak point a blade cannot reach is not one. The bloom
-  keeps ONE seat now (2.00 m, test-pinned within 0.12 m across every state), and `wx[ROOT]` translates in Y
-  ONLY, so the whole trunk hangs forward of `pos` and `BARREL_MID` is what keeps the withers inside it.
-- **A CORPSE WILTS FROM WHATEVER THE BLOW CAUGHT IT WEARING** (`deathOpen`). Snapping shut is a pop and ramping
-  from wide is the same pop the other way.
-- **`stageGather` AND NOT `stageRise`** — `shots.runMapShots` finds a creature's signature move off `@hasDecl`
-  of that ONE name, and under any other the deer goes unshot.
-
-### The fungal duo (`fungalduo.zig`) — two bodies, one encounter
-
-Owner's creature, owner's brief: a SWORDSMAN who stays in your face and a MAGUS who will not let you have the
-rest of the floor. Both on the shared humanoid rig at 1.48 of the hero (a 2.66 m crown). **THE HEIGHT IS
-AUTHORED AS METRES OVER THE HERO AND THE WIDTHS RIDE IT** (`SCALE`, `HIP_HALF`, `SHOULDER_HALF`) — written out
-as their own 1.34 and 1.30 the widths were `SCALE` copied by hand, and the first time the crown moved the body
-under it stayed the old build's width.
-
-- **THEY DIVIDE THE GROUND AND NEITHER COVERS THE OTHER'S.** The swordsman owns the ring you stand in
-  (`SW_SLASH_R`, lunging 3.4–9.0) and the magus owns everywhere past it (`MG_FLEE_R` to `MG_KEEP_R`
-  16.0). The bands ABUT, and that is the whole of the pair: backing off the blade walks into the sprouts.
-- **NEITHER KNOWS THE OTHER EXISTS.** No shared brain and no combo table — that would be a script, and the LAW
-  forbids reading anything of the hero's anyway. What makes them read as a pair is the geometry.
-- **TWO GROUPS, ONE FILE** (`Vanguard`, `Conclave`). A `FOE_GROUPS` row hands back ONE slice of ONE type, and a
-  set of strokes and a set of spells are not one type; a role field over both is a union with two state
-  machines in it. They share the file because they share the rig, the palette, the pose and the bands.
-- **ONE RAIL PER BOSS, AND THE RAIL IS THE ROW'S INDEX** (`game.BOSS_RAILS`, `hud.bossBarAt`). They die
-  separately and the fight is which of them you spend the window on, so one pooled bar would hide the only
-  decision in it. Each fades on its own clock, and the chip state is PER RAIL — the knight's bar and the duo's
-  swordsman both used to mean rail 0, so every frame each wiped the other's frac, fade and chip tail and the
-  two drew on top of each other whether or not either was awake. `game.aggroRing` takes each rail's ring off
-  `FOE_GROUPS`, so a bar cannot wake at a different range from the creature it is showing.
-- **THE BAND IS THE MEASURED REACH OF THE STROKE, NOT A NUMBER BESIDE ONE.** Thrown for real, the slash lands
-  out to 2.35 m; it was handed out to 3.3 and drove past the man at every stand past 2.5. A band wider than the
-  kit is a whiff the pick called a plan, and the judge below is what caught it.
-- **THE TWO STROKES DO NOT GET THE SAME BEARING GATE, BECAUSE THEY ARE NOT THE SAME SHAPE** (`swSlashArc`,
-  `swLungeArc`). The slash SWEEPS, so it gets the wind's turn plus its own arc; the LUNGE is a thrust down one
-  line that closes nothing after the wind commits it, so it gets the turn and nothing else. Given the slash's
-  allowance it was thrown at 100 deg, came round 9 short, and missed at every stand in its band.
-- **THE KIT IS AUTHORED POINTING UP OFF THE GRIP AND `hero.staffFit` TURNS IT** — and the ARM'S OWN FLEX comes
-  out of the tilt (`warrior.swingTilt`'s rule). Fitted in the forearm's frame instead, a `tilt` of 94 — level,
-  by the convention — put the point 3.73 m up over a hero column that ends at 1.71.
-- **THE VENOM IS THE CLOCK ON THE FIGHT.** Chaos builds poison, and a guard answers the DAMAGE and not the
-  buildup, so blocking every stroke still breaks the bar in 5. Both strokes carry it or the clock is on one.
-- **THE LUNGE IS PRICED AS A COMMITMENT, WHICH MEANS IT IS RARE** (owner: lunges come too often). At
-  the old `SW_LUNGE_CD` it came round every 4.6 s measured — near enough the slash's own cadence that the whole
-  3.4–9.0 band read as one move on repeat. At the one it carries now it is one throw in ~7.7 s, and the 4 m band bills 3.3 a
-  second against 6.9. **AND THE STEEL CAME DOWN A SECOND TIME** (owner: does too much damage) — 23 raw to 18 on
-  the slash and 32 to 25 on the lunge, all of it off `dmg`, because the VENOM is the clock the fight runs on.
-  That put one slash inside 1.5× of the orb, so the bar the tall-and-sturdy test holds moved onto the LUNGE:
-  the orb is pure chaos and cutting it would come off the venom too.
-- **THE JUMPBACK IS A REPOSITION AND ITS TRIGGER IS HIS OWN CLOCK** (`crowd`) — how long something has stood
-  inside his swing, which is a distance and a clock, never a read of what the player pressed. It lands him
-  inside his own lunge band, so what follows it is the lunge coming back.
-- **THE MAGUS'S BUNCH IS THE PUNISH AND THE ORB IS THE ATTRITION.** A bunch of four sown AROUND him (standing
-  still is what it punishes), 1.9 s of growing, 0.85 s of glowing, then 3.1 m of burst — the cap's COLOUR is
-  its clock, because a warning you have to remember is not a warning. **THE ORB IS A DRIP AND THE CADENCE IS
-  WHAT SAYS SO** (`MG_ORB_CD`, owner: chaos orbs could come out a bit slower) — the flight stays at
-  `ORB_SPEED`. Most of the caster side's 14 a second is the BUNCH, not the orbs; measure before cutting either.
-- **THE DISSOLVE IS LONG ON PURPOSE AND A STAGGER SPENDS IT.** Caught halfway out it comes back solid and owes
-  the whole cooldown, so pressure through the fade is the answer rather than a race. It leaves SLUMBER MIST
-  where it stood, billed as a soak on the bloom's own meter — and the mist does not bill on the frame it
-  appears, because the magus leaves it behind as it goes and that would be a blow with no tell.
-- **A MAN IN HIS FACE GETS THE DUST, NOT THE BACK OF HIS ROBE** (`MG_PUFF_R`, inside `MG_FLEE_R`): a lungful of
-  spore blown into a frontal cone off a `MG_PUFF_WIND` tell — his one blow, reported as `heroHit` and read by the
-  Conclave the frame it appears. It outranks BOTH the retreat and the blink in `mgClassify`, and he only vanishes
-  once the breath is spent, so pressing him now costs something. It is still no stroke and carries no parry
-  window; it is a cone you walk out of, like the priest's breath.
-- **AND THE CLOUD STAYS WHERE IT WAS BLOWN** (`Dust`, `Coven.holdDose`'s pattern): it blooms over `DUST_BLOOM`,
-  HANGS, and thins out, biting a small chaos pulse with no poise every `DUST_EVERY` to anyone still standing in
-  it. The chaos is `venom`, so the dust is on the same clock the rest of the fight runs on.
-- **THE BUNCH IS A MUSHROOM, NOT A BALL ON A STICK** (`capMesh`, `drawCap`). It is a real mesh drawn per cap —
-  a foot swelling out of the ground, a stem that narrows at the waist and flares back under the cap, a skirt,
-  LIT GILLS, a domed head with warts, and spore beads hung off the rim — built at a cap radius of ONE so the
-  world size is the single number `CAP_SIZE * Cap.r`, and it stands about as tall as its cap is wide. It comes
-  up PAST its rest and settles back onto it (`capRise`, the overshoot law) while the cap opens out after it
-  (`capSpread`), and it GLOWS from the moment it is up: the halo sits UNDER the cap where it lights the gills
-  rather than round it, and the heat only makes the halo and the ground pool burn harder.
-- **NEITHER CAST HAS A BAND INSIDE THE RING IT WALKS OUT OF** (`MG_ORB_MIN`, `MG_SPROUT_MIN`, both derived off
-  `MG_FLEE_R`). `.back` is answered before either, so a lower minimum is a number nothing can ever reach — the
-  DUST is the one thing that answers inside that ring.
-- **AND THE ARENA IS A ROOM NOW, NOT A DOORWAY IN OPEN GROUND** — `mycelian_hall` on the bench and
-  `fungal_hollow` in the shipped map, the second traced off the rock that was already round the pair (one corner
-  per 30 deg, each on the nearest cliff's own collision radius, the fog gate standing as the corner at due west).
-- The bench is `worlds/test_fungalduo.world` — the pair on an arena floor with one pillar, at the distance the
-  fight is meant to hold. `--map worlds/test_fungalduo.world`.
-
-### The corrupted druidess (`druidess.zig`) — third boss
-
-Owner's brief: robes, an orb, vines, keepaway, a dodge, and a phase two that heals unless you go and stop it.
-Shared humanoid rig at 1.36 of the hero under a wide hem and THREE trailing tails; the orb rides `HELD` in the
-right hand. Bench her in `worlds/test_druidess.world`, never the shipped map.
-
-- **THE VINES ARE THE COVEN'S, NOT HERS** (`Coven.vines`, the magus's bunch pattern). She reports `sowed` and
-  `snared` for one frame; the group plants, ticks, bills and draws them. They are not bodies: no HP, no lock, no
-  `tryHit` — a whip stands `WHIP_GROW + WHIP_LIFE` and withers, a snare ring `SNARE_SHOW`.
-- **A CAST IS COMMITTED WHERE HE STOOD WHEN THE GATHER BEGAN** (`castAt`, the necromancer's frost rule), and the
-  buds drawn through the wind stand exactly where the vines will (`whipSpots` are rolled at the gather). Walk, and
-  the ring comes up behind you — a RUN carries him clear of the ring in the gather and a walk no longer does, both
-  bracketed by comptime asserts against his own speeds. The snare is `hero.snareFor(SNARE_HOLD)` through
-  `Coven.takeSnare`, the shoal's net path, and `SNARE_HOLD` is under two whip periods so a snare is one lash
-  taken and one rolled.
-- **THE WHIP TURNS ONTO THE MAN WHILE IT REARS AND HOLDS ITS LINE THROUGH THE STRIKE** (`WHIP_TELL` over
-  `TELL_MIN` and under the roll's i-frames) — the tell is where it points.
-- **THE SIDESTEP READS CLOSING SPEED, NEVER THE PRESS.** She cannot see a swing (the LAW), so a rush is his
-  position over the last frame (`closing`) inside `STEP_R`, on `STEP_CD`. A man standing still in her face is not a
-  rush and draws the drift instead.
-- **THE RAKE IS THE ANSWER TO A MAN IN HER FACE** (`SLASH_R`, inside the sidestep's ring and the leap's, and it
-  does not read closing at all — standing there is enough). The free hand comes across the chest, the trunk winds
-  open behind it, and the whole arm is ripped back out through him: `SLASH_WIND` over `TELL_MIN`, billed at
-  `SLASH_IMPACT_K` of the strike into a frontal cone, once, on a short `SLASH_CD` armed at the COMMIT so a
-  stagger through the wind spends it. It is her ONE stroke and therefore her one parry window (`parryable`,
-  `takeParry` — she is off `game.NO_PARRY` because of it), and the one blow she reports herself: `heroHit`, read
-  by the coven the frame it appears, where every vine of hers is the group's.
-- **THE SPEAR IS THE ANSWER TO CLOSING** (`SPEAR_R`, `SPEAR_CLOSE`, `SPEAR_CD`) — the same read, further out. A
-  third of a second of cock (the ground heaving along the line she is bringing round IS the tell, and it turns with
-  her), then a shaft runs `SPEAR_LEN` down her facing in `SPEAR_STRIKE`, billed once as the TIP PASSES HIM
-  (`Coven.tickVines`, the strip from her feet to wherever the point has got to). It is the coven's, like every vine.
-  Thrown for real at every stand in its band by the test beside it; a comptime assert keeps the reach past the ring.
-- **THE LEAP IS AN ARC WITH A HANG AND NO SLOPE AT THE GROUND** (`Arc`, `arcHop`/`arcAlong`): up on a quarter
-  sine, held at `up`, down on `1 - smoothstep`, the ground covered on a half-cosine so the speed is nothing at
-  touchdown. `airborne()` while `hop` stands, so collision and steering leave her alone; it is a JUMP, so the roots
-  refuse it (`foe.canLeap`). A stagger mid-air drops her at 6 m/s rather than snapping her down.
-- **THERE ARE THREE HEALING BREAKS** (`BREAK_HP` — 50, 25 and 10 percent; `breaks` counts what is spent), each ONE
-  call and ONE channel, counted the frame she commits so a stagger through the gather cannot buy a second wave off
-  the same share. `summoned` is a one-frame report and `game.summonWave` does the spawning (`foe.summonInto`, into
-  the groups those kinds already live in, on the ground under `summonSpot`, roused by `Leash.call`). Then the
-  retreat arc and `passive`: `HEAL_RATE` of max HP a second, the channel drawn as a column from the orb to the
-  ground. **ANY BLOW THAT LANDS ENDS THE CHANNEL SHE IS IN, and that share is spent for good** — that is the whole
-  of "go and stop her". **AND A CHANNEL NEVER CLIMBS BACK PAST THE SHARE SHE ALREADY BROKE AT** (`mendCeiling`):
-  the first mends her whole, the second only back to half, the third only back to a quarter — so the breaks come
-  in order, each is worth less than the last, and the fight has a ceiling instead of three full heals.
-- **THE TANGLE IS THREE SPRINGS ON HER HEADING** (`trailYaw`, `tickTrails`): each tail chases her facing through its
-  own stiffness and rings past it, so a turn swings the robes round after her and they settle in three beats. The
-  drag lean is the necromancer's hem, and the flare in the air is the leap's `hop`.
-- **SHE NEVER LEAVES THE ROOM, AND NEVER THE DRY GROUND** (owner: the land before the water; she went into deep
-  water to heal once, and that was very bad). The arena she stands in is stamped onto her each frame (`room`) and so
-  is a way to ask the world's water (`ground`, `foe.Ground` — `game.stampRooms`, both off `@hasField`, so any
-  creature that grows either gets it). `inRoom` is dry (`DRY_MAX`) AND inside the walls, and every move of hers lands
-  there. **OVER HIS HEAD FIRST** (owner: readily): the leap that gets away from him and from whatever is behind her
-  is the same arc the other way, landing past him (`overHead`); back is for when the ground past him is out or wet,
-  and if that is out too, the bearing with the most room, cut to what the room allows (`roomReach`). The retreat is
-  the same solve. A drift that would cross the wall or the water turns along it (`steerInRoom`), and a sidestep into
-  either is the other side's, or none. The game's `holdInRoom` still stands behind all of it.
-- **SHE IS THE TELL, NOT THE SPEAR** (owner). Nothing is drawn on the ground through the wind: the coil is the
-  whole of it — orb hand hauled back past the shoulder, trunk reared and wound away from him, head down, and the
-  free arm pointing straight down the line — held for `SPEAR_WIND` with the orb lit, then the whole body unwinds into
-  the thrust. Every tell of hers is a POSE first; a mark on the ground is only ever where a thing will stand.
-- **THE PODS GO OUT AS SHE LEAVES** (`Coven.pods`, `scatter`): `POD_N` seed pods lobbed off the orb the frame she
-  takes off, landing in a fan on the side she left, SWELLING through `POD_FUSE` with a heartbeat that quickens, then
-  POPPING into splinters (`POD_HIT` inside `POD_R`). The ground she vacates is the ground you chase her across.
-- **ALL OF HER DAMAGE IS PHYSICAL BUT THE WHIPS**, which cut with chaos that is corruption and not venom (no
-  `Hit.venom`). The whips, the spear and the rake BUILD BLEED (`WHIP_BLEED`, `SPEAR_BLEED`, `SLASH_BLEED`, the
-  blinkbat's dose pattern); a
-  snare BITES WHILE IT HOLDS — `Coven.holdDose`, a physical pulse every `SNARE_PULSE_EVERY` with no poise, on the
-  knight's gas pattern, read by the game after the snare itself.
-- **THE VINES ARE ALIVE, NOT POSTS.** A sprout overshoots and settles (`sproutCurve`), a whip writhes and sways
-  between lashes and CRACKS past the mark and rings back (`Vine.lash`), the snare's stalks beat on their own clocks
-  and clutch harder with hold of someone (`lashed` on a snare is "it has him"), and the spear runs a wave down its
-  shaft going out and quivers once it has arrived. All of it is draw-side off the vine's own clock; the bills do not
-  move.
+- **SUBMERGED CANNOT BE STRUCK, AND THAT IS GEOMETRY** — depth rides as a NEGATIVE lift through `foe.bodyPoint`,
+  so hurt sphere, bar and reticle all sink and the swept test refuses it on its own. **NO LOCK-ON WHILE UNDER OR
+  DISGUISED** — `hidden()`, found by `@hasDecl` in `game.disguised`, the same predicate `Model.draw` hides the
+  body behind, and never a clock of its own.
+- **A SPOT IS COMMITTED THE FRAME THE TELL COMMITS IT** — the mound stopping, the gather starting.
+- **THE CORPSE IS THE MECHANIC** (necro) — a body inside `RAISE_R` of a living necromancer **STOPS DISSIPATING**
+  (`heldOpen`, read by `foe.dissipate` through an `@hasField` opt-in), so the held corpse is the FIRST tell and
+  arrives before the cast. **IT IS A PLACE, NOT A LIST**: flags cleared and re-earned each frame off where bodies
+  lie, walked in order so two cannot claim one body. **A BODY MAY BE RAISED ONCE**, into a light stun so it cannot
+  swing out of the ground. **THE CREATURE ONLY REPORTS IT** — `game.applyRaises` does the raising and
+  `foe.rekindle` reads FIELDS ONLY; the STATE it comes up in is each creature's own.
+- **A RING COMMITTED TO THE GROUND OUTLIVES ITS CASTER**, is not parryable, and carries the RING as `hitFrom` so
+  stood on the mark there is no bearing to catch. **IT TAKES THE TARGET'S OWN `pos.y`**, never the caster's, or a
+  ring twelve metres away is depth-culled under the turf. **A RING IS A BURST, NOT A COLUMN** — its radius grows
+  with the caster, its height does not, because what it has to reach is the hero.
+- **A FUSE BURNS ROUND THE RING RATHER THAN FILLING IT** — the last rune lighting IS the blow. Built from
+  `drawSphereEx` and nothing else: `drawLine3D` is one pixel however close, and a `drawTriangleStrip3D` annulus
+  came back invisible.
+- **THE SPELL IS BILLED AFTER THE BLADE IS** — hold the edge as `pendRaise`/`pendLay` until `tryHit` resolves, so
+  a stroke on the release frame cancels it and cancels NOTHING else.
+- **A HOP IS INTEGRATED, NOT SAMPLED** — `LEAP_SPEED * sin(pi*u)` integrated across the clamped slice of each
+  frame, so 30, 60 and 144 Hz travel the same distance. A stagger in flight keeps height and vertical velocity.
+- **A FLIGHT TUCK IS FOLDED ONTO THE GROUND SOLVE, NOT SWAPPED FOR IT** (`foldInto`) — an extra rotation at hip and
+  knee carrying its children, so the legs cannot pop the frame the soles leave the floor and a rotation cannot
+  change a bone's length.
+- **THE BLADE FINDS A THIN BODY THROUGH POSED HULLS** (`foe.hullTouches`), with `centerWorld`/`hurtRadius` only the
+  enclosing broad phase — a chest-centred sphere misses the skull and the shins. **A FIXED STATURE FRACTION IS NOT
+  A CROWN**: `topWorld` reads the POSED hulls, and borrowing another creature's `TOP_F` reported 3.28 m for a
+  2.78 m body.
+- **TALL AND SKINNY IS TWO DIALS AND THE RATIO IS THE CLAIM** — stature and `hx`/`sx` both; either alone is
+  satisfiable by the wrong creature, so a test measures stature over shoulder SPAN against the body beside it.
+- **`pos.y` IS THE GROUND UNDER A FLYER AND `hover` IS WHAT IT FLIES ABOVE THAT** — every world point measured off
+  `pos.y + hover`. **ALWAYS `airborne()`**: the terrain gate never applies and nothing shoulders it, **but it is
+  NOT exempt from `env.resolveActor`.**
+- **A FEED IS A BLOW AND THEN A HOLD, DOWN DIFFERENT CHANNELS** — the bite is a real `foe.Blow`, the swallow a DRIP
+  billed per SECOND. A shield answers the first and only the ROLL the second, and `holds()` is re-asked every
+  frame and tests height as well as bearing.
+- **A THING IN FLIGHT LANDS ON EARTH, NOT ON WHATEVER HE IS STANDING ON** (`foe.landed`) — nothing in `foes/` can
+  reach `env.groundAt`, so a shot carries the floor it was thrown from and is spent on the LOWER of that and his.
+- **A HANG BEFORE A HOMING SHOT IS THE MOVE**, its home speed asserted at comptime under `hero.SPRINT_SPEED`. **THE
+  STEER IS CAPPED, NOT LERPED** (`mathx.turnToward`) — `normV(from + k·(want − from))` stalls as the angle grows
+  and at dead opposite is a fixed point, so the one bearing the hang exists for was the one that did not work.
+  **AND A BOB'S RATE HAS TO BE IN THE STEP OR IT IS NOT ONE**: added as `A·cos(wt)·dt` it is the integral of the
+  wave, and 0.16 m authored arrives as 0.02 m of wobble.
+- **OPEN, IT TAKES MORE DAMAGE** (`frailty`) — on the BLADE in `tryHit` so cull, threat and shield all see the blow
+  that landed. **DAMAGE ONLY**: `poise` and `stance` ride through untouched, because `POISE_MAX` is solved to sit
+  between his light and his heavy and a multiplier there quietly puts a light poke through it.
+- **CORNERED IS TWO DISTANCES AND A CLOCK** — inside the ring the ranged move is useless in, AND the gap did not
+  open this frame, held for its own hold and draining at its own decay. **Never a read of what he is holding.**
+- **A CHARGE COMMITS TO THE LINE IT LOADED ON** and does not steer inside the drop.
+- **A CORPSE WILTS FROM WHATEVER THE BLOW CAUGHT IT WEARING** — snapping shut is a pop and ramping from wide is the
+  same pop the other way. **A ROOST HANGS IN THE BAND IT BITES FROM** — a roost nobody can reach cannot be the
+  thing that wakes the rest of them.
+- **PARTICLE COLOURS ARE LITERAL SCREEN VALUES WHERE MESH COLOURS ARE ALBEDOS**, and a substance drawn both ways
+  needs two palettes. **A ROOT PITCH ROTATES ABOUT THE POINT ON THE GROUND**, so the root is lifted by exactly
+  what the tip sinks. **AN EFFECT'S PHASE IS ITS OWN DECAY, NOT A CLOCK BESIDE IT** — a landing ring runs off
+  `thud`, not `self.t`, which resets on every state change.
+- **`stageGather` AND NOT `stageRise`** — `shots.runMapShots` finds a creature's signature move off `@hasDecl` of
+  that ONE name, and under any other the creature goes unshot.
+- **A RETRIGGER, NOT A LOOP** (`WHINE_EVERY`, `HUM_EVERY`) — raylib cannot loop a synthesized take, so cut a hair
+  LONGER than its own period; gapped, it chatters and reads as a helicopter.
 
 ## Combat
 
-**The two sides are tuned SEPARATELY.** A stagger you inflict is a punish window you must be able to walk
-into; a stagger you suffer is time taken off the player. Hence `FOE_*_STUN_DUR` well past the hero's and
-`FOE_REGEN_*` far slower.
+**The two sides are tuned SEPARATELY.** A stagger you inflict is a punish window you must be able to walk into; a
+stagger you suffer is time taken off the player. Hence `FOE_*_STUN_DUR` well past the hero's, `FOE_REGEN_*` far
+slower.
 
-**NOBODY IS POISE-DAMAGED WHILE ALREADY REELING, EITHER SIDE.** While a stun runs, incoming poise is dropped;
-when it ends, poise goes back to FULL, both tiers. HP and direct STANCE damage still land. `combat.Vitals`
-owns the clock (`stunLeft`, armed by `beginStun`), and it ticks BEFORE the regen gate or a foe's `regenDelay`
-outlasts the window and the immunity never lifts. A GUARD BREAK is the one door `hit()` misses —
-`hero.enterStun` arms it.
+- **NOBODY IS POISE-DAMAGED WHILE ALREADY REELING, EITHER SIDE** — while a stun runs incoming poise is dropped and
+  when it ends poise goes back to FULL, both tiers; HP and direct STANCE damage still land. `Vitals` owns the
+  clock and it ticks BEFORE the regen gate, or a foe's `regenDelay` outlasts the window and the immunity never
+  lifts. A GUARD BREAK is the one door `hit()` misses — `hero.enterStun` arms it.
+- **A DRIP IS NOT A BLOW** — anything that HOLDS bills damage every frame (`Vitals.drip`), and a blow's side
+  effects cannot be billed at that rate. TWO clocks: `sinceHit` gates the poise/stance refill and only a blow
+  moves it, `sinceHurt` is what the floating bar reads and anything taking HP moves it. **A drip that KILLS is
+  reported, not acted on** — only the creature knows how to die.
+- **A BLOW MAY TAKE THE BLUE BAR** (`Hit.fp`, the shade's touch, the only thing that does) — NOT part of
+  `Hit.raw()`, because what a shield's stamina bill measures is the WEIGHT of the thing that hit you.
+- **A TIMED STATUS REFRESHES, IT DOES NOT STACK** (`Root.grab`, `Regen.start`).
+- **A THROWN SORCERY REACHES ONE BODY; A HELD ONE REACHES WHAT IS IN FRONT OF HIM** — thrown into a warband it
+  picks ONE victim, so its reach is a search and never a blast, and the FX is sized to the BODY, not the reach.
+  **THE RIME BREATH IS THE ONE EXCEPTION, WHICH IS WHY IT IS A CONE** — a direction held in front of himself,
+  answered by not standing there.
+- **AN EFFECT'S CLOCK IS DERIVED FROM THE MECHANIC'S, NEVER PARALLEL TO IT**, and when the effect STAGGERS its
+  parts, its container outlives the mechanic by that stagger.
+- **FEEDBACK ON A CREATURE IS SIZED BETWEEN TWO FAILURES** — under, scenery round the ankles; over, it hides the
+  creature it points at. Judge against the CREATURE, never the hero who caused it.
+- **A FLOATING BAR TIMES OUT; THE FIXED ONE DOES NOT**, and it goes with the RETICLE, not `g.lock`, so a suspended
+  lock takes the bar down with the dot. **AND IT MAY NOT CLIMB OUT OF THE FRAME** (`hud.FOE_CEIL`) — overhead
+  unless that would put it above three quarters of the screen. ONE rule for every creature. **A HEAD CAN GO
+  BEHIND THE EYE**: stood at a giant's feet its crown is above AND behind the camera, which `projectToScreen`
+  refuses, so the fallback anchor is the CHEST.
+- **THE RETICLE RIDES THE BODY, NOT A HEIGHT OFF THE FEET** — each creature names the PART its mark rides and a
+  point in that bone's frame; a bone matrix already carries scale, facing and `pos`, and every `spawn` poses
+  before it returns. A test measures the mark's swing OFF THE CREATURE'S OWN AXIS, not its height, because a
+  fixed mark still rises and falls on a hop.
+- **ONE RAIL PER BOSS, AND THE RAIL IS THE ROW'S INDEX** (`game.BOSS_RAILS`) — two bosses sharing rail 0 wiped
+  each other's frac, fade and chip tail every frame. Chip state is PER RAIL, and `game.aggroRing` takes each
+  rail's ring off `FOE_GROUPS` so a bar cannot wake at a different range from the creature it shows. `game.zig`
+  owns when a bar shows and SUPPRESSES that body's floating bar — **one number may not be read in two places.**
+- **A BOSS BAR MAY NOT BE GATED ON A RANGE THE CREATURE'S OWN DESIGN EXCEEDS** (`game.sealedInWith`) — being
+  SEALED IN with something is the fight whatever the range, and `Leash.roused` is a timer topped up only by being
+  HIT, so chasing one boss let the other's bar lapse mid-fight.
+- **EVERY BAR THE RUN LEFT ON SCREEN GOES WHILE THE SCREEN IS BLACK** (`game.dropRunHud`, `hud.dropBossBars`) —
+  `bossK`/`spiritK` only tick inside `hud`, which the chrome fade and `rest.active()` both stop calling, so they
+  FREEZE at full and the rail comes back carrying the dead run's HP and chip tail.
 
-**A DRIP IS NOT A BLOW.** Anything that HOLDS bills damage every frame (`Vitals.drip`), and a blow's side
-effects cannot be billed at that rate. TWO clocks: `sinceHit` gates the poise/stance refill and only a blow
-moves it; `sinceHurt` is what the floating bar reads and anything taking HP moves it. **A drip that KILLS is
-reported, not acted on** — only the creature knows how to die.
+**Stamina.** **AN EMPTY BAR LOCKS OUT roll / attack / sprint** — not time theft: the consequence of a choice made
+a second earlier, readable off a bar. **WALKING IS NEVER GATED** (running dry caps `mv.speed`, denied at the
+SOURCE so `sprintingMove` stays the one definition of a sprint). **RUN IT OUT AND YOU ARE WINDED** — sprint
+denied until the bar is back to HALF, a LATCH and not a `cur == 0` test, latched from every path that moves
+`cur`. **YOU MAY ACT ON ANY STAMINA ABOVE ZERO** — `canAct()` is `cur > 0`, NOT `cur >= cost`, and that asymmetry
+is the PANIC ROLL. **A COMMITTED ACTION IS NEVER CUT SHORT** — `spend` floors at 0, nothing refunded or aborted.
+The refill pauses while attacking, rolling or sprinting, then waits `STAM_DELAY`. **A REFUSED ACTION IS SHOWN**
+(red ring): under zero-input-lag, silence is indistinguishable from a dropped input.
 
-**A BLOW MAY TAKE THE BLUE BAR** (`combat.Hit.fp`) — the shade's touch, the only thing that does. NOT part of
-`Hit.raw()`: what a shield's stamina bill measures is the WEIGHT of the thing that hit you. `hero.takeHit` is
-the one place it is spent (`Focus.drain` FLOORS, where `Focus.spend` refuses), and the guard chips it by the
-same fraction it chips damage.
+**Guarding — the plain DS1 block, not ER's.**
 
-**A RANGE GATE IS MEASURED FROM THE TARGET'S HIDE, NEVER ITS CENTRE** (`knight.triggerR` adds `HERO_REACH`;
-`wolf.triggerR` adds the quarry's `bodyR`). `env.resolveActor` holds an attacker `bodyR + its own` out, so a
-flat centre-to-centre range is unsatisfiable on anything broad. Derived off the hide the margin is the same
-1.5 m on every creature. **HEIGHT IS A SEPARATE QUESTION FROM REACH, so it needs its own test** — the bash's
-swept segment spanned only the middle 78% of the door and bottomed at 1.29 m against a hero whose chest is at
-1.12 m. A "below his crown" assert passes on a blow that only touches hair; ask for CHEST height. Both tests
-print their measurements.
+- **IT IS A HELD STATE, NOT A COMMITTED ACTION** — `setGuard(want)` every frame with the button's level,
+  re-derived from scratch. Call it AFTER `sprinting`.
+- **THE SHIELD IS A DIRECTION** (`GUARD_ARC`, 65° either side), not a bubble, which is why guarding cannot answer
+  a warband the way rolling can. A blow with a zero `fromDir` is never blocked, which is what lets `--shot` force
+  reactions with synthetic hits. **SO A BLOW CARRIES WHERE IT CAME FROM** — every group's update returns
+  `?foe.Blow` (hit + attacker pos), not a bare `?combat.Hit`; an arrow's direction is its own velocity reversed.
+- **IT COSTS STAMINA, NOT POISE.** **CHIP GETS THROUGH AND CHIP CAN KILL**, routed through `Vitals.hit`; stability
+  is poor by design, and **A BOARD MAY NEVER STOP A BLOW OUTRIGHT** (`GUARD_NEGATE_CAP`).
+- **EMPTY THE BAR UNDER A BLOW AND THE GUARD BREAKS** — heavy stagger, and the shield cannot come back up until
+  the pool refills. The danger is the NEXT hit.
+- **`takeHit` RETURNS WHAT BECAME OF THE BLOW** (`HitOutcome`) and `game.heroTakes` is the ONE place that turns it
+  into a felt beat.
+- **THE STANCE LAGS, THE BLOCK NEVER DOES** — `guarding` is live on the button, `guardB` a ~0.1 s visual blend.
+  **Nothing mechanical may read `guardB`.** **THE MAN MOVES, THE SHIELD HOLDS**: recoil goes into the BODY.
+- **The shield is not a bone** — it rides the left wrist through `hero.shieldFit`, DERIVED from the stance angles
+  (their inverse), or the first retune swings it off its own arm.
 
-**A TIMED STATUS REFRESHES, IT DOES NOT STACK** (`Root.grab`, `Regen.start`).
+**Parrying — L2, the shield's own skill.** L2 is the left-hand armament's SKILL slot, routed by that hand exactly
+as L1 is, and it asks NOTHING about whether the guard is up. On the mouse the two halves of L2 part company
+(`PARRY_KEY`), because RMB is the guard's held level.
 
-**A THROWN SORCERY REACHES ONE BODY; A HELD ONE REACHES WHAT IS IN FRONT OF HIM.** A sorcery thrown into a
-warband picks ONE victim — the locked foe, else nearest to the mark (`game.rootVictim`) — so its reach is a
-search, never a blast, and the FX is sized to the BODY (`combat.ROOT_GRIP_R`), not to the reach.
-
-**THE RIME BREATH IS THE ONE EXCEPTION, WHICH IS WHY IT IS A CONE AND NOT A BLAST.** It is not thrown AT
-anything: a direction held in front of himself for `RIME_DUR`, answered by not standing there. Priced off the
-single-target ladder — dearer than the roots (15 fp against 12) and the worst of the three at killing anybody
-(`spellDamage(.rime)` under the roots' whole grip). A comptime assert pins both.
-
-**AN EFFECT'S CLOCK IS DERIVED FROM THE MECHANIC'S, NEVER PARALLEL TO IT.** And when the effect STAGGERS its
-parts, its container outlives the mechanic by that stagger.
-
-**FEEDBACK ON A CREATURE IS SIZED BETWEEN TWO FAILURES.** Under, scenery round the ankles; over, it hides the
-creature it points at. Judge against the CREATURE, never the hero who caused it.
-
-**A FLOATING BAR TIMES OUT; THE FIXED ONE DOES NOT.** It goes with the RETICLE, not `g.lock`, so a suspended
-lock takes the bar down with the dot.
-
-**AND IT MAY NOT CLIMB OUT OF THE FRAME** (`hud.FOE_CEIL`). Bars hang off `topWorld`, right at every distance
-you can see the whole creature at and wrong the moment you close on a TALL one. So the bar is OVERHEAD unless
-that would put it above three quarters of the screen — one `max` against a screen-space ceiling. ONE rule for
-every creature.
-
-**THE RETICLE RIDES THE BODY, NOT A HEIGHT OFF THE FEET** (`foe.markOn`, each creature's `lockPoint`). Each
-creature names the PART its mark rides and a point in that bone's frame: skull for the three humanoids, brow
-for the toad, cephalothorax for the spiders, cowl for a shade, CHEST for the ogre (crown 4.4 m up). The egg sac
-is the one exception — one membrane on the ground has no part that moves on its own. A bone matrix already
-carries the rig's scale, facing and `pos`, and every `spawn` poses before it returns. **A test pins the whole
-rule at once** (`game.zig`, "THE MARK RIDES THE BODY") and it measures the mark's swing OFF THE CREATURE'S OWN
-AXIS, not its height — a fixed mark still rises and falls on a hop, and nothing on the axis can leave it.
-
-**A HEAD CAN GO BEHIND THE EYE.** Stood at a giant's feet its crown is above AND behind the camera, which
-`projectToScreen` refuses. The fallback anchor is the CHEST (`centerWorld`), and the ceiling then puts the bar
-where the head would have been.
-
-### Stamina
-
-- **AN EMPTY BAR LOCKS OUT roll / attack / sprint** (`STAM_LOCKOUT`). Not time theft: the consequence of a
-  choice made a second earlier, readable off a bar.
-- **WALKING IS NEVER GATED.** Running dry caps `mv.speed` to `RUN_SPEED`, denied at the SOURCE so
-  `sprintingMove` stays the one definition of a sprint.
-- **RUN IT OUT AND YOU ARE WINDED** (`STAM_WIND_CLEAR`): sprint stays denied until the bar is back to HALF.
-  A LATCH, not a `cur == 0` test, latched by `settleWind` from every path that moves `cur`. Sprint only. The
-  bar draws the mark (`Stamina.windedTo`).
-- **YOU MAY ACT ON ANY STAMINA ABOVE ZERO** — `canAct()` is `cur > 0`, NOT `cur >= cost`. That asymmetry is
-  the PANIC ROLL.
-- **A COMMITTED ACTION IS NEVER CUT SHORT.** `spend` floors at 0; nothing is refunded or aborted.
-- **THE REFILL PAUSES** while attacking, rolling or sprinting, then waits `STAM_DELAY`.
-- **A REFUSED ACTION IS SHOWN** (`hero.stamRefused` → red ring). Under zero-input-lag, silence is
-  indistinguishable from a dropped input. Feedback only.
-
-### Guarding — the plain DS1 block, not ER's
-
-- **IT IS A HELD STATE, NOT A COMMITTED ACTION.** `hero.setGuard(want)` is called every frame with the
-  button's level and re-derives from scratch (`canGuard`). Call it AFTER `sprinting`.
-- **THE SHIELD IS A DIRECTION** (`combat.GUARD_ARC`, 65° either side), not a bubble — which is why guarding
-  cannot answer a warband the way rolling can. A blow with a zero `fromDir` is never blocked, which is what
-  lets `--shot` force reactions with synthetic hits.
-- **SO A BLOW CARRIES WHERE IT CAME FROM.** Every group's update returns `?foe.Blow` (hit + attacker pos), not
-  a bare `?combat.Hit`. An arrow's direction comes off its own velocity reversed.
-- **IT COSTS STAMINA, NOT POISE** — `GUARD_STAM_FLAT + GUARD_STAM_PER_DMG × dmg`, refill paused while up.
-- **CHIP GETS THROUGH AND CHIP CAN KILL** (`GUARD_NEGATE`), routed through `Vitals.hit`. Stability is poor
-  by design: kobold teeth ~15 of 105, the ogre's club ~45.
-- **EMPTY THE BAR UNDER A BLOW AND THE GUARD BREAKS** — heavy stagger, and the shield cannot come back up
-  until the pool refills. The danger is the NEXT hit.
-- **`takeHit` RETURNS WHAT BECAME OF THE BLOW** (`HitOutcome`) and `game.heroTakes` is the ONE place that turns
-  it into a felt beat.
-- **HE CAN WALK A FIGHT DOWN BEHIND IT** — `hero.GUARD_SPEED` of the walk, capped against the walk, never
-  zeroed; denied at the SOURCE like the sprint.
-- **THE STANCE LAGS, THE BLOCK NEVER DOES.** `guarding` is live on the button; `guardB` is a visual blend
-  (~0.1 s). Nothing mechanical may read `guardB`.
-- **THE MAN MOVES, THE SHIELD HOLDS.** Recoil goes into the BODY (sink, step back, camera, pad), only a little
-  into the arm.
-- **The shield is not a bone** — it rides the left wrist through `hero.shieldFit`, DERIVED from the stance
-  angles (their inverse), or the first retune swings it off its own arm.
-
-### Parrying — L2, the shield's own skill
-
-- **L2 IS THE LEFT-HAND ARMAMENT'S SKILL SLOT**, routed by that hand exactly as L1 is: a raised bow AIMS on a
-  held level, boards PARRY on a pressed edge. It asks NOTHING about whether the guard is up.
-- **ON THE MOUSE THE TWO HALVES OF L2 PART COMPANY** (`PARRY_KEY`). RMB is the guard's held level, and
-  Shift+RMB would fire a parry every time a sprinting player pressed RMB. So the edge takes its own key.
-- **THE WINDOW AND THE ANIMATION ARE TWO CLOCKS** (`parryLive` vs `PARRY_DUR`). The catch is open ~0.16 s; the
-  shove plays a quarter second after it shuts, and `canGuard` refuses the whole time. That tail IS the price.
-- **IT IS SLOW OFF THE MARK** (`PARRY_OPEN` 0.10 of 0.52). Widening `foe.PARRY_LEAD` makes catches easier;
-  this makes STARTING one a commitment. Separate dials on purpose.
-- **THE ATTACK DIES AT CONTACT; THE HEAVY STUN IS EARNED.** `combat.PARRY_HIT` is STANCE and nothing else — no
-  damage, no poise, so a catch can never resolve as a flinch: it breaks the stance or it does not.
-- **THE CREATURE READS THE SHIELD, IT NEVER REACHES FOR IT** (`foe.Parry`, stamped by `game.markParry`). Each
-  MOVE answers for its own frames and reach (`ogre.parryable`). **MOST OF THE FIELD CARRIES WINDOWS NOW** —
-  fifteen creatures, every committed limb from the toad's leap to the skitterer's slam, each declared at its
-  own `parryable`. Adding one is a `parry` field, a `toImpact`, a `parryable` and its group's
-  `setParry`/`anyParried`: **`game.markParry`/`anyParried` are folded over `FOE_GROUPS` and keyed off
-  `@hasDecl`**. `parryBeat` fires ONCE a frame for the whole field.
+- **THE WINDOW AND THE ANIMATION ARE TWO CLOCKS** — the catch is open ~0.16 s, the shove plays a quarter second
+  after it shuts, and `canGuard` refuses the whole time. **That tail IS the price.** **IT IS SLOW OFF THE MARK**
+  (`PARRY_OPEN` 0.10 of 0.52): widening `foe.PARRY_LEAD` makes catches easier, this makes STARTING one a
+  commitment. Separate dials on purpose.
+- **THE ATTACK DIES AT CONTACT; THE HEAVY STUN IS EARNED.** `PARRY_HIT` is STANCE and nothing else — no damage, no
+  poise — so a catch can never resolve as a flinch: it breaks the stance or it does not.
+- **A WINDOW IS `foe.PARRY_LEAD` SECONDS BACK FROM THE IMPACT FRAME** — one number, in seconds, for EVERY creature
+  and move, and it IS the difficulty. **It is 0.18**, every creature's tests BRACKET it from above (a window may
+  never be more than a fraction of the tell in front of it), and it is **DELIBERATELY NOT A PERK.**
+- **TIMING EARNS THE CATCH; CONTACT DELIVERS IT** (`Parry.contact`) — `pending` preserves a valid early timing
+  while the attack continues unchanged, `setParry` preserves it across shield stamps, and losing shield, facing,
+  reach or attack cancels it. Swept weapons resolve after posing and before damage; others use `toImpact`.
+  `Parry.window` includes the impact-crossing frame so 30 Hz cannot skip a catch.
+- **THE CREATURE READS THE SHIELD, IT NEVER REACHES FOR IT** — each MOVE answers for its own frames and reach at
+  its own `parryable`. Adding one is a `parry` field, a `toImpact`, a `parryable` and the group's
+  `setParry`/`anyParried`. `parryBeat` fires ONCE a frame for the whole field.
 - **WHAT IS *NOT* PARRYABLE IS A DECISION, WRITTEN AT EACH `toImpact`** (or at the impact site of a move with
-  none). A projectile is not a blow (spit, clump, every arrow). The toad's HOP carries no blow and its CHOMP is
-  out on purpose. A BROODLING is out. **THE LEECHFLY IS OUT BY DESIGN**: its counters are the ROLL and the
-  ranged kit, and a window on the stab would make the boards the answer to a flyer. A GROUND DISC has no
-  bearing to catch (the delver's burst, the golem's smash and slam, the sporeling's splat); a POURED ELEMENT
-  has no swung mass (the priest's breath, the mage's flick) — each says so where it lands. **HYPER ARMOUR IS
-  NO DEFENCE** (`warrior.takeParry`) — it refuses poise off the blade, and a parry deals neither damage nor
-  poise, so the greatsword's uninterruptible slam is exactly the move the boards can still stop.
-- **A WINDOW IS `foe.PARRY_LEAD` SECONDS BACK FROM THE IMPACT FRAME** — one number, in seconds, for EVERY
-  creature and move, and it IS the difficulty. **It is 0.18**, and every creature's tests BRACKET it from
-  above: a window may never be more than a fraction of the tell in front of it. Written as fractions of each
-  state's own clock instead, the total was emergent and unreadable.
-- **TIMING EARNS THE CATCH; CONTACT DELIVERS IT** (`foe.Parry.contact`). `pending` preserves a valid early
-  timing while the attack continues unchanged. `setParry` preserves it across shield stamps; losing the shield,
-  facing, reach or attack cancels it. Swept weapons resolve after posing, before damage; other blows use
-  `toImpact`. `Parry.window` includes the impact-crossing frame so 30 Hz cannot skip a catch.
-- **IT IS A SWIPE, AND THE SWIPE COMES FROM THE WAIST** (`parrySweep` — coil, whip across, settle). A shoulder
-  yaw turns the boards' FACE with it, because `shieldFit` is the inverse of that yaw; the TRUNK turns arm and
-  boards together. `PARRY_ARM_LEAD` adds a few degrees so the boards outrun the chest.
-- **THE SHOVE MAY NOT BREAK THE FOLD.** `shieldFit` is also the inverse of shoulder-flex + elbow, so the
-  shoulder takes `PARRY_PUNCH` and the elbow gives back exactly as much: what travels is the HAND.
-- **THE OGRE SAYS WHEN HE COMMITS.** The ROAR at the top of a wind says a swing is COMING; the commit tell says
-  NOW, once, on the wind → swing boundary, in all three channels: `ogre_heave`, `plantBurst` off BOTH FEET, and
-  the shoulders driving over in the pose.
-- **JUDGE IT FROM ABOVE.** A lateral arc foreshortens to nothing head-on, so the harness shoots the coil, the
-  crossing and the follow-through straight down (`20o`/`20p`/`20q`).
-- **A CATCH KICKS A SPRING** (`foe.Deflect`, `hero.deflectUpper`). The warrior, knight, archer, berserker and
-  fungal swordsman share a sideways weapon deflection with overshoot; the legs stay planted and two-hand
-  grips are solved afterwards. `hero.parryCatch` gives the shield its own follow-through. Contact gets the
-  large flash, sparks, clang and rumble. The empty swipe's glint stays small.
-- **VERIFY BOTH BODIES TOGETHER** with `--shot --shot-only parry_study`: two sides of each encounter, incoming
-  weapon, contact and recoil. It asserts the real attack reaches, the parry catches, and the caught blow deals
-  no damage. The timing and warrior contact tests also run at 30, 60 and 144 Hz.
-- **THE SWIPE ITSELF THROWS A GLINT, CAUGHT OR NOT** (`parryGlint`), ONCE on the whip's peak frame. **LAID
-  ALONG THE ARC, NOT THROWN FROM A POINT** (`PARRY_GLINT_SPAN`), so it is a STREAK from the first frame. Count
-  buys brightness; a TIGHT fan and SHORT lives keep it a glint. Always less than a catch, never a different
-  colour — what separates the two is size.
+  none): a projectile is not a blow, a GROUND DISC has no bearing to catch, a POURED ELEMENT has no swung mass.
+  Broodlings and the LEECHFLY are out by design — its counters are the ROLL and the ranged kit, and a window on
+  the stab would make the boards the answer to a flyer. **HYPER ARMOUR IS NO DEFENCE**: it refuses poise off the
+  blade, and a parry deals neither damage nor poise, so the uninterruptible slam is exactly the move the boards
+  can still stop.
+- **IT IS A SWIPE, AND THE SWIPE COMES FROM THE WAIST** — a shoulder yaw turns the boards' FACE with it because
+  `shieldFit` is that yaw's inverse; the TRUNK turns arm and boards together. **THE SHOVE MAY NOT BREAK THE
+  FOLD**: the shoulder takes `PARRY_PUNCH` and the elbow gives back exactly as much, so what travels is the HAND.
+- **A CATCH KICKS A SPRING** (`foe.Deflect`) — a sideways weapon deflection with overshoot, legs planted,
+  two-hand grips solved afterwards. Contact gets the large flash, sparks, clang and rumble. **THE SWIPE ITSELF
+  THROWS A GLINT, CAUGHT OR NOT**, once on the whip's peak frame and **LAID ALONG THE ARC, NOT THROWN FROM A
+  POINT** so it is a STREAK from the first frame; always less than a catch, never a different colour.
+- **JUDGE IT FROM ABOVE** — a lateral arc foreshortens to nothing head-on. `--shot --shot-only parry_study`
+  asserts the real attack reaches, the parry catches, and the caught blow deals no damage, at 30/60/144 Hz.
 
-### The jump — A/Cross
+**The jump — A/Cross** (keyboard `V`; A is strafe-left, so the letter cannot be mirrored). Traversal, not a
+technique. NO stamina, no jump attack.
 
-Traversal, not a technique (`hud.BTN_JUMP`, keyboard `V` — A is strafe-left, so the letter cannot be mirrored).
-It costs NO STAMINA. No jump attack.
-
-**THE FALL** (`hero.fallDamage`, billed in `hero.hitGround`). Free under `FALL_FREE` 4 m, certain death at
-`FALL_DEATH` 13 m, a power curve between, all as fractions of `hpMax` so a levelled vitality buys the same
-metres it always did. On the starting 70: 5 m costs 4, 8 m costs 21, 12 m costs 59.
-
-- **MEASURED OFF THE HIGHEST POINT OF THE FLIGHT** (`hero.airTop`), not off where it began, or a jump taken
-  one stride before the lip is a shorter fall than a walk off it.
-- **THE GROUND IS NOT A BLOW** — billed straight to `vit`, past armour and past the guard, because a shield
-  does not catch the floor. It takes a light stun on any drop that hurt.
-- **DEXTERITY BUYS A QUARTER AND NOT ONE METRE** (`FALL_DEX_CUT`, nothing at the starting 15 and 25% at 99).
-  It never touches the height that kills, and `FALL_MIN_FRAC` is the floor that stops it making a drop free.
-
-- **`pos.y` IS STILL THE GROUND UNDER HIM** — `game.groundActor` its only writer, `hero.lift` what he is flying
-  above it by. The height integrated is `airY` (WORLD height of his feet) and `lift` is DERIVED off it
-  (`airY − pos.y`) every frame — which is what makes running off a ledge work. **`lift` is ZERO unless he is
-  airborne**, so a teleport can never strand him standing on nothing.
-- **TWO NUMBERS ARE THE DECISION AND THE OTHER TWO ARE SOLVED** — `JUMP_APEX` (1.4 m) and `JUMP_AIR`
-  (0.852 s, solved so `JUMP_G` stays 15.43 and the launches keep their numbers); `JUMP_G` and `JUMP_V0` fall
-  out. The apex clears FIVE terrain risers where a walk gets two (`env.STEP_UP`), pinned in `game.zig`
-  against `wf.HEIGHT_STEP` from both sides — **AND HIS REACH (`JUMP_APEX + STEP_UP`) STAYS UNDER THE LEAST
-  DROP THAT CUTS** (`wf.cliffMinDrop` on the default lattice, 2.1 m), so a painted face is a wall to the jump
-  as it is to the walk.
-- **THE INTEGRATOR IS THE CLOSED FORM**, not `v -= g·dt; y += v·dt` — that pair loses `g·t·dt/2`: nine
-  centimetres of apex at 30 fps and none at 240. A test flies all four rates.
+- **TWO NUMBERS ARE THE DECISION AND THE OTHER TWO ARE SOLVED** — `JUMP_APEX` (1.4 m) and `JUMP_AIR` (0.852 s);
+  `JUMP_G` and `JUMP_V0` fall out. The apex clears FIVE terrain risers where a walk gets two, pinned against
+  `wf.HEIGHT_STEP` both ways — **AND HIS REACH (`JUMP_APEX + STEP_UP`) STAYS UNDER THE LEAST DROP THAT CUTS**
+  (`wf.cliffMinDrop`, 2.1 m), so a painted face is a wall to the jump as it is to the walk.
+- **THE INTEGRATOR IS THE CLOSED FORM**, not `v -= g·dt; y += v·dt` — that pair loses `g·t·dt/2`: nine centimetres
+  of apex at 30 fps and none at 240. A test flies all four rates.
+- **`pos.y` IS STILL THE GROUND UNDER HIM** — `game.groundActor` its only writer, `hero.lift` what he flies above
+  it by. The height integrated is `airY` and `lift` is DERIVED off it every frame, which is what makes running
+  off a ledge work. **`lift` is ZERO unless he is airborne**, so a teleport can never strand him on nothing.
 - **GRAVITY LIVES IN `tickClocks`** — a blow mid-air routes to `updateStun` and a death to `updateDeath`, and a
   man who stopped falling because he got hit would hang in the sky. `dropActions` deliberately does NOT clear
-  `jumping`. Gated on `held`.
-- **IT IS `committed()`, beside the roll.** No double jump, no roll or cast out of the air, a sprint that stops
-  when his feet do, and an attack pressed mid-flight BUFFERED into the one slot and fired on landing
-  (`tickAir` → `fireQueued`).
-- **THE STICK BENDS THE ARC AND MAY NEVER RE-PRICE IT** (`AIR_TURN_RATE`, well under `TURN_RATE`). Heading and
-  ground speed are committed at takeoff.
-- **HE MAY FLY OVER ANYTHING HE IS ABOVE, AND NOTHING ELSE** (`env.flyStep`, beside `walkStep`). His own FEET
-  replace the riser rule, **plus the walk's own `STEP_UP` allowance** since on the takeoff frame his feet are
-  still on the ground he left. **THE SAME RULE RUNS ON ALL THREE THINGS THAT CAN BE IN THE WAY, each off its
-  own top**: BODIES in `collideActors` (off `topWorld`) and the world's SOLIDS in `env.resolveActor`, which
-  takes his `footY` and skips any collider whose `Solid.h` is under it. `buildSolids` has always stamped that
-  height and `blocksPoint`/`blocksSight` have always read it — the PUSH-OUT was the one consumer that did not.
-  A wall is still a wall at any altitude (`h` 3 m against `JUMP_APEX`). **NO `STEP_UP` allowance there**,
-  unlike `flyStep`: there is no step-over-props rule to stay level with. **REFUSED, `flyStep` SLIDES** along
-  the wall off the same gradient the walk uses, instead of stopping dead against it. **FOES are deliberately
-  still measured at `pos.y`** — nothing but the hero has a real integrated height yet.
-- **MELEE REACH IS REFUSED ACROSS A DROP** (`foe.REACH_RISE`, 2 m of GROUND between the two, both ways:
-  `foe.inArc`/`inFront` for theirs, `game.strikeVictim` for his). Under the least cut and over any bank a
-  walk climbs, so nothing at the foot of a face trades blows with the lip. Arrows and blasts fly their own
-  path and are not gated.
-- **THE LENS TAKES ONLY A SHARE OF IT** (`camera.LIFT_SHARE`, eased). `hero.shoulderPoint` is over the
-  GROUND under him; how much of a jump the camera takes is decided once, in `camera.zig`.
-- **THE POSE IS THREE TERMS OFF ONE NUMBER — the vertical velocity.** DRIVE up, TUCK where velocity passes
-  through ZERO (which IS the apex, so the pose cannot drift out of step with the arc), REACH down. **The arms
-  must survive the apex** (`JUMP_ARM_HOLD`) — drive and reach both pass through zero there. NO ROOT PITCH; the
-  whole fold is spine and chest, and a test pins the trunk under 20° off upright.
-- **THE ABSORB IS VISUAL ONLY, and that is a law.** A landing recovery that took the stick off him would be
-  hitstop on the most ordinary move in the game. It is a term in `poseBody`'s CROUCH, and it OVERSHOOTS its
-  rest through the shared `absorb` curve.
-- **THE BEAT GOES ON THE LANDING, NEVER THE TAKEOFF.** `landed` is a one-frame flag carrying `sfx.land` + the
-  ground overlay, `rumble.land` (mostly LOW against the roll's high) and `SHAKE_LAND`, which sits over a bolt
-  leaving and under the lightest blow he lands. The takeoff gets a voice and nothing else. No footfalls in
-  mid-air; the gait phase keeps running so he lands back into the stride he left with.
+  `jumping`.
+- **IT IS `committed()`, beside the roll** — no double jump, no roll or cast out of the air, a sprint that stops
+  when his feet do, and an attack pressed mid-flight BUFFERED into the one slot and fired on landing. **THE STICK
+  BENDS THE ARC AND MAY NEVER RE-PRICE IT** (`AIR_TURN_RATE`): heading and ground speed commit at takeoff.
+- **HE MAY FLY OVER ANYTHING HE IS ABOVE, AND NOTHING ELSE** (`env.flyStep`) — his own FEET replace the riser
+  rule, plus the walk's `STEP_UP` allowance since on the takeoff frame his feet are still on the ground he left.
+  **THE SAME RULE RUNS ON ALL THREE THINGS THAT CAN BE IN THE WAY, each off its own top**: BODIES in
+  `collideActors` (off `topWorld`) and the world's SOLIDS in `env.resolveActor` (skip any collider whose
+  `Solid.h` is under his `footY`) — **no `STEP_UP` allowance there.** **REFUSED, `flyStep` SLIDES** along the
+  wall off the same gradient the walk uses. **FOES are deliberately still measured at `pos.y`.**
+- **THE FALL** (`hero.fallDamage`) — free under `FALL_FREE` 4 m, certain death at `FALL_DEATH` 13 m, a power curve
+  between, all as fractions of `hpMax`. **MEASURED OFF THE HIGHEST POINT OF THE FLIGHT** (`airTop`), or a jump
+  taken one stride before the lip is a shorter fall than a walk off it. **THE GROUND IS NOT A BLOW** — billed
+  straight to `vit`, past armour and past the guard. **DEXTERITY BUYS A QUARTER AND NOT ONE METRE**: it never
+  touches the height that kills, and `FALL_MIN_FRAC` stops it making a drop free.
+- **THE LENS TAKES ONLY A SHARE OF IT** (`camera.LIFT_SHARE`) — decided once, in `camera.zig`.
+- **THE POSE IS THREE TERMS OFF ONE NUMBER, the vertical velocity** — DRIVE up, TUCK where velocity passes through
+  ZERO (which IS the apex, so the pose cannot drift out of step with the arc), REACH down. **The arms must survive
+  the apex.** NO ROOT PITCH; the whole fold is spine and chest, test-pinned under 20° off upright.
+- **THE ABSORB IS VISUAL ONLY, AND THAT IS A LAW** — a landing recovery that took the stick off him would be
+  hitstop on the most ordinary move in the game. **THE BEAT GOES ON THE LANDING, NEVER THE TAKEOFF**, and the
+  gait phase keeps running so he lands back into the stride he left with. No footfalls in mid-air.
 
-### In combat, and the quick bar
+**In combat, and the quick bar.** **ONE FLAG SAYS A FIGHT IS ON** (`game.inCombat`), and nothing about the HERO is
+in it: a creature counts if its `Leash` is ROUSED or if he is inside the range it notices him at — **and that
+range is the group's own `FoeGroup.aggro`.** Sight is deliberately not asked (`env.sees` flickers round a
+corner). A CORPSE DOES NOT COUNT. **IN COMBAT A CONSUMABLE COMES OFF THE QUICK BAR OR IT DOES NOT COME AT ALL.**
 
-**ONE FLAG SAYS A FIGHT IS ON** (`game.inCombat`), and nothing about the HERO is in it. A creature counts if
-its `foe.Leash` is ROUSED, or if he is inside the range it notices him at — **and that range is the group's own
-`FoeGroup.aggro`** (a toad's world is 11 m, an archer's 24). Sight is deliberately not asked: `env.sees`
-flickers as he rounds a corner. A CORPSE DOES NOT COUNT (`foe.corporeal`). **A BOSS ZONE, the day one exists**,
-is the third term in that one function. `foeFights` is the per-creature term, split out so the rule has a test.
-
-**IN COMBAT A CONSUMABLE COMES OFF THE QUICK BAR OR IT DOES NOT COME AT ALL.** The book's inventory Use is
-refused while a fight is on and the panel says where to go instead.
-
-- **THE BAR IS THE CROSS'S DOWN SLOT** (`combat.Quick`, ten entries). **The two flasks are its first two
-  entries**, so a fresh game plays as it did. `Flasks` still owns their CHARGES; `combat.quickCount` is that
-  split, ONE copy, asked by the HUD off the live game and by the book off its `View`.
-- **CYCLE STAMPS `flasks.sel`, it does not cycle it** (`hero.cycleQuick` → `syncFlask`). `Flasks` has no
-  `cycle` of its own — `Quick.cycle` is the only one, and `sel` is only ever STAMPED.
-- **A REMOVAL LEAVES ITS HOLE.** A list that compacts under you mid-fight is one you cannot learn.
-- **THE ONLY FLASK THE MAP CAN PLACE IS AN EMPTY ONE** (`item.empty_flask`, `item.placeable`; the editor's flask
-  shelf shows nothing else). Found, it is not an item: `game.awardLoot` calls `Flasks.found`, which is ONE MORE
-  IN THE POOL on the crimson side, EMPTY until the next fire, and he re-allots it there like any other. ER's
-  Sacred Flask tops out at 14 and so does `FLASK_CAP`. The pool rides the save's `ready:` row as a fourth
-  number, so an older file keeps the default three. There are no golden seeds: `golden_seed` is a
+- **THE BAR IS THE CROSS'S DOWN SLOT** (`combat.Quick`, ten entries), the two flasks its first two so a fresh game
+  plays as it did; `Flasks` still owns their CHARGES and `combat.quickCount` is that split, ONE copy. **CYCLE
+  STAMPS `flasks.sel`, it does not cycle it** — `Quick.cycle` is the only cycle. **A REMOVAL LEAVES ITS HOLE**: a
+  list that compacts under you mid-fight is one you cannot learn.
+- **EACH BAR ENTRY IS ITS OWN SOCKET ON THE PAGE** — Confirm puts a kind in THAT socket (`Quick.put` MOVES rather
+  than copies). Rows are FILTERED to what he carries, so a kind's ordinal is not its row and `pickIndexOf` counts
+  it out the way `candidates` builds it.
+- **THE ONLY FLASK THE MAP CAN PLACE IS AN EMPTY ONE** — found, it is not an item: `Flasks.found` is ONE MORE IN
+  THE POOL on the crimson side, EMPTY until the next fire. `FLASK_CAP` 14, ER's. The pool rides the save's
+  `ready:` row as a fourth number, so an older file keeps the default three. No golden seeds — `golden_seed` is a
   `RETIRED_TAGS` row, skipped by the bag loader instead of refusing the file.
-- **EACH BAR ENTRY IS ITS OWN SOCKET ON THE PAGE** — two rows of five, Confirm puts a kind in THAT socket
-  (`combat.Quick.put`, which MOVES a kind already on the bar rather than copying). Rows are FILTERED to what
-  he carries (`quickOffered`) and carry an empty row, so a kind's ordinal is not its row and `pickIndexOf`
-  counts it out the way `candidates` builds it.
 
-### The compare, the card and the sheet (`book.zig`) — ER's status screen, read in sections
+**Status effects — the shape every one takes.** **ONE METER DOES ALL THREE JOBS** (`combat.Status`): hits fill it;
+full, it PROCS; the same meter becomes the CLOCK, draining over the effect's life while it bills HP. **It cannot
+be topped up while it drains** — where a BURST status (bleed) resets to nothing and re-procs at once.
 
-**THE PICKER ROW SAYS WHAT IT IS WORTH BEFORE IT IS PICKED** (`headline`): the biggest thing the swap moves on
-the derived sheet, as a share of what it is now, signed and named short ("+6 heavy", "-5 armour"), in the
-colour of the news. Resistances are never a headline — a coat's cold ward is read in the compare.
+- **DECAY IS WHAT MAKES IT PRESSURE** — the meter falls once you STOP taking doses, so spaced hits never proc and
+  LINGERING is the whole cost. **A SOURCE HANDS OVER BUILDUP, NEVER HP**, and keeps no clock of its own.
+- **THE PROC IS BILLED AS A DRIP** (no poise), taking the row's `hpFrac` of MAX HP over its span — a fraction, so
+  it is worth the same on a Vitality build as on a fresh sheet. **BUILDUP AND RESISTANCE ARE TWO DIALS AND BOTH
+  ARE LIVE**: gear and the tree slow the METER filling while the element's resistance cuts each TICK.
+- **BUT CHAOS DOES NOT POISON BY ITSELF** — a blow's chaos builds the meter only with `Hit.venom` set. What
+  poisons: the duo's strokes, orb and bunch, the deer's spores, the rotgorger's bite. What is only damage: the
+  bolt, the siphon, the bolt's gas, the knight's lit stroke and his gas, the druidess's whip.
+- **THE DRAIN IS SILENT AND UNFLASHED** — the red edge and the beat belong to a BLOW, and **the PROC gets the whole
+  of the feedback, once**: one shake, one voice, one flash.
+- **THE BAR HAS TWO FACES OFF ONE NUMBER** — violet FILLING, toxic YELLOW once gone off, **nothing at all** while
+  empty. Not green: it sits directly under the stamina bar. The foe's own 2 px row is the same — a tint on a 54 px
+  red bar is a hue nobody can name.
+- **THE METER SITS ON THE BODY, NOT ON HIM** (`Vitals.ails`) — filled by `Hit.dose` through the one `Vitals.hit`
+  and ticked for a creature in `foe.grip`, which every creature already called, so no foe grew a field.
+  `Vitals.ailRate` is the dose multiplier and the ONE place it is applied.
+- **AN ENVENOMED EDGE IS WHAT PUTS ONE IN A FOE** — the dose is CARRIED through `Hit.scaled` rather than
+  multiplied, like `launch`: it belongs to the coating, so a heavy swing does not poison harder. A blow that
+  KILLED doses nothing.
+- **A BONFIRE CURES IT** (`makeWhole`), and a death is a return to one. Two sources at once dose as **both** — two
+  `add` calls, not a max.
+- **TEN METERS, EACH SAYING WHO CAN CARRY IT** (`combat.Ail`) — poison, burning, chill, stun, bleed, sleep,
+  confusion, charm, berserk, stupefy. A full meter reaches the state machine: stun and sleep come out of
+  `foe.grip` as `downed`, chill and stupefy take the FEET, charm and confusion re-point `foe.Threat`.
 
-- **THE COMPARE IS FOUR COLUMNS UNDER SECTION HEADS** (`drawGearCompare`, `cmpRow`, `head`): the two names
-  across the top with the candidate's TAGS under its own (heft, reach, what drives it, Board / Two-handed /
-  Coated, or the shelf a coat came off), then every dial the piece carries under ATTACK / GUARD / DEFENCE /
-  RESISTANCE / AILMENTS / BODY — NOW dim, a chevron when it moves, THEN in green or red (`cost` rows flip the
-  colour), the signed difference at the edge (`deltaStr`). `GDial` lists the dials in section order and
-  `gsectionOf` is an exhaustive switch, so a dial without a home does not compile and one pass inserts the heads.
-- **ON THE SHEET is the swap priced in HIS numbers**: every derived figure (`derive`) that MOVES, so a boon's
-  +3 Strength is read as the light and heavy attack it buys, a board as the guard it brings and the swing it
-  costs. Capped at `SHEET_ROWS_MAX`.
-- **A DIFFERENCE IS A WHOLE UNIT** (`moves`): half a point on a counted figure or a hundredth on a clock is
-  drift, printed as no change — never "10 → 10, +0".
-- **THE STATS PAGE IS FOUR PANELS** (`statsCols`): ATTRIBUTES (each point-count beside what it is buying —
-  "70 HP", "x1.00" — and the cursor row's prose ends with what the NEXT point buys, `nextPointSays`), BODY
-  (VITALS / ATTACK / DEFENCE — the pools, what the hands in force deal, armour, guard, the roll's i-frames and
-  cost), WARDS (RESISTANCE / AILMENTS — every meter a coat or the tree slows — / PASSIVES, read off
-  `ptree.Bonus` itself so a node the tree grows tomorrow shows up here without a hand), and the portrait.
-  `StatList` builds a column first and draws it after, into its own store: `hud.fmt`'s ring is sixteen deep
-  and a column is longer.
-- **THE PRIMS ARE `uiart`'S**: `rule`, `arrow`, `pill`, `meter`. Text stays in `book.zig`
-  (`uiart` does not import `hud`).
+**Resistances — PoE2's four.**
 
-### The two purses, in the book
-
-- **NEITHER ONE IS ON THE TAB STRIP** (owner: don't show souls on top right of all book). Souls AND gold sit
-  under the portrait on STATS and at the foot of the doll on EQUIPMENT (`book.drawWealth`), which is the only
-  place a total is stated.
-- **THE GOLD PURSE IN THE BAG IS A MIRROR, NOT A STACK.** `item.gold_purse` stands in the first cell of the
-  grid with the coin count as its tally, and `item.Bag` never holds one: gold is a `u32` on the hero and the
-  bag's counts are `u16`, so 65,535 coins is where a real stack would stop. Everything the bag really holds
-  follows it, so the inventory cursor is one past the bag's own ordinal (`book.bagAt`, `bagCells`, `heldOf`).
-
-### Souls — the drop, and the ring that refuses it
-
-Everything comes off him on the frame he DIES rather than at the respawn, so the spill plays under the YOU DIED
-card. The currency is SOULS throughout.
-
-- **THERE IS EXACTLY ONE.** A second death overwrites the first. Not a storage decision — a list of drops would
-  delete the whole risk.
-- **NOTHING ELSE SPENDS IT.** No timer, no decay, no despawn on distance. A death RE-HOMES the field
-  (`game.resetFoes`) and must not touch the drop; only a change of MAP clears it (`game.armScript`).
-- **RETRIEVAL IS INSTANT.** No committed action and no animation on the man. The animation is all on the DROP —
-  motes solved to ARRIVE at his chest inside their own life.
-- **IT IS A TREE, NOT A FLAME**, so it obeys the dead-limb law: crooked bole in three leaning segments, limbs
-  rising to an elbow, drooping off their line, stopping in a BLUNT swelling. It grows over `RISE`, overshoots
-  its own height and settles.
-- **ONE EMISSIVE LEVEL, THREE ALBEDOS.** Vertex alpha is the emissive channel, so all three golds sit at one
-  alpha and separate on hue and value alone (at two levels the shaft bands). Albedos SOLVED off a sampled
-  render (`souls.EMISSIVE`).
-- **IT SAYS WHERE IT IS OUT LOUD** — `souls_hum` on a RETRIGGER (`HUM_EVERY`), cut short enough that takes
-  overlap.
-- **THE PROMPT IS FIRST IN `game.reachable`**, ahead of the fire, the folk and a box. Its ring is the GENEROUS
-  one — `souls.REACH` against a box's `chest.REACH`, asserted at comptime.
-
-**THE SOUL BINDING RING REFUSES THE WHOLE THING** (`item.soul_binding_ring`, DS's Ring of Sacrifice). WORN, a
-death takes the RING instead of the souls.
-
-- **IT HAS TO BE ON A FINGER**, and it is the FIRST ring socket — the leech signet's own, so the choice is HP
-  back on every landed blow against keeping what you carry the once. `item.Bind` holds a socket and nothing
-  else.
-- **THE SNAP EMPTIES THE FINGER AND THE BAG** (`game.spillSouls`). A worn socket only NAMES a kind the bag
-  holds (`hero.wear`).
-- **IT IS NOT A TOOL.** `usable` false, off the quick bar. The one piece of gear spent by DYING.
-- **ASKED OF THE ITEM, NOT THE KIND** (`item.bindsSouls`, read off the `Bind` payload), which is why
-  `game.bindingWorn` walks every socket.
-- **ONE IN THE WORLD**, and the BONE KNIGHT carries it (`drops.BANK`, `BOSS_ALWAYS`) — nothing places it.
-
-### Status effects — POISON, and the shape every one after it takes
-
-**ONE METER DOES ALL THREE JOBS** (`combat.Status`). Hits fill it; full, it **PROCS**; the same meter becomes
-the **CLOCK**, draining over the effect's life while it bills HP. **It cannot be topped up while it drains** —
-where a BURST status (bleed) resets to nothing and re-procs at once.
-
-- **DECAY IS WHAT MAKES IT PRESSURE**: the meter falls once you STOP taking doses (`AilRow.decayDelay` then
-  `AilRow.decay`), so spaced hits never proc and LINGERING is the whole cost.
-- **A SOURCE HANDS OVER BUILDUP, NEVER HP.** A source keeps no clock of its own.
-- **THE PROC IS BILLED AS A DRIP** (`Vitals.drip`): no poise. It takes the row's `hpFrac` of MAX HP over its
-  span, a fraction so it is worth the same on a Vitality build as on a fresh sheet.
-- **AND IT IS BILLED AS CHAOS** (`combat.poisonPulse`, PoE2's). **BUILDUP AND RESISTANCE ARE TWO DIALS AND BOTH
-  ARE LIVE**: the tree's Warded Blood and `item.sporecrown` slow the METER filling (`hero.perk.poison`) while
-  chaos resistance cuts each TICK.
-- **BUT CHAOS DOES NOT POISON BY ITSELF** (owner: not all chaos damage causes poison — only what was meant to).
-  A blow's chaos builds the meter only with `Hit.venom` set; fire, cold and lightning still build their own. What
-  poisons (owner's list): the duo's strokes, orb and bunch, the deer's spores, the rotgorger's bite. What is only
-  damage: the bolt, the siphon, the bolt's gas, the knight's lit stroke and his gas, and the druidess's whip.
-- **THE DRAIN IS SILENT AND UNFLASHED.** The red edge and the beat belong to a BLOW. **The PROC gets the whole
-  of the feedback, once** — one shake, one voice, one flash.
-- **THE BAR HAS TWO FACES OFF ONE NUMBER** — violet FILLING, toxic YELLOW once it has gone off, and **nothing
-  at all** while empty. Not green: it sits directly under the stamina bar.
-- **A BONFIRE CURES IT** (`hero.makeWhole`), and a death is a return to one.
-- **TWO SOURCES, ONE FLUID** — the sporeling's cloud (`SPORE_BUILD`), the mother's spit (`M_SPIT_BUILD`) and
-  acid pools (`ACID_BUILD`). Neither floor deals damage. Spores and acid at once dose as **both** — two `add`
-  calls, not a max.
-- **THE METER SITS ON THE BODY, NOT ON HIM** (`combat.Vitals.ails`) — his and every creature's, filled by
-  `Hit.dose` through the one `Vitals.hit` and ticked for a creature in `foe.grip` (which EVERY creature
-  already called, so no foe grew a field). `Vitals.ailRate` is the dose multiplier and the ONE place it is
-  applied: the tree's node and what is on his head land there through `hero.settleBody`, so the spores' door
-  (`hero.poisonBy`) and an edge's cannot disagree.
-- **AN ENVENOMED EDGE IS WHAT PUTS ONE IN A FOE** (`item.Arm.venom`, `item.ENVENOMED`). The dose is CARRIED
-  through `Hit.scaled` rather than multiplied, like `launch`: it belongs to the coating, not to the stroke,
-  so a heavy swing does not poison harder. A blow that KILLED doses nothing. Since the proc is CHAOS, every
-  creature's own column already answers it — the brood's +75 takes a quarter of it, measured in a test.
-- **THE FOE'S BAR SHOWS IT** (`hud.foeBar`), its own 2 px row under the cold's, violet filling and yellow
-  running — a tint on a 54 px red bar is a hue nobody can name.
-
-### Resistances — PoE2's four
-
-- **PHYSICAL IS NOT ONE OF THE FOUR.** `Elem` is fire/cold/lightning/chaos. What mitigates physical is ARMOUR,
-  its own curve — `combat.armourTaken`, `A/(A + 5*dmg)`. Do not add a "physical resistance".
-- **75 IS THE CAP, NEGATIVE AMPLIFIES** (`RES_CAP`, `RES_FLOOR`). Stored uncapped, capped on READ
-  (`Resists.at` vs `.raw`).
+- **PHYSICAL IS NOT ONE OF THE FOUR.** `Elem` is fire/cold/lightning/chaos; what mitigates physical is ARMOUR, its
+  own curve (`armourTaken`, `A/(A + 5*dmg)`). **Do not add a "physical resistance".**
+- **75 IS THE CAP, NEGATIVE AMPLIFIES** — stored uncapped, capped on READ (`Resists.at` vs `.raw`).
 - **A SPREAD IS WRITTEN BY NAME** — `combat.resists(.{ .fire = -45 })`, matched at comptime so a rename is a
-  compile error. An array literal in enum order silently shifts on a fifth element.
-- **POISE AND STANCE BELONG TO THE BLOW, NOT THE BODY.** `guardChip` is damage only for the same reason. **A
-  shield is billed on the RAW blow** (`Hit.raw`).
-- **THREE AND A HALF OF THE FOUR ARE LIVE** — FIRE (fire arrow, tallowed sword, kobold sling clump), LIGHTNING
-  (the thundercrock's alone — nothing deals it AT the hero), **COLD, which BOTH SIDES deal** (the
-  necromancer's ring at him, the rod's rime breath back, both neat with no physical — `necro.FROST_HIT`,
-  `combat.Chill`; a comptime assert pins the necromancer's), and **CHAOS, the one he meets most**: the wand's
-  bolt and roots, the Bone Knight's lit blow and GAS, and what POISON bills in. So the sporeling cap's ward and
-  the tree's Veil answer sporelings, the brood and the boss alike.
+  compile error; an array literal in enum order silently shifts on a fifth element.
+- **POISE AND STANCE BELONG TO THE BLOW, NOT THE BODY** — `guardChip` is damage only for the same reason, and a
+  shield is billed on the RAW blow.
 - **COLD IS THE ONLY ONE THAT DOES SOMETHING BESIDES DAMAGE** (`combat.Chill`) — a hold on the FEET, travel
-  multiplied by `CHILL_TRAVEL`, taken as a post-step gate (`game.gateChill`). A chilled creature is not a
-  slowed creature, it is one that cannot close. **Deliberately NOT time dilation.** **NOT SKIPPED FOR A
-  FLYER** — the one place it parts company with the terrain gate beside it. **Built to be worn by EITHER
-  SIDE**: it knows nothing about a foe, holds no position, bills no damage.
-  - **BUT A BLINK IS NOT TRAVEL.** The gate scales a frame's whole DELTA, and a body that WARPS set that delta
-    rather than stepping it: chilled, the blinkbat, the shade and the duo's magus arrived at 0.55 of the way to
-    a flank they had already solved. Each answers `warped()` for the one frame, duck-typed the way `airborne()`
-    is, and the gate skips it. `shade.airborne()` happens to be exactly its blink; the bat's is its whole life.
-  - **WHAT IT STILL DOES NOT TAKE IS THE GAIT.** `movedDist` is filled BEFORE the gate, so a chilled walker's
-    legs cycle 1/`CHILL_TRAVEL` = 1.82x faster than the ground it covers. Either the gate owns the phase too or
-    the movers scale the GAIT (never the step) — the owner's call, not a sweep's.
+  multiplied by `CHILL_TRAVEL`, taken as a post-step gate. A chilled creature is not a slowed creature, it is one
+  that cannot close. **Deliberately NOT time dilation.** **NOT SKIPPED FOR A FLYER** — the one place it parts
+  company with the terrain gate beside it. Built to be worn by EITHER SIDE.
+  - **BUT A BLINK IS NOT TRAVEL** — the gate scales a frame's whole DELTA and a body that WARPS sets that delta
+    rather than stepping it, so each answers `warped()` for the one frame, duck-typed the way `airborne()` is.
+  - **WHAT IT STILL DOES NOT TAKE IS THE GAIT** — `movedDist` is filled BEFORE the gate, so a chilled walker's
+    legs cycle 1/`CHILL_TRAVEL` faster than the ground it covers. Either the gate owns the phase or the movers
+    scale the GAIT (never the step) — the owner's call, not a sweep's.
 - Every foe carries its own table, authored where its HP is (`initFoe(..).withRes(..)`):
 
   | creature | fire | cold | lightning | chaos | why |
   | --- | --- | --- | --- | --- | --- |
   | gaping toad | +40 | −30 | −25 | 0 | wet out of a bog, cold-blooded |
-  | skeletal archer | −35 | +60 | 0 | +45 | dry bone burns; no flesh to freeze or poison |
+  | skeletal archer / warrior / Bone Knight | −35 | +60 | 0 | +45 | dry bone burns; no flesh to freeze or poison |
   | one-eyed ogre | +30 | +30 | −15 | +20 | too much mass, but stands in an open field |
   | kobold (all three) | −45 | +20 | 0 | 0 | fur goes up — the fire arrow IS the answer to a warband |
   | brood mother / broodling | −25 | +35 | 0 | +75 | chitin and its own acid |
   | egg sac | −70 | 0 | 0 | +75 | dry silk over a membrane |
-  | skeletal warrior | −35 | +60 | 0 | +45 | the archer's body |
   | shade | +30 | +65 | 0 | −45 | nothing to burn, and cold is what it already is |
   | leechfly | −55 | −25 | 0 | +35 | a wing is a membrane; the chaos is what it has been drinking |
   | the Rooted | −70 | +40 | −20 | +30 | dead dry wood; lightning splits it |
   | sporeling | −50 | +15 | 0 | +75 | a damp fungus stuffed with its own element |
-  | Bone Knight | −35 | +60 | 0 | +45 | the archer's body in a suit |
   | Delver | +20 | −30 | −40 | 0 | packed earth over a damp hide; a bolt EARTHS |
   | Necromancer | −35 | **+75** | 0 | +45 | cold at the cap — it is the one thing that deals cold |
 
-- **WHAT HE OWNS ANSWERS THREE OF THE FOUR NOW** — cold off the rimeward mantle (35), chaos off the spidersilk
-  moccasins (25) and the sporeling cap's ward (40), fire off the kiln draught's (40). LIGHTNING IS STILL 0 ON
-  PURPOSE: nothing deals it at him, so a piece that turned it would be honestly inert.
-- **A WARD AND A COATING NAME THEIR OWN ELEMENT** (`item.Use.ward`, `item.Use.grease`, both an `item.ElemName`).
-  ONE column each and one at a time: a second tonic MOVES the ward rather than opening a second column, the way
-  `Timed` refreshes rather than stacks. `item` is a leaf, so `combat.elemOf` is the crossing and a comptime walk
-  in `combat` pins the two enums field for field.
-- `makeWhole` CARRIES RESISTANCES ACROSS a bonfire.
+- **THREE AND A HALF OF THE FOUR ARE LIVE** — FIRE, LIGHTNING (the thundercrock's alone; nothing deals it AT the
+  hero), COLD which **BOTH SIDES** deal (the necromancer's ring at him, the rod's rime breath back, both neat with
+  no physical), and CHAOS, the one he meets most. **WHAT HE OWNS ANSWERS THREE OF THE FOUR** — **LIGHTNING IS
+  STILL 0 ON PURPOSE**, because a piece that turned what nothing deals would be honestly inert.
+- **A WARD AND A COATING NAME THEIR OWN ELEMENT** (`Use.ward`, `Use.grease`) — ONE column each and one at a time:
+  a second tonic MOVES the ward rather than opening a second column. `item` is a leaf, so `combat.elemOf` is the
+  crossing and a comptime walk pins the two enums field for field. `makeWhole` carries resistances across a fire.
 
-### The character sheet (`stats.zig`)
+**The character sheet** (`stats.zig`) — seven attributes; `hpFor`/`fpFor`/`staminaFor` turn Vitality/Mind/Endurance
+into the bars at ER's soft caps. **The starting sheet reproduces the tuned bars exactly**: every attribute starts
+at 15, where the curves yield 70 HP / 60 FP / 105 stamina, so `hero.HP_MAX`, `combat.FP_MAX` and `combat.STAM_MAX`
+are DERIVED and a test pins all three. **The bars take their size from the sheet in one place** — `makeWhole`.
 
-Seven attributes; `hpFor`/`fpFor`/`staminaFor` turn Vitality/Mind/Endurance into the bars at ER's soft caps.
-**The starting sheet reproduces the tuned bars exactly** — every attribute starts at 15, where the curves yield
-70 HP / 60 FP / 105 stamina, so `hero.HP_MAX`, `combat.FP_MAX` and `combat.STAM_MAX` are DERIVED and a test
-pins all three. **The bars take their size from the sheet in one place** — `hero.makeWhole`.
+## The passive tree (`passivetree.zig`) — PoE2's, radially
 
-### The passive tree (`passivetree.zig`) — PoE2's, radially
-
-Three arms out of one hub. Arms are never NAMED on screen — colour and direction carry which is which
-(`Arm.ink`). Nothing is a class: all three hang off the hub, open from the first souls you spend.
-
-**EACH ARM OPENS ON ONE CLASS NODE AND RADIATES INTO TWO BRANCHES.** `Arm.stat` is that node — the arm said in
-one attribute. Six `Branch`es, two per arm in arm order (`Branch.arm` is arithmetic, pinned at comptime), each
-a climb of `PER_BRANCH` ending in its own keystone. 75 nodes in the arms, plus the six bridges: 81.
-
-| branch | what it is |
-| --- | --- |
-| `warrior_life` | armour, the slow refill, blood off the blade — keystone `Sanguine Pact` (leech 4.0) |
-| `warrior_berserk` | the bargain, the cull, what a body is worth as it drops — keystone `Berserk` (a fifth of the bar for 1.34×) |
-| `rogue_evade` | the roll, the bar behind it, poison, ground covered — keystone `Misty Step` |
-| `rogue_ranged` | everything that leaves his hand — keystone `Hail` (thrown 1.55×) |
-| `wizard_well` | the pool: how deep, how fast it fills, what it wards — keystone `Wellspring` |
-| `wizard_cast` | how fast, how hard, and **`Chaos Bloom`** — the one keystone that is a MECHANIC |
+Three arms out of one hub, never NAMED on screen (colour and direction carry which is which). Nothing is a class:
+all three open from the first souls you spend. `Arm.stat` is the class node, the arm said in one attribute; six
+`Branch`es, two per arm in arm order (`Branch.arm` is arithmetic, pinned at comptime), each a climb of
+`PER_BRANCH` ending in its own keystone. 75 nodes in the arms plus six bridges: 81. Keystones: `Sanguine Pact`
+(leech), `Berserk` (the bargain), `Misty Step`, `Hail` (thrown), `Wellspring`, and **`Chaos Bloom`, the one
+keystone that is a MECHANIC.**
 
 - **A GRANT IS A NUMBER ON `Bonus` OR IT DOES NOT EXIST**, and **THE IDENTITY IS THE FIELD'S OWN** — 0 for
   anything added, 1 for anything multiplied, false for a flag. A test pins every identity, pins that the tree
-  moves every one of them, and pins that **no `Grant` variant is unreachable**.
-- **A BARGAIN IS STILL ONE GRANT** (`Grant.sacrifice`). Costs ADD and gains MULTIPLY; `hero.hpMaxOf` clamps the
-  pair with the charms at 0.9 of the bar.
-- **THE CULL IS READ BEFORE THE BLOW, NEVER AFTER IT** (`foe.Blade.cullAt`, applied in `foe.strike`) — asked of
-  the HP the body walked into the swing with. Carried on the BLADE, stamped only on `game.heroBlade`.
-- **THE CHAOS BLOOM IS `knight.Gas` READ FROM THE OTHER SIDE** — same type, same life, same
-  `knight.GAS_DOSE_EVERY`, dosed through `pierceFoes` as a zero-length `through` blade at the cloud's radius.
-  Laid at the IMPACT frame.
-- **YOU CLIMB, AND THE LINK IS THE RULE** (`feeders` / `Tree.reached`). A node opens the moment ANY ONE of the
-  things it hangs off is yours. `feeders` is asked by the DRAW and by `locked` alike, so the page cannot gate a
-  branch on something it does not show. **The capstone is the one node with two ways in.**
-- **IT RETURNS A SLICE, NOT A PAIR OF OPTIONALS.** As `[2]?usize` a one-feeder node carried a trailing null,
-  every reader read that as "hangs off the hub", and the whole tree opened at once. An EMPTY slice is the hub.
-- **TAKING A NODE IS THE LEVEL** — one press spends the souls and puts the node on the board. No point pool.
-  `Tree.take` hands back what it charged, so `game.bonfirePick` is the one line that can bill him, and the ONLY
-  thing in the game that spends souls.
-- **SOULS, NEVER RUNES**, in the code as well as on the page. `combat.Souls`, `hero.souls`; `rune_arc` is a
-  physical object, and `nameless_soul` is the item that IS worth souls.
-- **THE PRICE IS MEASURED AGAINST A BODY.** Toad 60, archer 130, mother 240 — so `costAt` is set where the
-  first node is three archers and the whole 21 is ~80k. ONE price per level whichever node it lands on.
-- **SPENT AT A BONFIRE, READ ANYWHERE.** The book's LAST page is the wheel READ-ONLY; the fire's screen is
-  where it is committed. `passivetree.drawPage` is ONE copy drawn by both, `spendable` the only difference.
-  Tab is **PASSIVES**.
-- **THE BONFIRE IS A SCREEN, NOT A PAUSE.** He sits RIGHT, the menu is a list down the LEFT: Level Up (opens
-  the wheel), Memorize Spells (opens the rack), the two waits, Leave Bonfire. The wheel shows ONLY once Level
-  Up is chosen.
-- **GETTING UP IS A ROW ON THAT LIST, OR BACK.** "Any button" cannot coexist with a cursor. Back is the one
-  button that can never also pick — off the wheel first, then out of the fire. The book and the pause card are
-  BOTH refused at a fire.
-- **NO HINT ROW ON THE FIRE'S LIST.** The WHEEL keeps its hints — LS/RS/zoom is not guessable.
-- **THE VIEW IS PANNED, NOT SHEARED** (`game.restCamera`, `REST_PAN`). Eye and target move by the same vector
-  along the camera's right axis. Screen-right is `cross(forward, up)` — `camera.rightXZ`'s law.
-- **LEFT STICK WALKS THE WHEEL, THE CROSS ZOOMS, THE RIGHT STICK PANS** (`menu.stickPush`, `menu.dpadZoom`,
-  `menu.stickPan`). Zoom is on the CROSS, not the bumpers — those are the book's page turn. Which is why the
-  cross is WITHHELD from the walk on a wheel and kept on a list: `menu.navFor` is that decision, in one place.
-  A stick is a LEVEL where a walk wants EDGES. FOUR STANDARD PIECES, all here: a RADIAL magnitude, never
-  per-axis (the square's corner passes at 0.62 per axis while true deflection is 0.88); a SCHMITT TRIGGER
-  (`STICK_FIRE` to arm, `STICK_REARM` to re-arm); DAS then ARR; and a DEAD CONE AT THE DIAGONALS — **ON A LIST
-  OR A GRID, WHICH IS THE ONLY PLACE IT BELONGS.**
-- **A RADIAL LAYOUT TAKES THE THUMB'S OWN BEARING, NEVER ONE OF FOUR** (`menu.stickPush`'s `radial`). Arms run
-  out at 0, 120, 240°, so almost nothing lies along a screen axis; snapped to four axes and gated by the 32°
-  dead cone, the thumb pointed AT a node landed IN the cone on two arms of three. So `passivetree.step` takes a
-  HEADING (`dx`/`dy` as floats, normalised inside) and its own wedge chooses. CROSS and KEYS still hand it a
-  cardinal; a LIST still takes the sign of an axis (`mathx.signI`). Two tests pin it. **A WHEEL IS STEERED, NOT
-  RE-PRESSED**: a turn past `AIM_TURN` fires at once and a drift under it carries the repeat onto the
-  bearing the thumb is on NOW.
-- **THE FRAMING IS A SQUARE ON THE HUB, NOT A FIT OF THE BOUNDING BOX** (`passivetree.VIEW_R`). Three arms at
-  120° have a bounding box whose centre is nowhere near the hub. `unit` comes off the panel's SHORT axis so it
-  fits either way up, and `VIEW_R` is the outer radius of what is actually DRAWN — keystone centre at `RINGS`,
-  its disc, and the breathing halo an OPEN one wears. A test pins the hub to the centre at three aspect ratios.
-  **THE PAN IS LIVE AT `ZOOM_MIN`** (`PAN_FLOOR`). **THE ARMS ARE NEVER CAPTIONED, so nothing reserves room for
-  one** — the caption gutters outlived the labels and went on reserving dead air the fit paid for by drawing
-  every node ~19% smaller.
-- **The zoom re-centres on the CURSOR** as it goes in, blended from the hub so nothing moves at `ZOOM_MIN`.
-  Read as a HELD LEVEL so it glides; the pad's half is the cross alone.
-- **THE MIDDLE IS A PLACE THE CURSOR MAY REST** (`passivetree.HUB`, indexed one past the last node so every
-  `NODES[i]` site is untouched). It takes no press and is never a purchase — the reading column describes the
-  TREE from it.
-- **THE TREE OWNS THE LEVEL, NOT THE SHEET.** Level is COUNTED off the board (`spent() + 1`) and every
-  attribute past the starting sheet came off a node (`Bonus.sheet`). No attribute allocation beside this; the
-  STATS page is read-only for good.
-- **ONE GRANT PER NODE.**
-- **THE REST OF THE GAME READS FIELDS OFF ONE `Bonus`**, stamped by `game.applyTree` → `hero.applyPerks`
-  (sheet + resistances + perks in ONE call). Nothing outside `passivetree.zig` walks the node list. Five
-  hero-local readers: the roll's stamina, the roll's i-frames, the cast's cost, the cast's blow (`Hit.scaled` —
-  the WHOLE blow) and the guard's negation (`combat.guardChip` takes the figure as an argument; a foe's boards
-  pass the flat `GUARD_NEGATE`).
-- **`foe.PARRY_LEAD` IS DELIBERATELY NOT A PERK.** One difficulty dial every creature's tests bracket at
-  comptime.
-- **THE WALK IS GEOMETRIC** (`book.slotStep`'s law) — an ordinal walk steps between nodes nowhere near each
-  other. A test floods all four directions from every node.
-- **THE THREE STATES SEPARATE ON FILL, NOT ON HUE** — taken is solid, open is a lit rim over the seat, locked
-  is the rim gone to nothing. The arm's colour already carries the arm.
-- **ONE LINK PER NODE, AND TWO ONLY AT THE CAPSTONE.**
-- **THE SELECTION IS BUILT OUT OF THE NODE** and drawn last, by the wheel itself so both screens get it: a
-  breathing halo standing off the disc, a hard rim on it, and the chrome's corner brackets round that. All
-  three — the rim alone is lost in a taken node's fill, the halo alone in the ring circles behind it.
+  moves every one, and pins that **no `Grant` variant is unreachable**. **ONE GRANT PER NODE.**
+- **A BARGAIN IS STILL ONE GRANT** (`Grant.sacrifice`) — costs ADD and gains MULTIPLY, and `hero.hpMaxOf` clamps
+  the pair with the charms at 0.9 of the bar.
+- **THE CULL IS READ BEFORE THE BLOW, NEVER AFTER IT** (`Blade.cullAt`, applied in `foe.strike`) — asked of the HP
+  the body walked into the swing with. Carried on the BLADE, stamped only on `game.heroBlade`.
+- **THE CHAOS BLOOM IS `knight.Gas` READ FROM THE OTHER SIDE** — same type, same life, dosed through `pierceFoes`
+  as a zero-length `through` blade at the cloud's radius, laid at the IMPACT frame.
+- **YOU CLIMB, AND THE LINK IS THE RULE** (`feeders`/`Tree.reached`) — a node opens the moment ANY ONE of the
+  things it hangs off is yours, and `feeders` is asked by the DRAW and by `locked` alike so the page cannot gate a
+  branch on something it does not show. **IT RETURNS A SLICE, NOT A PAIR OF OPTIONALS**: as `[2]?usize` a
+  one-feeder node carried a trailing null, every reader read that as "hangs off the hub", and the whole tree
+  opened at once. **An EMPTY slice is the hub.** The capstone is the one node with two ways in.
+- **TAKING A NODE IS THE LEVEL** — one press spends the souls and puts the node on the board; no point pool.
+  `Tree.take` hands back what it charged, so `game.bonfirePick` is the one line that can bill him and **the ONLY
+  thing in the game that spends souls.** **THE TREE OWNS THE LEVEL, NOT THE SHEET**: level is COUNTED off the
+  board (`spent() + 1`) and every attribute past the starting sheet came off a node. The STATS page is read-only
+  for good.
+- **SOULS, NEVER RUNES**, in the code as well as on the page. **THE PRICE IS MEASURED AGAINST A BODY** — toad 60,
+  archer 130, mother 240, so `costAt` is set where the first node is three archers and the whole 21 is ~80k. ONE
+  price per level whichever node it lands on.
+- **THE REST OF THE GAME READS FIELDS OFF ONE `Bonus`**, stamped by `game.applyTree` → `hero.applyPerks` (sheet +
+  resistances + perks in ONE call). **Nothing outside `passivetree.zig` walks the node list.** Five hero-local
+  readers: the roll's stamina, the roll's i-frames, the cast's cost, the cast's blow (`Hit.scaled`, the WHOLE
+  blow) and the guard's negation.
+- **SPENT AT A BONFIRE, READ ANYWHERE** — the book's last page is the wheel READ-ONLY, `drawPage` is ONE copy
+  drawn by both, `spendable` the only difference.
+- **THE WALK IS GEOMETRIC** (`book.slotStep`'s law) — an ordinal walk steps between nodes nowhere near each other.
+  A test floods all four directions from every node.
+- **A RADIAL LAYOUT TAKES THE THUMB'S OWN BEARING, NEVER ONE OF FOUR** — arms run out at 0/120/240°, so snapped to
+  four axes and gated by the 32° dead cone the thumb pointed AT a node landed IN the cone on two arms of three.
+  `step` takes a HEADING and its own wedge chooses; CROSS and KEYS still hand it a cardinal, a LIST still takes
+  the sign of an axis. **A WHEEL IS STEERED, NOT RE-PRESSED**: a turn past `AIM_TURN` fires at once and a drift
+  under it carries the repeat onto the bearing the thumb is on NOW.
+- **THE FRAMING IS A SQUARE ON THE HUB, NOT A FIT OF THE BOUNDING BOX** — three arms at 120° have a bounding box
+  whose centre is nowhere near the hub. `unit` comes off the panel's SHORT axis so it fits either way up, and
+  `VIEW_R` is the outer radius of what is actually DRAWN. Test-pinned at three aspect ratios. **THE ARMS ARE
+  NEVER CAPTIONED, so nothing reserves room for one.**
+- **THE MIDDLE IS A PLACE THE CURSOR MAY REST** (`HUB`, indexed one past the last node so every `NODES[i]` site is
+  untouched) — it takes no press and is never a purchase.
+- **THE THREE STATES SEPARATE ON FILL, NOT ON HUE** — taken solid, open a lit rim over the seat, locked the rim
+  gone to nothing; the arm's colour already carries the arm. **ONE LINK PER NODE, TWO ONLY AT THE CAPSTONE.** The
+  selection is a breathing halo standing off the disc, a hard rim on it, and the chrome's corner brackets round
+  that — **all three**, drawn last by the wheel itself so both screens get it.
+- **THE BONFIRE IS A SCREEN, NOT A PAUSE** — he sits RIGHT, the menu is a list down the LEFT, and the wheel shows
+  ONLY once Level Up is chosen. **GETTING UP IS A ROW ON THAT LIST, OR BACK**: "any button" cannot coexist with a
+  cursor, and Back is the one button that can never also pick. The book and the pause card are BOTH refused at a
+  fire. **NO HINT ROW ON THE FIRE'S LIST**; the WHEEL keeps its hints, because LS/RS/zoom is not guessable.
+- **THE VIEW IS PANNED, NOT SHEARED** (`game.restCamera`) — eye and target move by the same vector along the
+  camera's right axis. Screen-right is `cross(forward, up)`, `camera.rightXZ`'s law.
+- **LEFT STICK WALKS THE WHEEL, THE CROSS ZOOMS, THE RIGHT STICK PANS.** Zoom is on the CROSS, not the bumpers
+  (those are the book's page turn), which is why the cross is WITHHELD from the walk on a wheel and kept on a list
+  — `menu.navFor` is that decision, in one place. **A stick is a LEVEL where a walk wants EDGES, and there are
+  FOUR STANDARD PIECES, all here**: a RADIAL magnitude never per-axis (a square's corner passes at 0.62 per axis
+  while true deflection is 0.88), a SCHMITT TRIGGER (`STICK_FIRE`/`STICK_REARM`), DAS then ARR, and a DEAD CONE AT
+  THE DIAGONALS — **on a LIST or a GRID, which is the only place it belongs.**
 
 ## Armaments
 
 **R1/R2 (and L1/L2) BELONG TO THE ARM, NOT THE WEAPON.** Attack buttons are read as buttons and routed by which
-armament is in that hand. L1 is the left hand's ACTION (block / cast), L2 its SKILL (aim / parry). Swaps: D-pad
-Right / Q = sword ↔ bow; D-pad Left / F = shield ↔ wand; D-pad Up / G cycles the sorceries he has MEMORIZED, in
-rack order (`combat.Memory`). The QUIVER keeps keyboard Y alone — on the pad the arrow is changed in the book's
-ammo slot.
+armament is in that hand: L1 is the left hand's ACTION (block / cast), L2 its SKILL (aim / parry). Swaps: D-pad
+Right / Q = sword ↔ bow, Left / F = shield ↔ wand, Up / G cycles MEMORIZED sorceries in rack order. **A SELECTED
+VARIANT IS LATCHED WHERE THE COMMITTED ACTION STARTS**, the selector REFUSES while one runs, and **one place
+answers what it costs** (`combat.spellFp`) — exhaustive switches, so a new one is a compile error until it has
+said what it costs and what it does.
 
-**A SELECTED VARIANT IS LATCHED WHERE THE COMMITTED ACTION STARTS**, and the selector REFUSES while one is
-running. **One place answers what it costs** (`combat.spellFp`). Exhaustive switches over the selection, so a
-new one is a compile error until it has said what it costs and what it does.
+**BARE IS THE GAME EXACTLY AS IT WAS** — every dial on an `item.Arm` defaults to 1 and the armour curve of 0
+armour is the blow itself. A new game is bare-handed.
 
-### The bow (`hero.zig`)
-
-- **THE SHIELD GOING IS ANATOMY, NOT A BALANCE DIAL** — `canGuard` ASKS the arm rather than the swap clearing a
-  flag. The HUD's LEFT slot goes EMPTY.
-- **IT IS THE SKELETONS' BOW** — `archer.bowMesh`/`stringMesh`/`nockArrowMesh`/`poseBow` are shared and every
-  stance angle is lifted from `archer.poseUpper`. The one import running against the grain (hero → archer).
-- **THE AIM IS HELD, THE LOOSE IS THE ONLY COMMITTED PART** — `setAim` re-derives from `canAim` every frame.
-- **AIMING SUSPENDS THE LOCK OUTRIGHT** (`game.activeLock`) — suspended, not dropped; R3 is dead while the bow
-  is up. **And it slows the look** (`game.AIM_LOOK_SCALE`).
-- **A BOW CHIPS; IT DOES NOT WIN.** Both shots come in under the melee they compare to, poise slighter still.
-  Behind a raised bow he moves at `BOW_AIM_SPEED`, a smaller share of the walk than the shield's.
-- **ARROWS ARE FINITE** — `combat.Quiver`, ten plain and five fire (`FIRE_ARROWS_MAX`), refilled at a bonfire.
-  The quiver is checked BEFORE stamina is charged. The SELECTED kind is what flies, empty or not, LATCHED at
-  `startShot`.
-- **THE FIRE ARROW** hangs fire worth `FIRE_ARROW_FRAC` of the shaft's physical ON TOP of it — PoE2's
-  "adds X fire damage", physical untouched. Uses `.flame` and `propart`'s fire palette. Tongues, not a blob.
-- **THE SHOT CONVERGES ON THE RETICLE, it does not run parallel to it.** Thrown at a point ON the camera's
-  centre ray at the distance that ray REACHES (`camera.centreRay` → `game.camAimPoint`). Loft is only added
-  when the target is a real point.
-- **THE AIM PUSHES THE EYE IN PAST HIM AND FADES HIM OUT** — the player's own `dist` is never written, and the
-  fade is LIT-PASS ONLY with the depth mask off.
-- **HIS SHAFTS ARE A PIERCING BLADE** (`foe.Blade.pierce`), through each creature's own `tryHit`. It neither
-  reads nor writes the swing latch.
-
-### What he is wearing and holding (`item.Equip`, `hero.Worn`)
-
-**BARE IS THE GAME EXACTLY AS IT WAS.** Every dial on an `item.Arm` defaults to 1 and the armour curve of 0
-armour is the blow itself. A new game is bare-handed (`STARTING_KIT` is the wolf scroll alone).
-
-- **ONE TABLE, ONE ROW PER THING** (`item.equip`) — twenty-one pieces, and the numbers are all any of them is (a
-  test counts the worn ones). Gear shelves as `Class.gear`, and the bag panel prints the row (`item.effect`),
-  A CLAUSE PER DIAL rather than a sentence per combination — four dials on a `Plate` is sixteen sentences.
-- **A PLATE MAY MOVE HIM TOO** (`item.Plate.move`, the spidersilk moccasins' 1.06). Multiplied onto the tree's
-  node in `hero.moveRateOf`, which `game.moveHero` is the only caller of, so a shoe that hurries him cannot
-  reach one movement path and miss the others. **STRICTLY WORSE ARMOUR ON PURPOSE** where it buys a column and a
-  pace: a piece better than the boots beside it on every dial retires them instead of competing.
-- **EVERY SOCKET ON THE DOLL IS REAL, AND A COMPTIME WALK KEEPS IT THAT WAY.** `item.zig` fails to compile if a
+- **ONE TABLE, ONE ROW PER THING** (`item.equip`) — the numbers are all any of them is. The bag panel prints the
+  row, **A CLAUSE PER DIAL** rather than a sentence per combination: four dials on a `Plate` is sixteen sentences.
+- **A WEAPON IS PRICED AS MULTIPLIERS ON THE ARMAMENT IT FILLS, NEVER AS FRESH ABSOLUTES** — `hero.ATK_*_HIT`,
+  `combat.STAM_*` and `GUARD_*` stay the one place a swing, a block and their bills are written down. **THE DIALS
+  ARE NOT ALL THE SAME WAY UP**: `dur` and `stam` are BILLS, so under 1 is the gain there.
+- **A WEAPON SAYS WHAT KIND IT IS ON TWO AXES** (`item.Heft`, `item.Reach`) — REACH pinned to the socket at
+  comptime, HEFT how much of the body goes into it, and HEFT is what the page prints.
+- **THE STROKE IS ONE STROKE, SCALED** (`hero.Move`/`moveOf`, three multipliers) — a club gathers further back,
+  drops lower in the hips, carries further through; a dirk is the same stroke shut down to the elbow. **THE PLAIN
+  SWORD IS 1 ON EVERY DIAL**, and a test pins the table against `heft`. **THE CLOCK MOVES WITH THE WEIGHT**
+  (`atkDur`), and the POSE reads the same clock.
+- **WHAT A ROW DOES TO A BLOW IS ONE FUNCTION** (`hero.weigh`), asked by sword, bow AND book — the ELEMENTAL half
+  rides the damage dial and the STANCE rides the poise dial, and tallow is applied AFTER the row.
+- **A SKILL DRIVES A BLOW THROUGH THE DAMAGE DIAL AND NOTHING ELSE** (`stats.scaleFor`) — one curve for
+  strength/dexterity/intelligence, ER's 20/55/80 caps, and **1.0 at `stats.START` exactly as the bar curves are**,
+  which is the licence for wiring damage to an attribute without retuning a tuned constant. A weapon names ONE
+  skill; poise and stance stay the WEAPON's mass. **An EMPTY socket gets `item.bareArm`, not `Arm{}`** — the
+  sword's `quality` default inherited by a bare bow paid a bowman for strength.
+- **ARMOUR IS THE FIFTH COLUMN AND IT IS A CURVE** — worth most against small blows and least against the one that
+  was going to kill you, so it can never become immunity and needs no cap. PHYSICAL ONLY, and it touches NEITHER
+  POISE NOR STANCE.
+- **A PLATE MAY MOVE HIM TOO** (`Plate.move`) — multiplied onto the tree's node in `hero.moveRateOf`, which
+  `game.moveHero` is the only caller of, so a shoe that hurries him cannot reach one movement path and miss the
+  others. **STRICTLY WORSE ARMOUR ON PURPOSE** where it buys a column and a pace: a piece better on every dial
+  retires the one beside it instead of competing.
+- **A SOCKET MAY BUY A SKILL** (`item.Boon`) — folded onto the live sheet by `hero.boonsOnto` through
+  `hero.resheet`, which is THE place the sheet is built: the tree plus what he has on. `applyPerks` assigning the
+  sheet straight from the bonus is how a belt got wiped off it by buying a node. A boon of an INERT attribute is a
+  compile error.
+- **EVERY SOCKET ON THE DOLL IS REAL, AND A COMPTIME WALK KEEPS IT THAT WAY** — `item.zig` fails to compile if a
   non-hand `Wear` has no kind that goes in it, and `book.wearOf` is the ONE place a doll slot becomes an
   `item.Wear`. A faint socket is a fact about his BAG, not about the world.
-- **BOTH FINGERS ARE THEIR OWN SOCKET, AND THE RINGS ARE SPLIT ACROSS THEM** — the bloodtinge signet (+5
-  Vitality) is a `ring` and the loop of chance (+4 Luck, the only thing that moves `stats.findFor`) a `ring2`,
-  so the pair can be worn at once and neither shares a socket with the other's attribute.
-- **A SOCKET MAY BUY A SKILL** (`item.Boon`) — `n` points of an attribute, folded onto the live sheet by
-  `hero.boonsOnto` through `hero.resheet`, which is THE place the sheet is built: the tree plus what he has on.
-  `applyPerks` assigning the sheet straight from the bonus is how a belt got wiped off it by buying a node. A
-  plain grant with no cost where `Charm` is a bargain; a boon of an INERT attribute is a compile error.
-- **A SKILL DRIVES A BLOW THROUGH THE DAMAGE DIAL AND NOTHING ELSE** (`stats.scaleFor`, `hero.scaleOf`,
-  `item.Scaling`). One curve for strength/dexterity/intelligence, ER's 20/55/80 caps, and **1.0 at
-  `stats.START` exactly as the bar curves are** — the licence for wiring damage to an attribute without
-  retuning a tuned constant. A weapon names ONE skill (club strength; dirk and warbow dexterity; plain sword
-  `quality`, the mean of the two); the rod is intelligence, taken in `castBlow`. Poise and stance stay the
-  WEAPON's mass. **An EMPTY socket gets `item.bareArm`, not `Arm{}`** — the sword's `quality` default inherited
-  by a bare bow paid a bowman for strength.
-- **A WEAPON IS PRICED AS MULTIPLIERS ON THE ARMAMENT IT FILLS, NEVER AS FRESH ABSOLUTES.** `hero.ATK_*_HIT`,
-  `combat.STAM_*` and `combat.GUARD_*` stay the one place a swing, a block and their bills are written down.
-  **THE DIALS ARE NOT ALL THE SAME WAY UP** — `dur` and `stam` are BILLS, so under 1 is the gain there.
-- **A WEAPON SAYS WHAT KIND OF WEAPON IT IS, ON TWO AXES** (`item.Heft`, `item.Reach`). REACH is pinned to the
-  socket at comptime; HEFT is how much of the body goes into it, and it is what the page prints.
-- **THE STROKE IS ONE STROKE, SCALED** (`hero.Move`/`moveOf`, three multipliers over `AL_*`/`AH_*`). A
-  club gathers further back, drops lower in the hips, carries further through; a dirk is the same stroke shut
-  down to the elbow. **THE PLAIN SWORD IS 1 ON EVERY DIAL.** A test pins the table against `heft`.
-- **THREE SHAPES ON ONE GRIP** (`hero.Blade`, `BLADES`, `bladeOf`). Dirk and club are the SWORD bone with
-  another mesh and capsule — 0.67 m and 1.44 m of reach against the sword's 1.15 — so pose, trail, sparks and
-  every window are written once. **THE SHAPE IS LATCHED AT `startAttack`** with the row.
-- **WHAT A ROW DOES TO A BLOW IS ONE FUNCTION** (`hero.weigh`), asked by the sword, the bow AND the book. The
-  ELEMENTAL half rides the damage dial and the STANCE rides the poise dial. Tallow is applied AFTER the row.
-- **THE CLOCK MOVES WITH THE WEIGHT** (`hero.atkDur`), and the POSE reads the same clock.
-- **ARMOUR IS THE FIFTH COLUMN AND IT IS A CURVE** (`combat.armourTaken`, PoE2's). Worth most against small
-  blows and least against the one that was going to kill you, so it can never become immunity and needs no cap.
-  PHYSICAL ONLY, and it touches NEITHER POISE NOR STANCE.
-- **A BOARD MAY NEVER STOP A BLOW OUTRIGHT** (`combat.GUARD_NEGATE_CAP`).
-- **A CHARM RESIZES THE RED BAR, AND THE FRACTION IS KEPT ACROSS THE RESIZE** (`hero.refitHp`). Done through
-  `hero.wear`, not at the next bonfire.
-- **A SOCKET REFUSES WHAT DOES NOT BELONG IN IT** — `hero.wear` and the save's parser both ask
-  `item.wearSlot`. Seated wrong, every dial reads as 1 and the piece silently does nothing.
-- **BOTH PAGES SPEAK IN NUMBERS, AND NEITHER CARRIES A BILL** (owner: attack damage in NUMBERS not percents,
-  attack speed in some NUMBER corollary not percent; remove stats like roll speed or stamina consumption). The
-  rows on the equipment sheet (`book.Der`) and on a piece's own card (`book.GDial`) are what the FIGHT uses:
-  light and heavy through `hero.weigh`, the clock in SECONDS through `hero.swingSecs`/`drawSecs`, the guard's
-  real negation under `combat.GUARD_NEGATE_CAP`, the arc in degrees, armour AND what its curve turns aside, the
-  pools, and the four columns. **A DIAL IS NOT A STAT**: "78% swing time" asks the reader to hold a straight
-  sword's own 0.62 s in their head, and no page ever showed them that number to hold. The stamina bills and the
-  roll went to a details panel that does not exist yet; the stamina POOL stays on the stats page, because a pool
-  is not a bill. `item.effect` still prints the DIALS for the bag page, which has no table under it.
-- **BROWSING THE DOLL SHOWS THE PIECE *AND* THE SHEET** (`book.browsing`, `drawGearCard`). What a worn piece
-  does was reachable only by OPENING the picker over its socket, and then only as a column beside a candidate.
-  The card is the slot under the cursor — a bare hand included, off `item.bareArm` — and the sheet under it is
-  the body carrying it; a slot with no gear in it at all (ammo, sorcery, the ten quick cells) gives the sheet
-  the whole column back. The card is capped at what the sheet is owed (`derivedNeedH`), `pickBox`'s own rule.
-- **THE SHEET IS TWO COLUMNS AND THE ENUM'S ORDER IS THE LAYOUT** (`book.DER_SPLIT`) — what he DOES before the
-  seam, what he IS after it. Twenty-one rows down one column overflowed the box a picker leaves them, and
-  `rowStep` will not pitch under `rowFloor`, so the tail drew over the panel below.
-- **A WEAPON'S FOOTER IS THE HALF A NUMBER CANNOT SAY** (`book.armWords`) — heft, reach, and WHICH SKILL DRIVES
-  IT, which had never appeared anywhere in the game. Off `stats.displayName`, so a renamed attribute carries.
-- **THE THREE MELEE SOCKETS RUN BACKWARDS TO A `Blade`** (`hero.bladeForWear`), so a panel handed a SOCKET can
-  price the stroke standing in it. Pinned against `wearFor`+`bladeOf` at comptime, or a club is clocked as a sword.
-- **A BOARD PRICES NO BLOW.** The card and the compare read the offence rows off a socket that actually swings
-  or shoots; taken from `item.bareArm` for every held socket alike, a shield printed the bare sword's damage
-  beside it — noise as "Damage 100%", a lie as "Heavy attack 27".
-- **THE PICKER OFFERS BOTH AXES AS ONE LIST** (`book.Hand`): every armament, and under each the gear he is
-  CARRYING that fills it. So the row has to be COUNTED rather than taken as an ordinal (`book.pickIndexOf`).
-  The VARIANT is the ARMAMENT'S, not the hand's.
-- **THE VARIANT IS NOT REFUSED WHEN THE HAND IS** (`game.takeHand`) — `hero.equip` says no mid-swing, and a
-  socket left saying "club" over a fist still swinging a sword is the page lying.
-- **THERE IS ONE OF EACH, AND THE RACK IS FOUR CELLS** (`hero.equip`). One sword, one board, one rod. Taking a
-  thing already racked SWAPS the two cells rather than refusing; `hero.tidyHands` fixes a save written before
-  the rule (`save.scatter`).
-- **THE CELL DRAWS WHAT IS IN IT, NOT WHICH ARM IT IS** (`hero.heldGear`, asked by `hud.Slot` and
-  `book.handArt`).
-- Saved as one `worn:` line, ABSENT from an older file, which loads as bare.
+- **A SOCKET REFUSES WHAT DOES NOT BELONG IN IT** — `hero.wear` and the save's parser both ask `item.wearSlot`.
+  Seated wrong, every dial reads as 1 and the piece silently does nothing.
+- **A CHARM RESIZES THE RED BAR, AND THE FRACTION IS KEPT ACROSS THE RESIZE** (`refitHp`), through `hero.wear` and
+  not at the next bonfire.
+- **THERE IS ONE OF EACH, AND THE RACK IS FOUR CELLS** — taking a thing already racked SWAPS the two cells rather
+  than refusing. **THE CELL DRAWS WHAT IS IN IT, NOT WHICH ARM IT IS** (`heldGear`). **THE VARIANT IS NOT REFUSED
+  WHEN THE HAND IS** (`game.takeHand`): a socket left saying "club" over a fist still swinging a sword is the page
+  lying. Saved as one `worn:` line, ABSENT from an older file, which loads as bare.
+- **BOTH PAGES SPEAK IN NUMBERS, AND NEITHER CARRIES A BILL** — the rows are what the FIGHT uses: light and heavy
+  through `weigh`, the clock in SECONDS, the guard's real negation, the arc in degrees, armour AND what its curve
+  turns aside, the pools, the four columns. **A DIAL IS NOT A STAT**: "78% swing time" asks the reader to hold a
+  number no page ever showed them. The stamina POOL stays, because a pool is not a bill.
 
-### The wand (`hero.zig`) — the first thing that spends FP
+**The book** (`book.zig`) — ER's status screen, read in sections.
 
+- **THE PICKER ROW SAYS WHAT IT IS WORTH BEFORE IT IS PICKED** (`headline`) — the biggest thing the swap moves on
+  the derived sheet, as a share of what it is now, signed and named short, in the colour of the news.
+- **THE COMPARE IS FOUR COLUMNS UNDER SECTION HEADS** — NOW dim, a chevron when it moves, THEN in green or red
+  (`cost` rows flip the colour), the signed difference at the edge. `GDial` lists the dials in section order and
+  `gsectionOf` is an exhaustive switch, so a dial without a home does not compile and one pass inserts the heads.
+- **ON THE SHEET is the swap priced in HIS numbers** — every derived figure that MOVES, so a boon's +3 Strength is
+  read as the attack it buys. **A DIFFERENCE IS A WHOLE UNIT**: half a point or a hundredth of a clock is drift,
+  printed as no change — never "10 → 10, +0".
+- **BROWSING THE DOLL SHOWS THE PIECE *AND* THE SHEET** (`browsing`, `drawGearCard`) — the card is the slot under
+  the cursor, a bare hand included, and a slot with no gear at all gives the sheet the whole column back. Capped
+  at what the sheet is owed (`derivedNeedH`), `pickBox`'s own rule.
+- **THE SHEET IS TWO COLUMNS AND THE ENUM'S ORDER IS THE LAYOUT** (`DER_SPLIT`) — what he DOES before the seam,
+  what he IS after it; `rowStep` will not pitch under `rowFloor`, so one column of 21 rows drew over the panel.
+- **A WEAPON'S FOOTER IS THE HALF A NUMBER CANNOT SAY** (`armWords`) — heft, reach, and WHICH SKILL DRIVES IT.
+  **A BOARD PRICES NO BLOW**: the card and the compare read offence rows off a socket that actually swings.
+- **THE PICKER OFFERS BOTH AXES AS ONE LIST** (`book.Hand`) — every armament, and under each the gear he is
+  CARRYING that fills it, so the row is COUNTED rather than taken as an ordinal. **The VARIANT is the
+  ARMAMENT'S, not the hand's.** **THE THREE MELEE SOCKETS RUN BACKWARDS TO A `Blade`** (`bladeForWear`), pinned
+  against `wearFor`+`bladeOf` at comptime or a club is clocked as a sword.
+- **THE STATS PAGE IS FOUR PANELS** — ATTRIBUTES (each point-count beside what it buys, the cursor row ending with
+  what the NEXT point buys), BODY, WARDS (read off `ptree.Bonus` itself, so a node the tree grows tomorrow shows
+  up here without a hand), and the portrait. `StatList` builds a column first and draws it after, into its own
+  store: `hud.fmt`'s ring is sixteen deep and a column is longer.
+- **THE PRIMS ARE `uiart`'S** (`rule`, `arrow`, `pill`, `meter`); text stays in `book.zig`, because `uiart` does
+  not import `hud`.
+- **NEITHER PURSE IS ON THE TAB STRIP** — souls AND gold sit under the portrait on STATS and at the foot of the
+  doll on EQUIPMENT, the only place a total is stated. **THE GOLD PURSE IN THE BAG IS A MIRROR, NOT A STACK**:
+  gold is a `u32` on the hero and the bag's counts are `u16`, so the inventory cursor is one past the bag's own
+  ordinal (`bagAt`, `bagCells`, `heldOf`).
+
+**The bow, the wand, the spells, the torch** (`hero.zig`).
+
+- **THE SHIELD GOING IS ANATOMY, NOT A BALANCE DIAL** — `canGuard` ASKS the arm rather than the swap clearing a
+  flag, and the HUD's LEFT slot goes EMPTY. **IT IS THE SKELETONS' BOW**: `archer.bowMesh`/`poseBow` shared and
+  every stance angle lifted from `archer.poseUpper` — the one import running against the grain (hero → archer).
+- **THE AIM IS HELD, THE LOOSE IS THE ONLY COMMITTED PART.** **AIMING SUSPENDS THE LOCK OUTRIGHT**
+  (`game.activeLock`) — suspended, not dropped; R3 is dead while the bow is up, and it slows the look.
+- **A BOW CHIPS; IT DOES NOT WIN** — both shots come in under the melee they compare to, poise slighter still.
+  **ARROWS ARE FINITE** (ten plain, five fire), refilled at a bonfire, checked BEFORE stamina is charged, and the
+  SELECTED kind is what flies, empty or not, LATCHED at `startShot`. **THE FIRE ARROW** hangs fire worth
+  `FIRE_ARROW_FRAC` of the shaft's physical ON TOP of it — PoE2's "adds X fire damage", physical untouched.
+- **THE SHOT CONVERGES ON THE RETICLE, it does not run parallel to it** — thrown at a point ON the camera's centre
+  ray at the distance that ray REACHES. **THE AIM PUSHES THE EYE IN PAST HIM AND FADES HIM OUT**: the player's own
+  `dist` is never written, and the fade is LIT-PASS ONLY with the depth mask off.
+- **HIS SHAFTS ARE A PIERCING BLADE** (`Blade.pierce`), which neither reads nor writes the swing latch. **THE BOLT
+  FLIES THROUGH THE ARROW POOL** (`archer.Shot.bolt`) — cover, gravity, ground, expiry and the swept `pierce`
+  test are one body of code.
 - **A CAST IS COMMITTED, NOT HELD** — the FP is gone the moment it starts, so it lives in `committed()`, is not
-  buffered, and a stagger drops it with the charge spent. He is PLANTED for it.
-- **BILLED IN FP AND NOTHING ELSE** — `BOLT_FP`. The wand competes with the flask, not with the roll.
-- **PAY OR CAST NOTHING** (`Focus.spend`) — the INVERSE of stamina's panic rule. `hero.fpRefused` →
-  `hud.refuseRing`.
-- **THE ARM GOES OVERHEAD AND SWEEPS ACROSS THE TOP**, repeated casts sweeping OPPOSITE ways (`castAlt`,
-  flipped at the START of each cast). `rz` swings the left arm through the frontal plane and 180 is straight up,
-  so raise and stroke are ONE channel: overhead ± `CAST_SWEEP` (34). `CAST_SH_FWD` (36) tips the plane forward.
-- **THE ARM GOES LONG AT THE THROW** — a folded elbow keeps the stone inside his own silhouette.
-- **THE ROD IS NOT A BONE** and has NO fit matrix: authored in the left wrist's frame along −Y. `wandTipWorld`
-  is MEASURED off the mesh's constants (the ogre's `clubLowWorld` law).
-- **THE BOLT FLIES THROUGH THE ARROW POOL** (`archer.Shot.bolt`) — cover, gravity, ground, expiry and the swept
-  `pierce` test are one body of code.
-- **ALL CHAOS, NO PHYSICAL** — `BOLT_HIT` 25 chaos, poise 14, stance 6. Chaos is the most-resisted column, so
-  the wand answers toads and kobolds and is near useless against skeletons. An honest trade.
-- **ONE VIOLET FOR THE WHOLE SPELL** — stone, gather, both bursts, streak and LIGHT.
-- **THE STONE IS THE ONLY LIGHT IN THE GAME THAT MOVES** (`hero.wandLight`). `env.uploadLights` takes it as a
-  RESERVED slot, so a brazier he is standing beside can never evict his own spell. Point light is MULTIPLIED by
-  albedo here — loud on marble, muted on grass.
-- **THE GATHER RIDES THE HAND AND ITS LIFE IS WHAT PAYS FOR IT.** Motes are solved to ARRIVE at the stone, and
-  the stone crosses 1.5 m through the lift. Adding the tip's velocity fixes the constant part; the leftover is
-  ½·a·life², so the correction that matters is a SHORT LIFE — and `drawParticles` fades radius with alpha, so a
-  short life is bought back with RADIUS, never with more motes.
-- **THE RELEASE IS A CONE, A COLLAR AND ONE FLASH.** The cone alone is indistinguishable from the bolt's first
-  metre; the collar thrown sideways out of the bolt line is what says the stone LET GO. The flash is a SOLID
-  sphere, not additive.
-- **THE CHARGE RISES IN THE GRIP, AND A `rumble.Event` CANNOT RISE** — a `Motor` decays from its peak. So the
-  raise is pulsed every frame with a peak scaled by `hero.chargeFill` (`rumble.castCharge`), 0 past the throw.
-  The release is a crack (`cast_throw`) and a frame shake UNDER the lightest one a landed blow gets.
-- **TWO VOICES, ITS OWN** — `wand_charge` climbs and must RESOLVE at the throw (0.40 s against a 0.30 s raise),
-  `wand_cast` is a struck-crystal crack. Nothing done with a rod is a throat.
-- **THE HARNESS HAS TO FIRE THE RELEASE ITSELF.** `castToThrow` drives the POSE past the throw without going
-  through `game.throwBolt`, so `throwBoltForShot` throws the sparks too. `castToCharged` stops one frame
-  earlier — the only frame the gather's ramp and the light's swell can be judged on. `releaseSpellForShot` is
-  the same door for the two STRIKES.
-
-### The two sorceries that DO NOT CROSS THE GROUND — LEVIN and SIPHON
-
-These arrive on ONE body on the frame they are cast. There is no flight to intercept, and SIGHT stands in for
-one (`env.sees`).
-
-- **THE LADDER IS MONOTONE, AND THAT IS THE WHOLE PRICE LIST**: bolt 8, levin 11, roots 12, siphon 13, lance
-  14, rime 15, sunder 16 FP (`combat.SPELLS`, which is the price list — the damages are the rows' own). Every
-  step up in FP is a step DOWN in raw damage — what the difference buys is a stagger, a hold, HP back, or a
-  second body in the cone. A comptime block asserts it over every PAIR, so an eighth spell is priced by the
-  rule without editing it.
-- **THE LEVIN BUYS THE STAGGER AND NOTHING ELSE.** Poise 34 — past every creature's `POISE_MAX` bar the
-  knight's 78. Its STANCE stays under his own heavy swing's. First lightning anything but a thrown jar deals.
-- **IT DOES NOT TRAVEL BECAUSE THE ELEMENT DOES NOT** (`elemfx`'s lightning: shortest life by 3×, no gravity).
-  The travel comes from WHERE THE SPARKS ARE PUT — laid along the blow's own segment, all on the landing frame.
-- **THE SHORT LIFE IS BOUGHT BACK WITH RADIUS, NEVER WITH MORE MOTES** (measured off a render). The landing
-  burst is held UNDER the stroke's own scale — at 7 cm a mote is a soft ball and a shower reads as SMOKE.
-- **THE STROKE LEANS, AND THE LEAN IS MECHANICAL** (`game.strikeSegment`). `foe.strike` takes the shove and the
+  buffered, and a stagger drops it with the charge spent. He is PLANTED for it. **PAY OR CAST NOTHING**
+  (`Focus.spend`), the INVERSE of stamina's panic rule. **BILLED IN FP AND NOTHING ELSE** — the wand competes with
+  the flask, not with the roll. **ALL CHAOS, NO PHYSICAL**: chaos is the most-resisted column, so the wand answers
+  toads and kobolds and is near useless against skeletons. An honest trade.
+- **THE ARM GOES OVERHEAD AND SWEEPS ACROSS THE TOP**, repeated casts sweeping OPPOSITE ways — `rz` swings the
+  left arm through the frontal plane and 180 is straight up, so raise and stroke are ONE channel. **THE ARM GOES
+  LONG AT THE THROW**: a folded elbow keeps the stone inside his own silhouette. **THE ROD IS NOT A BONE** and has
+  no fit matrix — authored in the left wrist's frame along −Y, and `wandTipWorld` is MEASURED off the mesh's own
+  constants (the ogre's `clubLowWorld` law).
+- **THE STONE IS THE ONLY LIGHT IN THE GAME THAT MOVES** — `env.uploadLights` takes it as a RESERVED slot (beside
+  the torch's), so a brazier he stands beside can never evict his own spell.
+- **THE GATHER RIDES THE HAND AND ITS LIFE IS WHAT PAYS FOR IT** — motes solved to ARRIVE at the stone. Adding the
+  tip's velocity fixes the constant part; the leftover is ½·a·life², so the correction that matters is a SHORT
+  LIFE — and `drawParticles` fades radius with alpha, so **a short life is bought back with RADIUS, never with
+  more motes.** **THE RELEASE IS A CONE, A COLLAR AND ONE FLASH**: the cone alone is indistinguishable from the
+  bolt's first metre, and the collar thrown sideways is what says the stone LET GO.
+- **THE CHARGE RISES IN THE GRIP, AND A `rumble.Event` CANNOT RISE** (a `Motor` decays from its peak) — so the
+  raise is pulsed every frame with a peak scaled by `chargeFill`, 0 past the throw.
+- **THE LADDER IS MONOTONE, AND THAT IS THE WHOLE PRICE LIST**: bolt 8, levin 11, roots 12, siphon 13, lance 14,
+  rime 15, sunder 16 FP. **Every step up in FP is a step DOWN in raw damage** — what the difference buys is a
+  stagger, a hold, HP back, or a second body in the cone. A comptime block asserts it over every PAIR, so an
+  eighth spell is priced by the rule without editing it. **ONE PLACE ANSWERS WHAT A SPELL LANDS** (`spellBlow`),
+  null for the two that bill over time.
+- **LEVIN AND SIPHON DO NOT CROSS THE GROUND** — they arrive on ONE body on the frame they are cast, and SIGHT
+  stands in for a flight. **THE LEVIN BUYS THE STAGGER AND NOTHING ELSE** (poise 34, past every `POISE_MAX` bar
+  the knight's 78; its STANCE stays under his own heavy swing's). **IT DOES NOT TRAVEL BECAUSE THE ELEMENT DOES
+  NOT** — the travel comes from WHERE THE SPARKS ARE PUT, laid along the blow's own segment on the landing frame.
+  **THE STROKE LEANS, AND THE LEAN IS MECHANICAL** (`game.strikeSegment`): `foe.strike` takes the shove and the
   facing snap off the segment's XZ bearing, and a plumb line has none.
-- **THE SIPHON FEEDS OFF WHAT THE BODY ACTUALLY LOST**, never off what was thrown at it
-  (`combat.SIPHON_SHARE`) — so resisted damage is resisted healing and a skeleton is a bad meal.
-- **IT IS A DRAIN, NOT A BLOW**: no poise, no stance (`Root.tick`'s law).
-- **ITS EFFECT RUNS THE WRONG WAY UP THE LINE** — motes off the BODY, solved to arrive at the stone inside their
-  own life, which is `souls.zig`'s construction with the ends swapped.
-- **ONE PLACE ANSWERS WHAT A SPELL LANDS** (`combat.spellBlow`), null for the two that bill over time.
+- **THE SIPHON FEEDS OFF WHAT THE BODY ACTUALLY LOST**, never off what was thrown at it — so resisted damage is
+  resisted healing and a skeleton is a bad meal. **IT IS A DRAIN, NOT A BLOW**: no poise, no stance.
+- **THE MEMORY RACK IS THE ONLY LIMIT, AND IT IS ONE NUMBER** (`MEM_SLOTS`, three) — a new character has the bolt
+  and two holes. **CARRYING THE SCROLL IS THE WHOLE GATE, AND MEMORIZING DOES NOT SPEND IT.** **THE RING IS THE
+  RACK, NOT THE TABLE** (`Memory.next`) — D-pad Up walks what is memorized IN SLOT ORDER, and a spell already in
+  another slot MOVES rather than doubling. **THE SELECTION IS A FINGER ON THE RACK AND FOLLOWS IT** (`hero.armed`,
+  `tidySpells`; `memorize` is the ONE door that moves either). **THE FIRE IS WHERE IT IS COMMITTED AND THE BOOK IS
+  WHERE IT IS READ** — the fire's screen is two stages, the equipment picker's exactly, opening on WHAT IS IN THE
+  SLOT. A sorcery he has no scroll for is DIMMED, never hidden. **THE FILE CARRIES THE RACK AND NOTHING DERIVED.**
+- **THE TORCH IS A RACK CELL, NOT A KEYBIND**, and **WHAT IT COSTS IS THE HAND, AND NOTHING ELSE** — no stamina,
+  no FP, no action on either button. **THE FLAME IS DRAWN IN WORLD SPACE, THE BRAND ON THE WRIST**: the shader's
+  billow throws along the MODEL's +Y, so hung off the wrist it would lash sideways when he turns his arm over.
+  **THE CARRY WAS SOLVED, NOT EYEBALLED** — flame at the crown, off the shoulder line, in front of the chest, and
+  the test prints all four figures with a window round each. **IT GUTTERS OFF THE SAME CURVE AS EVERY OTHER
+  FLAME** (`mathx.gutter`, three incommensurate rates). **ITS VOICE IS A BED, NOT A PLACED SOUND** — nine pops a
+  second, redrawn every pop: a crackle is Poisson, not a metronome.
+- **THE HARNESS HAS TO FIRE THE RELEASE ITSELF** — `castToThrow` drives the POSE past the throw without going
+  through `game.throwBolt`, `castToCharged` stops one frame earlier (the only frame the gather's ramp and the
+  light's swell can be judged on), and `game.selectSpellForShot` MEMORIZES rather than cycles.
 
-### The memory slots (`combat.Memory`, `rest.zig`, `book.zig`)
+**Souls — the drop, and the ring that refuses it.** Everything comes off him on the frame he DIES rather than at
+the respawn, so the spill plays under the YOU DIED card.
 
-Every spell is written on a SCROLL (`combat.SpellRow.scroll`, an `item.Kind` that `item.isSpellScroll` claims),
-and the rod casts only what is in the RACK — three slots (`combat.MEM_SLOTS`) filled at a fire.
-
-- **THE RACK IS THE ONLY LIMIT, AND IT IS ONE NUMBER.** Nothing else counts the cells; widening it is one edit.
-  **A NEW CHARACTER HAS THE BOLT AND TWO HOLES** (`Memory{}`'s default).
-- **CARRYING THE SCROLL IS THE WHOLE GATE, AND MEMORIZING DOES NOT SPEND IT.** The bag is asked and never
-  emptied. The seven sheets are in `game.STARTING_KIT`; where a scroll is FOUND belongs to the map and the drop
-  table.
-- **THE RING IS THE RACK, NOT THE TABLE** (`Memory.next`, `hero.cycleSpell`). D-pad Up walks what is memorized
-  IN SLOT ORDER. One in the rack is nothing to cycle to.
-- **A SPELL ALREADY IN ANOTHER SLOT MOVES RATHER THAN DOUBLING** (`Memory.put`).
-- **THE SELECTION IS A FINGER ON THE RACK AND FOLLOWS IT** (`hero.armed`, `hero.tidySpells`; `memorize` is the
-  ONE door that moves either). Empty the rack and `canCast` refuses, the HUD cell goes empty, and
-  `game.castWand` says "Nothing memorized." rather than eating the press.
-- **THE FIRE IS WHERE IT IS COMMITTED AND THE BOOK IS WHERE IT IS READ.** `Memorize Spells` is a row on the
-  fire's list (`rest.Row.memorize`); the book's SPELLS page is READ-ONLY.
-- **THE FIRE'S SCREEN IS TWO STAGES, THE EQUIPMENT PICKER'S EXACTLY** (`rest.memRow`/`memPick`): a slot, THEN
-  what goes in it, opening on WHAT IS IN THE SLOT — counted, never an ordinal. An empty row is always offered;
-  a slot with nothing to put in it does not open.
-- **A SORCERY HE HAS NO SCROLL FOR IS DIMMED, NEVER HIDDEN.**
-- **ONE SCROLL PICTURE, AND THE DRAWING ON IT SAYS WHICH** (`itemart.sorceryScroll`) — `spellArt` inked at a
-  third size, so the sigil the HUD shows is the sigil in the bag.
-- **THE FILE CARRIES THE RACK AND NOTHING DERIVED** (`memory:`). Absent from an older file it loads as the
-  STARTING rack, an unknown tag is a LOAD ERROR, and a file with more slots than this build drops its tail —
-  `MEM_SLOTS` may narrow. A comptime block pins that every spell names a scroll, no two share one, and no
-  scroll is unwritten.
-- **THE HARNESS MEMORIZES RATHER THAN CYCLES** (`game.selectSpellForShot`).
-
-### The torch (`hero.zig`)
-
-**IT IS A RACK CELL, NOT A KEYBIND.** `Armament.torch` is a sixth thing the book's four hand cells can hold. One
-torch in this world, so `wearFor` gives it no socket.
-
-- **WHAT IT COSTS IS THE HAND, AND NOTHING ELSE.** No stamina, no FP, no action on either button (`handActs`'
-  one empty prong). Nothing refuses a guard for holding one — `canGuard` asks `shieldOut` and gets its answer
-  from the rack, so in the LEFT cell the boards are gone and in the RIGHT the sword is.
-- **THE LIGHT IS RESERVED** (`hero.torchLight` → `game.reservedLights`), beside the rod's stone. `TORCH_LIT` is
-  the world torch's row opened out — a fifth again the colour at 8 m instead of 6.
-- **IT GUTTERS OFF THE SAME CURVE AS EVERY OTHER FLAME** (`mathx.gutter`): three incommensurate rates.
-- **THE FLAME IS DRAWN IN WORLD SPACE, THE BRAND ON THE WRIST.** The shader's flame billow throws along the
-  MODEL's +Y (`sceneVS`, mat 11) — hung off the wrist it would lash sideways when he turns his arm over.
-- **THE CARRY WAS SOLVED, NOT EYEBALLED.** Brand gripped SQUARE across the fist (90°, where the rod sits at
-  55). Arm angles swept for the pose that puts the flame at the crown, off the shoulder line, in front of the
-  chest: 1.78 m up, 0.38 m to the side, 0.30 m in front, 18° off plumb. The test prints all four with a window
-  round each.
-- **ITS VOICE IS A BED, NOT A PLACED SOUND** (`audio.torch_fire`, driven by `sfx.setTorch`) — centred stereo on
-  the rain's machinery. Nine pops a second, redrawn every pop: a crackle is Poisson, not a metronome.
+- **THERE IS EXACTLY ONE** — a second death overwrites the first. Not a storage decision: a list of drops would
+  delete the whole risk. **NOTHING ELSE SPENDS IT** — no timer, no decay, no despawn on distance; a death
+  RE-HOMES the field and must not touch the drop, and only a change of MAP clears it.
+- **RETRIEVAL IS INSTANT** — no committed action, no animation on the man. The animation is all on the DROP, motes
+  solved to ARRIVE at his chest inside their own life.
+- **IT IS A TREE, NOT A FLAME**, so it obeys the dead-limb law, and it grows over `RISE`, overshoots its own height
+  and settles. **ONE EMISSIVE LEVEL, THREE ALBEDOS** — vertex alpha is the emissive channel, so all three golds
+  sit at one alpha and separate on hue and value alone; at two levels the shaft bands.
+- **THE PROMPT IS FIRST IN `game.reachable`**, ahead of the fire, the folk and a box, and its ring is the GENEROUS
+  one — `souls.REACH` against `chest.REACH`, asserted at comptime.
+- **THE SOUL BINDING RING REFUSES THE WHOLE THING** (DS's Ring of Sacrifice) — worn, a death takes the RING
+  instead of the souls. **IT HAS TO BE ON A FINGER**, the FIRST ring socket, the leech signet's own, so the choice
+  is HP back on every landed blow against keeping what you carry the once. **IT IS NOT A TOOL** — `usable` false,
+  off the quick bar: the one piece of gear spent by DYING. **ASKED OF THE ITEM, NOT THE KIND**
+  (`item.bindsSouls`, off the `Bind` payload), which is why `game.bindingWorn` walks every socket. **ONE IN THE
+  WORLD**, and the BONE KNIGHT carries it — nothing places it.
 
 ## The world
 
 ### The map is data, and the editor owns it
 
 `worlds/*.world` are versioned text files of authoring OPS (`worldfmt.zig`); `env.materialize` replays them.
-Nothing about the world is authored in Zig. Ops: `at`, `belt`, `disc`, `ring`, `line`, `ivy`, `edge`, `cover`,
-plus `zone`/`clear`/`runway`/`foe` tables. Beside the shipped map, `02_brood_arena` and `03_bone_court` hold one
-fight each; a test loads and replays all of them.
+**Nothing about the world is authored in Zig.** Ops: `at`, `belt`, `disc`, `ring`, `line`, `ivy`, `edge`, `cover`,
+plus `zone`/`clear`/`runway`/`foe` tables. The world is **1000 m**.
 
-**`worlds/test_*.world` are BENCHES, not content** — one per thing being built, loaded with `--map
-worlds/test_x.world` (and `--shot` with it). Nothing under test goes into the shipped map to be looked at.
-`test_foggate` is the gate at three sizes and yaws plus a channel dug to 1.31 m, the one depth the hero can
-cross and nothing on foot will follow him into.
+**`worlds/test_*.world` ARE BENCHES, NOT CONTENT** — one per thing being built, loaded with `--map
+worlds/test_x.world` (and `--shot` with it). **NOTHING UNDER TEST GOES INTO THE SHIPPED MAP TO BE LOOKED AT**,
+and never pin a test to a coordinate, yaw or count off `01_fallen_plain.world` — author a bench instead.
 
-- **THE UNITS PALETTE IS TWO TABS AND THE FOES ARE FILED BY KINGDOM** (`editor.UnitTab`, `foe.homeOf`). Forty
-  one icon rows in one column is 1220 px of list in a 738 px panel: **the bottom seventeen creatures were drawn
-  off the end of the window and could not be clicked at all.** Foes / Folk, and under Foes a chip per
-  `props.Biome` that holds one — the same axis the props are filed on, so the two palettes split the world the
-  same way. Tallest tab is 12 rows now. `foe.homeOf` is an EXHAUSTIVE switch (`traitsOf`'s reason: a creature
-  cannot be added unfiled) and NOTHING SPAWNS BY IT; `any` is not a dustbin, it is the set that answers every
-  chip (`foe.atHome`), which is why it has no chip of its own.
-- **THE DIGIT KEYS AND THE PANEL WALK ONE LIST** (`editor.visibleBrushes`). Filtered in one and not the other,
-  `3` armed a creature the palette was not showing. **The eraser is in every tab** — a tool, not a category —
-  and the tab moves to the armed brush on entry, never the brush to the tab.
-- **THE MINIMAP IS FIVE THINGS** (owner) — walls, water, trees subtly, fires, red for the foes. It used to blit
-  the whole soil grid, shade the relief and dot every op, which on the shipped map is 16,587 dots over a painted
-  floor telling you nothing. **A wall is whatever the camera will not thin** (`props.Info.solid`), which is the
-  same set the hero cannot walk through, so the map's barriers and the world's cannot drift apart. **Read off
-  `env.placed()`, never off the ops**: a belt of a hundred trees is ONE op, and an op walk drew one tree where
-  there is a wood.
-- **THE FLOOR IS A MARGIN ON THE LOADED MAP'S OWN HALF** (`env.groundOut`, `GROUND_APRON` with a 60 m
-  floor). As a flat `DEFAULT_HALF + 220` a 95 m test bench was a 190 m island sitting in a 1000 m floor, with
-  the editor's bound box drawn round the island (owner: "the floor looks larger than the map"). The shipped
-  280 m map moves 4 m by this, 500 to 504 — which is the point: it was already right THERE and nowhere else.
-  The flat path draws ONE quad built at the widest and scaled (a plane scales exactly, and every field the
-  shader reads over it is indexed in world xz); the sculpted path already had the tiles and a skirt.
-- **THE DECOR LAYER IS NOT PLANTS** — it is `props.Info.flora`, which holds cobbles, shards and scree too. Small
-  accoutrements, whatever they are made of; the layer tip says so.
-- **A GENERATOR OP IS FOR STAMPING, NOT FOR KEEPING.** It is ONE thing to select, move and delete, so a wood
-  of 260 attempts was one tree — the same complaint that baked ground cover down to `at:` decor. Stamp a
-  `belt`/`disc`/`ring`/`line`/`ivy`, re-roll it until it reads, then **break it apart** (op panel, or the
-  right-click menu) and it becomes one `at:` per instance, standing exactly where it stood: `env.explodeOp`
-  writes down the props the replay already made, and an `at` replays at the same `groundY(x, z)` every
-  generator plants on. There is no way back but undo — the seed and the shape go with it.
-  `zig-out\bin\zig-soulslike.exe --explode <map>` does the whole file headlessly and verifies itself by
-  re-loading and re-replaying: same prop, solid and light counts or it refuses. **`01_fallen_plain` is
-  ALREADY BROKEN APART** — 13,923 ops, 215 of them groups, became 16,654 `at:`.
-- **EVERY GENERATOR OP CARRIES ITS OWN SEED.** One shared stream meant inserting a belt re-rolled every op
-  after it. Load-bearing.
-- **ORDER IS MEANING.** Ops replay in file order because later ones read what earlier ones placed.
-- **ONE FIELD TABLE DRIVES THE WRITER AND THE PARSER** (`fieldsOf`), walked at comptime in TABLE order.
+- **ONE FIELD TABLE DRIVES THE WRITER AND THE PARSER** (`fieldsOf`), walked at comptime in TABLE order —
   `std.meta.fields(Op)` reads the STRUCT's order and silently writes the wrong column. Unknown keys and missing
   fields are LOAD ERRORS; a missing or broken map PANICS with file and line.
-- **FLOORING IS TWO GRIDS** — `soil` (material id) and `soilCov` (coverage 0..255). An edge is where the author
+- **ORDER IS MEANING** — ops replay in file order because later ones read what earlier ones placed.
+- **EVERY GENERATOR OP CARRIES ITS OWN SEED** — one shared stream meant inserting a belt re-rolled every op after
+  it. Load-bearing.
+- **A GENERATOR OP IS FOR STAMPING, NOT FOR KEEPING** — it is ONE thing to select, move and delete, so a wood of
+  260 attempts was one tree. Stamp, re-roll until it reads, then **break it apart** (`env.explodeOp`) and it
+  becomes one `at:` per instance standing exactly where it stood, since an `at` replays at the same
+  `groundY(x, z)` every generator plants on. There is no way back but undo. `--explode <map>` does a whole file
+  headlessly and verifies by re-loading: same prop, solid and light counts or it refuses. **`01_fallen_plain` IS
+  ALREADY BROKEN APART.**
+- **AN OP MAY NOT SPIN** (`Placer.BUDGET`, `Env.opsCapped`) — the generator loops were bounded only by AUTHORED
+  numbers and a REJECTED candidate costs time without ever filling `MAX_PROPS`. One line op at 0.001 m over 400 m
+  burnt **21 ms a rebuild placing NOTHING** (227 ms at the parser's floor), a rebuild fires after every edit, and
+  a map holds 20,480 ops. Every generator now spends from a per-op candidate budget. **NO SILENT CAP** —
+  `opsCapped` counts what hit it and the editor's status line shows it, because a budget that bites real content
+  has made the world quietly smaller.
+- **EVERY PROP PLANTS AT THE HEIGHT UNDER IT** — `uploadHeight` must run BEFORE `materialize`, and a sculpt stroke
+  re-materializes on RELEASE. **`buildSolids` RESETS** (`materialize` runs it twice; an appending version doubles
+  every collider). Props carry the index of the op that placed them, which is what makes a generated rock
+  selectable. **PROPS CAN LEAN** about the prop's GROUND ORIGIN, so the base stays planted and the culling sphere
+  is unchanged. **AND `env.build` MAY RUN ONCE PER PROCESS** (`envBuilt` panics on the second).
+- **A MULTI-LINE RECORD ATTACHES TO THE ONE ABOVE IT** — `when:`/`do:` to the last `trig:`, `who:`/`say:`/`act:`/
+  `then:`/`ask:` to the last `node:`, `need:`/`gets:` to the last `ask:`. A part with nothing above it is a LOAD
+  ERROR, and `act:` may not be written after a choice. **PROSE LIVES IN ONE ARENA** (`Map.dtext`, `Span`), and `#`
+  still starts a comment, so no authored line may contain one.
+- **`npc:` RECORDS ARE APPENDED, NEVER INSERTED** — `near npc=0` is an INDEX into that table. `foe:` and
+  `wf.FoeKind` have the same rule. **AND A MAP SAYS WHERE THE PLAYER STARTS** (`wf.Start`, the `start:` row).
+
+```
+flags: met_wanderer heard_of_gate      # interned at load; the file stays self-describing
+npc: wanderer -4.50 7.50 128.0 1.00 0.31 roam=1.8 dlg=wanderer
+  call: The Wanderer
+dlg: wanderer
+  node: root
+  say: Another one walking north.
+  ask: What lies north? -> north
+  need: flag heard_of_gate=1           # gates the ask ABOVE it
+  ask: (say nothing) -> end            # `end` is reserved: it closes the conversation
+  node: north
+  say: A gate the size of a hill, and shut.
+  act: flag heard_of_gate=1            # fires when the node is SHOWN
+  then: root
+trig: wanderer_seen pri=10             # once=1 by default; once=0 or a `preserve` action keeps it
+  when: near npc=0 r=3.5
+  when: flag met_wanderer=0
+  do: flag met_wanderer=1
+  do: text Someone is sitting at the bonfire.
+```
+
+Conditions: `always`, `never`, `flag N=0|1`, `counter N <cmp> n`, `timer N=done|running`, `elapsed <cmp> secs`,
+`region x z x1 z1`, `near npc=i r=m`, `talked dlgId`, `deaths foeKind <cmp> n`, `alive foeKind <cmp> n`. Actions:
+`dialog dlgId`, `text …`, `flag N=0|1|flip`, `counter N set|add|sub n`, `timer N=secs`, `wait secs`, `preserve`.
+`<cmp>` is `<` `<=` `=` `>=` `>`.
+
+**The editor.**
+
+- **THE UNITS PALETTE IS TWO TABS AND THE FOES ARE FILED BY KINGDOM** (`editor.UnitTab`, `foe.homeOf`) — 41 icon
+  rows in one column is 1220 px of list in a 738 px panel, so the bottom seventeen creatures could not be clicked
+  at all. Foes / Folk, and under Foes a chip per `props.Biome` that holds one — the same axis the props are filed
+  on. `foe.homeOf` is EXHAUSTIVE and **NOTHING SPAWNS BY IT**; `any` is not a dustbin, it is the set that answers
+  every chip, which is why it has no chip of its own.
+- **THE DIGIT KEYS AND THE PANEL WALK ONE LIST** (`visibleBrushes`) — filtered in one and not the other, `3` armed
+  a creature the palette was not showing. The eraser is in every tab, and the tab moves to the armed brush on
+  entry, never the brush to the tab.
+- **THE CRIB NAMES EVERY GESTURE, OR THE VERB DOES NOT EXIST** (`editor.CRIBS`, widest-that-fits) — it named eight
+  while the editor bound twenty-five. **The EDITOR is the one place the UI names KEYS.**
+- **EVERY REGION IS SELECTED, MOVED, RESIZED AND NAMED THE SAME WAY** (`Grab`, `pickRegion`, `dragRegion`) — one
+  union rather than a flag per kind, handles drawn as posts, banked on the first frame a drag moves something so a
+  plain selection click leaves no undo step.
+- **RESET IS THE ONE STROKE THAT TAKES A PATCH BACK TO BARE FLOOR** (Ground > clear > Reset) — height to the datum
+  with NO feather (a graded rim is more terrain to undo, not less), the cliff flags, the cave, the water, the
+  soil, and every op, foe and folk anchored in the disc. Zones, locations, arenas and clearings survive it,
+  because a disc cannot say which part of a rectangle to take.
+- **THE DECOR LAYER IS NOT PLANTS** — it is `props.Info.flora`, which holds cobbles, shards and scree too.
+- **THE MINIMAP IS FIVE THINGS** (owner) — walls, water, trees subtly, fires, red for the foes. **A wall is
+  whatever the camera will not thin** (`Info.solid`), the same set the hero cannot walk through, so the map's
+  barriers and the world's cannot drift apart. **Read off `env.placed()`, never off the ops**: a belt of a hundred
+  trees is ONE op, and an op walk drew one tree where there is a wood.
+- **A PANEL MAY NOT SPEND A DRAW CALL PER OP** (`blitMinimap`, `miniGen`) — it issued **16,510 immediate-mode
+  rects a frame**, and the bill GROWS every time a scatter is exploded into `at:` ops. Those ops land on 12,442
+  distinct pixels of a 182x182 face, a 1.33x collapse, so no bucketing makes a per-frame walk cheap and the
+  answer had to be a HELD TEXTURE, painted on `miniGen` and blitted once.
+  - **A HELD FACE IS COPIED BACK, NOT BLENDED BACK** — raylib blends the target's OWN alpha by `SRC_ALPHA`, so
+    every translucent thing painted in drives the target's alpha below 1 and blending that over the panel
+    multiplies the face a SECOND time. Blit with `rlSetBlendFactors(GL_ONE, GL_ZERO, GL_FUNC_ADD)`.
+  - **AND THE SAME LESSON REACHES A BUTTON'S LABEL** (`unfilledCount`) — "next empty (N)" walked all 20,480 ops
+    every frame the Interact layer was open. Held against `miniGen` it is 0.002 us, and a test fills without
+    banking to prove it is a CACHE and not a second walk.
+- **THE CHART IS TWO HELD SHEETS AND A LENS** (`ui/mapart.zig`) — the map painted ONCE into a 2048 texture in
+  world space and the fog into a 128 one; the lens only blits a sub-rect of each, and walls are drawn as the
+  COLLIDERS with all haloes before any fill.
+  - **THE MASK IS BINARY AND THE PICTURE OF IT IS NOT** — one bit a 7.81 m cell blown up through a BILINEAR
+    filter, which is what makes the reveal a soft disc rather than a staircase. Punched with `GL_ONE, GL_ZERO`.
+  - **REVEALED ONCE A CELL, NOT ONCE A FRAME**, after the gates and the room have had their say, CAPPED at the
+    sheet, seeded at the spawn. Saved as `seenmap:`, the widest row the file has.
+  - **AND IT IS WHAT HE HAS SEEN, NOT WHERE HE HAS BEEN** (owner: you have to see the other side of a wall to map
+    that side) — every unrevealed cell in the disc costs one `env.sees` from his EYE down onto the ground out
+    there, and the look STOPS SHORT by `NEAR_FACE` (half a cell) so the wall's own cell charts and the ground
+    behind it does not. The `self.cell[i]` test comes BEFORE the look, so re-treading known ground pays nothing.
+    Every solid blocks, not only the wall-marked ones, so a wood charts speckled and fills in as he moves.
+- **THE THIRD FIELD SKIPS TOO** (`env.uploadSoil`) — `uploadHeight` and `uploadWater` each compare before they
+  rebuild; soil alone re-uploaded three textures and re-ran a 12,544-cell edge dilation on every edit.
+
+### Flooring, coasts and liquids
+
+- **FLOORING IS TWO GRIDS** — `soil` (material id) and `soilCov` (coverage 0..255); an edge is where the author
   left coverage low. The paint rule is `lerp(here, opacity, falloff)`: painting below what is there THINS it and
-  repeated passes converge. A cell holding a different material is CONTESTED — the stroke wins only where it
-  would cover more. `BRUSH_CORE` keeps the middle solid.
-- **HOW A PATCH ENDS IS PAINTED, NOT DERIVED** — a third grid (`Map.soilEdge`, one `wf.Edge` per cell), picked
-  in the brush panel like the radius and the opacity. It is the STROKE's and not the material's. Eight shapes —
-  `blend`, `natural`, `frayed`, `jagged`, `straight`, `tiled`, `scallop`, `speckle` — and their ordinals are
-  pinned to the shader's `edgeShape()` by a comptime assert.
-- **AN EDGE HAS THREE KNOBS**: how far the lookup WANDERS off the authored line, at what WAVELENGTH, and
-  whether the boundary CUTS or feathers. The policy is read FIRST, at the unwarped position, because the warp is
-  what the policy decides. (The old `hardEdge` bool reached only the last, and the wander was applied to the
-  material ID *before* anything was asked, so nothing could produce a straight edge.)
-- **THE EDGE MAP IS DILATED ONE CELL AT UPLOAD** (`gfx.dilateEdges`). A boundary is drawn from both sides and
-  the shader must read the same policy either way. POINT-sampled for the id map's reason: a bilinear read
-  halfway between `tiled` and `jagged` is an ordinal nobody authored.
-- **A CELL IS 5 m** (`SOIL_N` over a 560 m world), the floor on how fine any of this can be. Warps under
-  about half a cell do not survive the coverage staircase.
-- **AN OLD MAP COMES UP UNCHANGED** — no `soiledge:` row means every cell takes the edge its material used to
-  imply (`fillLegacyEdges`: stone cut, everything else soft). The row is only written when some stroke asked for
-  something else (`edgesAllDefault`).
-- **THE COAST USES THE SAME EDGES, AND THE TABLE IS WRITTEN ONCE** (`shaders.EDGE_K`). The GLSL `edgeShape` is
-  GENERATED from that table and `shaders.warpEdge` is its Zig twin, so the shape a map asks for means one thing
-  whether it is soil or water. Water USED to bake the shape into the field (`coastWarp`) and then re-facet it on
-  a 3.6 m lattice: measured, that left `natural` with 1.6% more waterline than `straight`, which applies no
-  wander at all — eight shapes arriving as one smooth blob, because a warp sampled once per 1.25 m cell is
-  undersampled by its own wavelength and bilinear filtering then smooths off what survived.
-- **THE SHEET DIES INTO THE SHORE; IT IS NOT CUT BY IT** (`WATER_FEATHER_D`, `WATER_FEATHER_MIN`). A domain
-  warp whose amplitude beats its own wavelength FOLDS OVER ITSELF, and a hard threshold turns every fold into a
-  shard — a `jagged` coast came out as torn paper with islands thrown off it. The soil never had this fault
-  because its edge is an ALPHA (`k.z` feathers the coverage ring); water was the one surface asked to end at a
-  compare. It fades over the shape's own `feather` now, FLOORED so even one authored to CUT still dies softly.
-  The amplitudes are the soil's own and are not the problem — do not go tuning them to chase a hard edge.
-- **THE COAST GETS A LOW OCTAVE THE SOIL DOES NOT** (`BAY_FREQ`, `BAY_M`) — bays at ~22 m, in METRES and not
-  as a multiple of the shape's wander, or `jagged` gets 8 m of bay and `natural` 4 for no authored reason. It
-  moves the waterline and `paintedDepth` follows, so it stays small enough that a painted pond is still the
-  pond somebody drew.
-- **THE FIELD IS ONE FIELD, FEEDING THE LOOK *AND* THE WADING**, which is why the warp is evaluated on BOTH
-  sides: `shaders.waterAt` per fragment, `env.paintedDepth` per query, off the same row. Shaped only on the GPU
-  the coast you see would sit up to `warp` metres from the coast you walk into — measured at 1.50 m on `jagged`.
-  Anything that reads the field for gameplay goes through `paintedDepth` or it is looking at the wrong line.
-- **WATER IS PAINTED, ITS COAST DERIVED** — one bit per cell → a signed distance field (128 is the waterline).
-  One field, three effects. The sheet is ONE world-spanning quad. `worlds/test_wateredge.world` is eight ponds,
-  one per `Edge`, on bare ground: `--shot-land --map worlds/test_wateredge.world`.
-- **FOUR LIQUIDS, ONE SHEET, ONE FIELD** (`wf.Liquid`, `wf.Map.waterKind`) — water, oil, fungal, lava, one per
-  cell off the same brush. **THE FOOTING IS WATER'S AND UNCHANGED FOR ALL FOUR**: same coast, same
-  `paintedDepth`, same `WADE_MAX`, same `Gait` gate, same `avoid.water`. Three things differ and only three —
-  the LOOK, the STATUS it soaks in, and the VOICE.
+  repeated passes converge. A cell holding a different material is CONTESTED — the stroke wins only where it would
+  cover more. **A CELL IS 5 m**, the floor on how fine any of this can be: warps under about half a cell do not
+  survive the coverage staircase.
+- **HOW A PATCH ENDS IS PAINTED, NOT DERIVED** — a third grid (`Map.soilEdge`, one `wf.Edge` per cell), picked in
+  the brush panel like radius and opacity, and it is the STROKE's, not the material's. Eight shapes (`blend`,
+  `natural`, `frayed`, `jagged`, `straight`, `tiled`, `scallop`, `speckle`) with their ordinals pinned to the
+  shader's `edgeShape()` by a comptime assert.
+- **AN EDGE HAS THREE KNOBS**: how far the lookup WANDERS off the authored line, at what WAVELENGTH, and whether
+  the boundary CUTS or feathers. **The policy is read FIRST, at the unwarped position**, because the warp is what
+  the policy decides.
+- **THE EDGE MAP IS DILATED ONE CELL AT UPLOAD** — a boundary is drawn from both sides and the shader must read
+  the same policy either way. POINT-sampled, for the id map's reason: a bilinear read halfway between `tiled` and
+  `jagged` is an ordinal nobody authored.
+- **THE COAST USES THE SAME EDGES, AND THE TABLE IS WRITTEN ONCE** (`shaders.EDGE_K`) — the GLSL `edgeShape` is
+  GENERATED from that table and `shaders.warpEdge` is its Zig twin, so a shape means one thing whether it is soil
+  or water.
+- **THE SHEET DIES INTO THE SHORE; IT IS NOT CUT BY IT** — a domain warp whose amplitude beats its own wavelength
+  FOLDS OVER ITSELF, and a hard threshold turns every fold into a shard. Soil never had this fault because its
+  edge is an ALPHA; water was the one surface asked to end at a compare. **The amplitudes are the soil's own and
+  are not the problem** — do not tune them to chase a hard edge.
+- **THE COAST GETS A LOW OCTAVE THE SOIL DOES NOT** — bays at ~22 m, in METRES and not as a multiple of the
+  shape's wander, small enough that a painted pond is still the pond somebody drew.
+- **THE FIELD IS ONE FIELD, FEEDING THE LOOK *AND* THE WADING** — `shaders.waterAt` per fragment,
+  `env.paintedDepth` per query, off the same row. Shaped only on the GPU, the coast you see would sit up to
+  `warp` metres from the coast you walk into. **Anything that reads the field for gameplay goes through
+  `paintedDepth` or it is looking at the wrong line.**
+- **WATER IS PAINTED, ITS COAST DERIVED** — one bit per cell → a signed distance field (128 is the waterline). One
+  field, three effects; the sheet is ONE world-spanning quad.
+- **FOUR LIQUIDS, ONE SHEET, ONE FIELD** (`wf.Liquid`) — water, oil, fungal, lava, one per cell off the same
+  brush. **THE FOOTING IS WATER'S AND UNCHANGED FOR ALL FOUR**: same coast, same `paintedDepth`, same `WADE_MAX`,
+  same `Gait` gate, same `avoid.water`. **Three things differ and only three** — the LOOK, the STATUS it soaks in,
+  and the VOICE.
 - **THE KIND RIDES IN THE COAST BYTE** (`env.packLiquid`) — `wf.Edge` in the low three bits, `wf.Liquid` in the
-  next two, one point-sampled `u8` per cell. Two ordinals in one texture because they are dilated by ONE walk
-  off ONE paint (`env.dilateWaterEdge`) and because a second sampler would be an EIGHTEENTH texture unit, where
-  GL 3.3 promises a fragment stage sixteen. The GPU unpacks in `waterCellAt`, the CPU in `env.waterEdgeAt` and
-  `env.liquidAt` — and `liquidAt` reads the DILATED field, so a foot on the bank answers with the pool's kind.
-- **A MAP WITH NO `liquid:` ROW IS ALL WATER** (ordinal 0), so every map written before this comes up unchanged
-  and round-trips byte for byte — the row's own `wateredge:` rule.
-- **THE STATUS IS A SOAK, NOT A BLOW** (`play/liquid.zig`, `game.tickLiquid`) — the sporeling cloud's channel
-  (`foe.Soak`, `hero.doseSelf`), so nothing blocks it and nothing parries it. **NOTHING DECAYS UNDER A
-  CONTINUOUS DOSE** — a dose resets `sinceDose` and the delay is 1.1 s — so `max/build` IS the seconds to break:
-  fungal 13.9 s of POISON, lava 7.0 s of BURNING, and clipping a rim is 2% and 5% of the bar. Lava also drips
-  4.5% of MAX HP a second in fire: a SHARE of the bar (`Soak.dpsFrac`), so a levelled body cannot walk it off,
-  and a DRIP (`hero.burn`) so it never builds the meter a second time. Oil is a look and a sound and nothing else.
+  next two, one point-sampled `u8` per cell: they are dilated by ONE walk off ONE paint, and a second sampler
+  would be an EIGHTEENTH texture unit where GL 3.3 promises sixteen. `liquidAt` reads the DILATED field, so a foot
+  on the bank answers with the pool's kind.
+- **A MAP WITH NO `liquid:` ROW IS ALL WATER** (ordinal 0), so every map written before this round-trips byte for
+  byte. Same for `soiledge:` (`fillLegacyEdges`: stone cut, everything else soft; the row is only written when
+  some stroke asked for something else).
+- **THE STATUS IS A SOAK, NOT A BLOW** (`play/liquid.zig`) — the sporeling cloud's channel, so nothing blocks it
+  and nothing parries it. **NOTHING DECAYS UNDER A CONTINUOUS DOSE**, so `max/build` IS the seconds to break:
+  fungal 13.9 s of POISON, lava 7.0 s of BURNING, clipping a rim 2% and 5% of the bar. Lava also drips 4.5% of MAX
+  HP a second in fire — a SHARE of the bar so a levelled body cannot walk it off, and a DRIP so it never builds
+  the meter twice. Oil is a look and a sound and nothing else.
 - **LAVA IS A LIGHT, NOT A SURFACE** (`sheetGlow`) — written from inside the sheet's material branch and applied
-  past the emissive mix, because `emis` rides a vertex alpha the world-spanning quad cannot carry. It also takes
-  NO sun lobe: a specular streak on lava reads as wet plastic. Tar's fresnel is the OPPOSITE problem — at
-  water's exponent 3 an oil pit came back a flat slate disc from the far bank (0.09 linear over the whole
-  surface, 87/255 after gamma), because a sheen over a near-zero albedo IS the pixel. Fifth power, a third the
-  amount.
-- **BUBBLES ARE ONE HASH TAP, NOT NINE** (`bubbleAt`) — one per cell, centre in 0.3..0.7 and radius under 0.28,
-  so a dome can never cross into a neighbour and the 3×3 ring a bubble field usually needs is not paid for on a
-  quad that covers the world. They MOUND and then pop; the swell is most of the read.
-- **ITS VOICES ARE A BED PLUS A THINNED POP** — one dialled bed per liquid (`audio.setLiquidBed`, off a scan
-  bounded to 27 cells a side around the hero) and a pop every ~1.15 s from a reservoir-sampled wet cell
-  (`game.POP_EVERY`; the surface pops far more often than it is heard to). **WATER GETS NEITHER**: the wind is
-  its bed, and painting a tarn may not add a voice to a map that already sounded right.
-- `worlds/test_liquids.world` is one 14 m pool per liquid at (±32, ±32) on bare ground:
-  `--shot-land --map worlds/test_liquids.world`.
-- **PROPS CAN LEAN** (`lean`/`leanDir`) about the prop's GROUND ORIGIN, so the base stays planted and the
-  culling sphere is unchanged. `buildSolids` carries the footprint with it.
-- **`buildSolids` RESETS** — `materialize` runs it twice and an appending version doubles every collider.
-- Props carry the index of the op that placed them, which is what makes a generated rock selectable.
-- **A MULTI-LINE RECORD ATTACHES TO THE ONE ABOVE IT** — `when:`/`do:` to the last `trig:`,
-  `who:`/`say:`/`act:`/`then:`/`ask:` to the last `node:`, `need:`/`gets:` to the last `ask:`. A part with
-  nothing above it is a LOAD ERROR. `act:` may not be written after a choice.
-- **PROSE LIVES IN ONE ARENA** (`Map.dtext`, `Span`). `#` still starts a comment, so no authored line may
-  contain one.
+  past the emissive mix, because `emis` rides a vertex alpha a world-spanning quad cannot carry. It takes NO sun
+  lobe: a specular streak on lava reads as wet plastic. **Tar's fresnel is the OPPOSITE problem** — at water's
+  exponent 3 an oil pit came back a flat slate disc, because a sheen over a near-zero albedo IS the pixel. Fifth
+  power, a third the amount.
+- **BUBBLES ARE ONE HASH TAP, NOT NINE** — one per cell, centre in 0.3..0.7 and radius under 0.28, so a dome can
+  never cross into a neighbour and the 3×3 ring is not paid for on a world-covering quad. They MOUND and then
+  pop; the swell is most of the read.
+- **ITS VOICES ARE A BED PLUS A THINNED POP** — one dialled bed per liquid (off a scan bounded to 27 cells a side)
+  and a pop every ~1.15 s from a reservoir-sampled wet cell. **WATER GETS NEITHER**: the wind is its bed, and
+  painting a tarn may not add a voice to a map that already sounded right.
+- Benches: `test_wateredge` (eight ponds, one per `Edge`), `test_liquids` (one 14 m pool per liquid).
 
-  ```
-  flags: met_wanderer heard_of_gate      # interned at load; the file stays self-describing
-  npc: wanderer -4.50 7.50 128.0 1.00 0.31 roam=1.8 dlg=wanderer
-    call: The Wanderer
-  dlg: wanderer
-    node: root
-    say: Another one walking north.
-    ask: What lies north? -> north
-    ask: Then why do you sit here? -> why
-    need: flag heard_of_gate=1           # gates the ask ABOVE it
-    ask: (say nothing) -> end            # `end` is reserved: it closes the conversation
-    node: north
-    say: A gate the size of a hill, and shut.
-    act: flag heard_of_gate=1            # fires when the node is SHOWN
-    then: root
-  trig: wanderer_seen pri=10             # once=1 by default; once=0 or a `preserve` action keeps it
-    when: near npc=0 r=3.5
-    when: flag met_wanderer=0
-    do: flag met_wanderer=1
-    do: text Someone is sitting at the bonfire.
-  ```
+### Elevation
 
-  **`npc:` RECORDS ARE APPENDED, NEVER INSERTED** — `near npc=0` is an INDEX into that table, so putting a new
-  person above an existing one repoints every condition after it. `foe:` and `wf.FoeKind` have the same rule.
+A HEIGHTFIELD sculpted in Ground > Raise/Lower/Smooth/Flat, stored as one QUANTISED height per lattice point
+(`HEIGHT_N`, `HEIGHT_STEP`, biased so `HEIGHT_ZERO` is the old flat ground) — quantised because the file is TEXT
+and the writer is a run-length encoder. The mesh is TILED, with normals from the FIELD so two tiles agree at their
+seam.
 
-  Conditions: `always`, `never`, `flag N=0|1`, `counter N <cmp> n`, `timer N=done|running`, `elapsed <cmp>
-  secs`, `region x z x1 z1`, `near npc=i r=m`, `talked dlgId`, `deaths foeKind <cmp> n`, `alive foeKind <cmp>
-  n`. Actions: `dialog dlgId`, `text …`, `flag N=0|1|flip`, `counter N set|add|sub n`, `timer N=secs`, `wait
-  secs`, `preserve`. `<cmp>` is `<` `<=` `=` `>=` `>`.
+- **A FLAT MAP IS THE OLD WORLD, EXACTLY** — `heightAny` false means one world-spanning quad, `groundAt` returns
+  `GROUND_Y`, and no `hgt:` record is written.
+- **NOTHING SAMPLES THE MAP DIRECTLY** — env keeps the live copy the visible mesh was built from and
+  `wf.sampleHeight` is the ONE sampler both owners call. It reads the CLIFF grid beside the height, and a flagged
+  cell steps instead of interpolating.
+- **THE LATTICES GREW WITH THE WORLD**, rather than `half` growing on its own — `half` is a DIVISOR
+  (`2 * half / (N - 1)`), so raising it alone stretches the sculpted land off the props standing on it. The test
+  binary needs the exe's own 192 MB stack because a round-trip test holds two `Map`s in one frame.
+- **AN OLD MAP EMBEDS EXACTLY, IT IS NOT RESAMPLED** (`wf.grownHalf`, `gridRead`) — every lattice gained the same
+  number of points, so a legacy record grows the map's own half by that ratio and the CELL SIZE IS UNCHANGED.
+  Worst height move on the shipped map: **0.000 m**. A bilinear resample was the first attempt and it blunted
+  every authored step. `--grow <map> [half]` writes the migration down and refuses at more than one `HEIGHT_STEP`.
+- **THE FLOOR IS A MARGIN ON THE LOADED MAP'S OWN HALF** (`env.groundOut`, `GROUND_APRON` 0.12 with a 60 m floor)
+  — **AND IT IS A SKIRT, NOT A SECOND WORLD.** At 0.80 the shipped map drew 400 m of floor a body could see and
+  never reach. The flat path draws ONE quad built at the widest and scaled (a plane scales exactly, and every
+  field the shader reads over it is indexed in world xz).
+- **TWO RULES DECIDE EVERY STEP** (`env.walkStep`): the rise ahead is within `MAX_SLOPE` (tan 40°), or it is under
+  `STEP_UP` (two risers, three a wall) **AND LANDS ON A TREAD** (`treadAt`: a deck, a stair cell, or ground under
+  `MAX_SLOPE` read a quarter-metre either way) — `STEP_UP` over the probe alone was a 47.7° climb. Read at the
+  step's own end and at four taps along `STEP_PROBE`, because a probe that landed past the corner of a cut put the
+  body on top of the wall.
+- **MEASURED OVER A FIXED LOOKAHEAD, NEVER THE FRAME'S OWN TRAVEL** — against frame distance a 240 fps hero
+  ratchets up a vertical cliff. A test pins the rule across four frame rates. **A REFUSED STEP IS NOT A STOP**:
+  the uphill component is removed and the rest is taken at full length.
+- **FOES GET THE SAME RULES as a POST-STEP GATE** (`game.gateTerrain`) — airborne foes are exempt from the terrain
+  rule and from being shouldered, **never from `env.resolveActor`**, and that push-out is NOT rate-limited.
+- **BUT NOT AT HIS WATERLINE — AT THEIR OWN** (`foe.wadeLimit`) — `WADE_MAX` is CHEST height on the 1.8 m rig and
+  HIS choice; a creature turns back at `foe.WADE_FRAC` of its own stature, read off `topWorld`. **THE WATER IS A
+  DOOR FOR EXACTLY TWO THINGS** — the gait table hands `.waterfaring` an infinite limit. The gate only refuses a
+  step that goes DEEPER.
+- **A WATER DWELLER IS POSTED IN ITS OWN BAND** (`foe.poolBand`) — the editor refuses a lurker outside
+  `POOL_MIN`..`WADE_MAX` (place and paste both, and says why), and Ground > Pool digs to `env.dwellerFloor`, the
+  deepest lattice height the hero still wades. **One place holds the band.**
+- **`pos.y` IS THE GROUND UNDER AN ACTOR**, written in ONE place (`game.groundActor`), EASED not snapped because
+  the camera rides the shoulder; past `GROUND_SNAP` it plants. **EVERY WORLD POINT ON AN ACTOR IS MEASURED FROM
+  `pos.y`.**
+- **THE CAMERA SHORTENS ITS BOOM RATHER THAN BURYING THE EYE** (`camera.followClear`) — **but it gives way to
+  terrain only, never to its own pitch.** An up-tilt puts the eye LOW on purpose. Only ground standing PROUD of
+  the hero's level is worth paying distance for. **THE BOOM IS SHORTENED AT ONCE AND GIVEN BACK AT A RATE**
+  (`CLEAR_REGAIN`); the shot harness solves fresh, because a shot has no previous frame.
+- **THE HERO LEANS INTO THE HILL** (0.55 of the slope capped at 16°) through the SAME `rx(bodyPitch)` term as the
+  run lean.
+- **THE TERRAIN CASTS FROM ITS FAR SIDE ONLY** (`env.drawGroundCasters`, FRONT faces culled) — drawn whole, a
+  heightfield off a 108 m ortho box put acne everywhere the surface grazed the sun. Only triangles facing AWAY
+  from the sun write depth: the lit slope never meets its own depth, the far slope is the silhouette that throws,
+  and the seam between hill and cut is gone. **THE PAINTED CLIFF FACES CAST TOO** (`env.drawCliffCasters`) — the
+  SHEET off a PLATE set inside the rock and under the lip, depth pass only, both windings; **EVERYTHING STOOD
+  AGAINST IT CASTS AS ITSELF** (`Face.cast`). Moss and grass tufts do not cast. The tile cull hands `castsInto`
+  the tile's own height, so a tall face just outside the box still throws into it.
+
+### Cliffs — a drop drawn as a FACE instead of a ramp
+
+A second grid (`Map.cliff`, one case per CELL, indexed by its low corner) says which cells cut instead of
+interpolating. Ground > Cliff paints it, Slope takes it back. **3..255 ARE UNCLAIMED** and a map using one is a
+LOAD ERROR on a build that does not know it.
+
+- **THE FLAG IS OPT-IN AND CHANGES NOTHING ELSE** — no `cliff:` row means the map loads and walks exactly as it
+  did. The same 6 m drop is a wall or a ramp depending on the flag, not on how steeply it was sculpted.
+- **ONE CUT SERVES THE MESH AND THE SAMPLER** (`wf.cliffCut`) — marching squares on the cell's four corners
+  against the midpoint of its two tiers, **crossing every cut edge at its MIDPOINT**, the one place both cells on
+  that edge agree. **THE FLOOR EITHER SIDE IS THE TERRAIN, NOT A TIER**: each side walks the bilinear of its own
+  corners, a corner across the cut standing in at the level its neighbours on this side hold. Snapped to `lo`/`hi`
+  instead, the walk stepped at every seam — 67 steps in 75 m along the shipped lip, 20 of them falls.
+- **A SADDLE'S MIDDLE IS A TIER, NOT A HOLE** — the bilinear's own centre decides which tier fills the diamond,
+  and the two chords that then face the other way get the wall.
+- **PAINT UNDER A WALKABLE DROP IS INERT** (`wf.cliffMinDrop` = max(`STEP_UP`, `MAX_SLOPE`·cell), 2.1 m) — a
+  painted cell cuts only where a ramp over it could not be walked. **Paint generously; it costs nothing.**
+- **A LIP IS WALKED ALONG, NOT WALKED OFF WHERE HE IS STOOD** (`game.brinkStep`) — the step's share toward the
+  drop is removed and the rest taken along the lip, the way the walk gate treats a rise. A body DROPS a lip under
+  `DROP_FRAC` of its own stature when the hero stands below it, which is a position read and legal.
+- **THE FACE IS THE PROPS' OWN ROCK** (`env.cliffWall`) — one flat plate per cell was the Minecraft read. A face
+  is a lattice of spans by courses, bellied over the low ground and swept by a 9 m bay field; `blocky` sets how
+  proud the strata stand (keyed on WORLD height, so a course runs level through every cell), `cleft` the grooves,
+  `ivy` the curtains, `broken` the talus. The kind is a 27 m field, so a run reads as one geology. **THE LIP IS
+  STRAIGHT AND THE CUT IS EXACT** — a ±0.3-cell wander made every straight line an accordion of facets.
+- **AND THE FACADE IS ONE OF THE `cliff*` PROPS, BISECTED INTO IT.** The wall is a PLAIN SHEET on the cut, lip and
+  foot on the two floors at the chord's ends so it runs with sloping ground (a test measures its area against the
+  cut's own to 1%), and the rock is `proprock.CLIFF_FACES` stamped along the run by `env.faceStamp`, turned so its
+  front looks out, scaled off its own STONE height (`Builder.boundsOf`, because a cliff prop's ivy carries a third
+  of its height again) and sunk until `FACE_PROP_PROUD` stands in front of the cut — **BOTH SPREAD PER STAMP**,
+  or every stamp crests the same 16% and the rim reads as a picket of boulders. **THE SHEET IS DIMMED UNDER
+  THEM.** **EVERY LOBE THAT STANDS PAST THE CUT IS SOLID** (`stampSolids` → `Env.cliffSolids`), one capsule along
+  the run per lobe, appended by `buildSolids` and dropped with its tile, so nothing walks into the stone and
+  nothing stops in the air between two lobes. **AND NO STAMP GOES OVER A LADDER'S FOOT OR A FLIGHT'S HEAD**
+  (`climbsNear`) — which is why `Env.replay` adopts the fields, materializes the props and only then builds the
+  tiles. `Builder.stamp` copies a prototype in turned, scaled and moved, so a forty-metre run costs ONE built
+  mesh. **Adding a face is one row in `CLIFF_FACES`.** Everything before this tried to make the sheet itself into
+  rock and every version read as plates pasted on a wall.
+- **THE FACE PROTOTYPES ARE BUILT WITHOUT THE PROP'S FISSURES** (`cliffBuildOpt`) — the dark capsules that stand
+  at a cliff prop's front stood alone once the body was bisected behind the sheet. **THE SHEET'S SHADING BUMP IS
+  0.10 m**; at 0.45 the relief noise tilted its normals past 45°.
+- **A CUT EDGE SHARED WITH ANOTHER CUTTING CELL GETS NO SKIRT** (`nbCut`) — `edgeOther` reads a neighbour as the
+  line through the two corners they share, which across a cut is a ramp, and the skirt stood a fin HALF THE DROP
+  tall at every cell of every straight face. A stair neighbour still takes the skirt (its tread is the surface),
+  and so does a painted cell under `cliffMinDrop`, which really is a ramp.
+- **THE RIM AND THE FOOT ARE AUTO-SCATTER ALONG THE CUT**, never hand-placed — bare rock cap, loose stones and
+  grass leaning over the drop above; a scree fillet whose height grows with the drop, and talus below. All on
+  `groundAt`, so it follows the neighbour cell's floor. **A FACE STANDING IN WATER IS WET** — `.marble` and a
+  darker, cooler tone plus a pale tide line, decided by `paintedDepth` at its foot (so water must be uploaded
+  before the tiles). Stair risers take none of the dressing.
+- **A STAIR CELL IS ONE TREAD** flat at its own mean snapped to `wf.STAIR_RISE`, and **ITS RISER GOES DOWN TO THE
+  LOWEST THE NEIGHBOUR REACHES ON THAT EDGE**, not to the neighbour's CENTRE — a tread is flat at its mean while
+  the cell beside it is a bilinear through the two corners they share, so its surface at the edge runs below its
+  centre and the riser left a hole under every step of a terrace. A comptime assert keeps the riser at or under
+  `STEP_UP`. **A FLIGHT CAN ONLY CLIMB ONE RISER A CELL**, so stairs walk somewhere a ramp cannot only where the
+  cell is under `STAIR_RISE / MAX_SLOPE` = 0.60 m.
+- **A STAIR THAT CLIMBS MORE THAN ONE RISER A CELL IS A PROP** (`props.stairflight`, `Info.flight`) — sections
+  like the ladder's, but each also ADVANCES `flight.run` along local −Z, and the whole run is ONE `WorldDeck` with
+  `run > 0` so `floorAt` answers the tread under a point. **THE WALK GATE AND THE BRINK MEASURE FROM WHERE HE
+  STANDS** (`stepOk`, `brink` off `from.y` through `standAt`), so the head of a flight meets the shelf at a step
+  and not at the drop the LAND takes — and a foe follows him down one.
+- **RAMP IS A REGRADE, NOT A CASE** — sweeping it drops the cut and smooths what is left, the only way to open a
+  walkable breach through a painted line; a single unflagged cell in a cliff is a 67° ramp and no more walkable
+  than the wall it replaced. `Slope` just unpaints.
+- `worlds/test_cliff.world` is the bench: a 6 m mesa with a straight face, a ladder and a `stairflight`, a 4 m
+  diagonal shelf, a painted stair terrace past `MAX_SLOPE`, and a flooded 3 m pit whose east wall is the wet face.
+  `--shot-land` also walks him into the face and prints how far short of the cut the stamped stone stops him.
+- **THE SHIPPED MAP'S NORTH-WEST BASIN LIP IS ONE OF THESE** — terraced to two tiers, a **13.25 m** face past
+  `FALL_DEATH`. Walking off it kills.
+
+### The fen lurker (`fenlurker.zig`) — the reach is the TONGUE, and the neck never was
+
+**A FIXTURE IN A POOL WHOSE ONLY BLOW ENDED AT 2.35 m IS BEATEN BY STANDING IN THE SHALLOWS.** It cannot walk
+(`game.NO_ORDERS` names it), it only answers a body standing IN its water, and it had one move: rise, and bring the
+skull down. Everything from the far edge of that skull out to the 9 m it senses him in was free.
+
+- **TWO BANDS AND THEY DO NOT OVERLAP** (`fenlurker.classify`): inside the skull's reach it lashes, outside it spits
+  the tongue, and off the tongue's clock at range it does NEITHER — it comes up and **LOOMS**, tracking him at the
+  full turn rate. It used to have no band at all and surged at anything inside `AGGRO_R`, so nine metres out it rose,
+  swung at nothing and sank. Both bands are taken off the constant the blow itself bills at, never an authored world
+  metre, so a body posted at `wf.FOE_SCALE_LO` promises only what it reaches.
+- **AND A BEARING THE WIND CANNOT COME ROUND TO IS REFUSED AT THE CHOOSE** (`fenlurker.windSweep`), solved off
+  `TURN_RATE` and each wind's own duration rather than picked. The skull answers a CONE so its gate carries
+  `LASH_FRONT_DOT`'s half-angle on top; the tongue is a SHAFT and answers nothing but where it points, so thrown at
+  a man 170 degrees off it turned the 120 its tell buys and fired 50 degrees past him. What the gate falls through
+  to is the LOOM, which turns — a gate with nothing behind it is a hole.
+- **THE TONGUE IS FOUR SEGMENTS OF ITS OWN, AND IT RIDES THE SKULL** — not the lower jaw. Hung off `JAW` it inherited
+  the 45-degree gape, and MEASURED that put the pad **1.99 m under the water** at 2.84 m out. A tongue leaves along
+  the head's axis and the mouth opens AROUND it.
+  - **IT TELESCOPES, IT DOES NOT UNCOIL, and that is ONE Z SCALE on the first tongue joint.** `setJoint` translates
+    by the rest offset AFTER the local matrix and then through the parent's, so a scale there takes the whole chain
+    with it — every segment's length and every offset under it — and the tip travels a STRAIGHT line along the
+    skull's axis. A curl was the first attempt: four joints at 142 degrees each still hold 69 degrees of accumulated
+    bend at 0.88 of the way out, so the shaft left the mouth, ELBOWED, and dived into the mud short of the man. The
+    telescope is also what makes `ext` LINEAR in the tip's distance, which is what `toImpact` solves off. At `ext` 0
+    it is inside the skull and `Model.draw` skips it outright.
+  - **AND THE TELL IS A LOAD.** It surfaces over the first `GAPE_RISE` of the wind — over the whole of it, the body
+    was still half submerged at 0.41 s of 0.95 and drew the same picture as the lash's surge — then rears back on the
+    lash's own `swing` channel and snaps forward, RELEASED before the shaft goes: held to the spit, the rear-back's
+    own head pitch cancels `GAPE_PITCH` and five metres of tongue leaves level, over his crown.
+  - **THE PITCH IS SOLVED, NOT PICKED.** At 16 degrees the shaft crossed the near edge of its own band at 1.74 m —
+    three centimetres over a 1.71 m crown, so the one stand the tongue exists to punish was the one it flew over.
+    20 (`GAPE_LEAN` 6 at the coil, `GAPE_PITCH` 14 at the skull) puts it at 1.52 m there and 0.77 m at the pad. A
+    big LEAN cannot do this job: tipping the coil 30 degrees pitches the head's forward axis with it and drives the
+    tip two and a half metres underground.
+- **IT IS BILLED SEGMENT BY SEGMENT**, the way the brood's claws are. `foe.weaponReaches` samples five points ALONG
+  whatever it is handed, so given the whole shaft as one segment those samples sit 1.24 m apart against a 0.47 m
+  grip — it passed clean through a man at 2.95 m and billed nothing. **And a swept bill does not get
+  `foe.hurtReach`'s allowance**: that 0.55 m is what a centre-to-centre RADIUS test owes his body, where a sweep is
+  already tested against his capsule and may only add his radius and the shaft's own half-thickness (`tongueGrip`,
+  which is both the band and the `r` the bill is handed).
+- **AND IT HAULS HIM IN** (`TONGUE_PULL`, through `game.noteYank` — the rooted's hook, not a new mechanic). Sized so
+  a hit taken at the FAR edge lands him inside the skull's band, which is the rooted's own rule and what makes the
+  drag a SETUP rather than a nuisance that moves him and nothing else. The longer reach is the LIGHTER blow and it
+  is the one that moves him; the whiff buys the longer punish window, and the reel does not bill — dodging five
+  metres of tongue is worth the whole haul-back.
+- **ITS ARRIVAL IS SOLVED FOR WHERE HE IS STANDING** (`toImpact`, off `spitShare`). One shaft crossing five metres at
+  a constant speed reaches a man at 3 m in a third of the time it reaches one at 4.8, so a fixed share of the stroke
+  is right at exactly one range: the parry window would open late up close and early far out. The extension is
+  LINEAR on the way out on purpose, which is what lets that be solved rather than searched.
+- A flinch swallows the tongue. Left out, the shaft hung in the air through the whole stagger and went on billing off
+  a body that had stopped throwing it.
+- **AN AUDIO `Id` IS APPEND-ONLY.** `crossingsPerSec` seeds every take off `0x9E3779B9 *% (idx + 1)`, so a row slipped
+  in beside `lurker_lash` re-rolled the noise of every voice under it, moved the knight's slam onto the ogre's to
+  within 1%, and reddened THE BOSS HAS HIS OWN THROAT in a file the change had nothing to do with. The family is
+  named by the NAME (`NAMES` is derived from the enum, `settings.cfg` writes `voice.<name>`), so contiguity buys
+  nothing.
+
+### Caves — a second surface UNDER the heightfield (`caves.zig`)
+
+Three grids on their own lattice (`wf.CAVE_N`, **half the terrain's cell** and sharing its points, so cave point
+2i IS terrain point i) holding COVERAGE, a FLOOR and a CEILING. No `cave:` row means the map loads and walks
+exactly as it did. **ONE UNDERGROUND LEVEL PER POSITION** — two tunnels crossing at different heights are not
+representable; that needs a different representation, not another brush.
+
+- **THE CEILING DECIDES WHICH WORLD A BODY IS IN** (`caves.supportAt`, and `env.standAt` routes through it) — feet
+  under a chamber's roof are in the chamber, feet at or over it are on the land. Height alone cannot tell a
+  hillside from the roof of the cave under it, and neither can a step allowance: solved that way the hero walked
+  OVER the hill instead of into the mouth, because the hill was within one step the whole way.
+- **NOTHING ELSE IN THE WALK CHANGED** — `stepOk`, `brink`, `gateTerrain` and `groundActor` all ask `standAt`, and
+  a cave WALL refuses a step for free because rock answers with the LAND's height, which is a rise no step can
+  take. Only the SLIDE needed teaching: `env.blockGrad` reads the coverage gradient underground, so a body slides
+  along the rock instead of along the hill over its head.
+- **ONE CONTOUR SERVES THE ROCK AND THE AIR** (`caves.cellShapes`) — marching squares on the four coverage corners
+  at `CAVE_EDGE`, saddles decided the way `cliffCut` does. The open polygon is floor and ceiling, the chords are
+  walls, and the ROCK polygon is what is left of the hill — same crossing points, so a mouth cannot crack against
+  the hill it opens through.
+- **A MOUTH IS WHERE THE CEILING COMES UP THROUGH THE HILL** — no flag: `roof >= groundAt` and the cell drops its
+  ceiling, the terrain over it is cut to the contour, and `mouthBand` closes the cut edge. Which is why the
+  Entrance tool needs no hand-solved ramp: carve out toward open ground and the hill opens itself where it gets
+  too thin to roof one.
+- **THE CARVE FLOOR IS A FIELD, NOT A NUMBER** (`Brush.dx/dz`) — a stroke stamps a disc many times over, and with
+  one floor per stamp the overlaps walked the floor down under themselves and the mouth ended a metre below the
+  ground it started on. A slope written per CELL is the same value however many stamps cover it.
+- **UNDER ROCK THE SKY IS GONE AND SO IS THE SUN** (`shelterAt`, slots 18/19) — per FRAGMENT, off world position,
+  so from inside the mouth the hillside outside is still in daylight while the chamber behind is dark in the same
+  frame. The field is coverage TIMES the rock over the ceiling, so it falls to nothing at a mouth on its own;
+  ambient keeps 16% under cover and torches are untouched. **BOTH FALLOFFS ARE FULL AT THE SURFACE THEY MEET** —
+  keyed to the coverage contour or the ceiling they ring every chamber in daylight, because the wall's own face
+  stands exactly on that contour.
+- **A SHEET SEEN FROM BEHIND IS ITS OWN UNDERSIDE** — the fragment shader flips the normal on back faces and
+  `game` draws the ground two-sided while the eye is under the surface. Without it a chamber looks up through the
+  hill at the sky.
+- **THE BOOM IS PINNED BOTH WAYS** (`camera.followRoofed`) — it already shortened against rock, and it now stops
+  at the ceiling too. **THE NEAR PLANE IS 0.55 m**, so a shot that PLACES a camera underground rather than
+  solving one clips through the floor.
+- **ROCK IS OPAQUE** (`env.rockBetween`) — nothing on the hill sees or shoots a body in the chamber under it. A
+  jump stops at the ceiling (`hero.capUnderRoof`), and the air in a chamber is DRY even under a painted pool.
+- **A PLACEMENT CARRIES ITS OWN SURFACE** — `under=1` on a `foe:` row or an `at:` op (one byte, fitting in `Op`'s
+  existing padding). `caves.homeY` gives the land back if the chamber it named has since been filled, rather than
+  dropping the body through the world.
+- **A CARVE WITH THE FLOOR PLANE LEFT UP AT THE HILLTOP LAYS THE CHAMBER IN THE AIR** — a crater, not a cave.
+  `--fix-caves <map>` drops every point under `CAVE_ROOF_MIN` of rock, keeps the largest chamber a body can walk
+  end to end (four-connected, neighbours within `STEP_UP`), cuts ONE entrance to the nearest open ground on the
+  Entrance tool's own grade, and walks it before it writes — dry run unless `--write`.
+- **Authoring one** (Caves layer): set FLOOR and HEADROOM, then Carve under a hill — the cursor rides the floor
+  plane, not the hill, or it would climb the very rock you are carving under. Drag Entrance from open ground
+  toward it. Fill puts rock back. Cutaway takes the hill off every chamber and that viewing choice FOLLOWS YOU
+  into Props and Units, so a chamber can be furnished without the roof coming back on; a body placed in that view
+  is marked `under`. F5 starts on the chamber floor under the editor camera. The panel says how much rock is over
+  the ceiling and refuses to pretend a hill 2 m thick can roof a 3 m room. Bench: `worlds/test_caves.world`,
+  authored by `caves.bench`.
+
+### Arenas, fog gates and the spar
+
+- **AN ARENA IS A ROOM AND THE FOG GATE IS ONLY ITS DOOR** (`wf.Arena`, the `arena:` row, `game.holdInRoom`) — the
+  ward refuses ONE line 0.8 m thick, which on open ground is a gate you stroll round, and a creature that BLINKS
+  never touches the line at all. The row is an XZ polygon plus its own `boss=` seal and holds every body inside
+  it, HIS included, for exactly as long as a name on it still stands.
+- **IT IS A PUSH-OUT, NOT THE WARD'S REFUSAL, AND IT IS ASKED ON THE STEP'S START** — there is no segment to
+  refuse on a blink, and `Arena.hold` pushes an OUTSIDE point IN, so asked about where a body ENDED UP it would
+  reach out and drag a creature walking past into the fight.
+- **THE SEAL IS THE ROOM'S AND THE DOOR HAS ITS OWN COPY**, PINNED by a test over every shipped map rather than
+  trusted to agree: a wall that outlives its door locks you into a fight that is over, and a door that outlives
+  its wall is a room you walk out of the back of. The editor closes a room by INHERITING the seal off the gate
+  standing in the wall you just drew, and says so loudly when there is no gate on it.
+- **A HAND-DRAWN OUTLINE CAN CROSS ITSELF** (`Arena.simple`) — a figure-of-eight's even-odd test answers `false`
+  in its own middle, so it holds nothing exactly where it looks most like a room. One corner per 30° about a
+  single centre, in bearing order, cannot produce one, and a test refuses any shipped map that does.
+- **A FOG GATE IS A WALL UNTIL HE ASKS TO PASS IT** — the ONE crossing allowed is `enterGate`'s walk, refused on
+  the SEGMENT rather than left to the push-out, because a roll is 3.5 m in one step and the sheet is 0.8 m thick.
+  A SPENT gate never answers. It is a wall to every FOE and every LOOK regardless.
+- **THE LATCH AND THE DOOR ARE DELIBERATELY APART** — the latch is his own step crossing the sheet; the door is
+  only SHUT while a creature the seal names is still standing, so killing them is what lets you back out. **A gate
+  may not shut on the man in it** (`wardClear`).
+- **THE SEAL IS A LIST, BECAUSE A DUO IS TWO** (`Op.boss`/`nboss`, up to `wf.MAX_SEAL`) — ANY name holds the door,
+  `boss=-` is a doorway that never shuts, and one name still writes no tail when it is the default.
+- **A CROSSING IS A GRACE, AND THE CLOCK ON IT IS HIS** (`hero.FOG_GRACE_TAIL`, folded into the one `iFramed` the
+  roll answers) — untouchable from the sheet to the far side and for as long as he STANDS there; the tail runs
+  only once he moves under his own power and is measured off ground SPEED, so it cannot last longer on a slower
+  machine. **`updateGateWalk` RE-HOLDS IT EVERY FRAME** rather than arming it at the door, since the walk moves
+  him and a grace armed at the door would arrive nearly spent.
+- **AND A NAMED GATE OWNS ITS BOSS'S BAR** (`game.gateEntered`) — where a ward's seal names the creature the bar
+  waits until his own step has crossed that sheet; where nothing names it, the aggro ring it always had. **The
+  arena is the MAP's to say, authored per gate in the editor, never a list in `game.zig`.**
+- **F6 PUTS HIM IN A WALLED ROOM WITH ONE CREATURE AND NOTHING ELSE** (`spar.zig`) — the kind SELECTED, or the one
+  the Units brush is holding. **HIS MAP IS SET ASIDE, NOT RELOADED** (one more `Map` at file scope beside the undo
+  ring): map, path and dirty flag come back exactly as they were, and camera, layer and brush never move — which
+  is why `endSpar`'s BOOL is read, since `Editor.enter` re-solves the camera onto the hero and after a fight that
+  is the middle of the room. Coming back takes `Editor.reopen`, everything `enter` puts back EXCEPT the view.
+- **THE ROOM IS WRITTEN, NOT BRUSHED** — 42 m of exactly flat floor inside a 7 m wall on a 96 m map whose lattice
+  is 0.48 m. The sculpt brush feathers across its whole radius, so a flatten wide enough to level the floor levels
+  the wall with it; the field is filled point by point, and ONE cell of the rise already clears `STEP_UP`, which
+  is what makes it a painted CUT and not a ramp. **A GATE STANDS ON ITS WALL**, sealing on that one kind, because
+  that is what makes it a room and not a clearing — the same contract every boss room keeps, and the repo's own
+  test over `worlds/` enforces it. The CAMPFIRE behind him is the RETRY.
+- **AND A FIGHT IS NOT A RUN, so it may not write his slot** (`game.saveNow` refuses while `sparring()`) — it would
+  have written his position in a 96 m test room, a fresh picture over `save1.png`, and a rail bit for the boss he
+  just killed, and `snapRail` only ever GAINS a bit. **HE FIGHTS WITH THE KIT HE IS CARRYING.**
+
+### Illusory walls, decks and ladders
+
+**`props.illusory` IS `cliff2`'S OWN MESH WASHED TOWARD SLATE** — it stands in a line of real faces and reads as
+one at a glance, and as the odd one to someone who looks. SOLID and BLOCKS SIGHT like any cliff until touched, and
+the map places it like any prop.
+
+- **THREE THINGS BRING IT DOWN, ALL THE HERO'S** — a blade that reaches the stone (the blade's own radius inflating
+  the face), a ROLL pressed against it, or an arrow planted in it. **A foe cannot dispel one.**
+- **IT STOPS BEING A WALL THE FRAME IT IS STRUCK**, and only LOOKS like one for `ILLUSION_FADE` (0.7 s):
+  `eachSolid` drops every solid whose `illusionLife` is under 1, so look, step, arrow and roll all pass at once
+  while the face thins in place (`Prop.dissolve`, alpha only — never `shrink`, which would sink it).
+- **THE BOOKKEEPING IS THE FOG GATE'S** — a slot PLUS ONE on both `Prop.illusion` and `Solid.illusion`. Walls come
+  back with the map (`restoreIllusions` beside every `openWards`) and NOT at a bonfire.
+
+**A DECK IS THE FIRST WALKABLE SURFACE THAT IS NOT THE LAND** (`Info.decks`, `env.deckAt`/`standAt`) —
+`game.groundActor` asks `standAt`, so `pos.y` is the deck where there is one and `groundAt` stays the question
+about the LAND.
+
+- **A DECK HE IS NOT ALREADY UP AT IS NO FLOOR AT ALL** — the gate is the walk's own `STEP_UP`, which is what stops
+  a body on the ground being snapped onto a platform five metres over its head.
+- **A `hole` CANCELS THE DECK AT ITS OWN `y` AND NO OTHER** (`env.holedAt`) — a trapdoor, and the ONE way a deck is
+  not simply convex. Mesh and deck are solved off the same constants (`WATCH_STOREYS` → `WATCH_DECKS`) or it is a
+  floor you fall through.
+- **WALKING OFF A DECK EDGE IS A FALL, NOT A SNAP** (`game.heroFooting`, `hero.startFall`) — `groundActor` PLANTS
+  past `GROUND_SNAP`, which off a five-metre floor is a teleport with a footstep on the end of it. Only a deck does
+  this; the land keeps the snap it has always had.
+- **THE LENS FOLLOWS HIS FEET, NOT `pos.y`** (`game.syncLensLift`) — both jump (a plant, a mount, a top-out) while
+  `pos.y + lift` is continuous through all of it. A climb and a fall off a deck take the FULL lift; a jump takes
+  `camera.LIFT_SHARE`.
+- **A SOLID CAN HAVE A FOOT** (`Part.y0`, `Solid.y0`) — a LINTEL: open to a body on the floor, wall to one up on a
+  deck. **FOUR consumers and they must all know**: `blocksPoint`, `blocksSight`, `env.resolveActorPast`, and
+  **`buildSolids`, which has to carry `y0` into the collider the way it already carried `h`** — left behind, the
+  watchtower's doorway came out sealed from the ground up.
+- **A COLLIDER IS THE SHAPE OF WHAT IT STANDS FOR, AND `props.partsOf` IS THE ONE PLACE TO ASK** — nothing that
+  builds, draws or counts a collider reads `Info.parts` itself. **A CLIFF'S ARE FITTED OFF ITS OWN ROCK**
+  (`proprock.Masses`, recorded as the mesh is built; `fitParts`): one capsule per lobe and per boulder big enough
+  to stop a body, through the section between his feet and his crown. The hand pair it replaced was 2.9 m deep
+  against lobes 2–3.4 m deep, so a body stood inside the stone and stopped in the air beside it.
+- **MEASURE IT**: `--shot-props` prints a `COLLIDER` line per kind — stone past the collider (a walk-through),
+  collider past the stone (an invisible wall), flagged `LOOK` over 0.5 / 0.6 m — off the model's own vertices,
+  plus the kind's FOOTPRINT MAP through the walk band, **which is what every part in `INFO` was sized off: author
+  a collider from the map, never from the number that looked right.** Stone under `STEP_UP` owes no collider.
+  **SIX KINDS ARE LOOSE ON PURPOSE AND STAY FLAGGED** — conifer and willow (the collider is the bole), ash dune
+  and sand dune (walked OVER, the collider the crest, since a dune's plan is a lens and no box holds one), fog
+  gate (the ward is the wall), awning (cloth over two posts). **Everything else under `LOOK` is a defect.**
+  **`solidMat` DOES NOT COUNT `Mat.plant`**, so an agave's collider is its heart, not its blades.
+- **PLANT THE ROUND SILHOUETTE, MEASURE THE SQUARE ONE**, and **A COLLIDER MAY HAVE SQUARE ENDS** (`Part.flat`,
+  `collision.box`): the solid is the capsule's bounding rectangle in the segment's frame, so a wall, block, plinth
+  or house has corners, and a degenerate segment with `flat` is a SQUARE of side `2r`. Round ends left a 7.7 m
+  keep's corners 2 m in the open. Rings and posts stay round — a polygon of round-ended segments joins without
+  gaps. **Choosing wrong is most of the audit's `LOOK` lines.**
+
+**A LADDER IS THE ONE PROP YOU GET ON** (`Info.climb`, `game.Climb`). Its local **+Z is the open side** he mounts
+from and stands off; local −Z is the wall it leans on.
+
+- **IT IS THE FIRST KIND THAT STACKS** (`Info.stack`, `Prop.rise`, `env.drawStack`) — one mesh drawn as whole
+  sections up its own axis, because a uniform `scale` drags the rungs apart with the rails. Every other section is
+  turned 180°, or the mesh's own wabi-sabi bands the run like a barber's pole.
+- **THE SECTION IS THE AUTHORING GRANULARITY, AND THAT IS WHY IT IS 0.90 m** (three rungs) — a run can only be a
+  whole number of them, and at 2.40 the band `ladderExit` accepts was narrower than the pitch, so against a cliff
+  quantised to `HEIGHT_STEP` most lips had no run that served them.
+- **THE HEAD MAY STAND PROUD AND MAY ONLY JUST FALL SHORT** (`LADDER_PROUD` up, `STEP_UP` down) — rails over a
+  floor are what you haul on; a head under the lip is a pull-up.
+- **THE EXIT ASKS THE WALL SIDE FIRST AND MAY NOT BE A LEDGE** — over a cliff you top out over the lip, inside a
+  shaft the stone refuses that side and he steps off inboard. **ON A ROOF THERE IS NO WALL LEFT TO REFUSE IT**, so
+  one more stride the same way has to hold him too, which is what keeps him off the merlons.
+- **HEIGHT IS A `lift`, NOT A `pos.y`** — the jump's own machinery, so `footPos` and the shadow follow for free and
+  a knock-off is `hero.launchFrom`. `game.updateClimb` owns his XZ outright, and the phase is driven by DISTANCE
+  climbed.
+- **TOPPING OUT IS A HAUL, AND IT IS STILL THE LADDER** (`game.Mantle`) — he lets go `MANTLE_RISE` under the lip
+  rather than riding the top rungs, and the beat stands him a full `LADDER_EXIT` in from the edge. **EVERY GATE
+  THAT LEAVES A BODY ON A LADDER ALONE ASKS `hero.onLadder`, NOT `climbing`** — footing, terrain gate, push-out,
+  lens lift, and the INTERACT button, which is not one of the things `committed()` refuses and reached a bonfire
+  in the yard through the haul.
+- Forward climbs, back climbs down, back + sprint SLIDES; jump or roll lets go, everything else is refused by
+  `committed()`. **NOTHING BUT THE HERO CLIMBS**, so a ladder is an escape from whatever cannot follow.
+- `worlds/test_ladder.world` — two shelves, the watchtower's four flights, and the three runs that must REFUSE to
+  top out. The test prints every head and exit in metres.
 
 ### The day (`daynight.zig`)
 
 One number — `Game.day.hour` — and every colour and shadow in the world is a function of it.
 
-- **ONE DIRECTION CASTS AND THE SHADER KEYS OFF IT**: `keyDir` is the SUN while it is up and the MOON once it is
-  down, `gfx.Scene.setHour` its only writer, moving `gfx.sun` and `gfx.sunReach` together. Sun rises at 6 on
+- **ONE DIRECTION CASTS AND THE SHADER KEYS OFF IT** — `keyDir` is the SUN while it is up and the MOON once it
+  is down, `gfx.Scene.setHour` its only writer, moving `gfx.sun` and `gfx.sunReach` together. Sun rises at 6 on
   bearing 100 and sets at 20 on 262; the moon is the ANTI-SUN, so the world is never unlit.
-- **THE SKY DRAWS THE TRUE PATH, THE SHADOWS DO NOT.** `keyDir` FLOORS the casting altitude at `KEY_ALT_MIN`
+- **THE SKY DRAWS THE TRUE PATH, THE SHADOWS DO NOT** — `keyDir` FLOORS the casting altitude at `KEY_ALT_MIN`
   (15°) while `sunDir`/`moonDir` keep the honest angle for the disc. A 2° sun throws a 300 m shadow the 108 m
-  ortho box cannot hold. The one place the two are allowed to disagree.
-- **THE SWAP GOES OVER THE TOP, IN THE DARK** (`keyDir`, `keyDim`). The moon is the anti-sun, so the key
-  changes bearing by 180 at dusk and at dawn. Turned around the compass at the floor it wheeled every shadow
-  half a circle in 45 real seconds. It now climbs from the floored sun through the zenith onto the floored
-  moon in the sun's own vertical plane, linear in the shadow's LENGTH, and `keyDim` takes the key to black
-  at the crossing — fade, flip, fade back, which is what every engine with one caster does. A test measures
-  a pole's shadow: lit, it moves under half as fast in the swap as when the sun leaves the floor at 07:06.
-- **THE TEXEL SNAP IS TAKEN IN THE LIGHT'S OWN BASIS** (`gfx.lightBasis`). A world-axis snap stops snapping
+  ortho box cannot hold. **The one place the two are allowed to disagree.**
+- **THE SWAP GOES OVER THE TOP, IN THE DARK** (`keyDir`, `keyDim`) — the moon is the anti-sun, so the key changes
+  bearing by 180 at dusk and dawn. Turned round the compass at the floor it wheeled every shadow half a circle
+  in 45 real seconds. It climbs from the floored sun through the zenith onto the floored moon in the sun's own
+  vertical plane, linear in the shadow's LENGTH, with `keyDim` taking the key to black at the crossing — fade,
+  flip, fade back. A test measures a pole's shadow.
+- **THE TEXEL SNAP IS TAKEN IN THE LIGHT'S OWN BASIS** (`gfx.lightBasis`) — a world-axis snap stops snapping
   under a sweeping sun and the shadow edges crawl.
 - **`Palette` IS THE WHOLE LOOK OF AN HOUR**, keyframed at nine hours and blended with the ease taken off both
-  ends. Retuning means moving a row, not a shader.
-- **ITS TWO HALVES ARE ON DIFFERENT SCALES.** `key`/`ambGround`/`ambSky`/`haze`/`hazeBank` are read by the SCENE
-  shader, which gammas its output — PRE-GAMMA and near-black. Every `sky*`/`cloud*` value is read by the SKY
-  shader, which gammas nothing — LITERAL SCREEN VALUES. **At the dark hours `haze` must sit UNDER what the
+  ends. **Retuning means moving a ROW, not a shader.**
+- **ITS TWO HALVES ARE ON DIFFERENT SCALES** — `key`/`ambGround`/`ambSky`/`haze`/`hazeBank` are read by the
+  SCENE shader, which gammas its output: PRE-GAMMA and near-black. Every `sky*`/`cloud*` value is read by the
+  SKY shader, which gammas nothing: LITERAL SCREEN VALUES. **At the dark hours `haze` must sit UNDER what the
   ground is lit to**, or the distance is brighter than the foreground.
-- **THE ANCHOR IS NOT A KEYFRAME.** `SHOT_HOUR` reproduces `gfx.SUN_DIR` — the light this game was
-  authored, measured and photographed under, and the bearing `shots.LIT_YAW` is framed off. `SUN_ALT_MAX` and
-  `SHOT_HOUR` are SOLVED from it; move `AZ_RISE`/`AZ_SET` and you solve them again. Two tests pin the direction
-  and the palette row. `--shot` pins and FREEZES that hour (`game.pinHourForShot`).
-- **The controls.** Menu > Debug > `Hour` (Left/Right scrub, Shift coarse, hold to sweep, Confirm holds it); in
-  the EDITOR `,` and `.` sweep it and Shift runs (the clock is held there, so those are the only writers) — and
-  the same hour is on the World card, as a readout, a quarter-hour stepper and four marks worth authoring at,
-  `Anchor` among them. A BONFIRE offers `Rest until morning` / `Rest until evening` — always FORWARD
-  (`hoursUntil`). Nothing is restocked there: `hero.sit` made him whole when he sat down. **EVENING IS AFTER
-  DARK**: morning 8:30, evening `EVENING_HOUR` (an hour past `SUNSET`, sun DOWN and moon casting).
-  Deliberately NOT `SHOT_HOUR`. A comptime assert pins it past the horizon, a test pins `!isDay` and the key
-  under a quarter of the anchor, and `shots/147` is that hour.
-- **THE FIRE TOUCHES THE CLOCK NOWHERE ELSE.** The old `dim` uniform is GONE: the hour you walk in at is the
-  hour you sit in, and the two `Rest until…` rows are the only thing at a fire that moves the light.
-- Verify with the strip: `shots/140`–`147` are eight hours of ONE view shot into the light's own quarter,
-  `148*` three overheads. The arc is the test — a frame that reads like its neighbour is an hour the palette is
-  not earning.
+- **THE ANCHOR IS NOT A KEYFRAME.** `SHOT_HOUR` reproduces `gfx.SUN_DIR` — the light this game was authored,
+  measured and photographed under, and the bearing `shots.LIT_YAW` is framed off. `SUN_ALT_MAX` and `SHOT_HOUR`
+  are SOLVED from it; move `AZ_RISE`/`AZ_SET` and you solve them again. `--shot` pins and FREEZES that hour.
+- **The controls.** Menu > Debug > `Hour`; in the EDITOR `,` and `.` sweep it and Shift runs (the clock is held
+  there, so those are the only writers), and the same hour is on the World card as a readout, a quarter-hour
+  stepper and four marks worth authoring at, `Anchor` among them. A BONFIRE offers `Rest until morning` /
+  `Rest until evening`, always FORWARD (`hoursUntil`). **EVENING IS AFTER DARK** — morning 8:30, evening
+  `EVENING_HOUR` (an hour past `SUNSET`, sun DOWN and moon casting), deliberately NOT `SHOT_HOUR`; a comptime
+  assert pins it past the horizon.
+- **THE FIRE TOUCHES THE CLOCK NOWHERE ELSE** — the hour you walk in at is the hour you sit in, and the two
+  `Rest until…` rows are the only thing at a fire that moves the light. Nothing is restocked there: `hero.sit`
+  made him whole when he sat down.
+- Verify with the strip: `shots/140`–`147` are eight hours of ONE view shot into the light's own quarter.
+  **The arc is the test** — a frame that reads like its neighbour is an hour the palette is not earning.
 
 ### What the hour does to a creature
 
 - **A BODY READS `daynight.dayShare`, NEVER `dayAmt`.** `dayAmt` is the SUN'S HEIGHT and eases over the whole
-  span — half of it is gone by 09:00 — so it cannot tell a creature whether it is day. `dayShare` is a ramp
-  across `WINDOW_FADE` (0.75 h) either side of each horizon, exactly 0.5 AT the horizon: 75 s of real fade at
-  `DAY_MINUTES`, and every gate in the game is `< 0.5` / `>= 0.5`, which is "the sun is down".
-- **WHEN A PLACED BODY IS OUT IS AUTHORED, AND DERIVED UNTIL IT IS** (`wf.FoeWhen`, `wf.Foe.window`,
-  `wf.foeWhen`). A row with no `when=` means *the kind's own answer*, so a default can be retuned in one
-  exhaustive switch without touching a map on disk; the editor's right-click carries `Spawns: …` and steps
-  through derived / day & night / day only / night only. Both shade roles are `night`; everything else is
-  `any`. **A STATUE AND A ROOST ARE NOT ABSENCES** — those bodies are present and inert, which is a creature's
-  own business, not the window's.
+  span, so it cannot tell a creature whether it is day. `dayShare` is a ramp across `WINDOW_FADE` (0.75 h) either
+  side of each horizon, exactly 0.5 AT the horizon, and every gate in the game is `< 0.5` / `>= 0.5`.
+- **WHEN A PLACED BODY IS OUT IS AUTHORED, AND DERIVED UNTIL IT IS** (`wf.FoeWhen`, `wf.foeWhen`) — a row with
+  no `when=` means *the kind's own answer*, so a default can be retuned in one exhaustive switch without
+  touching a map on disk. **A STATUE AND A ROOST ARE NOT ABSENCES** — those bodies are present and inert.
 - **AND ABSENCE REACHES EVERYTHING THROUGH ONE FIELD** (`foe.Win` on the `Leash`, stamped by `game.markHour`).
-  `in` is a SHARE, and it is the alpha `foe.drawGroup` hands the shader, so a body comes and goes across the
-  horizon instead of popping. Under `foe.WIN_SOLID` it is not there at all: `drawGroup` skips it,
-  `foe.reached` refuses every blade, `game.disguised`/`phased` take it out of lock-on, AoE and collision, and
-  `foe.sensedDist` bends its sense of the hero past its own ring — which is what holds every state machine at
-  home without a second decision tree in any of them. It rides the leash because that is the one struct every
-  creature embeds and the one `senseHero` already has in its hand.
-- **A CREATURE WHOSE BEHAVIOUR TURNS ON THE CLOCK OWES A `foe.Sky`** and reads `sky.night`. Two do: the owlbear
-  is stone until dark (`owlbear.dozing`, eyes catching from `STONE_EYE_FROM` of the night so you can see which
-  carvings are somebody tonight), and the blinkbat hangs inverted and wrapped through the day
-  (`blinkbat.ROOST_HOVER`, re-solved so a roost hangs in the band it BITES from — a roost nobody can reach
-  cannot be the thing that wakes the rest of them, and striking one calls every bat inside `ROOST_CALL_R`).
-  **A BLOW OUTRANKS THE HOUR, and ORDERS outrank it outright**: a fight carried into the dawn finishes, and a
-  route the map authored is the author saying this one is about.
-- **FLAME IS A FACT ABOUT THE WORLD, NOT A READ OF WHAT HE IS HOLDING** (`foe.Glare`, `game.markGlare`) — `k`
-  is the share of the flame's own radius the body stands inside, `shy` the latch (`SHY_ON` 0.55 / `SHY_OFF`
-  0.42, so 3.60 m and 4.64 m off the torch's 8 m). ONLY THE FLAME HE CARRIES: letting a brazier the map placed
-  hold a camp off would silently retune every encounter standing near one. The skitterer and both spiders back
-  out of it (`foe.shyOfFlame`, `foe.shyStep`), **and one blow undoes that**, which is what stops a torch being
-  an off switch — cornered they still strike, and the mother still spits from outside the light.
+  `in` is a SHARE and it is the alpha `foe.drawGroup` hands the shader, so a body comes and goes across the
+  horizon instead of popping. Under `foe.WIN_SOLID` it is not there at all: `drawGroup` skips it, `foe.reached`
+  refuses every blade, `game.disguised`/`phased` take it out of lock-on, AoE and collision, and
+  `foe.sensedDist` bends its sense of the hero past its own ring — which holds every state machine at home
+  without a second decision tree in any of them.
+- **A CREATURE WHOSE BEHAVIOUR TURNS ON THE CLOCK OWES A `foe.Sky`** and reads `sky.night`. **A BLOW OUTRANKS
+  THE HOUR, and ORDERS outrank it outright**: a fight carried into the dawn finishes, and a route the map
+  authored is the author saying this one is about.
+- **FLAME IS A FACT ABOUT THE WORLD, NOT A READ OF WHAT HE IS HOLDING** (`foe.Glare`, `game.markGlare`) — `k` is
+  the share of the flame's radius the body stands inside, `shy` the latch (`SHY_ON` 0.55 / `SHY_OFF` 0.42).
+  **ONLY THE FLAME HE CARRIES**: letting a map-placed brazier hold a camp off would silently retune every
+  encounter standing near one. The skitterer and both spiders back out of it, **and one blow undoes that**,
+  which is what stops a torch being an off switch.
 
 ### The weather (`weather.zig`)
 
-**IT IS AN EVENT, NOT A SETTING.** A storm arrives every `DRY_LO`..`DRY_HI`, runs
-`WET_LO`..`WET_HI`, ramps 9 s in and 14 s out. Measured over an hour: **9 storms, raining 26% of the
-time, dry gaps 162–405 s**. The clock is PURE (`Weather` is seconds and 0..1), so a test runs a day without a
-window.
+**IT IS AN EVENT, NOT A SETTING.** A storm arrives every `DRY_LO`..`DRY_HI` and runs `WET_LO`..`WET_HI`, ramping
+9 s in and 14 s out — measured over an hour: **9 storms, raining 26% of the time, dry gaps 162–405 s**. The clock
+is PURE (seconds and 0..1), so a test runs a day without a window. Weather does not run in the EDITOR and
+`--shot` forces one (`shots/150`–`155`).
 
-- **TWO STRENGTHS, AND ONLY THE HEAVIER HAS A SKY.** `GENTLE_TOP` against `MODERATE_TOP`, and the
-  moderate storm is the minority (`MODERATE_ODDS`). Lightning waits for the storm to arrive (`FLASH_AT`).
-- **A STORM BREATHES WHILE IT IS THERE.** `gustAt` is two slow swells on periods that do not divide (17.5 s and
-  30), riding the top DOWN by at most `GUST_DEEP` — a moderate storm measures 0.70–1.00 of full. It rides the
-  TOP and not the level, so the ramp still owns how fast the sheet may move. The lull bottoms out over
-  `FLASH_AT` on purpose.
-- **THE STRIKE IS A DOUBLE AND THE THUNDER IS LATE.** `flash()` is a spike, a dark beat, then a lower second
-  flicker. The sound is behind the light by the strike's own distance (`STRIKE_LO`..`STRIKE_HI` over
-  `SOUND_MPS`, 1.7–7.5 s), and it arrives even if the rain has stopped.
-- **THE PICTURE IS ONE MESH** (`Rain`) — a cell of `STREAKS` streaks one `CELL_H` tall, drawn STACKED up the
-  camera's column and slid by a phase that WRAPS on the cell; the heavier storm draws the same cell again,
-  offset. **7,200 triangles in the cell, 4 draw calls gentle and 7 moderate**, test-pinned. Rain as PARTICLES
-  would be thousands of live motes at one immediate-mode sphere each.
-  - **WHAT COSTS IS FILL, AND FILL IS DENSITY** — streaks per square metre, which a test prints. **0.55/m² out
-    to 24 m** at `OPACITY` (from 1.97/m² at 0.44). Spreading the disc IS the thinning: streaks are laid by
-    area, so trebling it drops the near field by the same factor while the count barely moves.
+- **TWO STRENGTHS, AND ONLY THE HEAVIER HAS A SKY**; the moderate storm is the minority. Lightning waits for the
+  storm to arrive (`FLASH_AT`).
+- **A STORM BREATHES WHILE IT IS THERE** — `gustAt` is two slow swells on periods that do not divide (17.5 s and
+  30), riding the TOP down (not the level, so the ramp still owns how fast the sheet may move).
+- **THE STRIKE IS A DOUBLE AND THE THUNDER IS LATE** — a spike, a dark beat, a lower second flicker; the sound is
+  behind the light by the strike's own distance (1.7–7.5 s) and arrives even if the rain has stopped.
+- **THE PICTURE IS ONE MESH** (`Rain`) — a cell of `STREAKS` one `CELL_H` tall, drawn STACKED up the camera's
+  column and slid by a phase that WRAPS on the cell; the heavier storm draws the same cell again, offset.
+  **7,200 triangles, 4 draw calls gentle and 7 moderate**, test-pinned. Rain as PARTICLES would be thousands of
+  live motes at one immediate-mode sphere each.
+  - **WHAT COSTS IS FILL, AND FILL IS DENSITY** — streaks per square metre, which a test prints: **0.55/m² out
+    to 24 m**. Spreading the disc IS the thinning, since streaks are laid by area.
   - **THE COLUMN STANDS ON THE MAN, NOT ON THE LENS, AND ITS RIM FADES.** Centred on the camera the disc reached
-    24 m behind the lens and 19 ahead of the hero — the short side being the side the frame looks at; and it
-    must be a point the camera does not ROTATE, since a lead off the camera's forward slides the sheet sideways
-    at 40 m/s when you turn. The rim thins to nothing past `TAPER_FROM` (width goes out, length only part way),
-    baked into the geometry because a per-streak opacity is the one thing this renderer has no channel for. The
-    heavy sheet's second copy is offset in Y, barely in XZ.
-  - **THE HEAVY SHEET FADES IN, IT DOES NOT ARRIVE** (`copyFade`, 3.6 s up, 5.6 s out, topping at `COPY_TOP`
-    0.72), so the peak storm is 6.16 columns of blended fill rather than 8.
-  - `FALL_MPS` is just over real rain's 7–9. At 21 a streak crossed twenty-three times its own body in a
-    second, which is a smear.
-  - **A STREAK IS TWO CROSSED CARDS** — a single card is invisible edge-on. Two segments each, so the tail
-    fades in the GEOMETRY (`propfx`'s pillar law). **AND THE SHEET DRAWS WITH BACKFACE CULLING OFF**: a card
-    is ONE winding (fronts +Z and −X), so under raylib's default cull a lens in the streaks' −X/+Z quadrant
-    saw NEITHER face — the rain stood on one heading and vanished on the turn, or fell on one side of the
-    frame only. Test-measured: two-sided the worst heading reads a card at 0.69, one-sided at 0.
-  - **THE SLANT IS WORLD-FIXED** (0.30 across the fall) so turning the camera turns the rain, MEASURED off the
-    first shot where 0.17 read as vertical.
-  - Draws LAST, through `Scene.beginFade`: no depth written, still depth TESTED, which is what puts it behind
-    the wall you are standing under.
-- **THE CLOUD TAKES THE LIGHT, AND THE STRIKE GIVES IT BACK** — two rectangles over the frame, INSIDE the retro
-  pass. `DIM_MAX` of a cold slate; the flash at 74/46 alpha.
-- **BUT THE STORM IS A LAYER ON THE PALETTE, NOT A RECTANGLE** (`daynight.overcast`). Cloud does four things a
-  rectangle cannot: puts the KEY out (`STORM_KEY`, so shadows and every `keyAmt` specular go with it),
-  leaves the AMBIENT alone (an overcast sky is one enormous soft source), takes the WARMTH out (`slate` is
-  luma-preserving, so a hue change and not a dimmer), and CLOSES THE DISTANCE (haze colour lifts,
-  `gfx.HAZE_STORM` multiplies density by 2.4). Every term is a factor on the HOUR'S own value, never a
-  constant. `Scene.setHour`/`Sky.setHour` take the level, so dome and world agree.
-  - The fog distance has a DEBUG override (`menu.DBG_FOG`: Auto / Off / Thick / Soup). The row answers TWO
-    questions: `fogK` is the haze DISTANCE, `fogAmt` is how foggy it IS.
-- **THE FOG HAS A SHAPE: THE STRAY BANKS** (`weather.Mist`). Seven banks standing in the field, so fog is
+    24 m behind the lens and 19 ahead of the hero — the short side being the side the frame looks at; and it must
+    be a point the camera does not ROTATE, since a lead off the camera's forward slides the sheet sideways at
+    40 m/s when you turn. The rim thins past `TAPER_FROM`, **baked into the geometry** because a per-streak
+    opacity is the one thing this renderer has no channel for.
+  - **A STREAK IS TWO CROSSED CARDS** — a single card is invisible edge-on; two segments each, so the tail fades
+    in the GEOMETRY. **AND THE SHEET DRAWS WITH BACKFACE CULLING OFF**: a card is ONE winding, so under raylib's
+    default cull a lens in the streaks' −X/+Z quadrant saw NEITHER face and the rain stood on one heading and
+    vanished on the turn.
+  - **THE SLANT IS WORLD-FIXED** (0.30 across the fall) so turning the camera turns the rain. `FALL_MPS` is just
+    over real rain's 7–9; at 21 a streak crossed twenty-three times its own body in a second, which is a smear.
+  - Draws LAST through `Scene.beginFade`: no depth written, still depth TESTED, which is what puts it behind the
+    wall you are standing under.
+- **THE STORM IS A LAYER ON THE PALETTE, NOT A RECTANGLE** (`daynight.overcast`). Cloud does four things a
+  rectangle cannot: puts the KEY out (`STORM_KEY`, so shadows and every specular go with it), leaves the AMBIENT
+  alone (an overcast sky is one enormous soft source), takes the WARMTH out (`slate` is luma-preserving — a hue
+  change, not a dimmer), and CLOSES THE DISTANCE (`gfx.HAZE_STORM` 2.4× density). **Every term is a factor on
+  the HOUR'S own value, never a constant.** The fog distance has a DEBUG override answering TWO questions:
+  `fogK` is the haze DISTANCE, `fogAmt` how foggy it IS.
+- **THE FOG HAS A SHAPE: THE STRAY BANKS** (`weather.Mist`) — seven banks standing in the field, so fog is
   somewhere you walk through rather than a value. **THE GRADIENT IS IN THE GEOMETRY**: one bank is 22 lumps
   scattered with density falling off outward, so alpha compounds in the middle and thins at the rim (vertex
-  alpha is the EMISSIVE channel, and three concentric shells would read as three rings). One draw per bank, 7
-  draws, ~10.8k tris, `MIST_TOP` at full fog. **THE SLOWEST THING IN THE GAME** — 0.045–0.16 m/s, 94 s to
-  cross its own width. Banks ramp in and out over 9 s and are re-seeded out past `MIST_R`, never in view. Three
+  alpha is the EMISSIVE channel, and three concentric shells would read as three rings). **THE SLOWEST THING IN
+  THE GAME** — 0.045–0.16 m/s, 94 s to cross its own width. Re-seeded out past `MIST_R`, never in view. Three
   mesh variants (the repeated-big-prop law).
-- **EMBERS RISE, THEY DO NOT FALL** (`weather.Ember`, the `ember=` band on a `location:`). The spore field's own
-  construction — `EMBER_MOTES` motes in a `EMBER_CELL_H` cell, `EMBER_STACKS` up the column, `EMBER_SHOALS` shoals
-  — with the phase ADDED to the base so the stack climbs, at `EMBER_MPS` (0.85 m/s, a cell in 7 s: 15x slower than
-  the rain, 10x faster than a spore). **THE FIELD FLICKERS BUT NEVER BLINKS**: a shoal winks on `EMBER_WINK_SECS`
-  (6.5 s, a sixth of the spore's breath), squared so it is lit briefly and dark longer the way sparks are, held off
-  zero, and a test pins the sum's swing under 12%. Every shoal rides its own gust sideways (`gustOf`). Motes are
-  1.2–3 cm and EMISSIVE (alpha 40/62/110, hot to going-out) — under the stroke's 7 cm, or a field of them reads as
-  smoke.
-  - **THE SMOKE IS THE MIST, TINTED.** `bankTint` takes an `ember` term that pulls the banks toward `SMOKE_BANK`,
-    a warm dark grey (smoke TAKES light, fog scatters it), and `game.EMBER_BANKS` (0.35) puts banks up under the
-    field — lighter than the spore's 0.45 so the coals still read through it.
-  - **AND THE SKY IS A LAYER ON THE HOUR** (`daynight.smolder`, on top of `bloom` as `bloom` is on `overcast`):
-    haze darker and warmer, the horizon band thrown to orange, the key warmed a little, the stars mostly gone,
-    `HAZE_EMBER_D` 1.75 on the distance. Every term a factor on the hour's own value, so a smoking field at 3 a.m.
-    is a darker night with an orange horizon and not a lit one — tested at noon and at 3.
-  - `worlds/test_firelands.world` is the bench: the location at 0.85 over one of every `propember` kind.
-    `shots/158`–`158b` are the field and its smoke, forced through `game.forceEmberForShot`.
-- **THE DRY SKY HAS BIRDS IN IT** (`weather.Skein`, owner: bird packs of different sizes across the sky,
-  distantly, from different angles, infrequently, "just to feel alive"). **IT IS AN EVENT, NOT A FLOCK THAT LIVES
-  THERE** — the storm's own law. One flight arrives, crosses, and is gone: measured over an hour, **63 crossings,
-  4 to 17 birds, in the sky 28% of the time**, so it is empty more often than not and a crossing is still worth
-  looking up at. Gap `SKEIN_GAP_LO`..`HI` **18–62 s** (owner's own number, twice revised — it was 190–520 and he
-  never saw one), and the clock runs ONLY on a dry sky (plus `SKEIN_AFTER_RAIN` of settling), so a long storm
-  cannot bank up a flight that then arrives the second it clears. A flight already in the air is not deleted by a
-  squall; it finishes its crossing. **THE COUNT IS DERIVED IN THE TEST, NOT PINNED BESIDE IT** — a mean gap plus a
-  crossing predicts 65 an hour against 63 flown, so moving the gap cannot leave a stale number behind.
-  - **AND THERE IS A DEBUG ROW** (`menu.DBG_BIRDS`, owner: I didn't see any) — `DBG_WEATHER`'s reasoning exactly:
-    an event on a clock measured in minutes is not a question anybody can sit and answer. It sends one ACROSS his
-    view, and the request survives the menu being open (`takeBirds` drains on the first frame after it shuts,
-    which is the frame he is looking at the sky again).
-  - **THE RANGE IS NOT PICKED EITHER, BUT IT IS NO LONGER SOLVED AGAINST THE HAZE.** `gfx.HAZE_DENSITY` is
-    0.013 a metre, so what is left of a thing at range d is exp(−0.013 d) — 9% at 185 m, which is why the birds
-    were invisible, photographed. The band is solved against the FRAME now (`skeinNear`/`skeinWide`/`skeinRim`,
-    measured 160–284 m), the haze is turned DOWN over it (`SKEIN_HAZE`), and the fade-in is code
-    (`SKEIN_FADE_M`) rather than the distance doing it.
-  - **A BIRD IS A SILHOUETTE**, so it is opaque and nearly black. At vertex alpha 210 they came up self-lit and
-    pale and washed out into the very haze they are read against (the 248+ law).
-  - **THE FLAP IS A SQUASH OF THE V, NOT A BONE** — at this range a wing is a couple of pixels and what reads is
-    the silhouette breathing. Cheap enough that every bird carries its own period, which is what stops a pack
-    beating as one animal; a test pins that no two in a skein share a wingbeat.
-  - **DIFFERENT ANGLES IS A RESULTANT, NOT A DIE.** Bearings summed as unit vectors pull 0.38 one way over an
-    hour, where 1.00 would be a flight path — "no two in a row within N degrees" is a dice roll that fails on an
+- **EMBERS RISE, THEY DO NOT FALL** (`weather.Ember`, the `ember=` band on a `location:`) — the spore field's
+  construction with the phase ADDED to the base so the stack climbs, at 0.85 m/s (15× slower than the rain, 10×
+  faster than a spore). **THE FIELD FLICKERS BUT NEVER BLINKS**: a shoal winks on `EMBER_WINK_SECS` (6.5 s),
+  squared so it is lit briefly and dark longer the way sparks are, held off zero, and a test pins the sum's
+  swing under 12%. Motes are 1.2–3 cm and EMISSIVE — under the stroke's 7 cm, or a field of them reads as smoke.
+  - **THE SMOKE IS THE MIST, TINTED** (`bankTint` toward `SMOKE_BANK`, a warm dark grey — smoke TAKES light,
+    fog scatters it). **AND THE SKY IS A LAYER ON THE HOUR** (`daynight.smolder`, on top of `bloom` as `bloom`
+    is on `overcast`): haze darker and warmer, horizon thrown to orange, key warmed a little, stars mostly gone.
+    Every term a factor on the hour's own value, so a smoking field at 3 a.m. is a darker night with an orange
+    horizon and not a lit one — tested at noon and at 3.
+- **THE DRY SKY HAS BIRDS IN IT** (`weather.Skein`) — **AN EVENT, NOT A FLOCK THAT LIVES THERE**, the storm's own
+  law: one flight arrives, crosses, and is gone. Measured over an hour: **63 crossings, 4 to 17 birds, in the sky
+  28% of the time**, gap **18–62 s**, and the clock runs ONLY on a dry sky (plus `SKEIN_AFTER_RAIN`) so a long
+  storm cannot bank up a flight. A flight already in the air finishes its crossing. **THE COUNT IS DERIVED IN
+  THE TEST, NOT PINNED BESIDE IT** — a mean gap plus a crossing predicts 65 against 63 flown.
+  - **THE SKY IS SMALLER THAN IT LOOKS, AND ANYTHING PUT IN IT IS SOLVED AGAINST `camera.skyTop()`** — half the
+    lens less the resting pitch, **11.46° above the horizon**, and that is the whole of the sky a player sees
+    without holding the stick up. Authored at 30–62 m up the lowest elevation any bird reached over a whole
+    flight was 15.1° and the middle of a crossing was 48°: sixty-two flights an hour and not one on screen.
+    **THE HARNESS DID NOT CATCH IT BECAUSE BOTH BIRD SHOTS HELD THE LENS UP AT THE FLOCK** —
+    `157b_birds_resting.png` is the frame a player actually gets, and a test walks half an hour of sky and pins
+    every bird inside it (3.5–8.3° now).
+  - **THE WHOLE BAND IS DERIVED, NOT PICKED** (`SKY_SHARE`, `skeinNear`/`skeinWide`/`skeinRim`) — ceiling 0.70 of
+    `skyTop`, closest approach `HIGH_HI / tan(ceiling)` so the highest bird at the nearest point sits exactly on
+    it; `HIGH_LO` is the floor because a cliff stands 15.5 m and they used to fly through them. **THE OFFSET
+    NEVER PASSES THROUGH ZERO** — a line over your head is a line whose middle is at 90°, and the middle is the
+    part you were meant to see.
+  - **AND THE HAZE IS TURNED DOWN FOR THEM ALONE** (`gfx.Scene.setHaze`, `SKEIN_HAZE`, paired like `beginFade`).
+    A bird is not a surface the distance veils, it is a SILHOUETTE, and haze does not soften a silhouette — it
+    deletes it by pulling it to the sky's colour. At 0.013/m the world leaves 4% of a thing at 240 m, which is
+    where the band has to be; at 0.35 of it, 33%. **THE FADE IS METRES, NOT A SHARE OF THE CROSSING**
+    (`SKEIN_FADE_M`) — as a fraction the ramp got steeper every time the chord came in shorter.
+  - **A BIRD IS A SILHOUETTE**, so it is opaque and nearly black; at vertex alpha 210 they came up self-lit and
+    pale and washed into the very haze they are read against (the 248+ law). **THE FLAP IS A SQUASH OF THE V, NOT
+    A BONE** — at this range a wing is a couple of pixels and what reads is the silhouette breathing; cheap
+    enough that every bird carries its own period, and a test pins that no two in a skein share a wingbeat.
+  - **DIFFERENT ANGLES IS A RESULTANT, NOT A DIE** — bearings summed as unit vectors pull 0.38 one way over an
+    hour where 1.00 would be a flight path. "No two in a row within N degrees" is a dice roll that fails on an
     honest sky about a third of the time.
-  - One draw a bird, `BIRDS_HI` at the worst and only while a flight is up, against the rain sheet's 4–7.
-- **THE SKY IS SMALLER THAN IT LOOKS, AND ANYTHING PUT IN IT IS SOLVED AGAINST `camera.skyTop()`** — half the
-  lens less the resting pitch, 0.200 rad, **11.46 deg above the horizon**. That is the whole of the sky a player
-  sees without holding the stick up. The birds were authored at 30–62 m up, entering at 96 m and crossing to
-  within 56 m: the LOWEST elevation any bird reached over a whole flight was 15.1 deg and the middle of a
-  crossing was 48 deg, near enough straight overhead. Sixty-two flights an hour, something in the sky 30% of the
-  time, and not one of them was ever on the screen (owner: "i never see any fuckin birds"). **THE HARNESS DID
-  NOT CATCH IT BECAUSE BOTH BIRD SHOTS HELD THE LENS UP AT THE FLOCK** — `157b_birds_resting.png` is the frame
-  a player actually gets, and a test walks half an hour of sky and pins every bird inside it (3.5–8.3 deg now).
-- **THE SKEIN'S WHOLE BAND IS DERIVED, NOT PICKED** (`weather.SKY_SHARE`, `skeinNear`/`skeinWide`/`skeinRim`).
-  The ceiling is 0.70 of `skyTop`; the closest the line may come is `HIGH_HI / tan(ceiling)`, so the highest
-  bird at the nearest point sits exactly on the ceiling. `HIGH_LO` is the floor because a cliff stands
-  15.5 m (`props.cliffParts`) and they used to fly through them. **THE OFFSET NEVER PASSES THROUGH ZERO**: a
-  line over your head is a line whose middle is at 90 deg, and the middle is the part you were meant to see.
-- **AND THE HAZE IS TURNED DOWN FOR THEM ALONE** (`gfx.Scene.setHaze`, `weather.SKEIN_HAZE`, paired like
-  `beginFade`). A bird is not a surface the distance veils — it is a SILHOUETTE, and the haze does not soften a
-  silhouette, it deletes it by pulling it to the sky's own colour. At 0.013/m the world's own density leaves 4%
-  of a thing at 240 m, which is where the band has to be now; at 0.35 of it, 33%.
-- **THE FADE IS METRES, NOT A SHARE OF THE CROSSING** (`SKEIN_FADE_M`). As a fraction the ramp got steeper
-  every time the chord came in shorter, and "it never pops" is a claim about the per-frame STEP.
-- **THE BED IS THE STORM'S, NOT THE HOUR'S** (`audio.setRain`, `audio.mkRain`) — three bands with a granular
-  patter (a hiss alone is tape noise, a low roar alone is a motorway). Does not retrigger while dry. Thunder
-  (`mkThunder`) is a ROLL with no transient at its head, and it is the third kind of ambient voice
-  (`AMBIENT_EVENTS`): not a bed, not a call, fired by the world.
-- Weather does not run in the EDITOR, and `--shot` forces one: `shots/150`–`153` are dry, gentle, moderate and
-  the strike, `154`–`155` the fog and one mist bank — forced through the debug row (`game.forceFogForShot`) so
-  the air is photographed APART from the rain.
+  - **AND THERE IS A DEBUG ROW** (`menu.DBG_BIRDS`) — an event on a clock measured in minutes is not a question
+    anybody can sit and answer. It sends one ACROSS his view, and the request survives the menu being open
+    (`takeBirds` drains on the first frame after it shuts, which is the frame he is looking at the sky again).
+- **THE BED IS THE STORM'S, NOT THE HOUR'S** (`audio.setRain`) — three bands with a granular patter (a hiss
+  alone is tape noise, a low roar alone is a motorway). Thunder is a ROLL with no transient at its head, and it
+  is the third kind of ambient voice (`AMBIENT_EVENTS`): not a bed, not a call, fired by the world.
 
 ### The Sun Palace (`proppalace.zig`, `propdesert.zig`)
 
-Gold, emerald and sandstone in a desert — the Gilded Ruins' architecture at three times the scale, and the
-only biome whose FLOOR is authored (`wf.Soil.sand`).
+Gold, emerald and sandstone in a desert — the Gilded Ruins' architecture at three times the scale, and the only
+biome whose FLOOR is authored (`wf.Soil.sand`). Bench: `worlds/test_palace.world`.
 
 - **ONE MUQARNAS, ONE BAND, ONE RING, ONE STAR** (`propart.muqarnasInto`/`giltBandInto`/`giltRingInto`/
-  `starInto`, each taking an `art.Tone`). The Gilded Ruins pass `propgold.GILT` and the palace `proppalace.SUN`;
-  what separates the two families is that row and the three motifs the palace adds — the stepped fret
-  (`grecaInto`, Mitla's), the sun sign (`ziaInto`, four groups of four) and the pecked panel (`glyphBandInto`).
-  `art.Course.tone` is the same idea for coursed stone: `null` is the grey every ruin is built of.
+  `starInto`), each taking an `art.Tone`. What separates the two families is that row and three motifs the
+  palace adds — the stepped fret (`grecaInto`), the sun sign (`ziaInto`) and the pecked panel
+  (`glyphBandInto`). `art.Course.tone` is the same idea for coursed stone: `null` is the grey every ruin is
+  built of.
 - **THE FRET IS ONE LINE THAT NEVER CROSSES ITSELF** — two continuous rails with a meander between them, one
-  repeat per band height. Broken into separate keys it reads as a row of blocks; at a third the pitch the
-  whole frieze greys out at twenty metres.
-- **THE SIGN IS SIZED OFF THE WALL THAT HOLDS IT**, never off the prop. A Zia whose rays carry past the cornice
-  is a spiked mess; `sunGateMesh` solves its radius from the tympanum's own height.
-- **THE JEWEL IS A LIGHT, NOT A COLOUR.** Alpha is the emissive channel, so `EMERALD_LT` (150) burns hardest and
-  `EMERALD_DK` (238) barely at all. Two kinds carry a real point light off `GEM_LIGHT`: the vault's pedestal
-  stone and the shard.
-- **THREE ARE WALKED INTO AND ONE IS WALKED UP.** The hall's and the vault's colliders are SHELLS with doorways
-  (the course over a door is a `Part.y0` lintel), and the terrace carries a deck at 4.00 m reached by
-  `palacestair` — the third kind that stacks, and the widest flight in the game at 5.2 m.
-- **THE SAND IS THE ONLY PAINTED GROUND WITH ITS OWN GRAIN.** `shaders.paintedSoil` branches on its ordinal for
+  repeat per band height. Broken into separate keys it reads as a row of blocks; at a third the pitch the whole
+  frieze greys out at twenty metres.
+- **THE SIGN IS SIZED OFF THE WALL THAT HOLDS IT**, never off the prop — `sunGateMesh` solves its radius from
+  the tympanum's own height, or the rays carry past the cornice.
+- **THE JEWEL IS A LIGHT, NOT A COLOUR** — alpha is the emissive channel, so `EMERALD_LT` (150) burns hardest
+  and `EMERALD_DK` (238) barely at all. Two kinds carry a real point light off `GEM_LIGHT`.
+- **THREE ARE WALKED INTO AND ONE IS WALKED UP** — hall and vault colliders are SHELLS with doorways (the course
+  over a door is a `Part.y0` lintel); the terrace carries a deck at 4.00 m reached by `palacestair`, the third
+  kind that stacks and the widest flight in the game.
+- **THE SAND IS THE ONLY PAINTED GROUND WITH ITS OWN GRAIN** — `shaders.paintedSoil` branches on its ordinal for
   a 58-cell hash at a third the amplitude of `blades`; on the generic term a desert floor comes back as scree.
-- **EVERY PLANT HERE IS TALLER THAN IT IS WIDE**, which is what water-starved looks like. A cactus is FLESH
-  (`addCapsule`), its flutes are 4% of the radius proud, and one pale areole stands in for twenty spines —
-  the halo is the read, and it has to beat the flesh (198 on screen against 118) or the plant is a green post.
-- `worlds/test_palace.world` is the bench: the avenue north from the bonfire through the gate to the terrace
-  and the spire, with the hall west and the vault east, on a floor painted `sand` end to end (`soil: 11x12544`).
+- **EVERY PLANT HERE IS TALLER THAN IT IS WIDE**, which is what water-starved looks like. A cactus is FLESH, its
+  flutes 4% of the radius proud, and one pale areole stands in for twenty spines — the halo is the read, and it
+  has to beat the flesh (198 on screen against 118) or the plant is a green post.
 
-### Elevation
+### Performance — how a 1000 m world stays cheap (`env.zig`)
 
-The world is a HEIGHTFIELD you sculpt (Ground layer > Raise/Lower/Smooth/Flat), stored as one QUANTISED height
-per lattice point (`HEIGHT_N`, `HEIGHT_STEP`, biased so `HEIGHT_ZERO` is the old flat ground).
-Quantised because the file is TEXT and the writer is a run-length encoder. The mesh is TILED (`TCHUNK`), with
-normals from the FIELD so two tiles agree at their seam.
-
-- **A FLAT MAP IS THE OLD WORLD, EXACTLY** — `heightAny` false means one world-spanning quad, `groundAt`
-  returns `GROUND_Y`, and no `hgt:` record is written.
-- **NOTHING SAMPLES THE MAP DIRECTLY.** Env keeps the live copy the visible mesh was built from and
-  `wf.sampleHeight` is the ONE sampler both owners call. It reads the CLIFF grid beside the height, and a
-  flagged cell steps instead of interpolating — see Cliffs below.
-- **EVERY PROP PLANTS AT THE HEIGHT UNDER IT** — `uploadHeight` must run BEFORE `materialize`, and a sculpt
-  stroke re-materializes on RELEASE.
-- **TWO RULES DECIDE EVERY STEP** (`env.walkStep`): the rise ahead is within `MAX_SLOPE` (tan 40°), or it is
-  under `STEP_UP` (two risers, three a wall) **AND LANDS ON A TREAD** (`treadAt`: a deck, a stair cell, or
-  ground under `MAX_SLOPE` read a quarter-metre either way). `STEP_UP` over the probe alone was a 47.7° climb
-  and the constant was never the limit — 288 cells of the shipped map sit in that band. Read at the step's
-  own end and at four taps along `STEP_PROBE`: a probe that landed past the corner of a cut put the body on
-  top of the wall.
-- **MEASURED OVER A FIXED LOOKAHEAD (`STEP_PROBE`), NEVER THE FRAME'S OWN TRAVEL.** Against frame distance a
-  240 fps hero ratchets up a vertical cliff. A test pins the rule across four frame rates.
-- **A REFUSED STEP IS NOT A STOP** — the uphill component is removed and the rest is taken at full length.
-- **FOES GET THE SAME RULES** as a POST-STEP GATE (`game.gateTerrain`). Airborne foes are exempt from the
-  terrain rule and from being shouldered — never from `env.resolveActor`. That push-out is NOT rate-limited.
-- **BUT NOT AT HIS WATERLINE — AT THEIR OWN** (`foe.wadeLimit`, `env.walkStepPast`). `WADE_MAX` is CHEST
-  height on the 1.8 m rig and HIS choice. A creature turns back at `foe.WADE_FRAC` of its own stature,
-  read off `topWorld`. **THE WATER IS A DOOR FOR EXACTLY TWO THINGS**: the gait table hands `.waterfaring` an
-  infinite limit — the toad and the fen lurker. The gate only refuses a step that goes DEEPER.
-- **A WATER DWELLER IS POSTED IN ITS OWN BAND** (`foe.poolBand`): the editor refuses a lurker outside
-  `fen.POOL_MIN`..`WADE_MAX` (place and paste both, and says why), and Ground > Pool digs to
-  `env.dwellerFloor` — the deepest lattice height the hero still wades, 1.295 m of water. One place holds
-  the band; the shipped-map test reads the same one.
-- **`pos.y` IS THE GROUND UNDER AN ACTOR**, written in ONE place (`game.groundActor`), EASED not snapped
-  (`GROUND_RISE_RATE`/`GROUND_FALL_RATE`) — the camera rides the shoulder, so snapping kicks the frame. Past
-  `GROUND_SNAP` it plants.
-- **EVERY WORLD POINT ON AN ACTOR IS MEASURED FROM `pos.y`** — shoulder points, `centerWorld`, `lockPoint`,
-  `topWorld`, crush points, dust.
-- **THE CAMERA SHORTENS ITS BOOM RATHER THAN BURYING THE EYE** (`camera.followClear`).
-- **BUT IT GIVES WAY TO TERRAIN ONLY, NEVER TO ITS OWN PITCH.** An up-tilt puts the eye LOW on purpose (that is
-  `game.lockPitch` framing an ogre). Only ground standing PROUD of the hero's level (`GROUND_RISE`, just under
-  one terrain riser) is worth paying distance for; on the flat the skim clamp lifts the eye those last few
-  centimetres and the boom stays the player's.
-- **THE HERO LEANS INTO THE HILL** (`hero.slopeLean`, 0.55 of the slope capped at 16°) through the SAME
-  `rx(bodyPitch)` term as the run lean.
-- **THE TERRAIN CASTS FROM ITS FAR SIDE ONLY** (`env.drawGroundCasters`, drawn with FRONT faces culled). Drawn
-  whole, a heightfield off a 108 m ortho box put acne everywhere the surface grazed the sun, so for a long time
-  it did not cast at all — and a smooth hill stood beside a painted cut of the same height with no shadow while
-  the cut threw one (owner: "notable shadow diff between cliff and smooth"). Only the triangles facing AWAY
-  from the sun write depth now: the lit slope never meets its own depth, the far slope is the silhouette that
-  throws, and the seam between hill and cut is gone. The grazing band at the terminator still carries the
-  wrap light's 10% and the 0.22 m bias. **THE PAINTED CLIFF FACES CAST TOO** (`env.drawCliffCasters`) —
-  the SHEET off a PLATE set `FACE_SHADOW_IN` inside the rock and `FACE_SHADOW_LIP` under the lip, drawn in the
-  depth pass only, so neither the sheet nor the shelf behind it can read its own depth back (both windings,
-  because the depth pass culls back faces and the sun stands behind half the walls); **EVERYTHING STOOD
-  AGAINST IT CASTS AS ITSELF** (`Face.cast` copies what the lit builder took since a mark into the caster):
-  the stamped rock, the rim stones, the ivy curtains, the talus and the leaned slab. Without them the rock
-  read as pasted on — sampled, sheet and stone were the same value. Moss and grass tufts do not cast. The
-  tile cull hands `castsInto` the tile's own height (`tileH`), so a tall face just outside the box still
-  throws into it.
-- **THE BOOM IS SHORTENED AT ONCE AND GIVEN BACK AT A RATE** (`camera.CLEAR_REGAIN`, `CamRig.eased`). A cliff
-  behind him is a step in the solve; taken raw it was a cut in the frame. The shot harness solves fresh
-  (`eased = -1`) — a shot has no previous frame.
-
-### Cliffs — a drop drawn as a FACE instead of a ramp
-
-A heightfield holds ONE height per lattice point, so the steepest thing it can make on its own is the whole
-drop spread over one cell — 2.51 m on the shipped map, which is a ramp and not a cliff. A second grid
-(`Map.cliff`, one case per CELL, indexed by its low corner) says which cells cut instead of interpolating.
-Ground layer > Cliff paints it, Slope takes it back.
-
-- **THE FLAG IS OPT-IN AND CHANGES NOTHING ELSE.** No `cliff:` row means the map loads and walks exactly as
-  it did; the dried-lake basin next door stays a bilinear bowl. The same 6 m drop is a wall or a ramp
-  depending on the flag, not on how steeply it was sculpted.
-- **ONE CUT SERVES THE MESH AND THE SAMPLER** (`wf.cliffCut`, `wf.cliffHigh`, `wf.cliffLevels`). Marching
-  squares on the cell's four corners against the midpoint of its two tiers, crossing every cut edge at its
-  MIDPOINT — the one place both cells on that edge agree. Solved off each cell's own tiers the cut stepped
-  sideways at every seam of the sculpted shipped lip and the sky showed through. **THE FLOOR EITHER SIDE IS
-  THE TERRAIN, NOT A TIER**: each side walks the bilinear of its own corners, a corner across the cut standing
-  in at the level its neighbours on this side hold (per lattice point, so the two cells on an edge agree).
-  Snapped to `lo`/`hi`, a cell on sculpted ground stood proud of the plain cell beside it and the walk stepped
-  at every seam — 67 steps in 75 m along the shipped lip, 20 of them falls. A test walks six cases on a 200²
-  grid (worst residue 0.37%, the grid straddling the chord) and a sculpted two-level bench end to end.
-- **A SADDLE'S MIDDLE IS A TIER, NOT A HOLE.** Four cuts leave a diamond between the corners; the bilinear's
-  own centre decides which tier fills it, and the two chords that then face the other way get the wall.
-- **PAINT UNDER A WALKABLE DROP IS INERT** (`wf.cliffMinDrop` = max(`STEP_UP`, `MAX_SLOPE`·cell), 2.1 m on
-  the shipped lattice). A painted cell cuts only where a ramp over it could not be walked; under that it is
-  the bilinear it always was, and a normal reads across it (`env.cellCuts`). The shipped map carries 1,300
-  painted cells on flat ground and 260 on sculpt noise under 2 m, each of which was a vertical step at its own
-  midpoint. Paint generously; it costs nothing.
-- **WALKING OFF A LIP IS A FALL, NOT A SNAP** (`game.heroFooting`) — the same `hero.startFall` a deck edge
-  takes, keyed on the LAND dropping more than `STEP_UP` in one step, which a bilinear ramp cannot do at any
-  frame rate.
-- **NOTHING ON FOOT FOLLOWS HIM OFF ONE** (`env.brink`, applied in `game.gateTerrain` after the walk gate).
-  Climbing one was already refused by `MAX_SLOPE`; this is the other direction. **BUT A BRINK IS PACED, NOT
-  STOOD AT** (`game.brinkStep`): the step's share toward the drop is removed and the rest is taken along the
-  lip, the way the walk gate treats a rise — and a body DROPS a lip under `DROP_FRAC` of its own stature when
-  the hero stands below it, which is a position read and legal.
-- **THE FACE IS THE PROPS' OWN ROCK** (`env.cliffWall`, `proprock.CLIFF_KINDS`). One flat plate per cell was
-  the Minecraft read. A face is now a lattice of spans (`FACE_SPAN_M`) by courses (the kind's `H / bands`),
-  bellied out over the low ground and swept by a 9 m bay field so some stretches bulge and others stand
-  flat; `blocky` sets how proud the strata stand (keyed on WORLD height, so a course runs level through every
-  cell), `cleft` the vertical grooves, `ivy` hangs curtains and presses moss into the seams, `broken` scatters
-  talus and leans a slab. The kind is a 27 m field, so a run reads as one geology. **THE LIP IS STRAIGHT AND
-  THE CUT IS EXACT** (owner: "straight cliffs, never the jagged minecraft look") — a ±0.3-cell wander made
-  every straight line an accordion of facets, one a cell, which is the palisade read.
-  **AND THE FACADE IS ONE OF THE `cliff*` PROPS, BISECTED INTO IT** (owner: "a smooth wall, then juxtapose
-  one of our cliff faces onto it halfway bisected"). The wall itself is a PLAIN SHEET on the cut, its lip and
-  foot on the two floors at the chord's ends so it runs with sloping ground — the test measures its area
-  against the cut's own and they agree to 1% — and the rock is `proprock.CLIFF_FACES`
-  (one row per face; "Rocky Cliff" is the first) stamped along the run by `env.faceStamp` at world stations
-  `FACE_PROP_M` apart, turned so its front looks out, scaled off its own STONE height (`Builder.boundsOf`,
-  because a cliff prop's ivy carries a third of its height again) and sunk until `FACE_PROP_PROUD` of it
-  stands in front of the cut — BOTH SPREAD PER STAMP (`FACE_PROP_FILL_VAR`, `FACE_PROP_PROUD_VAR`): sized to
-  one number every stamp crested the same 16% over the lip and the rim read as a picket of boulders; now a
-  third stop short of the lip as buttresses and the rest crest by up to a quarter of the drop. **THE SHEET
-  IS DIMMED UNDER THEM** (`FACE_SHEET_DIM`), the recess darker than the rock in front. **EVERY LOBE THAT STANDS PAST
-  THE CUT IS SOLID** (`stampSolids` off the prototype's `Masses` → `StampSolids` → `Env.cliffSolids`: one
-  capsule along the run per lobe, as deep as it protrudes and as wide as the lobe, `h` at its crown, appended
-  by `buildSolids` after the props' and dropped with its tile), so nothing walks into the stone and nothing
-  stops in the air between two lobes; the cut itself was already the wall. **AND NO STAMP GOES OVER A LADDER'S FOOT OR A FLIGHT'S HEAD**
-  (`climbsNear`, `FACE_PROP_CLEAR`) — which is why `Env.replay` adopts the fields, materializes the props and
-  only then builds the tiles. `Builder.stamp` copies a prototype mesh in turned, scaled and moved, so a
-  forty-metre run costs ONE built mesh. Everything before this tried to make the sheet itself into rock —
-  bellied cells, half-sunk masses on a recessed core — and every version of it read as plates pasted on a
-  wall. Adding a face is one row in `CLIFF_FACES`.
-  **THE RIM AND THE FOOT ARE AUTO-SCATTER ALONG
-  THE CUT**, never hand-placed: a cap of bare rock the soil has left, loose stones and grass leaning over the
-  drop above; a scree fillet whose height grows with the drop and talus past it below. Everything sits on
-  `groundAt`, so it follows the neighbour cell's floor. **A FACE STANDING IN WATER IS WET** — `.marble` and a
-  darker, cooler tone to `FACE_WET_H` over the sheet, a pale tide line to `FACE_TIDE_H` — decided by
-  `paintedDepth` at its foot, so it needs the water uploaded before the tiles (`replay` does).
-  Stair risers take none of the dressing (`Face.dress`).
-- **A CUT EDGE SHARED WITH ANOTHER CUTTING CELL GETS NO SKIRT** (`cliffCell`'s `nbCut`, off `faceCutsAt`).
-  `edgeOther` reads a neighbour as the line through the two corners they share, which across a cut is a
-  ramp, and the skirt closing our low floor against it stood a fin HALF THE DROP tall at every cell of every
-  straight face — a comb of dark spikes the stamps half hid, and the "chevrons" on every shadowed wall. A
-  stair neighbour still takes the skirt (its tread is the surface), and so does a painted cell under
-  `cliffMinDrop`, which really is a ramp. **THE FACE PROTOTYPES ARE BUILT WITHOUT THE PROP'S FISSURES**
-  (`proprock.cliffBuildOpt`, `fissures = false`): the six dark capsules that stand at a cliff prop's front as
-  cracks stood alone once the body was bisected behind the sheet. **THE SHEET'S SHADING BUMP IS 0.10 m**
-  (`FACE_BUMP`); at 0.45 the relief noise tilted its normals past 45°.
-- **A STAIR CELL IS ONE TREAD** (case 2, `wf.stairTread`), and **ITS RISER GOES DOWN TO THE LOWEST THE
-  NEIGHBOUR REACHES ON THAT EDGE**, not to the neighbour's CENTRE: a tread is flat at its own mean, the cell
-  beside it is a bilinear through the two corners they share, so its surface at the edge runs below its
-  centre and the riser stopped short of it — a hole under every step of a terrace. Flat at its mean snapped to
-  `wf.STAIR_RISE`, with risers drawn down whichever of its four edges faces lower ground. A run of them
-  terraces, and the walk takes it because a probe crosses at most one riser — a comptime assert beside it
-  keeps the riser at or under `STEP_UP`. **A FLIGHT CAN ONLY CLIMB ONE RISER A CELL**, so stairs walk
-  somewhere a ramp cannot only where the cell is under `STAIR_RISE / MAX_SLOPE` = 0.60 m. On the shipped
-  map's 2.51 m cell they are a look and a flat tread, never a shortcut; the bench's 0.538 m cell is where a
-  0.90 grade climbs that a plain ramp refuses.
-- **A STAIR THAT CLIMBS MORE THAN ONE RISER A CELL IS A PROP** (`props.stairflight`, `propbuild.stairMesh`,
-  `Info.flight`). Sections like the ladder's — `rise=` snaps to whole `STAIR_SEG` (1.0 m over `STAIR_RUN`
-  1.6 m, four 0.25 m treads, one `wf.HEIGHT_STEP` each) — but each section also ADVANCES `flight.run` along
-  local −Z (`env.drawStack`), and the whole run is ONE `WorldDeck` with `run > 0`: `floorAt` answers the
-  tread under a point, so `standAt` walks it. **THE WALK GATE AND THE BRINK MEASURE FROM WHERE HE STANDS**
-  (`stepOk`, `brink` off `from.y` through `standAt`), so the head of a flight meets the shelf at a step and
-  not at the drop the LAND takes — and a foe follows him down one. Local −Z is the wall it climbs to, the
-  ladder's convention; the head may sit up to two risers off the shelf (`STEP_UP`) and still be a step.
-- **RAMP IS A REGRADE, NOT A CASE.** Sweeping it drops the cut and smooths what is left, which is the only
-  way to open a walkable breach through a painted line — a single unflagged cell in a cliff is a 67° ramp on
-  the shipped lattice and no more walkable than the wall it replaced. `Slope` still just unpaints.
-- **3..255 ARE UNCLAIMED** and a map using one is a LOAD ERROR on a build that does not know it.
-- `worlds/test_cliff.world` is the bench: a 6 m mesa with a straight face, a ladder and a `stairflight` up
-  it, a 4 m shelf cut on the diagonal `x + z = 20`, a painted stair terrace up the mesa at a grade past
-  `MAX_SLOPE`, and a 3 m pit with an unflagged ramp down its west side — FLOODED, so its east wall is the wet
-  face. `--shot-land` also walks him into the face for two `_foot` frames and prints how far short of the cut
-  the stamped stone stops him.
-- **THE SHIPPED MAP'S NORTH-WEST BASIN LIP IS ONE OF THESE** — a leaned `cliff4` used to stand in for the
-  face there; the lip is terraced to two tiers now, `-1.75` m over `-15.00`, which is a **13.25 m** face and
-  past `FALL_DEATH`. Walking off it kills.
-
-### Caves — a second surface UNDER the heightfield (`caves.zig`)
-
-A heightfield holds one height per lattice point, so the land can never be over anything. A cave is a
-SECOND surface: three grids on their own lattice (`wf.CAVE_N`, 447 points, **half the terrain's cell** and
-sharing its points, so cave point 2i IS terrain point i) holding COVERAGE, a FLOOR and a CEILING.
-The CAVES layer paints them; no `cave:` row means the map loads and walks exactly as it did.
-
-- **THE CEILING DECIDES WHICH WORLD A BODY IS IN** (`caves.supportAt`, and `env.standAt` routes through it).
-  Feet under a chamber's roof are in the chamber; feet at or over it are on the land. Height alone cannot
-  tell a hillside from the roof of the cave under it, and a step allowance cannot either — solved that way
-  the hero walked OVER the hill instead of into the mouth, because the hill was within one step the whole way.
-- **NOTHING ELSE IN THE WALK CHANGED.** `stepOk`, `brink`, `gateTerrain` and `groundActor` all ask `standAt`,
-  so a cave floor is followed, and a cave WALL refuses a step for free: rock answers with the LAND's height,
-  which is a rise no step can take. Only the SLIDE needed teaching — `env.blockGrad` reads the coverage
-  gradient underground, so a body slides along the rock instead of along the hill over its head.
-- **ONE CONTOUR SERVES THE ROCK AND THE AIR** (`caves.cellShapes`). Marching squares on the cell's four
-  coverage corners at `CAVE_EDGE`, with the cell's own middle deciding a saddle the way `cliffCut` does.
-  The open polygon is the floor and the ceiling, the chords are the walls, and the ROCK polygon is what is
-  left of the hill — same crossing points, so a mouth cannot crack against the hill it opens through.
-- **A MOUTH IS WHERE THE CEILING COMES UP THROUGH THE HILL.** No flag: `roof >= groundAt` and the cell drops
-  its ceiling, the terrain over it is cut to the contour, and `mouthBand` closes the cut edge from the
-  neighbour's ceiling up to the hill. Which is why the Entrance tool needs no hand-solved ramp — carve a
-  passage out toward open ground and the hill opens itself where it gets too thin to roof one.
-- **THE CARVE FLOOR IS A FIELD, NOT A NUMBER** (`caves.Brush.dx/dz`). A stroke stamps a disc many times over;
-  with one floor per stamp the overlaps walked the floor down under themselves and the mouth ended a metre
-  below the ground it started on. A slope written per CELL is the same value however many stamps cover it.
-- **UNDER ROCK THE SKY IS GONE AND SO IS THE SUN** (`shelterAt` in the scene shader, slots 18/19). Per
-  FRAGMENT, off world position: from inside the mouth the hillside outside is still in daylight while the
-  chamber behind is dark, in the same frame. The field is coverage TIMES the rock over the ceiling, so it
-  falls to nothing at a mouth on its own; the ambient keeps 16% under cover and torches are untouched.
-  **BOTH FALLOFFS ARE FULL AT THE SURFACE THEY MEET** — keyed to the coverage contour or to the ceiling they
-  ring every chamber in daylight, because the wall's own face stands exactly on that contour.
-- **A SHEET SEEN FROM BEHIND IS ITS OWN UNDERSIDE** — the fragment shader flips the normal on back faces and
-  `game` draws the ground two-sided while the eye is under the surface. Without it a chamber looks up
-  through the hill at the sky.
-- **THE BOOM IS PINNED BOTH WAYS** (`camera.followRoofed`): it already shortened against rock (rock answers
-  as the hill), and it now stops at the ceiling as well. A test walks it in a 3 m room. **THE NEAR PLANE IS
-  0.55 m**, so a shot that PLACES a camera underground rather than solving one will clip through the floor.
-- **ROCK IS OPAQUE** (`env.rockBetween`, walked at `ROCK_PROBE`): nothing on the hill sees or shoots a body
-  in the chamber under it. A jump stops at the ceiling (`hero.capUnderRoof`), and the air in a chamber is
-  DRY even under a painted pool (`env.wadeDepthUnder`).
-- **A PLACEMENT CARRIES ITS OWN SURFACE** — `under=1` on a `foe:` row or an `at:` op (one byte, and it fits
-  in `Op`'s existing padding: 64 B either way). `caves.homeY` gives the land back if the chamber it named
-  has since been filled, rather than dropping the body through the world.
-- **ONE UNDERGROUND LEVEL PER POSITION.** Two tunnels crossing at different heights are not representable;
-  that needs a different representation, not another brush.
-- `worlds/test_caves.world` is the bench, authored by `caves.bench` and rewritten by its own test: a 10 m
-  hill with a 3 m chamber under it, a bent passage, a 2.25 m low stretch, a mouth out on the flat, and a
-  fire on the chamber floor. `--shot-land --map worlds/test_caves.world` frames the mouth, the inside,
-  looking out, the bend, the chamber and the hill overhead, and prints the roof thickness at each.
-
-**Authoring one** (the Caves layer): set FLOOR and HEADROOM, then Carve under a hill — the cursor rides the
-floor plane, not the hill, or it would climb the very rock you are carving under. Drag Entrance from open
-ground toward it and the grade and the opening come out walkable. Fill puts rock back. Cutaway takes the
-hill off every chamber, and that viewing choice FOLLOWS YOU into Props and Units, so a chamber can be
-furnished without the roof coming back on; a body placed in that view is marked `under`. F5 starts on the
-chamber floor under the editor camera. The panel says how much rock is over the ceiling and refuses to
-pretend a hill 2 m thick can roof a 3 m room.
-
-### Illusory walls — a cliff face that is not there
-
-**`props.illusory` IS `cliff2`'S OWN MESH WASHED TOWARD SLATE** (`proprock.illusoryMesh`, `Builder.wash` at
-`ILLUSION_WASH_T`): it stands in a line of real faces and reads as one at a glance, and as the odd one to
-someone who looks. It is SOLID and BLOCKS SIGHT like any cliff until touched, and the map places it like any
-prop (`at: illusory x z yaw scale`; `worlds/test_illusory.world` is the bench, three faces in a row with a
-chest behind the middle one).
-
-- **THREE THINGS BRING IT DOWN, ALL THE HERO'S**: a blade that reaches the stone (`env.illusionStruck` off
-  `heroBlade`, the blade's own radius inflating the face), a ROLL pressed against it (`env.illusionTouched`
-  at `HERO_R + ILLUSION_ROLL_REACH`), or an arrow planted in it (`game.planted`). ER's walls fall to any hit;
-  the roll is the owner's addition. A foe cannot dispel one.
-- **IT STOPS BEING A WALL THE FRAME IT IS STRUCK**, and only LOOKS like one for `env.ILLUSION_FADE` (0.7 s):
-  `eachSolid` drops every solid whose `illusion` slot has `illusionLife` under 1, so the look, the step, the
-  arrow and the roll all pass at once while the face thins in place (`Prop.dissolve`, alpha only — never
-  `shrink`, which would sink it). The game marks the break with `veil_break` (glass and air, no stone) and a
-  wash of pale motes up the face (`game.dispelIllusion`).
-- **THE BOOKKEEPING IS THE FOG GATE'S**: `Info.illusion` on the row, a slot PLUS ONE on both `Prop.illusion`
-  and `collision.Solid.illusion`, `illusionProps/Solid0/SolidN` filled by `buildSolids`. Walls come back with
-  the map (`restoreIllusions` beside every `openWards` in `env`'s own load paths), and NOT at a bonfire —
-  `game.rehomeFoes` does not touch them.
-
-### Decks and ladders — the only two ways off the ground
-
-**A DECK IS THE FIRST WALKABLE SURFACE THAT IS NOT THE LAND** (`props.Info.decks`, `env.deckAt`/`standAt`). Props
-were XZ capsules with a ceiling and nothing else; `game.groundActor` asks `standAt` now, so `pos.y` is the deck
-where there is one and `groundAt` stays the question about the LAND.
-
-- **A DECK HE IS NOT ALREADY UP AT IS NO FLOOR AT ALL** — the gate is the walk's own `STEP_UP`, which is what
-  stops a body on the ground being snapped onto a platform five metres over its head.
-- **A `hole` CANCELS THE DECK AT ITS OWN `y` AND NO OTHER** (`env.holedAt`) — a trapdoor, and the ONE way a deck
-  is not simply convex. The mesh and the deck are solved off the same constants or it is a floor you fall
-  through. One row per storey in `propbuild.WATCH_STOREYS` is that single source: the mesh boards each row and
-  `props.WATCH_DECKS` turns the same rows into decks and holes.
-- **WALKING OFF A DECK EDGE IS A FALL, NOT A SNAP** (`game.heroFooting`, `hero.startFall`). `groundActor` PLANTS
-  past `GROUND_SNAP`, which off a five-metre floor is a teleport with a footstep on the end of it. Only a deck
-  does this; the land keeps the snap it has always had.
-- **THE LENS FOLLOWS HIS FEET, NOT `pos.y`** (`game.syncLensLift`, `camera.tickLift`'s share). Both jump — a
-  plant, a mount, a top-out — while `pos.y + lift` is continuous through all of it. A climb and a fall off a
-  deck take the FULL lift; a jump still takes `camera.LIFT_SHARE`.
-- **A SOLID CAN HAVE A FOOT** (`Part.y0`, `collision.Solid.y0`) — a LINTEL: the course over a doorway, open to a
-  body on the floor and wall to one up on a deck. Four consumers and they must all know: `blocksPoint`,
-  `blocksSight`, `env.resolveActorPast`, and **`buildSolids`, which has to carry `y0` into the collider the way
-  it already carried `h`** — left behind, the watchtower's doorway came out sealed from the ground up.
-- **A COLLIDER IS THE SHAPE OF WHAT IT STANDS FOR, AND `props.partsOf` IS THE ONE PLACE TO ASK** — nothing
-  that builds, draws or counts a collider reads `Info.parts` itself. **A CLIFF'S ARE FITTED OFF ITS OWN ROCK**
-  (`proprock.Masses`, recorded as the mesh is built; `fitParts`; `cliffColliders` once per row): one capsule
-  per lobe and per boulder big enough to stop a body (`MASS_MIN_R`), through the section between his feet
-  and his crown (`FIT_BAND_LO..HI`, at the stamp's own scale for a painted face). The hand pair it replaced
-  was 2.9 m deep against lobes 2–3.4 m deep, so a body stood inside the stone and stopped in the air beside
-  it (owner: "bad collision feels janky and ppl get frustrated and quit"). **MEASURE IT**: `--shot-props`
-  prints a `COLLIDER` line per kind — stone past the collider (a walk-through), collider past the stone (an
-  invisible wall), flagged `LOOK` over 0.5 / 0.6 m — off the model's own vertices (`props.colliderAudit`),
-  and the cliff test pins the same numbers off the builder. Under the line it prints the kind's FOOTPRINT MAP
-  through the walk band (`#` stone over a metre, `=` over the step, `_` a step a body walks over, `o`
-  collider, `@`/`+`/`,` both), which is what every part in `INFO` was sized off — author a collider from the
-  map, never from the number that looked right. Stone under `STEP_UP` owes no collider and the audit does not
-  count it. **SIX KINDS ARE LOOSE ON PURPOSE AND STAY FLAGGED**: the conifer and the willow (boughs and
-  fronds are walked through; the collider is the bole), the ash dune and the sand dune (walked OVER, their
-  collider the crest — a dune's plan is a lens and no box holds one without standing out in the open), the fog
-  gate (the ward is the wall) and the awning (cloth over two posts). Everything else under `LOOK` is a defect.
-  **`solidMat` DOES NOT COUNT `Mat.plant`**, so a body of leaves audits as nothing and its collider is measured
-  against the woody part alone: an agave's is its heart, not its blades.
-
-- **PLANT THE ROUND SILHOUETTE, MEASURE THE SQUARE ONE.** A degenerate segment with `flat` (`ax == bx`,
-  `az == bz`) is a SQUARE of side `2r` — how every plinth, pier and kilt here is held — and a round part is the
-  same capsule without it. Choosing wrong is most of the audit's `LOOK` lines.
-- **A COLLIDER MAY HAVE SQUARE ENDS** (`Part.flat`, `collision.Solid.flat`, `collision.box`): the solid is the
-  capsule's own bounding rectangle in the segment's frame, so a wall, a block, a plinth or a house has
-  corners. Round ends left a 7.7 m keep's corners 2 m in the open and every altar and slab with a phantom
-  bulge at both ends. Rings and posts stay round (`art.towerRing`, `DOME_RING`): a polygon of round-ended
-  segments joins without gaps.
-
-**A LADDER IS THE ONE PROP YOU GET ON** (`props.Info.climb`, `game.Climb`). Its own local **+Z is the open side**
-he mounts from and stands off (`propbuild.LADDER_STANDOFF`); local −Z is the wall it leans on.
-
-- **IT IS THE FIRST KIND THAT STACKS** (`props.Info.stack`, `Prop.rise`, `env.drawStack`). One mesh drawn as
-  whole sections up its own axis, because a uniform `scale` drags the rungs apart with the rails. Every other
-  section is turned 180°, or the mesh's own wabi-sabi bands the run like a barber's pole.
-- **THE SECTION IS THE AUTHORING GRANULARITY, AND THAT IS WHY IT IS 0.90 m** (`propbuild.LADDER_SEG`, three
-  rungs). A run can only be a whole number of them; at 2.40 the band `ladderExit` accepts was narrower than the
-  pitch, so against a cliff quantised to `wf.HEIGHT_STEP` most lips had no run that served them.
-- **THE HEAD MAY STAND PROUD AND MAY ONLY JUST FALL SHORT** (`env.LADDER_PROUD` up, `env.STEP_UP`
-  down). Rails over a floor are what you haul on; a head under the lip is a pull-up.
-- **THE EXIT ASKS THE WALL SIDE FIRST AND MAY NOT BE A LEDGE.** Over a cliff you top out over the lip; inside a
-  shaft the stone refuses that side and he steps off inboard. **ON A ROOF THERE IS NO WALL LEFT TO REFUSE IT**,
-  so one more stride the same way has to hold him too — that is what keeps him off the merlons.
-- **HEIGHT IS A `lift`, NOT A `pos.y`** — the jump's own machinery, so `footPos` and the shadow follow for free
-  and a knock-off is `hero.launchFrom` with the climb height. `game.updateClimb` owns his XZ outright (no
-  terrain gate, no push-out, like the fog-gate walk), and the phase is driven by DISTANCE climbed.
-- **TOPPING OUT IS A HAUL, AND IT IS STILL THE LADDER** (`game.Mantle`, `hero.startMantle`/`poseMantle`). He
-  lets go `MANTLE_RISE` under the lip rather than riding the top rungs, and the beat presses and stands him a
-  full `LADDER_EXIT` in from the edge. **EVERY GATE THAT LEAVES A BODY ON A LADDER ALONE ASKS `hero.onLadder`,
-  NOT `climbing`** — the footing, the terrain gate, the push-out, the lens lift and the INTERACT button, which
-  is not one of the things `committed()` refuses and reached a bonfire in the yard through the haul.
-- Forward climbs, back climbs down, back + sprint SLIDES; jump or roll lets go. Everything else is refused by
-  `committed()`. **NOTHING BUT THE HERO CLIMBS**, so a ladder is an escape from whatever cannot follow.
-- `worlds/test_ladder.world` is the bench — two shelves, the watchtower's four flights to its roof, and the
-  three runs that must REFUSE to top out. The test beside it prints every head and exit in metres.
-
-### Performance — how a 560 m world stays cheap (`env.zig`)
-
-- **UNIFORM GRID (CSR).** Props bucketed by 16 m cell into two indexes (structures, flora), built by counting
+- **UNIFORM GRID (CSR)** — props bucketed by 16 m cell into two indexes (structures, flora), built by counting
   sort into one flat array. Each cell carries the MAXIMA its pass needs, so a whole cell can be rejected first.
 - **THE LIT PASS culls per cell then per prop** — four frustum side planes plus each kind's `view` distance.
-- **THE DEPTH PASS culls by SHADOW REACH, not camera distance.** A caster throws its shadow `gfx.sunReach`
-  times its height sideways — the cotangent of the sun's elevation, solved from the HOUR
+- **THE DEPTH PASS culls by SHADOW REACH, not camera distance** — a caster throws its shadow `gfx.sunReach`
+  times its height sideways, the cotangent of the sun's elevation solved from the HOUR
   (`daynight.shadowReach`, written only by `Scene.setHour`). A prop matters iff its footprint plus that reach
-  can touch the ortho box (`castsInto`); a terrain tile or cliff caster asks the same with its own height
-  (`tileH`).
+  can touch the ortho box (`castsInto`).
 - **COLLISION + ARROW FLIGHT query the grid**, never the whole solid list.
-- **Check it, don't trust it.** Menu > Debug > Stats prints the live counts and `--shot` captures them. If
+- **Check it, don't trust it** — Menu > Debug > Stats prints the live counts and `--shot` captures them. If
   `drawn` approaches `props`, a culler has been defeated. Caps are init-time PANICS
-  (`MAX_PROPS`/`MAX_SOLIDS`/`MAX_SOLID_REFS`) — a silently dropped collider is a walk-through wall.
-- **THE OCCLUDER FADE** (`env.markOccluders`): a prop between lens and hero goes thin, keyed to how much of him
-  it hides. Three rules keep it from reading as a switch: the geometry sets a TARGET and an EASED ramp walks
-  you there (`OCCL_IN`, `OCCL_OUT` — out is slower, and `easeShape` takes the speed off both
-  ends); it stops being in the way over a BAND not a plane (`OCCL_DEPTH_BAND`); and `OCCL_MAX` counts what is
-  in flight, both directions. The shape is a pure function of where the value SITS, never of where a travel
-  began — `fadeTo` moves under it every frame the camera does.
-- **EVERYTHING THINS EXCEPT WHAT SAYS `solid`** — architecture, cliffs, the water sheet, the bonfire. The flag
-  is that way round because as an opt-in every kind added afterwards opted out by silence.
-- **GROUND COVER THINS FROM HIS WAIST UP** (`OCCL_TALL`, the rig's SPINE at 0.640·H). `markOccluders`
-  walks BOTH indices — `scanCell` over `stx` then `flx` — and the height gate is what keeps grass out of it.
-  Coverage will not do that job: a tuft against the lens scores 0.54, over three times `OCCL_MIN`. **The gate
-  is the INSTANCE'S height, `top * scale`, not the kind** — the scatter stamps 0.72..1.38. On the shipped map
-  it passes 5,095 of 15,826: all cattails, thicket and ivy, most reeds, bush, grasstall, gorse and foxglove,
-  and NOT ONE tuft, patch, fern, shrub, bracken, moss, clover, heather or mushroom. At his HIP (0.95) it let
-  316 scaled patches and 303 ferns in.
-- **AND IT COSTS NOTHING TO HAVE.** Flora is 15,826 of the map's 17,524 props; the gate leaves 45..52 reaching
-  `thinFor` a frame beside the 22 the props index does. Measured over the whole map at 2.4/4.6/9.0 m of boom,
-  what enlists is 0.11..0.15 instances a frame, worst spot 10, list peaking at 12 of `OCCL_MAX` 64 — against a
-  lit pass issuing 865 draws and peaking near 1875. It was never a frame problem; it was shimmer.
-- **A THINNED PLANT KEEPS ITS WIND** (`drawThinned`). `drawFlora` draws inside `Scene.setWind(true)` and this
-  path is outside it. It goes on for BOTH of the pass's draws, never one: the depth prepass has to lay down the
-  same geometry the colour pass draws, or LEQUAL throws the surface away.
-- **THE OCCLUDER VOLUME IS NOT THE COLLIDER** (`props.Blocker`, `Info.occl`). A collider is sized for what you
-  WALK INTO, an occluder for what you SEE THROUGH — a conifer's collider is a 0.58 m pole against boughs that
-  block the view at 3.4 m. The trees carry cylinders off their own mesh builders (bole then crown; `y0`..`y1`
-  off the foot). A kind with no `occl` falls back to the colliders plus `OCCL_SKIRT`, right where the two
-  shapes agree — a pillar, and an ARCH, whose opening must stay see-through.
-- **COVERAGE OPENS THE GATE, DEPTH SCALES THE ANSWER** (`thinOf`). `OCCL_MIN` is a coverage figure and nothing
+  (`MAX_PROPS`/`MAX_SOLIDS`/`MAX_SOLID_REFS`): a silently dropped collider is a walk-through wall.
+- **A CULLER BUG LOOKS LIKE AN EMPTY WORLD, AND ONE-ORIENTATION TESTS MISS IT** — `View.fromCamera`
+  sign-corrects its plane normals against the camera forward rather than assuming a handedness. Its test sweeps
+  seven headings. **`env.View` is THE frustum, there is one of them, and a second culler is the empty-world bug.**
+- **THE OCCLUDER FADE** (`env.markOccluders`) — a prop between lens and hero goes thin, keyed to how much of him
+  it hides. Three rules keep it from reading as a switch: the geometry sets a TARGET and an EASED ramp walks you
+  there (`OCCL_IN`/`OCCL_OUT`, out slower, `easeShape` taking speed off both ends); it stops being in the way
+  over a BAND not a plane (`OCCL_DEPTH_BAND`); and `OCCL_MAX` counts what is in flight, both directions. **The
+  shape is a pure function of where the value SITS, never of where a travel began.**
+- **EVERYTHING THINS EXCEPT WHAT SAYS `solid`** — architecture, cliffs, the water sheet, the bonfire. The flag is
+  that way round because as an opt-in every kind added afterwards opted out by silence.
+- **GROUND COVER THINS FROM HIS WAIST UP** (`OCCL_TALL`, the rig's SPINE at 0.640·H) — `markOccluders` walks BOTH
+  indices and the height gate is what keeps grass out of it. **Coverage will not do that job**: a tuft against
+  the lens scores 0.54, over three times `OCCL_MIN`. **The gate is the INSTANCE'S height, `top * scale`, not the
+  kind** — the scatter stamps 0.72..1.38.
+- **COVERAGE OPENS THE GATE, DEPTH SCALES THE ANSWER** (`thinOf`) — `OCCL_MIN` is a coverage figure and nothing
   else. Multiplied together before the threshold, a mass a metre in front of him was discounted under it.
-- **A THINNED OCCLUDER DRAWS LAST, AFTER EVERY OPAQUE THING, AND BACK TO FRONT** (`env.drawThinned`). It draws
-  with the depth MASK OFF; left in cell order, the HERO came afterwards and composited at FULL opacity straight
-  over it. Drawn last, the tree's alpha is what mattes HIM, so the reveal IS the ramp.
-- **IT BLENDS ONE LAYER PER PIXEL.** A trunk stacks three or four surfaces along the ray and blended one after
-  another the alpha COMPOUNDS. So each prop lays its own depth down first with the colour buffer held (`dst =
-  0·src + 1·dst`, rlgl having no colour mask), and the pass after draws under rlgl's LEQUAL.
-- **A FULL LIST GIVES ITS SLOTS TO WHAT HIDES HIM MOST — TAKEN OFF SOMETHING STILL SOLID** (`wantFade`).
-  Nothing outside the list is ticked, so dropping an entry that has already left solid strands it thin or snaps
-  it back; the victim is the least-thin ask among those still AT solid, and with none of those the ask waits a
-  frame. A tree a frame late is not something the eye can see; a tree jumping back to solid is.
+- **THE OCCLUDER VOLUME IS NOT THE COLLIDER** (`props.Blocker`, `Info.occl`) — a collider is sized for what you
+  WALK INTO, an occluder for what you SEE THROUGH: a conifer's collider is a 0.58 m pole against boughs that
+  block the view at 3.4 m. A kind with no `occl` falls back to the colliders plus `OCCL_SKIRT`, right where the
+  two shapes agree — a pillar, and an ARCH, whose opening must stay see-through.
+- **A THINNED OCCLUDER DRAWS LAST, AFTER EVERY OPAQUE THING, AND BACK TO FRONT** (`env.drawThinned`) with the
+  depth MASK OFF; left in cell order the HERO came afterwards and composited at FULL opacity over it. Drawn
+  last, the tree's alpha is what mattes HIM, so the reveal IS the ramp.
+- **IT BLENDS ONE LAYER PER PIXEL** — a trunk stacks three or four surfaces along the ray and blended one after
+  another the alpha COMPOUNDS. Each prop lays its own depth down first with the colour buffer held (`dst =
+  0·src + 1·dst`, rlgl having no colour mask), and the pass after draws under LEQUAL.
+- **A THINNED PLANT KEEPS ITS WIND** (`drawThinned`) — `drawFlora` draws inside `Scene.setWind(true)` and this
+  path is outside it, and it goes on for BOTH of the pass's draws, never one: the depth prepass has to lay down
+  the same geometry the colour pass draws.
+- **A FULL LIST GIVES ITS SLOTS TO WHAT HIDES HIM MOST — TAKEN OFF SOMETHING STILL SOLID** (`wantFade`). Nothing
+  outside the list is ticked, so dropping an entry that has already left solid strands it thin or snaps it back.
+  A tree a frame late is not something the eye can see; a tree jumping back to solid is.
 
 ## Triggers, folk and dialog
 
-StarCraft's trigger system on this world: CONDITIONS and ACTIONS; every condition must hold, then the action
-list runs in order. `worldfmt.zig` holds the definitions as map data, `trigger.Runtime` everything that
-changes, `dialog.Session` the one conversation that may be on screen, `npc.zig` the body you speak to. Nothing
-about any of it is authored in Zig.
+StarCraft's trigger system on this world: CONDITIONS and ACTIONS; every condition must hold, then the action list
+runs in order. `worldfmt.zig` holds the definitions as map data, `trigger.Runtime` everything that changes,
+`dialog.Session` the one conversation that may be on screen, `npc.zig` the body you speak to. **Nothing about
+any of it is authored in Zig.**
 
-- **THE GENERAL-PURPOSE STATE IS WHAT MAKES IT COMPOSE**, not the condition vocabulary: named switches
-  (`flag`), named integer counters, countdown timers. Without them every new bit of story state wants a new
-  condition kind.
+- **THE GENERAL-PURPOSE STATE IS WHAT MAKES IT COMPOSE** — named switches (`flag`), named integer counters,
+  countdown timers. Without them every new bit of story state wants a new condition kind.
 - **A NAME IS INTERNED TO A SLOT AT LOAD**, so a condition costs two bytes; the map carries the
   `flags:`/`counters:`/`timers:` tables so the file stays self-describing.
 - **EVERY OTHER REFERENCE IS RESOLVED AFTER THE WHOLE FILE IS READ** (`link`) — a dialog may be declared below
-  the trigger that opens it, and an `ask:` may point forward. An unresolved one is a LOAD ERROR.
-- **EVALUATED EVERY FRAME, NOT ON A CYCLE.** A PRESERVED trigger is held off by `REPEAT_GUARD` —
-  without it `always` + `preserve` fires sixty times a second and never lets go of the screen.
-- **A CONDITION IS LIVE, NEVER STICKY.** `region` is SC1's Bring exactly: true while he stands in it. Two
-  conditions that come true at different moments are what the SWITCHES are for.
-- **AN EMPTY `when:` LIST NEVER FIRES.** `always` is a condition you write down.
+  the trigger that opens it. An unresolved one is a LOAD ERROR.
+- **EVALUATED EVERY FRAME, NOT ON A CYCLE.** A PRESERVED trigger is held off by `REPEAT_GUARD` — without it
+  `always` + `preserve` fires sixty times a second and never lets go of the screen.
+- **A CONDITION IS LIVE, NEVER STICKY** — `region` is SC1's Bring exactly: true while he stands in it. Two
+  conditions that come true at different moments are what the SWITCHES are for. **AN EMPTY `when:` LIST NEVER
+  FIRES**; `always` is a condition you write down.
 - **A `dialog` ACTION BLOCKS ITS OWN LIST AND NOTHING ELSE** (SC1's Transmission), and so does `wait`. Only one
   conversation may be up, and a trigger that wanted the screen is not advanced that frame — deferred, never
   dropped.
-- **`deaths` IS MAINTAINED BY THE ENGINE**, off `justDied` through `eachTarget` — a latch (the sac's `killed`)
-  would bill one death sixty times. The egg sac has no such edge, so the brood's own `bursts` bills it.
-- **THE SCRIPT LAYER IS ARMED WHERE THE MAP CHANGES, NOT WHERE THE HERO DIES** (`game.armScript`): a load and
-  every way out of the editor.
+- **`deaths` IS MAINTAINED BY THE ENGINE**, off `justDied` through `eachTarget` — a latch would bill one death
+  sixty times. The egg sac has no such edge, so the brood's own `bursts` bills it.
+- **THE SCRIPT LAYER IS ARMED WHERE THE MAP CHANGES, NOT WHERE THE HERO DIES** (`game.armScript`).
 - **ONE BUTTON, ONE WRITTEN PRIORITY ORDER** — bonfire, then whoever is standing there, then a box
   (`game.interact`). The HUD prompt reads the same order.
+- **The dialog panel** is SIZED TO WHAT IT HOLDS, growing upward off a fixed bottom edge. **A GATE HIDES A LINE,
+  IT DOES NOT GREY IT** — nothing here has a reason to show, and a greyed row with no reason is worse than a row
+  never offered. **YOU MAY NOT WALK OUT MID-SENTENCE**: no cancel, a conversation is left through one of its own
+  endings, which is what lets `talked` mean "has heard this". The world's HUD goes away behind it. **A NODE'S
+  `act:` FIRES ON ARRIVAL AND A CHOICE'S `gets:` ON THE PICK.**
 
-### The dialog panel
+### The folk (`npc.zig`)
 
-- **IT IS SIZED TO WHAT IT HOLDS**, growing upward off a fixed bottom edge.
-- **A GATE HIDES A LINE, IT DOES NOT GREY IT.** Nothing here has a `disabledMessage` to show, and a greyed row
-  with no reason is worse than a row never offered.
-- **YOU MAY NOT WALK OUT MID-SENTENCE.** No cancel — a conversation is left through one of its own endings,
-  which is what lets `talked` mean "has heard this".
-- **THE WORLD'S HUD GOES AWAY BEHIND IT**, as at a bonfire.
-- **A NODE'S `act:` FIRES ON ARRIVAL AND A CHOICE'S `gets:` ON THE PICK**, both through
-  `trigger.Runtime.apply`.
+Not foes: no `Vitals`, no `Leash`, no blade. **Do not let the foe contract grow into them by accident.**
 
-### The wanderer (`npc.zig`)
-
-Not a foe: no `Vitals`, no `Leash`, no blade. Do not let the foe contract grow into it by accident.
-
-- **A MAN STANDING STILL IS THE HARDEST THING TO ANIMATE.** THREE clocks at rates that never line up — breath,
-  a weight shift, a head drift — so the loop never shows.
-- **THE WEIGHT SHIFT IS A PELVIC LIST, NOT A SLIDE.** Translating the pelvis sideways carries both hips and
+- **A MAN STANDING STILL IS THE HARDEST THING TO ANIMATE** — THREE clocks at rates that never line up (breath, a
+  weight shift, a head drift) so the loop never shows.
+- **THE WEIGHT SHIFT IS A PELVIC LIST, NOT A SLIDE** — translating the pelvis sideways carries both hips and
   `legChain` solves each leg straight down from its own hip, so both feet travel too. A roll about the pelvis
-  raises one hip and drops the other.
-- **AND ITS DROP IS PAID BACK AT THE PELVIS.** At rest this rig's leg is EXACTLY straight (pelvis 0.530·H,
-  ankle 0.039·H, thigh + shank 0.491·H), so a pelvis a millimetre below rest puts the sole through the floor —
-  there is no foot IK. Lift by `hx·sin(list)`.
+  raises one hip and drops the other. **AND ITS DROP IS PAID BACK AT THE PELVIS**: at rest this rig's leg is
+  EXACTLY straight, so a pelvis a millimetre below rest puts the sole through the floor — there is no foot IK.
+  Lift by `hx·sin(list)`.
 - **NO PITCH AT ALL AT THE ROOT** — a root pitch rotates the LEGS, so one degree of stoop levers a planted foot
   half a centimetre into the ground. A stoop is thoracic anyway.
-- **HE TURNS FIRST, THEN WALKS** (`TURN_GATE`). Stepping off before he is pointed at it makes travel disagree
+- **HE TURNS FIRST, THEN WALKS** (`TURN_GATE`) — stepping off before he is pointed at it makes travel disagree
   with facing, which IS a sidestep as far as the shared gait is concerned.
-- **THE STAFF IS THE OTHER HALF OF THE GAIT.** A walking staff plants with the OPPOSITE foot, so the staff arm
-  drives the pole down once a stride while the free arm swings at full amplitude.
-- **WHERE IT POINTS IS AUTHORED IN THE WORLD, NOT IN THE WRIST** (`warrior.swingTilt`'s law). Built down the
-  wrist's own −Y it inherits the entire arm chain: 46° off plumb at rest. The fit BILLS THE ARM for its
-  abduction and pitch, leaving `STAFF_TILT` to mean degrees off plumb in the world.
+- **THE STAFF IS THE OTHER HALF OF THE GAIT** — a walking staff plants with the OPPOSITE foot, so the staff arm
+  drives the pole down once a stride while the free arm swings at full amplitude. **WHERE IT POINTS IS AUTHORED
+  IN THE WORLD, NOT IN THE WRIST** (`warrior.swingTilt`'s law) — built down the wrist's own −Y it inherits the
+  entire arm chain (46° off plumb at rest); the fit BILLS THE ARM so `STAFF_TILT` means degrees off plumb.
 - **THE BOOT IS THE HERO'S FOOTPRINT EXACTLY** — the gait curves plantarflex the ankle to a fixed angle at
   toe-off, so a longer toe is a longer lever below the plane and `legChain` can only level the ankle.
 - **THE TWO HEAD VARIANTS ARE WHAT MAKES TWO OF THESE TWO PEOPLE** — hood up, hood back, picked by seed.
   Everything else varies through the POSE, which costs no mesh.
-- **VALUE CONTRAST BETWEEN TWO LARGE AREAS CANNOT SURVIVE FULL DAYLIGHT ON THIS SUN.** A sunward face reads
-  `255·(albedo·1.72/255)^(1/2.2)`, so albedo 40 comes back at 142 and 58 at 168. Layer on HUE, which the sun
-  does not flatten, and spend value contrast only where the area is small (`LINEN`) or is a hole (`HOOD_IN`).
-
-### Mossbeard, the tree smith (`npc.zig`, `props/propforge.zig`)
-
-The third `NpcKind` and the first that is not a man. Owner's brief — wise, old, mustached, a hulking gentle
-giant, sad but noble, hammering endlessly on his anvil — and every word of it is a number.
-
-- **THE STROKE IS THE IDLE, NOT A `Gesture`.** A gesture has a clock that ends; he is doing this when you find
-  him and when you leave. `Wanderer.hammer` is a repeating phase, `HAMMER_PERIOD`, and `struck` is the
-  one-frame edge `game.voiceFolk` spends on `sfx.smith_ring`.
-- **THE RISE TAKES FOUR TIMES AS LONG AS THE FALL, AND THE ELBOW CARRIES THE RAISE.** Comptime-pinned, both:
-  a shoulder that did the lifting reads as an executioner, and an even rise/fall reads as a woodpecker. The
-  head travels 1.96 m — 2.83 m at the top of the raise to 0.88 m on the face.
-- **AND IT OVERSHOOTS** (the LAW). `HAMMER_REBOUND` bounces the head 0.19 m back off the anvil and the trunk
-  drives past its own stoop with it. There is no hitstop to fake the weight with.
-- **THE BEARD ARRIVES LATE.** The moustache is grown onto the burl, so the only thing that can swing it is the
-  skull — read off the stroke's phase shifted back by `BEARD_LAG`. A rope that moved WITH the arm is a rope
-  nailed to it, and that late arrival is most of what makes the hammer look heavy.
-- **BOWED, NOT FOLDED.** `stoop` 25° and `headFwd` 21° put the skull 0.20 m forward of the chest while the
-  chest sits 0.075 m forward of the hips. Sad is the head; NOBLE is that the shoulders stay square under it —
-  the split is asserted, not described.
-- **THE ANVIL IS SOLVED OFF THE STROKE AND NOT THE OTHER WAY ROUND** (`npc.SMITH_ANVIL_Z`,
-  `propforge.ANVIL_FACE`). A test re-measures the pair every build, so a re-authored stroke cannot quietly
-  start swinging through air.
-- **HE STILL HAS TO FIT THROUGH A DOOR.** Crown 2.80 m against the wanderer's 1.77, pinned under
-  `propart.TOWER_DOOR_HEAD` — a character nobody can put indoors has one place to stand.
-- **THE FORGE YARD IS FOUR PROPS, NOT ONE MESH** (`propforge`): anvil, forge, quench trough, tool rack, laid
-  out by an author the way `propmarket` is the caravaneer's.
-  - **THE COAL BED IS `Mat.flame`, NEVER `Mat.ember`.** Ember is one of the two VERTEX-ANIMATED ids and is for
-    sparks that FLY UP; a static bed under it drifted off the hearth and out of the hood.
-  - **THE HOOD STANDS CLEAR OF THE FIRE.** Sat on the hearth at full width it is a KILN that swallows the one
-    thing the object exists to show. It is a cone — two goes in boxes left daylight between four slabs and then
-    came back as a wedding cake — raised, leaning back, open at the front.
-  - **A BIG SMOOTH PROP NEEDS A DARKER ALBEDO THAN A SMALL ONE OF THE SAME MATERIAL.** Shot alone, every piece
-    of the first cut came back pale: `art.TIMBER` on a 0.6 m capsule reads at 180 where the same value on a
-    fence rail reads at 130. The family carries its own timber and stone, a third under `propart`'s.
-  - **AND A 6 mm DISC IS ALWAYS WHITE.** Hammer scale scattered on the floor had every normal straight up into
-    the key, so a near-black albedo still landed at full brightness. Ground litter is a `decor` op.
+- **VALUE CONTRAST BETWEEN TWO LARGE AREAS CANNOT SURVIVE FULL DAYLIGHT ON THIS SUN** — a sunward face reads
+  `255·(albedo·1.72/255)^(1/2.2)`, so albedo 40 comes back at 142 and 58 at 168. Layer on HUE, which the sun does
+  not flatten, and spend value contrast only where the area is small or is a hole.
+- **MOSSBEARD, the tree smith:** **THE STROKE IS THE IDLE, NOT A `Gesture`** — a gesture has a clock that ends;
+  he is doing this when you find him and when you leave. `Wanderer.hammer` is a repeating phase and `struck` is
+  the one-frame edge. **THE RISE TAKES FOUR TIMES AS LONG AS THE FALL, AND THE ELBOW CARRIES THE RAISE**
+  (comptime-pinned, both: a shoulder that did the lifting reads as an executioner, an even rise/fall reads as a
+  woodpecker). **AND IT OVERSHOOTS** — `HAMMER_REBOUND` bounces the head off the anvil and the trunk drives past
+  its own stoop with it; there is no hitstop to fake the weight with. **THE BEARD ARRIVES LATE** — read off the
+  stroke's phase shifted back by `BEARD_LAG`; a rope that moved WITH the arm is a rope nailed to it, and that
+  late arrival is most of what makes the hammer look heavy. **BOWED, NOT FOLDED** — sad is the head, NOBLE is
+  that the shoulders stay square under it, and the split is asserted, not described. **THE ANVIL IS SOLVED OFF
+  THE STROKE AND NOT THE OTHER WAY ROUND** (a test re-measures the pair every build). **HE STILL HAS TO FIT
+  THROUGH A DOOR** — crown pinned under `propart.TOWER_DOOR_HEAD`.
+- **THE FORGE YARD IS FOUR PROPS, NOT ONE MESH** (`propforge`) — anvil, forge, quench trough, tool rack, laid
+  out by an author. **THE COAL BED IS `Mat.flame`, NEVER `Mat.ember`** — ember is one of the two
+  VERTEX-ANIMATED ids and is for sparks that FLY UP. **THE HOOD STANDS CLEAR OF THE FIRE**, a cone, raised,
+  leaning back, open at the front. **A BIG SMOOTH PROP NEEDS A DARKER ALBEDO THAN A SMALL ONE OF THE SAME
+  MATERIAL** — `art.TIMBER` on a 0.6 m capsule reads at 180 where the same value on a fence rail reads at 130,
+  so the family carries its own timber and stone a third under `propart`'s. **AND A 6 mm DISC IS ALWAYS WHITE**:
+  hammer scale scattered on the floor had every normal straight up into the key. Ground litter is a `decor` op.
 
 ## Sight and leashing
 
 **A LOOK IS A SEGMENT AND IT IS TESTED EXACTLY** (`collision.blocksSight`) — one segment-vs-capsule test per
-solid, never a walk of samples. It passes OVER anything whose blocking height is under both ends.
+solid, never a walk of samples, passing OVER anything whose blocking height is under both ends. **THE GRID IS
+WALKED, NOT COPIED** (`env.sees`) — `nearSolids` truncates at `MAX_NEAR`, which over a 20 m line through a wood
+quietly drops the wall it was asked about. **IT IS ASKED ONCE A FRAME, BY THE GAME** (`game.markSight`) for
+every foe inside `game.sightR()` — the widest ring in `FOE_GROUPS` plus a metre — and stamped on that foe's
+`Leash`. **Creatures do not ask it themselves** — the prop grid belongs to `env`.
 
-**THE GRID IS WALKED, NOT COPIED** (`env.sees`) — `nearSolids` truncates at `MAX_NEAR`, which over a 20 m line
-through a wood quietly drops the wall it was asked about.
-
-**IT IS ASKED ONCE A FRAME, BY THE GAME** (`game.markSight`) for every foe inside `game.sightR()` — the widest
-ring in `FOE_GROUPS` plus a metre — stamped on that
-foe's `Leash`. Creatures do not ask it themselves — the prop grid belongs to `env`.
-
-**WHAT IT LOSES IS ITS EYES, NOT ITS MEMORY.** `Leash.blind()` needs `SIGHT_MEMORY` with no line, longer
-than `LEASH_CALM`, so breaking sight can never shed a foe faster than walking away does. **A blow outranks
-blindness** — `roused()` beats `blind()`.
-
-The leash is one struct every creature embeds:
-
-- **START FAR, STOP NEAR** — turns for home past `foe.leashR(AGGRO_R)`, stops inside `LEASH_HOME_R`. That
-  gap IS the debounce.
-- **THE TETHER IS THE CREATURE'S OWN NOTICE RING PLUS `LEASH_SLACK`**, not one authored number. A flat
-  30 m was also THE SPACING BETWEEN CAMPS, so a tether reached the next encounter.
-- **ONLY AFTER `LEASH_CALM` WITH NO BLOW GIVEN OR TAKEN**, and only once the hero has left the patch.
+- **WHAT IT LOSES IS ITS EYES, NOT ITS MEMORY** — `Leash.blind()` needs `SIGHT_MEMORY` with no line, longer than
+  `LEASH_CALM`, so breaking sight can never shed a foe faster than walking away does. **A blow outranks
+  blindness** (`roused()` beats `blind()`).
+- **START FAR, STOP NEAR** — turns for home past `foe.leashR(AGGRO_R)`, stops inside `LEASH_HOME_R`. **That gap
+  IS the debounce.**
+- **THE TETHER IS THE CREATURE'S OWN NOTICE RING PLUS `LEASH_SLACK`**, not one authored number: a flat 30 m was
+  also THE SPACING BETWEEN CAMPS, so a tether reached the next encounter.
 - **THE PATCH IS A PLACE, NOT A SEPARATION** — both ranges in `Leash.tick` are measured FROM THE POST: how far
   the CREATURE has come, and how far the HERO is. Asked as the gap between the two BODIES, tethers nominally
-  17–30 m long measured out at 34 m (ogre) to 176 m (leechfly). A test walks the field and pins each one
-  (`game.zig`, "NOTHING CHASES FOREVER").
-- **A WALK HOME IS NOT BLIND** — step back into the patch, or land one blow, and it turns on the spot.
-- **A FIGHT IN PROGRESS OUTRANKS THE TETHER, and that is not a leak**: `noteCombat` is stamped by every blow
-  either side lands, so a leechfly that rides him for eighty metres has been FEEDING the whole way. What a
-  tether owes there is a prompt let-go once the biting stops — a CLOCK, not a distance.
-- **RE-ENGAGING COSTS `REENGAGE_HOLD`** in which it cannot try to leave again.
-- **ONE PLAYER BLOW ROUSES IT FROM ANY RANGE for `PROVOKE_ROUSE`** — a COUNTDOWN, not a level, because
-  it has to outlast the walk. Only a `pierce` blade also snaps its facing back down the shaft.
-- **KEEP AT IT AND THE LEASH BREAKS** (`PROVOKE_BREAK`, held `PROVOKE_HOLD`). The anti-cheese. Not gated on
-  `pierce`, or the sword is exempt.
+  17–30 m long measured out at 34 m to 176 m. A test walks the field and pins each one.
+- **ONLY AFTER `LEASH_CALM` WITH NO BLOW GIVEN OR TAKEN**, and only once the hero has left the patch. **A WALK
+  HOME IS NOT BLIND** — step back into the patch, or land one blow, and it turns on the spot. **RE-ENGAGING
+  COSTS `REENGAGE_HOLD`**, in which it cannot try to leave again.
+- **A FIGHT IN PROGRESS OUTRANKS THE TETHER, and that is not a leak** — `noteCombat` is stamped by every blow
+  either side lands, so a leechfly that rides him for eighty metres has been FEEDING the whole way. What a tether
+  owes there is a prompt let-go once the biting stops: a CLOCK, not a distance.
+- **ONE PLAYER BLOW ROUSES IT FROM ANY RANGE for `PROVOKE_ROUSE`** — a COUNTDOWN, not a level, because it has to
+  outlast the walk. Only a `pierce` blade also snaps its facing back down the shaft. **KEEP AT IT AND THE LEASH
+  BREAKS** (`PROVOKE_BREAK`, held `PROVOKE_HOLD`) — the anti-cheese, not gated on `pierce` or the sword is
+  exempt.
 - **IT REACHES EVERY STATE MACHINE BY BENDING THE SENSED RANGE** (`foe.sensedDist`), not by bolting a second
-  decision tree onto each. Only the DECISION sees the bent number. **Every decision, including the ones after a
-  leap** — the kobold's dash and the archer's backstep both re-decided on the raw distance when they landed.
-
-**Foe pacing:** the archer's BACKSTEP is a committed jump straight back, inside sword reach, on a 7 s cooldown
-— it buys the shot back exactly once. An evade you can spam is a wall.
-
-**A TELEPORT IS A JUMP, AND THE ROOTS REFUSE IT** (`shade.wantsBlink` → `foe.canLeap`), gated where the move is
-CHOSEN. It is also the one move that must not fire out of a STAGGER: a creature that vanishes mid-flinch erases
-the punish window, so the blow sets a latch (`spooked`) and the blink is spent at the next choose site. Half a
-blink is `airborne()`, which is what exempts the jump from `game.gateTerrain`.
-
-**A MOVE THAT CANNOT LAND IS NOT A DECISION.** The ogre's swipe passes clean OUTSIDE anything hugging its legs
-(`swipeInner` 2.28 m) and collision holds the hero at 1.68, so toe to toe `classify` was spending two thirds of
-a second on a guaranteed miss. A choose site tests the move's OWN band, not just its outer range.
+  decision tree onto each. Only the DECISION sees the bent number — **every decision, including the ones after a
+  leap** (the kobold's dash and the archer's backstep both re-decided on the raw distance when they landed).
+- **A TELEPORT IS A JUMP, AND THE ROOTS REFUSE IT** (`shade.wantsBlink` → `foe.canLeap`), gated where the move
+  is CHOSEN. It is also the one move that must not fire out of a STAGGER: a creature that vanishes mid-flinch
+  erases the punish window, so the blow sets a latch (`spooked`) and the blink is spent at the next choose site.
 
 ## Saving, and the boot screen (`save.zig`, `menu.zig`)
 
 **YOU SAVE AT BONFIRES AND NOWHERE ELSE.** No Save row anywhere; sitting down IS the save,
 `game.tickRest`'s `justEntered` is the one line that writes one, and it lands in whatever slot is being played
-(`g.slot`) without asking. **THREE SLOTS**, `save1.dat`…`save3.dat`, each with a `save<n>.png` beside it.
+without asking. **THREE SLOTS**, `save1.dat`…`save3.dat`, each with a `save<n>.png` beside it.
 
 - **THE FILE IS TEXT IN THE MAP'S OWN GRAMMAR** (`key: value`, `version:` first). Unknown key, bad version or
-  another map's name are LOAD ERRORS — a save is refused whole rather than applied in half.
-- **THE FIRE HE SAT AT IS WHERE HE COMES BACK, AND SO IS THE ONE HE LOADED AT.** `tickRest`'s `justEntered`
-  stamps `hero.setSpawn` at the SEAT for the live session, and `save.scatter` takes the checkpoint off `at:` —
-  the position IN THE FILE — because every write in the game is inside the rest flow, so a save's position IS a
-  bonfire seat and a second stored point can only ever be the stale one. The file's `spawn:` row is READ AND
-  DROPPED and the key may never leave the parser: an unknown key is a refused save and every file on disk has
-  that row. `enterMap` still stamps the entry, so a new map is its own checkpoint until he next sits down.
-- **THE BARS ARE NOT IN THE FILE, AND THAT IS THE POINT.** `hero.sit` runs `makeWhole` before the write. The
-  SHEET is out for the same reason: it is `ptree.Bonus.sheet()` of the tree below, and `game.applyTree`
-  re-derives it on the way back in.
-- **THE BOOT SCREEN STANDS AWAY FROM THE TOWER** (`game.BOOT_AT_X/Z` = −60, 60): the owner asked for the
-  intro camera moved off it, so the boot view is open plain and sky, not the tower's flank.
-- **IT IS GATHERED AND SCATTERED THROUGH ONE VIEW** (`save.Slot`, `game.slotOf`): the save file owns no game
+  another map's name are LOAD ERRORS — **a save is refused whole rather than applied in half.**
+- **THE FIRE HE SAT AT IS WHERE HE COMES BACK, AND SO IS THE ONE HE LOADED AT** — `justEntered` stamps
+  `hero.setSpawn` at the SEAT for the live session, and `save.scatter` takes the checkpoint off `at:`, the
+  position IN THE FILE, because every write is inside the rest flow so a save's position IS a bonfire seat and a
+  second stored point can only be the stale one. The file's `spawn:` row is READ AND DROPPED and the key may
+  never leave the parser: an unknown key is a refused save and every file on disk has that row. `enterMap` still
+  stamps the entry, so a new map is its own checkpoint until he next sits down.
+- **THE BARS ARE NOT IN THE FILE, AND THAT IS THE POINT** — `hero.sit` runs `makeWhole` before the write. The
+  SHEET is out for the same reason: it is `ptree.Bonus.sheet()` of the tree below, re-derived on the way in.
+- **IT IS GATHERED AND SCATTERED THROUGH ONE VIEW** (`save.Slot`, `game.slotOf`) — the save file owns no game
   state and reaches for nothing. Parsing goes into a `save.Data` on the stack FIRST and is committed only if the
   whole file read.
-- **A LOAD LANDS IN A FRESH WORLD AND THEN OVERWRITES IT** (`game.loadGame`). Every array the file does not
-  mention is at what a NEW game has. The order is load-bearing: `beginGame` sizes `chests.n` off the map and
-  rebuilds the trigger ORDER, both of which the file writes into and neither of which it carries.
-- **`beginGame` IS THE ONE ANSWER TO "WHAT IS A FRESH GAME"** — `Game.init` and New Game both come through it.
-- **A DEV RUN WRITES `devsave<n>`, NEVER THE PLAYED SHELF** (`save.useDevShelf`, set once in `game.run`).
-  `--map` and `--shot` used the same three filenames: one rest at a test map's bonfire overwrote `save1.dat`,
-  and since the file then named a map the shipping boot cannot match, the picker showed that slot EMPTY and
-  New Game finished the character off. `--shot` clobbered `save1.png` the same way. Every reader and writer in
-  `save.zig` goes through `path`/`shotPath`; nothing indexes the name arrays.
-- **THE THUMBNAIL IS A POST-DRAW GATE, NOT A DECISION AT THE EDGE** (`game.takeSlotShot`). `justEntered` fires
+- **A LOAD LANDS IN A FRESH WORLD AND THEN OVERWRITES IT** (`game.loadGame`) — every array the file does not
+  mention is at what a NEW game has. **The order is load-bearing**: `beginGame` sizes `chests.n` off the map and
+  rebuilds the trigger ORDER, both of which the file writes into and neither of which it carries. **`beginGame`
+  IS THE ONE ANSWER TO "WHAT IS A FRESH GAME"** — `Game.init` and New Game both come through it.
+- **A DEV RUN WRITES `devsave<n>`, NEVER THE PLAYED SHELF** (`save.useDevShelf`, set once in `game.run`). `--map`
+  and `--shot` used the same three filenames: one rest at a test map's bonfire overwrote `save1.dat`, and since
+  the file then named a map the shipping boot cannot match, the picker showed that slot EMPTY and New Game
+  finished the character off. Every reader and writer goes through `path`/`shotPath`.
+- **THE THUMBNAIL IS A POST-DRAW GATE, NOT A DECISION AT THE EDGE** (`game.takeSlotShot`) — `justEntered` fires
   at the BOTTOM of the fade-in where the screen is black, so what is OWED and when it can be PAID are different
-  frames. Taken after the world is drawn and before the HUD and the fire's list go over it. The harness calls
-  the same function at the same point (`shots.bonfireShoot`) — `--shot` never runs the loop, so that is the only
-  thing proving the grab works.
-
-**THE BOOT SCREEN IS ITS OWN SCREEN, not the pause card with different rows.** New Game / Load Game / Options /
-Editor / Quit, over a live 3D backdrop the camera walks slowly round (`game.BOOT_*`).
-
-- **IT HAS NO BACK AND NO CONTINUE**, and Select/Start are refused while it is up (`Menu.booting`) rather than
-  gated at each call site. **QUIT IS ITS ROW**; from inside a game the way out is `Back to Title`.
-- **`menu.home` IS WHICH ROOT A SUB-SCREEN RETURNS TO.** Options hangs off both cards, so a hard `.main` dropped
+  frames. Taken after the world is drawn and before the HUD and the fire's list. The harness calls the same
+  function at the same point (`shots.bonfireShoot`), which is the only thing proving the grab works.
+- **THE BOOT SCREEN IS ITS OWN SCREEN, not the pause card with different rows** — New Game / Load Game / Options
+  / Editor / Quit, over a live 3D backdrop the camera walks slowly round. **IT HAS NO BACK AND NO CONTINUE**, and
+  Select/Start are refused while it is up (`Menu.booting`) rather than gated at each call site. **QUIT IS ITS
+  ROW**; from inside a game the way out is `Back to Title`. It stands away from the tower (`BOOT_AT_X/Z`).
+- **`menu.home` IS WHICH ROOT A SUB-SCREEN RETURNS TO** — Options hangs off both cards, so a hard `.main` dropped
   you into the pause menu of a game nobody had started.
-- **THE BOOT CAMERA IS ASKED FOR AFTER `menu.update`, NEVER BEFORE.** `dist`/`pitch` are the PLAYER's zoom and
+- **THE BOOT CAMERA IS ASKED FOR AFTER `menu.update`, NEVER BEFORE** — `dist`/`pitch` are the PLAYER's zoom and
   tilt and nothing in play resets them, so stamping the title framing on the frame New Game was pressed handed
   the new character a camera seven metres back.
-- **BOTH ROWS ASK WHICH SLOT.** Three slots is few enough that choosing is the point of having them.
-- **A SLOT CAN BE THROWN AWAY, AND IT IS THE ONLY PRESS IN THE GAME THAT DESTROYS ANYTHING** — armed on one
-  button (`hud.BTN_QUICK`) and done on a SECOND, the ordinary Confirm, because by then the row has become the
-  question. Walking off the row, Back, or re-opening the picker all disarm it. **BOTH FILES GO** (`save.erase`).
-  The menu holds no game state, so it hands `Action.deleteSlot` up and `game.zig` does the removing, the
-  re-survey and the re-read of the pictures.
-- **A ROW THAT CANNOT BE PRESSED IS DRAWN SO** (`Menu.rowLive` + `Card.dim`, `TEXT_OFF`) — one predicate read
-  by the PRESS and by the picture. The cursor still lands on it: the reason is the footnote.
-- **THE PICKER'S THREE TEXTURES LIVE NO LONGER THAN THE PICKER** (`menu.loadShots`/`unloadShots`).
-- **ASCII ONLY, like every string in the game** — the atlas has no em dash and one renders as tofu.
+- **BOTH ROWS ASK WHICH SLOT.** **A SLOT CAN BE THROWN AWAY, AND IT IS THE ONLY PRESS IN THE GAME THAT DESTROYS
+  ANYTHING** — armed on one button (`hud.BTN_QUICK`) and done on a SECOND, the ordinary Confirm, because by then
+  the row has become the question. Walking off the row, Back, or re-opening the picker all disarm it. **BOTH
+  FILES GO** (`save.erase`). The menu holds no game state, so it hands `Action.deleteSlot` up.
+- **A ROW THAT CANNOT BE PRESSED IS DRAWN SO** (`Menu.rowLive` + `Card.dim`) — one predicate read by the PRESS
+  and by the picture. The cursor still lands on it: the reason is the footnote.
+- **THE PICKER'S THREE TEXTURES LIVE NO LONGER THAN THE PICKER** (`loadShots`/`unloadShots`).
 
 ## Controls (`game.zig`)
 
 Keyboard+mouse or gamepad; the pad follows **Elden Ring's default layout** (ER is the north star throughout).
 
-**WALK vs RUN:** the whole left-stick range is WALK (tilt scales walk speed only), and RUN is exclusively the
-hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick-speed `runB`.
-
+- **WALK vs RUN:** the whole left-stick range is WALK (tilt scales walk speed only), and RUN is exclusively the
+  hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick-speed `runB`.
 - **Mouse:** hidden over the window and drives the camera, but NEVER locked/captured. Do NOT reintroduce
   `disableCursor`/pointer-lock.
 - **Committed actions with an ER-style input queue** — an attack/roll pressed mid-action buffers in ONE slot
   (last press wins; a same-frame roll outranks attack) and fires at the earliest exit. A queued roll leaves in
   the direction HELD at fire time, not pressed.
-- **INTERACT IS Y, EVERYWHERE** — `game.INTERACT_PAD`/`INTERACT_KEY`, and the keyboard mirrors the pad letter
-  for letter so no crib ever has to name a key. It is the one face button ER leaves free: A is the jump, B the
-  roll, X the quick item. The dialog panel takes it on top of the menu Confirm. The quiver's keyboard cycle
-  moved off Y to `ARROW_KEY`.
-- **Guard or CAST:** hold L1/LB or RMB. The button belongs to the HAND, not the shield.
-- **A LADDER TAKES INTERACT AND THEN THE STICK, AND NOTHING ELSE.** Forward is up whichever way the lens points
-  — the camera does not steer a ladder — back climbs down, back + sprint SLIDES. Jump or roll lets go of it;
-  every other press is refused by `committed()`.
-- **Aim or PARRY:** L2 is that same hand's SKILL slot — a raised bow aims on the HELD level (or RMB with the bow
-  out), boards parry on the PRESSED edge (`PARRY_KEY`).
-- **THE RIG TILTS ONTO WHAT IT IS LOCKED TO** (`game.lockPitch`). The boom's pitch IS the view's, so the right
-  number is the angle from the EYE down to the mark. Measured off the LIVE eye rather than solved, which makes
-  it a convergent feedback loop (gain `boom / (boom + range)`) that `camera.aim`'s ease damps. It is why
-  `camera.PITCH_MIN` is −0.38.
-  **THE TILT UP IS EARNED BY HEIGHT *AND* BY CLOSENESS**, and it is a SHARE rather than a switch
-  (`lockTiltShare`, the product of two smoothsteps, so neither gate can step). **DOWN IS FREE; UP IS EARNED**
-  (`LOCK_TILT_TALL`): the up half is gated on how far the creature reaches into the sky OFF ITS OWN FEET
-  (`topWorld`), which keeps a kobold standing on a rise a kobold. Only the ogre and the Rooted clear it
-  standing, and the LEECHFLY clears it once it has climbed.
-- **Lock-on:** R3 / middle mouse; a flick cycles. Suspended entirely while aiming. Two ER exceptions: a hold-B
-  sprint faces TRAVEL, and an attack's recovery tail re-squares (`ATK_RETRACK`). **YOU CANNOT FIX ON WHAT YOU
-  CANNOT SEE** — a foe behind a wall is not offered (`game.canSee`), but a HELD lock fades rather than switching
-  (`LOCK_BLIND_HOLD`). **THE FLICK WALKS A LINE** (`game.stepPart`, `FoeRef.part`): every point this body offers in
-  part order, then the next body over at ITS first point — and back the same way, arriving on the last. R3 fixes on a
-  body's first point. A point is offered whether or not the kit in hand can reach it: locked to the ogre's head, the
-  sword swings at the head.
+- **INTERACT IS Y, EVERYWHERE** — `INTERACT_PAD`/`INTERACT_KEY`, and the keyboard mirrors the pad letter for
+  letter so no crib ever has to name a key. It is the one face button ER leaves free: A is the jump, B the roll,
+  X the quick item. The dialog panel takes it on top of the menu Confirm.
+- **Guard or CAST:** hold L1/LB or RMB — the button belongs to the HAND, not the shield. **Aim or PARRY:** L2 is
+  that same hand's SKILL slot, a raised bow aiming on the HELD level and boards parrying on the PRESSED edge.
 - **Cross/A = JUMP** (keyboard `V`). Not a clash with the menu Confirm: every screen that takes Confirm holds
   the world still. `hud.BTN_JUMP` is named apart from `BTN_CONFIRM` because a rebind of one is not a rebind of
   the other.
+- **A LADDER TAKES INTERACT AND THEN THE STICK, AND NOTHING ELSE** — forward is up whichever way the lens
+  points, since the camera does not steer a ladder.
+- **THE RIG TILTS ONTO WHAT IT IS LOCKED TO** (`game.lockPitch`) — the boom's pitch IS the view's, so the right
+  number is the angle from the EYE down to the mark, measured off the LIVE eye rather than solved, which makes
+  it a convergent feedback loop (gain `boom / (boom + range)`) that `camera.aim`'s ease damps. It is why
+  `camera.PITCH_MIN` is −0.38. **THE TILT UP IS EARNED BY HEIGHT *AND* BY CLOSENESS**, and it is a SHARE rather
+  than a switch (`lockTiltShare`, the product of two smoothsteps so neither gate can step). **DOWN IS FREE; UP
+  IS EARNED** (`LOCK_TILT_TALL`) — the up half is gated on how far the creature reaches into the sky OFF ITS OWN
+  FEET (`topWorld`), which keeps a kobold standing on a rise a kobold.
+- **Lock-on:** R3 / middle mouse; a flick cycles; suspended entirely while aiming. Two ER exceptions: a hold-B
+  sprint faces TRAVEL, and an attack's recovery tail re-squares (`ATK_RETRACK`). **YOU CANNOT FIX ON WHAT YOU
+  CANNOT SEE** (`game.canSee`), but a HELD lock fades rather than switching (`LOCK_BLIND_HOLD`). **THE FLICK
+  WALKS A LINE** (`game.stepPart`, `FoeRef.part`) — every point this body offers in part order, then the next
+  body over at ITS first point, and back the same way, arriving on the last. R3 fixes on a body's first point.
+  **A point is offered whether or not the kit in hand can reach it**: locked to the ogre's head, the sword swings
+  at the head.
 
 ## Hard invariants & gotchas
 
+### Coordinates and the frame
+
 - **Coordinates:** ground is XZ, Y up. Hero faces +Z at yaw 0; `atan2(facing.x, facing.z)` is the facing angle.
-- **`Env` IS `alloc.create`d LIKE `Game`, SO ITS DEFAULTS NEVER RAN.** Every counter `build`/reload reads
-  before the props exist is zeroed there by hand (`nprops`, `nsolids`, `nwards`, `nillusions`) — `restoreIllusions`
-  once walked `illusionProps[0..fill byte]` and the prop gallery died on its first frame.
 - **Strafe sign:** the camera looks +Z from behind, so screen-right is world −X → `camera.rightXZ` MUST be
   `(−cos yaw, 0, sin yaw)`. Flipping it mirrors L/R walking.
-- **VSYNC, not `setTargetFPS`.** `vsync_hint` before `initWindow`, no frame cap — `setTargetFPS` is a CPU-side
+- **VSYNC, not `setTargetFPS`** — `vsync_hint` before `initWindow`, no frame cap. `setTargetFPS` is a CPU-side
   limiter that never asks the driver to swap during vblank, so the swap TEARS in exclusive fullscreen, and two
   limiters fight on any panel that isn't 60 Hz.
 - **Depth z-fighting:** `rlSetClipPlanes(CLIP_NEAR, CLIP_FAR)` (0.55, 320) at startup. The ground sits a hair
@@ -3000,175 +2068,81 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
   (`setCasterShaders`) and runs BEFORE `beginDrawing`. Terrain and FLORA receive but do not cast. The ortho box
   tracks the hero, snapped to shadow texels, and tracks Y as well.
 - **The hero is per-bone matrices, not `drawModelEx`.**
-- **A TEST MAY ONLY WRITE `worlds/test_*.world`** — `wf.save` panics on any other path under `is_test`. The
-  suite rewrote the shipped map once and the cause was never found; the trap is cheaper than the search.
-- **THE CHART IS TWO HELD SHEETS AND A LENS** (`ui/mapart.zig`). The map is painted ONCE into a 2048 texture in
-  world space and the fog into a 128 one; the lens only ever blits a sub-rect of each. Per-prop per-frame is
-  `editor.blitMinimap`'s 16,510 rects, and re-running that walk on every notch of a zoom is the same freeze with
-  a stick held down. Walls are drawn as the COLLIDERS (`env.PropFrame`, now public), all haloes before any fill.
-  - **THE MASK IS BINARY AND THE PICTURE OF IT IS NOT** — one bit a 4.38 m cell, blown up through a BILINEAR
-    filter, which is what makes the reveal a soft disc rather than a staircase. Punched with `GL_ONE, GL_ZERO`:
-    raylib blends a target's OWN alpha by `SRC_ALPHA`, so an ordinary-blended hole comes back half-opaque.
-  - **REVEALED ONCE A CELL, NOT ONCE A FRAME**, after the gates and the room have had their say, and the reach is
-    CAPPED at the sheet or a map smaller than `REVEAL_R` walks (2n+1)^2 cells of nothing. Seeded at the spawn, so
-    the sheet shows where he stands before he has taken a step. Saved as `seenmap:`, the widest row the file has.
-  - **AND IT IS WHAT HE HAS SEEN, NOT WHERE HE HAS BEEN** (owner: don't expose map beyond walls — you have to
-    see the other side of a wall to map that side). Every unrevealed cell in the disc costs one `env.sees` from
-    his EYE down onto the ground out there, and the look STOPS SHORT by `NEAR_FACE` (half a cell) so the wall's
-    own cell charts and the ground behind it does not. Measured: a wall 12 m out leaves 254 of 376 cells, and a
-    kerb leaves all 376 — `blocksSight` passes over anything under both ends of the look. The `self.cell[i]`
-    test comes BEFORE the look, so re-treading known ground pays nothing and the 376-look case is the spawn;
-    walking, it is the crescent. Every solid blocks, not only the wall-marked ones, so a wood charts speckled
-    and fills in as he moves — the mask is cumulative, a cell needs seeing once from anywhere.
-- **AN ELBOW BENDS ONE WAY, AND THAT WAY IS `rx(NEGATIVE)`.** The bow arm settles it: `BOW_SH_FLEX` 88 goes in
-  as `rx(-shFlex)` and points the bow AT the target, and `BOW_DRAW_ELBOW` 152 as `rx(-)` folds the string to the
-  cheek. So a positive number is negated at the joint (`rx(-el)`, the folk and the two staff casters) or the
-  constant is authored negative and passed raw (`knight.CARRY_EL` -10, `ogre.OFF_EL` -18, `warrior.GUARD_EL`
-  -52) — never both, which is how it broke. **It broke three times**: `npc.FREE_EL` at -22 through `rx(-el)`
-  gave the folk a 22-degree BACKWARD elbow and the beckon drove it to 78, so all three waved behind their own
-  backs; every `ancientpriest` Posture's `staffEl`/`freeEl` was negative through the same negation, up to 74 on
-  the breath; and all eight of `necro`'s `*_EL`. The gesture DELTAS carry the sign too — a beckon that
-  subtracts is an arm going the wrong way twice. Each of the three files now pins its own signs in a test.
-  - **A POSE AUTHORED AROUND THE BUG DOES NOT SURVIVE THE FIX.** `necro.FROST_STAFF_SH` is -74, so the upper arm
-    swings BACK 74 degrees; the old +34 elbow swung the forearm a further 34 back and folded the hand up behind
-    the shoulder, which is the only reason the ferrule sat at 0.86 m. With the joint bent the right way the arm's
-    pitch is 40 rather than 108 and the ferrule is at 0.47. `staffFit` counter-rotates the pole exactly, so the
-    staff's ANGLE never moved (30.8 to 29.8 deg) — the HEIGHT did, and restoring it means re-authoring the pose.
+
+### Colour and material
+
 - **The scene shader gammas output (`pow 1/2.2`): author dark colours near-black.**
-- **Vertex alpha is the EMISSIVE channel** (255 = fully lit; lower = self-lit).
-- **…AND MATTER WANTS 248+, NOT 206.** `lit = mix(lit, base*1.35, 1 - a)`, so an alpha of 206 puts 0.19 of the
-  raw albedo on everything unlit. In SUN that is a 6% lift (nothing); in SHADOW it is a floor the terminator
-  cannot get under, and a whole creature authored at 206 reads as one flat lump however well its albedo is
-  solved. Reserve the low alphas for the things that are LIGHT (a throat, a flame, an eye).
+- **Vertex alpha is the EMISSIVE channel** (255 = fully lit; lower = self-lit) — **…AND MATTER WANTS 248+, NOT
+  206.** `lit = mix(lit, base*1.35, 1 - a)`, so alpha 206 puts 0.19 of the raw albedo on everything unlit: a 6%
+  lift in SUN (nothing), and in SHADOW a floor the terminator cannot get under, so a whole creature authored at
+  206 reads as one flat lump however well its albedo is solved. **Reserve the low alphas for the things that ARE
+  LIGHT** — a throat, a flame, an eye.
 - **A BIG SMOOTH MASS NEEDS A NEARLY-BLACK ALBEDO — and FORM BREAKS.** The hot key (×1.72) plus the gamma lift
   turns any mid-dark value pale on a large sunward face. The bigger the face, the darker it must start.
-- **TWO STONE MATERIALS.** `.stone` is rubble masonry, matte; `.marble` is dressed stone, veined, with the only
-  real gloss besides steel and water — kept LOW. Marble = columns/arches/statues; stone = walls/towers/rubble.
-- **`gfx.Mat` is APPEND-ONLY** — the shader branches on the raw ordinal from 1 to 16, and the comptime asserts
-  pin the TAIL (water 9 through gilt 16). Pinning `water == 9` is what catches an insert below it. **The
-  VERTEX-ANIMATED ids are bounded at BOTH ends** (`> 11.5 && < 13.5`, and fog's `> 14.5 && < 15.5`): an
-  open-ended test claims every id added after it, which is how `bark` went in and every trunk started climbing
-  like an ember.
+- **TWO STONE MATERIALS** — `.stone` is rubble masonry, matte (walls/towers/rubble); `.marble` is dressed stone,
+  veined, with the only real gloss besides steel and water, kept LOW (columns/arches/statues).
+- **`gfx.Mat` IS APPEND-ONLY** — the shader branches on the raw ordinal 1..16 and comptime asserts pin the TAIL
+  (water 9 through gilt 16); pinning `water == 9` is what catches an insert below it. **The VERTEX-ANIMATED ids
+  are bounded at BOTH ends** (`> 11.5 && < 13.5`, fog's `> 14.5 && < 15.5`): an open-ended test claims every id
+  added after it, which is how `bark` went in and every trunk started climbing like an ember.
 - **THE FLAME MATERIAL IS THE ONE THING DRAWN SEMI-TRANSPARENT BY ITS MATERIAL** (the faded hero under an aim is
   the one drawn so by a per-draw uniform). Opacity is graded off the emissive (`FLAME_A_CORE`→`FLAME_A_TIP`);
   depth WRITE stays on so tongues don't stack into a brighter core.
-- **AN ARENA IS A ROOM AND THE FOG GATE IS ONLY ITS DOOR** (`worldfmt.Arena`, the `arena:` row, `game.holdInRoom`).
-  The ward refuses ONE line 0.8 m thick; on open ground that is a gate you stroll round, and a creature that
-  BLINKS never touches the line at all — the duo's magus dissolved 13 m out of its own fight (owner). The row is
-  an XZ polygon plus its own `boss=` seal, and it holds every body inside it, HIS included, for exactly as long
-  as a name on it still stands. Then it opens, on the same tally and the same frame the gate starts fading
-  (`game.solveArenaSeals`, beside `markWards`).
-  - **IT IS A PUSH-OUT, NOT THE WARD'S REFUSAL, AND IT IS ASKED ON THE STEP'S START.** There is no segment to
-    refuse on a blink, so only being stood back inside answers it; and `Arena.hold` pushes an OUTSIDE point IN,
-    so asked about where a body ended up it would reach out and drag a creature walking past into the fight.
-  - **THE SEAL IS THE ROOM'S AND THE DOOR HAS ITS OWN COPY**, so the two are PINNED by a test over every shipped
-    map rather than trusted to agree — a wall that outlives its door locks you into a fight that is over, and a
-    door that outlives its wall is a room you walk out of the back of. The editor closes a room by INHERITING
-    the seal off the gate standing in the wall you just drew, and says so loudly when there is no gate on it.
-  - **A HAND-DRAWN OUTLINE CAN CROSS ITSELF** (`Arena.simple`) — a figure-of-eight's even-odd test answers
-    `false` in its own middle, so it holds nothing exactly where it looks most like a room. Solving one corner
-    per 30 deg about a single centre, in bearing order, cannot produce one; a test refuses any shipped map that does.
-  - **A BOSS BAR MAY NOT BE GATED ON A RANGE THE CREATURE'S OWN DESIGN EXCEEDS** (`game.sealedInWith`). MEASURED:
-    the magus keeps to `MG_KEEP_R` and blinks `MG_REAPPEAR_R` more — 29 m against a bar ring of 26 — and
-    `Leash.roused` is a 14 s timer topped up only by being HIT, so chasing the swordsman let it lapse and the bar
-    faded out mid-fight. Being SEALED IN with something is the fight whatever the range; `AGGRO_R` went to 30 and
-    a comptime block by `MG_REAPPEAR_R` now holds the blink inside the ring for the next creature.
-- **A UNIT'S ORDERS ARE STAREDIT'S, AND THEY ARE WALKED NOW** (`wf.FoeAi`, `foe.Post`, `foe.postStep`). JUNKYARD
-  DOG is `roam` — roaming about a post, leashed — and `roam_free` is the same dog off its chain; `patrol` walks
-  the `wp=` legs out and back; `hold` is what every unit did before this existed, and it is the DEFAULT, so a
-  map that never says `ai=` loads unchanged.
-  - **THE CREATURE OWES A FIELD AND ONE CALL.** `post: foe.Post`, and `foe.postStep` from its IDLE branch,
-    filling the same `movedDist`/`moveSpeed`/`moveYaw` its chase branch fills — a helper that advanced the gait
-    itself would run the walk cycle at double speed on exactly the frames the body is walking. Arming is free:
-    `resetGroup`/`resetRoles` stamp the authored orders on at spawn, duck-typed.
-  - **AND "BACK TO YOUR POST" MEANS THE POST, NOT THE SPAWN PIN** (`foe.tetherFor`). Every roamer got three
-    metres out and turned round, because a creature's own `.hold` arm compares against where it was placed and
-    `LEASH_HOME_R` is a stride: the orders and the go-home rule pulled against each other and the orders lost. The
-    same anchor feeds `tickLeash` at every call site, or `roam_free` — unleashed BY DEFINITION — is dragged back by
-    the tether. `foe.homeFor` is the OTHER half of the same rule and answers `self.pos` under any orders at all,
-    so a creature's own "am I far from home?" arm reads zero and only the round moves it.
-  - **WHICH UNITS GET THEM IS THE AUTHOR'S CALL, MADE PER UNIT IN THE EDITOR** (owner: let me assign them).
-    So every creature that CAN move takes them — 30 of 33 groups — and `hold` being the default is what keeps a
-    map that never says `ai=` unchanged. The three that cannot are the FIXTURES, and `game.NO_ORDERS` names them
-    with a reason, enforced both ways: a creature added with no `Post` and no line there is an order the editor
-    lets you assign that silently does nothing.
-  - **AND EACH WALKS IT IN ITS OWN IDIOM.** `foe.postDrive` is the leg-and-gait case (nine of them share it),
-    `postAmble` the five that ease a `self.speed` — and it steps by the speed REACHED, not the one asked for,
-    or `accel` shapes the gait blend and moves no mass, which is how a round started at full pace —
-    and `postWant` hands back only the PLACE — which is what a
-    hopper leaps to (`frog`, `shroom`), a flyer cruises to (`leechfly`, `blinkbat` — it drifts its round rather
-    than blinking it, or the blink has no tell left for the flank), and a quadruped simply walks to instead of
-    home (`fungaldeer`, `skitterer`, `rotgorger`). A round stops at `foe.ARRIVE`: the old ravager's own `HOME_R` was 1.2 against it
-    and the body stalled a tenth of a metre short of a mark it could then never reach.
-  - **A UNIT UNDER ORDERS READS AS ONE FROM ACROSS THE MAP** — the editor draws its box in the live tone and a
-    leashed roamer's tether as a circle, because which bodies have a round is the one thing you cannot see on a
-    map full of identical boxes.
-- **THE CRIB NAMES EVERY GESTURE, OR THE VERB DOES NOT EXIST** (`editor.CRIBS`, widest-that-fits). It named
-  eight and the editor bound twenty-five: undo, redo, cut, copy, paste, select-all, save, delete, grid snap,
-  brush size, re-roll and playtest were all live and written NOWHERE on screen. An editing tool whose edit
-  verbs are undiscoverable is one you can build in and not revise in.
-- **AND NO SILENT CAP MEANS THE AUTHOR CAN SEE IT** (`env.opsCapped`, the editor's status line). The count
-  existed and was printed by a TEST — the one person who needs it is the author cranking a belt's count, and
-  a budget that bites real content has made the world quietly smaller.
-- **A CROSSING IS A GRACE, AND THE CLOCK ON IT IS HIS** (`hero.FOG_GRACE_TAIL`, `hero.startFogGrace`,
-  folded into the one `iFramed` the roll already answers). He is untouchable from the sheet to the far side and
-  stays that way for as long as he STANDS there; the tail runs only once he is moving under his own power, and
-  it is measured off ground SPEED (`FOG_GRACE_STILL`) so it cannot last longer on a slower machine.
-  **`updateGateWalk` RE-HOLDS IT EVERY FRAME rather than arming it at the door** — the walk moves him, and a
-  grace armed at the door would arrive nearly spent. A death clears it (`respawn`), and a test walks both halves.
-- **EVERY BAR THE RUN LEFT ON SCREEN GOES WHILE THE SCREEN IS BLACK** (`game.dropRunHud`) — the death card's
-  black, the bonfire's and the map cut's are three doors and all three already re-home the field behind them.
-  `bossK` and `spiritK` only tick inside `hud`, which the chrome fade and `rest.active()` both stop calling, so
-  they FROZE at full: the rail came back up carrying the dead run's HP and the dead run's chip tail and then
-  faded out in front of him, as the black lifted, instead of behind it. The chip statics are hud module scratch
-  and need their own `hud.dropBossBars`.
-- **THE FOG GATE IS A VEIL** (`props.foggate`, `propfx.fogGateMesh`, `Mat.fog`). Laid down in `env.drawVeils`
-  AFTER everything opaque, because its own depth write at the head of the sheet is a rectangle of missing world
-  behind it. `build` is the two threshold stones and the sheet is the veil; `solid` is TRUE.
-- **ITS HEIGHT FRACTION RIDES `animY` AND IS READ TWICE** — the vertex billow in the VS and the fade in the FS.
-  It has to INTERPOLATE across a cell (`gfx.Builder.quadFadeAnim`): constant per cell it steps. **And the height
-  the fade dies at WANDERS** (per world column, over time) — a few percent of alpha over something this bright
-  is still a straight edge.
-- **ITS VERTEX ALPHA IS LEFT NEAR-SOLID ON PURPOSE.** The scene shader reads `1 - fragColor.a` as EMISSIVE, so
-  fading a translucent thing through the vertex colour makes it GLOW as it goes.
+- **A LIGHT'S RADIUS MATTERS MORE THAN ITS BRIGHTNESS** — a 9 m torch in a 5×7 m chapel reaches every surface
+  from every corner, so four summed to a flat wash however dim each was. **Fire has to POOL.**
+
+### Geometry and the builder
+
 - **BUILDER WINDING IS NOT CHECKED, AND FACE-DOWN GEOMETRY IS INVISIBLE.** A flat annulus swept outward-first
   points DOWN and raylib culls it. Sweep inner@a0 → inner@a1 → outer@a1 → outer@a0. For a ring, radial is the
-  position direction and tangent is `(cos a, 0, sin a)`; for an arch ring at angle a, radial is `(−cos a, sin a,
-  0)`, tangent `(sin a, cos a, 0)`. `addBox` also accepts a NON-PERPENDICULAR axis triple and builds a skewed
-  parallelepiped.
+  position direction and tangent is `(cos a, 0, sin a)`; for an arch ring at angle a, radial is
+  `(−cos a, sin a, 0)`, tangent `(sin a, cos a, 0)`. **`addBox` also accepts a NON-PERPENDICULAR axis triple**
+  and builds a skewed parallelepiped.
+- **A cylinder is CAPLESS** — an open end shows its culled interior. Cap with `addDome` or an axis-flattened
+  `addBlob`; a flat cap constrains the piece to a world axis.
 - **A CURVED SHAFT DRAWS ITS CURL ONCE AND APPLIES IT EVERY SEGMENT.** Re-rolled per segment it wanders, and a
   wander made of straight capsules is a chain of elbows. Total arc is per-segment curl TIMES segment count, so
   moving either the length or the count re-brackets the curl.
+- **REPEATED BIG PROPS NEED VARIANTS** — one mesh placed sixty times reads as a periodic pattern, and yaw and
+  scale do not hide it. The three `bigtree` kinds and six `cliff` kinds exist for this, drawn through an op's
+  weighted `mix=`. **Long-wavelength variation beats per-instance noise.**
+- **Prototype models/meshes are permanent** (CPU arrays stay attached and leak at exit — fine). Don't
+  `unloadModel` them. **TERRAIN TILES are the one exception, and cost two crashes:**
+  - **`gfx`'s mesh allocator MUST be `raw_c_allocator`, not `c_allocator`** — raylib frees mesh CPU arrays with
+    libc `free()` and `std.heap.c_allocator` does not hand out malloc pointers on Windows, so freeing one frees
+    an interior pointer. Heap corruption, surfacing as `0xC0000374` with no stack.
+  - **A MODEL'S MATERIAL CARRIES THE SCENE SHADER, AND ONLY THE PINNED raylib SPARES IT** — go through
+    `env.unloadTerrain`, which points the material at raylib's default shader id first. The bundled raylib 5.5
+    `UnloadModel` frees `materials[i].maps` and never calls `UnloadMaterial`, so today the swap is belt to the
+    braces — but `UnloadMaterial` unloads any shader that is not the default one, and a raylib that routed
+    through it took the scene shader out from under the whole frame.
+
+### Particles
+
 - **A MOTE IS A CAMERA-FACING TEXTURED BILLBOARD, NEVER A SOLID SPHERE** (`foe.drawParticles`, `foe.setLens`).
-  `gfx/particleart.zig` builds one seeded atlas with four variants per style. `Particle.style` picks the
-  shape; legacy emitters infer matter, haze, spark or blood from their properties. Alpha MATTER sorts back
-  to front within each pool, then additive LIGHT; depth TESTED, never WRITTEN. Reuse `foe.drawCloud`,
-  `drawAura` and `contactFlash` rather than adding sphere clouds or another contact emitter.
-  `--shot --shot-only particles_study` and `docs/PARTICLE_PASS.md` cover this pass.
+  `gfx/particleart.zig` builds one seeded atlas with four variants per style; `Particle.style` picks the shape
+  and legacy emitters infer matter, haze, spark or blood from their properties. Alpha MATTER sorts back to front
+  within each pool, then additive LIGHT; depth TESTED, never WRITTEN. **Reuse `foe.drawCloud`, `drawAura` and
+  `contactFlash`** rather than adding sphere clouds or another contact emitter. `--shot --shot-only
+  particles_study` and `docs/PARTICLE_PASS.md` cover the pass.
 - **A POOL NOBODY CAN SEE MAY NOT BE DRAWN** (`foe.motesVisible`) — not for the per-mote cost but for the COUNT:
   twelve chaos clouds at 132 motes each still walk their whole array. The gate is a REACH and a HEMISPHERE and
-  **it is not the frustum and may never become one** — `env.View` is the frustum, there is one of them, and a
-  second culler is the empty-world bug. A pool the lens is standing INSIDE always draws.
-  - **AND IT IS NOT GATED ON THE EMITTER BEING ALIVE.** A cloud ticks its motes past its own death, so a puff
-    laid on the last frame still fades out; `shroom`'s own test pins that.
+  **it is not the frustum and may never become one.** A pool the lens is standing INSIDE always draws.
+  - **AND IT IS NOT GATED ON THE EMITTER BEING ALIVE** — a cloud ticks its motes past its own death, so a puff
+    laid on the last frame still fades out.
   - **IT IS ASKED OF THE MOTE, SO IT IS ON ALL 40 CALL SITES** — `drawParticles` scans for one visible mote
-    before it binds anything, and `drawPass` asks again per mote. The two clouds (`knight.Gas`, `shroom.Cloud`)
-    are still where the COUNT bites — 132 motes each against a creature's own 20..176 — but a per-CREATURE
-    reach was never the way in: guessed too tight it clips a mote you could see, which is the one thing this
-    gate may not do, and the mote's own position and radius cannot be wrong. `tickParticles` stays ungated
-    every frame for every body and always must — a mote off screen has to keep moving.
+    before it binds anything, and `drawPass` asks again per mote. A per-CREATURE reach was never the way in:
+    guessed too tight it clips a mote you could see, which is the one thing this gate may not do.
+    **`tickParticles` stays ungated every frame for every body and always must** — a mote off screen has to keep
+    moving.
 - **A RING THAT OVERWRITES ITS OLDEST DOES IT SILENTLY**, so its size is arithmetic over what feeds it (every
   emitter's worst frame), asserted at comptime — never a round number that looked big enough.
-- **A cylinder is CAPLESS** — an open end shows its culled interior. Cap with `addDome` or an axis-flattened
-  `addBlob`; a flat cap constrains the piece to a world axis.
-- **REPEATED BIG PROPS NEED VARIANTS.** One mesh placed sixty times reads as a periodic pattern; yaw and scale
-  do not hide it. The three `bigtree` kinds and six `cliff` kinds exist for this, drawn through an op's weighted
-  `mix=`. Long-wavelength variation beats per-instance noise.
-- **A CULLER BUG LOOKS LIKE AN EMPTY WORLD, AND ONE-ORIENTATION TESTS MISS IT.** `View.fromCamera`
-  sign-corrects its plane normals against the camera forward rather than assuming a handedness. Its test sweeps
-  seven headings.
-- **A LIGHT'S RADIUS MATTERS MORE THAN ITS BRIGHTNESS.** A 9 m torch in a 5×7 m chapel reaches every surface
-  from every corner, so four summed to a flat wash however dim each was. Fire has to POOL.
+
+### Shaders and the retro pass
+
+- **GLSL RESERVED WORDS ARE NOT ONLY THE OBVIOUS ONES.** A local named `patch` compiled everywhere the author
+  tested and failed on Intel, which enforces it at `#version 330`. `layout`, `subroutine` and friends are the
+  same trap, and a scene shader that fails to compile is a hard startup panic.
 - **Fullscreen shader passes must build ray/UV from `gl_FragCoord`** + a resolution uniform when drawn via
   `drawRectangle` — raylib maps rectangle texcoords to the tiny shapes-texture rect, so `fragTexCoord` is
   effectively CONSTANT. `drawTexturePro` blits are fine.
@@ -3177,170 +2151,102 @@ hold-B / hold-Shift sprint. Gate run-only flourishes on `sprintB`, not the stick
 - **THE RETRO RT IS `GL_NEAREST`, AND PIXELATE POINT-SAMPLES IT.** `sceneTap` box-filters the block (`PIX_BOX`)
   instead of keeping one pixel of four, which is a TRADE — the twinkle IS a hard edge crossing a pixel boundary.
   **Sub-pixel filter offsets snap under nearest**, so the chroma fringe's offset snaps to whole BLOCKS.
+- **THE FOG GATE IS A VEIL** (`props.foggate`, `propfx.fogGateMesh`, `Mat.fog`) — laid down in `env.drawVeils`
+  AFTER everything opaque, because its own depth write at the head of the sheet is a rectangle of missing world
+  behind it. `build` is the two threshold stones and the sheet is the veil; `solid` is TRUE. **ITS HEIGHT
+  FRACTION RIDES `animY` AND IS READ TWICE** — the vertex billow in the VS and the fade in the FS — and it has
+  to INTERPOLATE across a cell (`Builder.quadFadeAnim`), constant per cell it steps. **And the height the fade
+  dies at WANDERS** per world column, over time: a few percent of alpha over something this bright is still a
+  straight edge. **ITS VERTEX ALPHA IS LEFT NEAR-SOLID ON PURPOSE** — the scene shader reads `1 - fragColor.a`
+  as EMISSIVE, so fading a translucent thing through the vertex colour makes it GLOW as it goes.
+
+### UI
+
 - **THE UI NAMES BUTTONS, NEVER KEYS.** Every prompt, crib and footer in the GAME shows the button that does the
-  thing, DRAWN — `hud.Hint`, `hud.hintRow`/`hintRowAt`, and the `padFace`/`padDpad`/`padBumper`/`padMenu`
-  pictograms ported from zig-diablo's `hudx`. No keyboard caption anywhere and no pad-vs-keyboard branch: one
-  strip, whether a pad is plugged in or not. Keys still work. The glyphs live in `hud.zig` and not `uiart.zig`
-  because a face button is a LETTER, and that file is the only path to draw text. **The EDITOR is the one
-  exception** — a mouse-and-keyboard authoring tool with no pad bindings, so its crib names keys.
+  thing, DRAWN — `hud.Hint`, `hintRow`/`hintRowAt`, and the `padFace`/`padDpad`/`padBumper`/`padMenu`
+  pictograms. No keyboard caption anywhere and no pad-vs-keyboard branch: one strip, whether a pad is plugged in
+  or not. Keys still work. The glyphs live in `hud.zig` and not `uiart.zig` because a face button is a LETTER,
+  and that file is the only path to draw text. **The EDITOR is the one exception.**
 - **A BUTTON IS NAMED ONCE** — `hud.BTN_INTERACT`/`BTN_CONFIRM`/`BTN_BACK`/`BTN_QUICK`. `game.zig` binds off
   them and every crib draws off them, so a rebind moves the caption and the press together.
-- **THE CURSOR IS A LEADING BAR, AND IT IS THE ONLY THING THAT MARKS A ROW.** `uiart.caret` draws it and
+- **THE CURSOR IS A LEADING BAR, AND IT IS THE ONLY THING THAT MARKS A ROW** — `uiart.caret` draws it and
   `uiart.rowHilite` lays it under the wash, so a list cannot grow a second kind of cursor. A row too dim to take
-  a wash draws the bar on its own at `CARET_DIM`: the cursor may never be invisible on the row it is standing
-  on. The `<` `>` PAIR ON A GAUGE stays — that is "this row adjusts", not "you are here".
-- **All UI text goes through `hud.text/textW`**, in **Balthazar** (`assets/`, OFL). The atlas is ASCII-ONLY — a
-  `·` or `—` renders as tofu. One face only.
+  a wash draws the bar on its own at `CARET_DIM`: **the cursor may never be invisible on the row it is standing
+  on.** The `<` `>` PAIR ON A GAUGE stays — that is "this row adjusts", not "you are here".
+- **All UI text goes through `hud.text`/`textW`**, in **Balthazar** (`assets/`, OFL). **THE ATLAS IS ASCII-ONLY**
+  — a `·` or `—` renders as tofu, in the game and in every save file. One face only.
 - **SIZES COME FROM `hud`'s TYPE SCALE** (`TITLE`/`BODY`/`SMALL`/`HINT`/`TINY`, plus `MONO` for the editor),
   never a literal at the call site; rows step by `hud.lineH(size)`. The atlas resolution must stay ABOVE the
   largest size drawn, and the drop shadow's offset scales with the size.
 - **HUD colours are LITERAL screen values** — drawn after the retro blit, outside the scene shader.
 - **THE CHROME FADES AS ONE PICTURE, NOT AS A LIST OF THINGS THAT EACH KNOW AN ALPHA**
-  (`hud.beginChrome`/`endChrome`, `game.HUD_FADE_DUR`, read off `hero.deathT` — the clock the YOU DIED
-  card is drawn from, and short of the card's own first beat). Composited through a target because the
-  alternative is threading a factor through every literal in `hud.zig` PLUS `uiart`'s rules and the `itemart`
-  pictures. The target is only taken WHILE a fade runs — at full chrome `beginChrome` refuses. **The BANNER is
-  not chrome** and is laid down after `endChrome`.
-- **Prototype models/meshes are permanent** (CPU arrays stay attached and leak at exit — fine). Don't
-  `unloadModel` them. TERRAIN TILES are the one exception, and cost two crashes:
-  - **`gfx`'s mesh allocator MUST be `raw_c_allocator`, not `c_allocator`.** raylib frees mesh CPU arrays with
-    libc `free()`, and `std.heap.c_allocator` does not hand out malloc pointers on Windows — freeing one frees
-    an interior pointer. Heap corruption, surfacing as `0xC0000374` with no stack.
-  - **A MODEL'S MATERIAL CARRIES THE SCENE SHADER, AND ONLY THE PINNED raylib SPARES IT.** Go through
-    `env.unloadTerrain`, which points the material at raylib's default shader id first. The bundled raylib 5.5
-    `UnloadModel` frees `materials[i].maps` and never calls `UnloadMaterial`, so today the swap is belt to the
-    braces — but `UnloadMaterial` unloads any shader that is not the default one, and a raylib that routed
-    through it took the scene shader out from under the whole frame.
-- **AN OP MAY NOT SPIN** (`Placer.BUDGET`, `Env.opsCapped` — owner: the editor freezes the PC mid prop-edit,
-  "spinning endlessly, almost crashing"). **It was never a leak.** The generator loops were bounded only by
-  AUTHORED numbers — `Op.n` is an unbounded `i32` and a `line`'s step only has to clear 1e-4 — and a candidate
-  that is REJECTED costs time without ever filling `MAX_PROPS`, so nothing stopped it and nothing showed on
-  screen. MEASURED: one line op at 0.001 m spacing over 400 m burns **21 ms a rebuild placing NOTHING**, and
-  **227 ms** at the parser's own floor; a rebuild fires `editor.REBUILD_QUIET` after every edit and a map
-  holds 20,480 ops. Every generator now spends from a per-op candidate budget: 0.6 ms in both cases, and a belt of
-  two million stops at the budget instead of reaching the `MAX_PROPS` panic. **NO SILENT CAP** — `opsCapped`
-  counts the ops that hit it, and a test pins that `01_fallen_plain` builds with ZERO capped and PRINTS the op
-  and prop counts rather than pinning them, because a budget that bites real content has made the world quietly
-  smaller and a pinned count on the map he edits goes red on every authoring session.
-- **A PANEL MAY NOT SPEND A DRAW CALL PER OP** (`editor.blitMinimap`, `miniGen` — same owner, same freeze).
-  `drawMinimap` walked the whole op list and issued one `drawRectangleV` apiece: **16,510 immediate-mode rects a
-  frame** on `01_fallen_plain`, and the bill GROWS every time a scatter is exploded into `at:` ops, which is
-  exactly what prop-editing does. Every other field on that face already collapsed — `blitField` run-length
-  encodes a grid and skips id 0 (the soil and the relief have since gone off the face entirely; the liquid layer
-  is its one caller now) — the op layer was the only term that scaled with the map. MEASURED before reaching for a fix: those ops land on 12,442 distinct pixels of the 182x182 face,
-  a **1.33x** collapse, so no bucketing makes a per-frame walk cheap and the answer had to be a held texture.
-  Painted on `miniGen` (bumped by `bank`, `rebuild` and `touchFolk`) and blitted once.
-  - **A HELD FACE IS COPIED BACK, NOT BLENDED BACK.** raylib blends the target's OWN alpha channel by
-    `SRC_ALPHA` like the colour, so every translucent thing painted into it drives the target's alpha below 1
-    and blending that over the panel multiplies the face a SECOND time — measured, 49/765 darker across 78% of
-    it. Blit an opaque face with `rlSetBlendFactors(GL_ONE, GL_ZERO, GL_FUNC_ADD)` under `.custom`.
-  - **AND THE SAME LESSON REACHES A BUTTON'S LABEL** (`editor.unfilledCount`). "next empty (N)" walked all
-    20,480 ops every frame the Interact layer was open — MEASURED 78.9 us a frame, 0.47% of a 16.7 ms one, for a
-    number that only moves when a container is edited. Held against `miniGen` (every op edit banks first, so the
-    stamp is exact) it is 0.002 us. A test fills without banking to prove it is a CACHE and not a second walk.
-  - A target has no MSAA and the window does: the held face carries 2,182 distinct colours where the direct
-    draw carried 6,538. Same picture, crisper edges — expected, not a regression.
-- **THE THIRD FIELD SKIPS TOO** (`env.uploadSoil`). `uploadHeight` and `uploadWater` each compare before they
-  rebuild; soil alone re-uploaded three textures and re-ran a 12,544-cell edge dilation on every single edit
-  whatever it touched. Cheap beside a terrain rebuild, but it was the odd one out. All three now guard.
-- **AND `env.build` MAY RUN ONCE PER PROCESS** (`envBuilt` panics on the second). It makes every prototype, the
-  ground and the water sheet and clears `tileBuilt`, so a second run strands all of it.
-- **GLSL RESERVED WORDS ARE NOT ONLY THE OBVIOUS ONES.** A local named `patch` compiled everywhere the author
-  tested and failed on Intel, which enforces it at `#version 330`. `layout`, `subroutine` and friends are the
-  same trap, and a scene shader that fails to compile is a hard startup panic.
+  (`hud.beginChrome`/`endChrome`, `game.HUD_FADE_DUR`, read off `hero.deathT`). Composited through a target
+  because the alternative is threading a factor through every literal in `hud.zig` plus `uiart`'s rules and the
+  `itemart` pictures. The target is only taken WHILE a fade runs — at full chrome `beginChrome` refuses. **The
+  BANNER is not chrome** and is laid down after `endChrome`.
+
+### Audio
+
 - **raylib's `SetSoundPan` IS THE LEFT CHANNEL'S GAIN, not a position.** The mixer is `left = pan; right = 1 -
   pan`, so **`pan = 1.0` is hard LEFT**. `audio.panFor` is the only place the sign is decided and a test pins
-  it. The pan law is `0.5·x·(3 − x²)`, so a hard-panned sound is ~3.2 dB louder in its own ear than a centred
-  one.
+  it. The pan law is `0.5·x·(3 − x²)`, so a hard-panned sound is ~3.2 dB louder in its own ear than a centred one.
 - **`master` NORMALIZES each voice** (`norm`), so a layer's `amp` sets its BALANCE inside the voice and only
-  `BANK.gain` sets how loud it is. **THE FIGHT IS ONE BAND** — combat rows above `BATTLE_FLOOR` are
-  pulled geometrically toward the soft end, halving the spread in dB. Retune by moving the FLOOR, not by pushing
-  one row back up; a test pins the ratio and the orderings.
-- **THE VOLUME IS RESERVED FOR WHAT IS ABOUT TO HIT YOU.** A creature's committed arrival outranks its own
-  movement noise — lunge over hop, slam over step, stab over wingbeat, swing over creak — and the tells sit past
-  the midpoint of the band. **TEXTURE GOES AT OR UNDER THE FLOOR**, which takes it out of the band entirely:
-  hops, the wingbeat, the idle creak, the whirl. A second test pins both halves, in PAIRS.
-- **TEXTURE IS THINNED IN COUNT, NOT JUST IN LEVEL** — `leechfly.DRINK_EVERY`, `rooted.CREAK_EVERY`, and the
-  hiss the brood mother no longer spends on laying a sac. The one cadence that MAY NOT be thinned is
-  `leechfly.WHINE_EVERY`.
-- **THE FAMILY LEVEL IS `TRIM_COMBAT`, NOT THE FLOOR** — the floor moves only the `battle()` band, where
-  the trim reaches the literal-gain rows too. **And the fight is rolled off the top** (`COMBAT_TREBLE`, one pole
-  at bake in `bakeTake`, UNDER the player's rack so a dial still sits on top of it).
-- **The sound filter rack is BAKE-TIME** — raylib cannot filter a playing voice, but every voice is
-  synthesized, so a dial re-renders that family (coalesced by `FX_SETTLE`). A bake STOPS every take before
-  freeing any of it. **IT LIVES IN THE EDITOR, beside the JUKEBOX** (`editor.rackPanel`, the `.jukebox` modal):
-  it is an authoring tool rather than a setting. Its eleven dials end in the EQ pair (`AF_BASS`,
-  `AF_PRESENCE`), applied LAST. The RETRO rack stays in the menu; that one is a LOOK the player picks.
-- **THE BANK RENDERS ON A WORKER THREAD, AND ONLY RENDERS** (`sfx.bakeAll`): boot loads the two streams and
+  `BANK.gain` sets how loud it is. **THE FIGHT IS ONE BAND** — combat rows above `BATTLE_FLOOR` are pulled
+  geometrically toward the soft end, halving the spread in dB. **Retune by moving the FLOOR, not by pushing one
+  row back up**; a test pins the ratio and the orderings.
+- **THE VOLUME IS RESERVED FOR WHAT IS ABOUT TO HIT YOU** — a creature's committed arrival outranks its own
+  movement noise (lunge over hop, slam over step, stab over wingbeat, swing over creak) and the tells sit past
+  the midpoint of the band. **TEXTURE GOES AT OR UNDER THE FLOOR**, which takes it out of the band entirely.
+- **TEXTURE IS THINNED IN COUNT, NOT JUST IN LEVEL** — `leechfly.DRINK_EVERY`, `rooted.CREAK_EVERY`. The one
+  cadence that MAY NOT be thinned is `leechfly.WHINE_EVERY`.
+- **THE FAMILY LEVEL IS `TRIM_COMBAT`, NOT THE FLOOR** — the floor moves only the `battle()` band. **And the
+  fight is rolled off the top** (`COMBAT_TREBLE`, one pole at bake, UNDER the player's rack so a dial still sits
+  on top of it).
+- **The sound filter rack is BAKE-TIME** — raylib cannot filter a playing voice, but every voice is synthesized,
+  so a dial re-renders that family (coalesced by `FX_SETTLE`). A bake STOPS every take before freeing any of it.
+  **IT LIVES IN THE EDITOR, beside the JUKEBOX** — an authoring tool rather than a setting. Eleven dials ending
+  in the EQ pair, applied LAST. The RETRO rack stays in the menu; that one is a LOOK the player picks.
+- **THE BANK RENDERS ON A WORKER THREAD, AND ONLY RENDERS** (`sfx.bakeAll`) — boot loads the two streams and
   spawns it, so `sfx.init` is ~250 ms instead of 2.7 s in Debug. The worker owns `work`, `tape` and `pcm` and
-  pushes PCM onto `queue`; `pump` uploads finished takes on the MAIN thread (`uploadTake`), because raylib's
-  audio buffer list is touched from one thread only. A voice is silent until its first take is uploaded. Every
-  main-thread path that synthesises or frees a row (`rebakeMix`, the voice-dirty pass, `deinit`) calls
-  `awaitBake` first, which joins the worker and drains the queue.
-- **AND THE BENCH EDITS ONE VOICE, NOT JUST A FAMILY.** `BANK` is the ORIGINAL and never moves; `live` is the
-  copy every play path reads and the only thing the editor writes, so **revert is free and cannot be lost**.
-  `settings.cfg` carries the DIFFERENCE only, one `voice.<name>` line per edited voice. Five dials (`Dial`: vol,
-  pitch, reach, and the two jitters) answer under the finger; the eleven filters are bake-time and ride the same
-  `FX_SETTLE`, applied ON TOP of the family's. **`vars` and `poly` are NOT on the bench**: they size the alias
-  table `freeRow` walks to unload a row, so a dial that moved either between a bake and its free would leak or
-  double-free — they, `mix`, `id` and `make` are read from `BANK` everywhere and have no setter. A test pins all
-  four against `live` for every voice.
-- **Never bulk-edit source through PowerShell** `Get-Content`/`Set-Content`: em dashes mojibake and a BOM
-  appears. Use the Edit tool.
+  pushes PCM onto `queue`; `pump` uploads finished takes on the MAIN thread, because raylib's audio buffer list
+  is touched from one thread only. A voice is silent until its first take is uploaded. Every main-thread path
+  that synthesises or frees a row calls `awaitBake` first, which joins the worker and drains the queue.
+- **THE BENCH EDITS ONE VOICE, NOT JUST A FAMILY.** `BANK` is the ORIGINAL and never moves; `live` is the copy
+  every play path reads and the only thing the editor writes, **so revert is free and cannot be lost**.
+  `settings.cfg` carries the DIFFERENCE only. Five dials answer under the finger; the eleven filters are
+  bake-time. **`vars` and `poly` are NOT on the bench** — they size the alias table `freeRow` walks to unload a
+  row, so a dial that moved either between a bake and its free would leak or double-free; they, `mix`, `id` and
+  `make` are read from `BANK` everywhere and have no setter, pinned by a test.
 
 ## Gaps
 
-- **Bone Knight:** no fighting stance. `poseUpper` sets no leg pose while standing, so `legChain` gives him
-  straight legs and rest-offset feet — no knee flex, no foot stagger, no weight on the back foot, through
-  either stroke. `legBrace` only drops the pelvis. It cannot be bolted on AFTER `legChain` (that is the hand
-  that levels the ankle), and a bespoke walk is forbidden, so the stance has to go THROUGH `legChain` — every
-  creature's change, not his. No RIPOSTE behind the parry. His arena has a `foggate` on it but no `arena:` row
-  yet — the Locations tab's ARENA brush draws one, and the duo's two are the worked examples.
-- **Necromancer:** no `necro_*` voice family (borrows the shade's, the wand's and the skeletons'). Nothing
-  raises a BODY but this creature, so `foe.rekindle` still has two callers — the ancient priest claws a new
-  skitterer out of the ground rather than reanimating anything, and it is the second COLD source.
+- **Bone Knight:** no fighting stance — `poseUpper` sets no leg pose while standing, so `legChain` gives him
+  straight legs and rest-offset feet through either stroke. It cannot be bolted on AFTER `legChain` (that is the
+  hand that levels the ankle) and a bespoke walk is forbidden, so the stance has to go THROUGH `legChain` —
+  every creature's change, not his. No RIPOSTE behind the parry. His arena has a `foggate` but no `arena:` row.
+- **Necromancer:** no `necro_*` voice family (borrows the shade's, the wand's and the skeletons').
 - **Combat:** no criticals, no guard counter, no AR × motion-value damage (flat constants). Nothing scales a
-  cast. Every `FOE_GROUPS` row carries a parry window except the ones `game.NO_PARRY` excuses, and the pairing
-  is comptime-enforced both ways, so the count here would only ever go stale: what carries none says why at its
-  own impact site (projectiles, ground discs, poured elements — broodlings out on purpose).
-- **The jump exists but little hangs off it** — no jump ATTACK, and no creature's
-  move misses him for being over it (a per-move height would be authored at each `toImpact` the way a parry
-  window is).
-- **Souls buy levels and nothing else** — COIN is the other purse and the counter is what takes it
-  (`play/counter.zig`, the `merchant` and `smith` folk). The PASSIVE TREE is 81 nodes with no respec, no jewel sockets, no second grant on a node. Every
-  attribute is raised by at least one node (test-pinned) and NO attribute is inert; `stats.inert` stays and
-  answers false for all seven, because the next attribute arrives dead the way LUCK did.
-- **TEN METERS NOW, AND EACH SAYS WHO CAN CARRY IT** (`combat.Ail`, `combat.AILS`) — poison, burning, chill,
-  stun, bleed, sleep, confusion, charm, berserk, stupefy. A full meter reaches the state machine: stun and sleep
-  come out of `foe.grip` as `downed`, chill and stupefy take the FEET, charm and confusion re-point
-  `foe.Threat`. **WHAT IS STILL MISSING IS A PANEL** — `combat.ailSays` writes one line of mechanic per row and
-  nothing calls it, so the meters explain themselves nowhere but in `item.effect`'s own sentence.
-- **Equipment:** every registered piece is live and the SWORD HAND draws what is in it (`hero.Blade`/`bladeOf`,
-  three shapes on one bone) — but the **WARBOW and the DOOR are still the plain bow and the small shield**. The
-  door has a mesh to borrow (`knight`'s bowed wall); the warbow is the bow at another scale. **NOTHING WORN
-  SHOWS ON HIS BODY AT ALL** — helm, coat, belt, boots and both rings are a number, a bag picture and a socket
-  caption. Every doll socket has at least one piece for it now (helm 3, neck 2, belt 1, feet 2, ring 4,
-  ring2 2). The crock lands with no burst FX; the tallowed blade shows nothing on the sword.
+  cast. What carries no parry window says why at its own impact site, and the `game.NO_PARRY` pairing is
+  comptime-enforced both ways.
+- **The jump exists but little hangs off it** — no jump ATTACK, and no creature's move misses him for being over
+  it (a per-move height would be authored at each `toImpact` the way a parry window is).
+- **Souls buy levels and nothing else** — COIN is the other purse and the counter is what takes it. The tree is
+  81 nodes with no respec, no jewel sockets, no second grant on a node. Every attribute is raised by at least
+  one node (test-pinned) and none is inert; `stats.inert` stays and answers false for all seven, because the
+  next attribute arrives dead the way LUCK did.
+- **Ailments:** ten meters and no PANEL — `combat.ailSays` writes one line of mechanic per row and nothing calls
+  it, so the meters explain themselves nowhere but in `item.effect`'s own sentence.
+- **Equipment:** the **WARBOW and the DOOR are still the plain bow and the small shield** (the door has a mesh to
+  borrow, the warbow is the bow at another scale). **NOTHING WORN SHOWS ON HIS BODY AT ALL** — helm, coat, belt,
+  boots and both rings are a number, a bag picture and a socket caption. The crock lands with no burst FX; the
+  tallowed blade shows nothing on the sword.
 - **Rig:** no foot IK — `rx(bodyPitch)` rotates about the WORLD ORIGIN, so a deep lean levers a forward-swung
   foot down and feet clip a few cm on slopes. The roll has front-loaded i-frames but no collision. One leg-cycle
   is reused across run and sprint.
-- **Elevation exists but nothing is authored with it:** terrain casts no shadows (the painted faces do),
-  painted water is one level plane.
-- **The script layer is foundations only, but it is AUTHORABLE now** (`editor.drawScriptModal`, the top bar's
-  Script button beside Objects/World/Sounds). Triggers, their conditions and their actions are made, named,
-  re-kinded and thrown away from a modal — and a MODAL rather than a map layer, because a trigger is not a
-  place and the one condition that is a rectangle already has Locations to name it. Still hand-written: the
-  DIALOG trees themselves (nodes and choices), and the flag/counter/timer TABLES — the modal cycles the names a
-  map already declares and cannot coin a new one. Three `NpcKind` (`wanderer`, `merchant`, `smith`). No quest log, no
-  journal. `deaths brood_sac` is billed off the brood's own `bursts`.
-- **THE EDITOR NOW REACHES EVERY FIELD THE FORMAT HAS.** `Op.r1` on an `at` is the prop's LIFT off the ground
-  (`env.Placer.expand`) and has a row; `Op.field` has its "cover field" checkbox; an npc's `dlg=` is a chip per
-  conversation the map declares. **AND A MAP SAYS WHERE THE PLAYER STARTS** (`worldfmt.Start`, the `start:`
-  row, the World modal, drawn on the map as a ring and a bearing) — hard-coded at (0, 4) facing south, every
-  test map had to be built around that one spot whatever its own shape was.
-- **EVERY REGION IS SELECTED, MOVED, RESIZED AND NAMED THE SAME WAY** (`editor.Grab`, `pickRegion`,
-  `dragRegion`). Zones, locations, clearings and rooms were all create-and-delete only: a rectangle you got
-  wrong could only be erased and redrawn, losing its mix or its weather, and a LOCATION could never be renamed
-  at all — which made the layer useless for script, since `Cond.region` and every trigger find one BY NAME.
-  One union rather than a flag per kind, handles drawn as posts, and the handle under the mouse in the live
-  tone. Banked on the first frame a drag moves something, so a plain selection click leaves no undo step.
+- **Elevation is authored but sparsely used** — terrain casts no shadows (the painted faces do), painted water
+  is one level plane.
+- **The script layer is foundations only, but it is AUTHORABLE** (`editor.drawScriptModal`) — triggers, their
+  conditions and their actions are made, named, re-kinded and thrown away from a MODAL rather than a map layer,
+  because a trigger is not a place. Still hand-written: the DIALOG trees themselves, and the flag/counter/timer
+  TABLES (the modal cycles the names a map already declares and cannot coin a new one). Three `NpcKind`. No
+  quest log, no journal.

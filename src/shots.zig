@@ -21,9 +21,11 @@ const broodmod = @import("foes/brood.zig");
 const warriormod = @import("foes/warrior.zig");
 const shademod = @import("foes/shade.zig");
 const leechmod = @import("foes/leechfly.zig");
+const fenmod = @import("foes/fenlurker.zig");
 const rootedmod = @import("foes/rooted.zig");
 const fishmod = @import("foes/fishman.zig");
 const birchmod = @import("foes/birchwight.zig");
+const entmod = @import("foes/ent.zig");
 const saltmod = @import("foes/salthusk.zig");
 const cindermod = @import("foes/cinderwake.zig");
 const rotmod = @import("foes/rotgorger.zig");
@@ -435,6 +437,8 @@ const STAGE_SHOT = [_][]const u8{ "stagePounce", "stageGather" };
 const STAGE_UNSHOT = [_]struct { decl: []const u8, why: []const u8 }{
     .{ .decl = "stageBiteAt", .why = "the wolf's aim, held by `game.zig`'s own bite tests" },
     .{ .decl = "stageLash", .why = "the lurker's second reach, posed by its own tests" },
+    .{ .decl = "stageGape", .why = "the lurker's TONGUE wind — `lurker_study` drives the whole stroke through the real update instead" },
+    .{ .decl = "stageSpit", .why = "the lurker's tongue at full reach — `lurker_study` drives the whole stroke through the real update instead" },
     .{ .decl = "stageBreath", .why = "the priest's COLD, a second pose behind the raise `stageGather` already shoots" },
     .{ .decl = "stageCharge", .why = "the deer's antlers, a second pose behind the spit `stageGather` already shoots" },
 };
@@ -2337,6 +2341,7 @@ fn runUnitStudies(g: *Game, directOnly: bool) bool {
         .{ .tag = "broodling_study", .run = broodlingStudyShots },
         .{ .tag = "sac_study", .run = sacStudyShots },
         .{ .tag = "knight_study", .run = knightStudyShots },
+        .{ .tag = "lurker_study", .run = lurkerStudyShots },
         .{ .tag = "shade_study", .run = shadeStudyShots },
         .{ .tag = "mourner_study", .run = mournerStudyShots },
         .{ .tag = "leech_study", .run = leechStudyShots },
@@ -2385,6 +2390,11 @@ fn broadFoeShots(g: *Game) void {
     broadFoeStudy(g, rt, o, oa, &g.perch.model, "owlbear", owlmod.MOVES[0].windDur, owlmod.MOVES[0].strikeDur, 5.0, 2.0);
     oa = o; oa.debugSlam();
     broadFoeStudy(g, rt, o, oa, &g.perch.model, "owlbear_slam", owlmod.MOVES[1].windDur, owlmod.MOVES[1].strikeDur, 5.0, 2.0);
+    const e = entmod.Ent.spawn(mathx.zero3, yaw, 1, 0.37);
+    var ea = e; ea.debugSwipe();
+    broadFoeStudy(g, rt, e, ea, &g.copse.model, "corruptent", 0.72, 0.24, 7.3, 2.9);
+    ea = e; ea.debugShake();
+    broadFoeStudy(g, rt, e, ea, &g.copse.model, "corruptent_shake", 1.15, 0.60, 7.3, 2.9);
 }
 
 fn broadFoeStudy(g: *Game, rt: rl.RenderTexture2D, initial: anytype, attack: @TypeOf(initial), model: anytype, name: []const u8, wind: f32, strike: f32, height: f32, focus: f32) void {
@@ -2678,6 +2688,62 @@ fn knightStudyShots(g: *Game) void {
         }
     }
 }
+/// THE TONGUE IS FIVE METRES OF NEW GEOMETRY AND THE HOUSE PORTRAIT IS BOOMED OFF A HEIGHT AND AIMED AT THE BODY'S
+/// OWN AXIS — neither of which holds this. The frame is solved off the SWEPT BOX of the whole stroke with the width
+/// converted at the lens's own aspect, and it is AIMED at that box's middle: solved for the distance but still
+/// pointed at the creature, the shaft ran off the right of the plate two metres before it stopped, because the box
+/// is five metres long and only one end of it is the body. Both moves, all four sides, driven through the REAL
+/// `update` at a hero stood inside the band being thrown.
+fn lurkerStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("lurker plate target");
+    defer rl.unloadRenderTexture(rt);
+    const reach = fenmod.TONGUE_R + fenmod.H * 0.5;
+    const aspect = @as(f32, @floatFromInt(game.SCREEN_H)) / @as(f32, @floatFromInt(game.SCREEN_W));
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        for ([_]fenmod.Move{ .tongue, .lash }, 0..) |which, mode| {
+            // The tongue's box is five metres long and the skull's is the body: one solve each, off the same reach.
+            const wide = which == .tongue;
+            const boxHalf: f32 = if (wide) reach * 0.5 else 0;
+            const boxY: f32 = fenmod.H * (if (wide) @as(f32, 0.70) else @as(f32, 0.52));
+            const frame = @max(fenmod.H * 1.45, if (wide) reach * aspect else 0);
+            var body = fenmod.Lurker.spawn(mathx.zero3, yaw, 1, 0.3);
+            body.wade = .{ .here = 1.0, .quarry = 1.0 };
+            body.restT = 0;
+            // Stood inside the band being thrown, and out of the other one: the picker takes the skull first, so a
+            // quarry inside its reach would never spend the tongue.
+            const at = fenmod.bandOf(which, 1.0) * (if (which == .tongue) @as(f32, 0.82) else @as(f32, 0.5));
+            const quarry = mathx.scaleV(mathx.headingDir(yaw), at);
+            const move = if (which == .tongue) fenmod.tongueClock() else fenmod.lashClock();
+            const stamps = [_]f32{
+                0,
+                move.wind * 0.45,
+                move.wind * 0.9,
+                move.wind + move.strike * 0.3,
+                move.wind + move.strike * 0.65,
+                move.wind + move.strike,
+                move.wind + move.strike + move.recover * 0.45,
+                move.wind + move.strike + move.recover,
+            };
+            var clock: f32 = 0;
+            for (stamps, 0..) |stamp, i| {
+                while (clock + STAMP_EPS < stamp) {
+                    const dt = @min(SHOT_DT, stamp - clock);
+                    _ = body.update(dt, quarry, game.PLAY_HALF, .{});
+                    clock += dt;
+                }
+                var tag: [80]u8 = undefined;
+                unitStudyViewFrame(g, rt, &body, &g.marsh.model, std.fmt.bufPrint(&tag, "lurker_study_{d}_{d}_{d}", .{ side, mode, i }) catch unreachable, .{
+                    .offset = mathx.addV(mathx.scaleV(mathx.headingDir(yaw), boxHalf), v3(0, boxY, 0)),
+                    .dist = frame / (2 * @tan(mathx.radians(camera.FOVY) * 0.5) * 0.82) + 0.4,
+                });
+            }
+            // What was photographed has to be the move that was asked for.
+            std.debug.assert(body.move == which);
+        }
+    }
+}
+
 fn shadeStudyShots(g: *Game) void {
     hauntStudyShots(g, .shade, "shade_study");
 }

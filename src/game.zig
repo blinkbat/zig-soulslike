@@ -53,6 +53,7 @@ const owlbearmod = @import("foes/owlbear.zig");
 const druidmod = @import("foes/druidess.zig");
 const mimicmod = @import("foes/mimic.zig");
 const mastodonmod = @import("foes/mastodon.zig");
+const entmod = @import("foes/ent.zig");
 const leechmod = @import("foes/leechfly.zig");
 const shademod = @import("foes/shade.zig");
 const chestmod = @import("play/chest.zig");
@@ -251,6 +252,7 @@ pub const Game = struct {
     coven: druidmod.Coven,
     hoard: mimicmod.Hoard,
     drove: mastodonmod.Drove,
+    copse: entmod.Copse,
     vigil: knightmod.Vigil,
     vanguard: duomod.Vanguard,
     conclave: duomod.Conclave,
@@ -319,6 +321,7 @@ pub const Game = struct {
     rockModel: rl.Model,
     wispModel: rl.Model,
     sparkModel: rl.Model,
+    acornModel: rl.Model,
     arrows: [MAX_ARROWS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_ARROWS,
     shafts: [MAX_SHAFTS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_SHAFTS,
     rig: cameramod.CamRig,
@@ -420,6 +423,7 @@ pub const Game = struct {
         g.rockModel = delvermod.rockModel(g.scene.shader);
         g.wispModel = shademod.wispMesh(g.scene.shader);
         g.sparkModel = hollowmod.sparkMesh(g.scene.shader);
+        g.acornModel = entmod.acornModel(g.scene.shader);
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
         g.shafts = [_]archermod.Arrow{.{}} ** MAX_SHAFTS;
         phase(&initTimer, "pools");
@@ -796,6 +800,7 @@ pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "coven", .kind = .druidess, .aggro = aggroRing(druidmod), .vs = &WAVE_FIELDS },
     .{ .field = "hoard", .kind = .bone_mimic, .aggro = aggroRing(mimicmod) },
     .{ .field = "drove", .kind = .mastodon, .aggro = aggroRing(mastodonmod), .vsHero = false, .vs = &.{ "warren", "line", "band" }, .big = .launch },
+    .{ .field = "copse", .kind = .corrupt_ent, .aggro = aggroRing(entmod), .big = .{ .stance = blowAt(entmod, "SWIPE_HIT", "stance") } },
     .{ .field = "vigil", .kind = .bone_knight, .aggro = aggroRing(knightmod), .vsHero = false, .vs = &.{ "line", "muster" }, .big = .{ .stance = blowAt(knightmod, "CHARGE_HIT", "stance") } },
     .{ .field = "vanguard", .kind = .fungal_swordsman, .aggro = aggroRing(duomod), .vs = &.{ "cluster", "ring" }, .big = .launch },
     .{ .field = "conclave", .kind = .fungal_magus, .aggro = aggroRing(duomod), .vs = &.{ "cluster", "ring" }, .big = .launch },
@@ -1222,8 +1227,8 @@ test "A DETONATOR RESOLVES ONE WAY — caught on the chest and rolled to a stop 
     inline for (@typeInfo(archermod.Shot).@"enum".fields) |f| {
         if (detonates(@enumFromInt(f.value))) bombs += 1;
     }
-    try std.testing.expectEqual(@as(usize, 2), bombs);
-    try std.testing.expect(detonates(.emberball) and detonates(.rock));
+    try std.testing.expectEqual(@as(usize, 3), bombs);
+    try std.testing.expect(detonates(.emberball) and detonates(.rock) and detonates(.acorn));
     try std.testing.expect(!detonates(.arrow) and !detonates(.firearrow) and !detonates(.bolt));
 
     const dt: f32 = 1.0 / 60.0;
@@ -3562,6 +3567,10 @@ fn bonfirePick(g: *Game, pick: restmod.Pick) void {
 const SaveShot = enum { withShot, noShot };
 
 fn saveNow(g: *Game, shot: SaveShot) void {
+    // A FIGHT IS NOT A RUN. The sparring room's fire is a rest kind and a death in there respawns him, so both
+    // reached here: the hero's position in a 96 m test room, and a rail bit for the boss he just killed, written
+    // into his real slot with a fresh picture over it. The rail only ever GAINS a bit, so that one does not wash out.
+    if (editormod.Editor.sparring()) return;
     snapBosses(g);
     if (!savemod.write(g.slot, slotOf(g))) {
         std.debug.print("SAVE FAILED: could not write {s}\n", .{savemod.path(g.slot)});
@@ -4532,6 +4541,7 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
         },
         .powder => powderBurst(g, ground),
         .rock => rockBurst(g, ground),
+        .acorn => acornBurst(g, ground),
         .arrow, .firearrow, .wisp, .crock, .spark => {},
     }
 }
@@ -4546,6 +4556,20 @@ fn rockBurst(g: *Game, ground: rl.Vector3) void {
     _ = heroTakes(g, .{ .hit = delvermod.ROCK_HIT, .from = ground }, true, true);
 }
 
+/// A NUT COMES DOWN AND CRACKS: a small ring where it lands, and the volley's whole answer is not to be standing in one. Billed once, in the air or on the ground (`detonates`).
+fn acornBurst(g: *Game, ground: rl.Vector3) void {
+    sfx.world(.wood_hit, ground);
+    g.rig.addShake(SHAKE_HIT_LIGHT);
+    g.hero.dustPuff(ground, entmod.ACORN_SPLASH_R, foemod.DUST, g.hero.casts);
+    if (g.hero.iFramed()) return;
+    if (mathx.distXZ(ground, g.hero.pos) > entmod.ACORN_SPLASH_R + HERO_R) return;
+    _ = heroTakes(g, .{ .hit = entmod.ACORN_HIT, .from = ground }, false, true);
+}
+
+fn spawnAcorn(g: *Game, toss: entmod.Toss) void {
+    poolPut(g, archermod.launchShaft(toss.from, toss.at, entmod.ACORN_SPEED, entmod.ACORN_HIT, true, .acorn));
+}
+
 fn spawnRock(g: *Game, from: rl.Vector3) void {
     poolPut(g, archermod.launchShaft(from, mathx.addV(g.hero.pos, v3(0, 0.3, 0)), delvermod.ROCK_SPEED, delvermod.ROCK_HIT, true, .rock));
 }
@@ -4553,7 +4577,7 @@ fn spawnRock(g: *Game, from: rl.Vector3) void {
 fn shotBuildup(s: archermod.Shot) f32 {
     return switch (s) {
         .venom => broodmod.M_SPIT_BUILD,
-        .arrow, .firearrow, .clump, .crock, .bolt, .wisp, .emberball, .sac, .spark, .powder, .rock => 0,
+        .arrow, .firearrow, .clump, .crock, .bolt, .wisp, .emberball, .sac, .spark, .powder, .rock, .acorn => 0,
     };
 }
 
@@ -4576,7 +4600,7 @@ test "A GLOB THAT LANDS CARRIES ITS VENOM — the constant the meter is written 
 }
 
 fn detonates(s: archermod.Shot) bool {
-    return s == .emberball or s == .rock;
+    return s == .emberball or s == .rock or s == .acorn;
 }
 
 const BLAST_R: f32 = 3.1;
@@ -4619,6 +4643,7 @@ fn drawArrows(g: *Game) void {
                 .rock => &g.rockModel,
                 .wisp => &g.wispModel,
                 .spark => &g.sparkModel,
+                .acorn => &g.acornModel,
             };
             rl.drawMesh(m.meshes[0], m.materials[0], archermod.arrowXform(ar));
         }
@@ -5087,11 +5112,11 @@ const DT_MAX: f32 = 1.0 / 30.0;
 /// Alt+F4 and the close box both land here: raylib clears its own close flag every `windowShouldClose`,
 /// so ignoring one frame's request is enough to hold the window open for the save/discard prompt.
 fn quitBlocked(g: *Game) bool {
-    if (!g.editor.dirty) return false;
+    if (!g.editor.dirty and !editormod.Editor.sparStashDirty()) return false;
     if (!g.editor.on) {
         g.lock = null;
         leavePlace(g);
-        g.editor.enter(g.hero.pos);
+        if (g.editor.endSpar(&g.map, &g.env)) g.editor.reopen() else g.editor.enter(g.hero.pos);
     }
     g.editor.requestQuit();
     return true;
@@ -5227,6 +5252,22 @@ pub fn run(mode: Mode) void {
                     armScript(g);
                 },
                 .quit => break,
+                // ONE CREATURE, IN A ROOM, WITH THE KIT HE IS CARRYING. His own map is set aside, not reloaded.
+                .spar => {
+                    const kind = g.editor.sparTarget(&g.map) orelse .toad;
+                    g.editor.flushRebuild(&g.map, &g.env);
+                    g.editor.beginSpar(&g.map, &g.env, kind);
+                    g.editor.on = false;
+                    g.menu.started();
+                    rl.hideCursor();
+                    armScript(g);
+                    g.hero.pos = g.map.start.at();
+                    plantActor(g, &g.hero.pos);
+                    g.hero.setSpawn(g.hero.pos, g.map.start.facing());
+                    g.hero.respawnNow();
+                    g.rig = cameramod.newCamRig(g.hero.shoulderPoint(), g.hero.facing);
+                    wasInside = false;
+                },
                 .playtest => {
                     g.editor.flushRebuild(&g.map, &g.env);
                     g.editor.on = false;
@@ -5275,9 +5316,16 @@ pub fn run(mode: Mode) void {
                 .editor => {
                     g.lock = null;
                     leavePlace(g);
-                    g.editor.enter(g.hero.pos);
+                    // BACK TO THE VIEW HE LEFT: `enter` re-solves the camera onto the hero, which after a fight is the
+                    // middle of the sparring room — and its "Editor ready" would bury what `endSpar` just said.
+                    if (g.editor.endSpar(&g.map, &g.env)) g.editor.reopen() else g.editor.enter(g.hero.pos);
                 },
-                .toTitle => g.menu.toTitle(),
+                .toTitle => {
+                    // THE STASH MAY NOT OUTLIVE THE WORLD IT BELONGS TO: from the title he can start or load a
+                    // game, and a stash still held then lands his old map over the one he is playing.
+                    _ = g.editor.endSpar(&g.map, &g.env);
+                    g.menu.toTitle();
+                },
                 .newGame => |i| beginEnter(g, .{ .fresh = i }),
                 .loadGame => |i| beginEnter(g, .{ .load = i }),
                 .deleteSlot => |i| {
@@ -5657,6 +5705,15 @@ pub fn run(mode: Mode) void {
             g.rumble.play(rumblemod.hit_heavy);
             g.rig.addShake(SHAKE_SURGE);
         }
+        _ = billGroup(g, "copse", dt, bladeNow);
+        for (g.copse.live()) |*e| {
+            if (e.groaned) sfx.world(.wood_wake, e.pos);
+            if (e.shook) {
+                sfx.world(.wood_creak, e.pos);
+                g.rig.addShake(SHAKE_HIT_LIGHT);
+            }
+            for (e.tosses[0..e.tossN]) |toss| spawnAcorn(g, toss);
+        }
         _ = billGroup(g, "rite", dt, bladeNow);
         _ = billGroup(g, "herd", dt, bladeNow);
         for (g.herd.live()) |*d| {
@@ -5689,10 +5746,17 @@ pub fn run(mode: Mode) void {
                 spawnSac(g, from);
             }
         }
-        _ = billGroup(g, "marsh", dt, bladeNow);
+        // OFF `billGroup` because the TONGUE HAULS: the lurker answers with a blow and a pull the way the rooted's
+        // hook does, and `g.hook` has to be cleared before the group can set it.
+        g.hook = null;
+        if (g.marsh.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, noteYank)) |b| {
+            applyYank(g, heroTakes(g, b, b.hit.heavy(), true));
+        }
         for (g.marsh.live()) |*l| {
             if (l.broke) sfx.world(.lurker_break, l.pos);
             if (l.lashed) sfx.world(.lurker_lash, l.pos);
+            if (l.gaped) sfx.world(.lurker_gape, l.pos);
+            if (l.spat) sfx.world(.lurker_tongue, l.pos);
             if (l.sank) sfx.world(.lurker_sink, l.pos);
             if (l.yelped) sfx.world(.lurker_hurt, l.pos);
             if (l.justDied) sfx.world(.lurker_die, l.pos);
@@ -7069,7 +7133,8 @@ test "the editor's re-home stamp trips on every edit a placed body can take, and
     try std.testing.expectEqual(at0, foePlacementStamp(m));
 
     const hb = m.height;
-    for (&m.height) |*c| c.* += 3;
+    // WRAPPING: a map sculpted to the encoding's ceiling holds 255s, and the point is only to move the field.
+    for (&m.height) |*c| c.* +%= 3;
     try std.testing.expect(foePlacementStamp(m) != at0);
     m.height = hb;
     try std.testing.expectEqual(at0, foePlacementStamp(m));

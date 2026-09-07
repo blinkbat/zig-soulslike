@@ -8,6 +8,7 @@ const mapart = @import("mapart.zig");
 const wf = @import("../world/worldfmt.zig");
 const dialogmod = @import("../world/dialog.zig");
 const envmod = @import("../world/env.zig");
+const spar = @import("../world/spar.zig");
 const caves = @import("../world/caves.zig");
 const gfx = @import("../gfx/gfx.zig");
 const daynight = @import("../world/daynight.zig");
@@ -64,6 +65,12 @@ const FOE_PICK_R: f32 = 1.6;
 
 // File scope: BSS, not inside Game and not on an allocator — a `Map` is megabytes and the ring is `UNDO_CAP` of them.
 var undoRing: [UNDO_CAP]wf.Map = undefined;
+/// The map he was editing, while a sparring room borrows the world out from under him. One more `Map`, same reason as the ring's.
+var sparStash: wf.Map = undefined;
+var sparPath: [wf.PATH_CAP]u8 = undefined;
+var sparPathLen: usize = 0;
+var sparWasDirty = false;
+var sparHeld = false;
 var undoBase: usize = 0;
 var undoN: usize = 0;
 var undoAt: usize = 0;
@@ -159,6 +166,7 @@ const groundBrushes = [_][:0]const u8{
     "Oil",
     "Fungal",
     "Lava",
+    "Reset",
     "Erase",
 };
 const caveBrushes = [_][:0]const u8{ "Carve", "Entrance", "Fill", "Sample" };
@@ -230,11 +238,11 @@ const GROUND_SOIL_0: usize = GROUND_CLIFF_0 + GROUND_CLIFF_N;
 
 const SCULPT_EVEN: f32 = 0.5;
 
-/// An Entrance floor falls this much per metre run — well inside `MAX_SLOPE`, so the grade it lays is walkable without the author solving one.
-const ENTRANCE_GRADE: f32 = 0.5;
-/// How far under the ground an entrance starts, so the first step in is a step and not a drop.
-const ENTRANCE_SINK: f32 = 0.25;
-const HEAD_MIN: f32 = 2.0;
+const ENTRANCE_GRADE = caves.ENTRANCE_GRADE;
+const ENTRANCE_SINK = caves.ENTRANCE_SINK;
+const HEAD_MIN = caves.HEAD_MIN;
+/// Where a sparring room would be saved if he ever pressed Ctrl+S inside one. It is built in memory and never written on its own.
+const SPAR_PATH = wf.DIR ++ "/test_spar.world";
 const CAVE_PICK_STEP: f32 = 0.35;
 const CAVE_PICK_REACH: f32 = 400.0;
 /// Under this much rock over a ceiling the hill is not a roof any more, and the panel says so.
@@ -251,6 +259,8 @@ const CLIFF_SWATCH = propart.CLIFF_ROCK;
 const SLOPE_SWATCH = ui.col(112, 116, 108, 255);
 const STAIR_SWATCH = propart.CLIFF_LT;
 const RAMP_SWATCH = ui.col(98, 92, 70, 255);
+/// ONE COLOUR, ONE MEANING: worn by every tool that TAKES SOMETHING AWAY — the erasers, Ground > Reset, Caves > Fill — and by nothing else.
+const GONE = ui.col(146, 66, 54, 255);
 
 const groundTips = [_][:0]const u8{
     "Sweep to raise. [ ] sets size, the panel sets strength",
@@ -277,6 +287,7 @@ const groundTips = [_][:0]const u8{
     "Tar. Wades like water; bubbles mound and pop. No status",
     "Fungal soup. Wades like water and builds POISON while you stand in it",
     "Molten rock. Wades like water, builds BURNING and bites every second",
+    "Sweep to put a patch back to BARE FLOOR: ground to the datum, no cliff, no cave, no water, no soil, and everything standing in it gone. Zones, locations and arenas stay - a disc cannot say which part of a rectangle to take",
     "Sweep to unpaint soil and water. Leaves the sculpted shape",
 };
 const locationTips = [_][:0]const u8{
@@ -349,6 +360,7 @@ const FOE_TIPS = [NFOE_KIND]FoeTip{
     .{ .kind = .druidess, .tip = "BOSS. Keeps away: vines that snare where you stood, vines that whip, a vine SPEAR down the line as you close. Leaps clear, sidesteps a rush. At half health she calls a wave and jumps off to HEAL - go and hit her" },
     .{ .kind = .bone_mimic, .tip = "A chest, glowing BLUE, until you open it: then a bone stalk on small legs with the box for a head. Lunging bite, a full-circle head swing. Dangerous" },
     .{ .kind = .mastodon, .tip = "LARGE beast, horns over head and shoulders. Headbutt and bite up close, a CHARGE from a distance, a jump-lunge with a long recovery, and a tail swipe that turns him if you get behind" },
+    .{ .kind = .corrupt_ent, .tip = "The BIGGEST thing that walks. Wide bough sweeps that answer either side, and from range it shakes its crown and rains EXPLODING ACORNS where you stand. Burns badly" },
 };
 
 const foeTips = blk: {
@@ -428,6 +440,7 @@ const unitIcons = [_]ui.Icon{
     .druidess,
     .bone_mimic,
     .mastodon,
+    .corrupt_ent,
     .wanderer,
     .merchant,
     .smith,
@@ -478,11 +491,24 @@ fn armFirstShown(ed: *Editor) void {
     if (shown.len > 0) ed.setBrush(shown[0]);
 }
 
+/// Which of a layer's brushes REMOVES. Every layer's last brush is its eraser except the two that sculpt, and each of those names its own.
+fn brushRemoves(l: Layer, i: usize) bool {
+    return switch (l) {
+        .ground => switch (@as(GroundBrush, @enumFromInt(i))) {
+            .reset, .erase => true,
+            else => false,
+        },
+        .caves => @as(CaveBrush, @enumFromInt(i)) == .fill,
+        else => i + 1 == brushesFor(l).len,
+    };
+}
+
 fn brushSectionFor(l: Layer, i: usize) ?[:0]const u8 {
     if (l != .ground) return null;
     if (i == 0) return "shape";
     if (i == GROUND_CLIFF_0) return "relief";
     if (i == GROUND_SOIL_0) return "surface";
+    if (i == @intFromEnum(GroundBrush.reset)) return "clear";
     return null;
 }
 
@@ -524,7 +550,17 @@ fn brushTipsFor(l: Layer) []const [:0]const u8 {
 
 comptime {
     std.debug.assert(layerTips.len == Layer.N);
-    std.debug.assert(groundBrushes.len == GROUND_SOIL_0 + (wf.Soil.N - 1) + wf.Liquid.N + 1);
+    // A BRUSH INDEX ADDRESSES FOUR LISTS AT ONCE — the names, the tips, the glyphs, and for two layers an enum
+    // it is cast into. Drift in any one of them mis-labels a tool or casts an index no enum field has.
+    for (0..Layer.N) |i| {
+        const l: Layer = @enumFromInt(i);
+        std.debug.assert(brushesFor(l).len == brushTipsFor(l).len);
+        if (brushIconsFor(l)) |g| std.debug.assert(g.len == brushesFor(l).len);
+    }
+    std.debug.assert(groundBrushes.len == @typeInfo(GroundBrush).@"enum".fields.len);
+    std.debug.assert(caveBrushes.len == @typeInfo(CaveBrush).@"enum".fields.len);
+    // The two on the end are Reset and Erase.
+    std.debug.assert(groundBrushes.len == GROUND_SOIL_0 + (wf.Soil.N - 1) + wf.Liquid.N + 2);
     for (0..wf.Liquid.N) |i| {
         std.debug.assert(liquidOf(@enumFromInt(GROUND_SOIL_0 + wf.Soil.N - 1 + i)).? == @as(wf.Liquid, @enumFromInt(i)));
     }
@@ -545,7 +581,7 @@ comptime {
     }
 }
 
-pub const GroundBrush = enum { raise, lower, smooth, flat, pool, cliff, stair, ramp, slope, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, sand, water, oil, fungal, lava, erase };
+pub const GroundBrush = enum { raise, lower, smooth, flat, pool, cliff, stair, ramp, slope, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, sand, water, oil, fungal, lava, reset, erase };
 
 fn cliffCaseOf(b: GroundBrush) ?u8 {
     return switch (b) {
@@ -617,6 +653,7 @@ const UnitBrush = enum {
     druidess,
     bone_mimic,
     mastodon,
+    corrupt_ent,
     wanderer,
     merchant,
     smith,
@@ -736,7 +773,7 @@ fn layerOf(o: *const wf.Op) Layer {
     };
 }
 
-pub const Action = enum { none, leave, playtest, quit };
+pub const Action = enum { none, leave, playtest, spar, quit };
 
 pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, boss, jukebox, stats, world, zonemix, script, talk, options };
 
@@ -920,6 +957,15 @@ const Wipe = struct {
     n: usize = 0,
 };
 
+/// WHETHER A HELD REMOVE-STROKE MAY BITE AGAIN. The first tap of one always lands; after that it owes both the clock
+/// and the step, because what is behind it is a whole `materialize` — MEASURED 4.0 ms over `01_fallen_plain`'s 16,988
+/// ops — and a sixty-frame drag across a wood would spend a quarter of every frame on it. The eraser and Ground >
+/// Reset are the two, and they answer here so a rate tuned for one is the rate for both.
+fn strokeDue(w: Wipe, g: rl.Vector3) bool {
+    if (!w.on) return true;
+    return w.t >= 1.0 / ERASE_HZ and mathx.dist2XZ(g, w.at) >= ERASE_STEP * ERASE_STEP;
+}
+
 
 pub const Editor = struct {
     on: bool = false,
@@ -978,6 +1024,8 @@ pub const Editor = struct {
     heightStroke: bool = false,
     sculptRate: f32 = 3.0,
     wipe: Wipe = .{},
+    /// Reset's own copy of the eraser's clock. Its op sweep costs a rebuild, so it is throttled the same way; the field strokes beside it are not.
+    clear: Wipe = .{},
     rmbDown: bool = false,
     rmbTravel: f32 = 0,
     menuOpen: bool = false,
@@ -1056,6 +1104,8 @@ pub const Editor = struct {
     status: [ui.MSG_CAP]u8 = undefined,
     statusLen: usize = 0,
     statusT: f32 = 0,
+    /// Set by the panel's own button; the key handler is the one place that turns it into an action.
+    sparWanted: bool = false,
 
     pub fn auditioning(self: *const Editor) bool {
         return self.modal == .jukebox;
@@ -1093,7 +1143,6 @@ pub const Editor = struct {
     }
 
     pub fn enter(self: *Editor, at: rl.Vector3) void {
-        self.on = true;
         self.yaw = 0;
         self.pitch = -0.7;
         self.dist = 28;
@@ -1106,6 +1155,14 @@ pub const Editor = struct {
             .projection = .perspective,
         };
         self.applyCam();
+        self.reopen();
+        undoReset();
+        self.say("Editor ready");
+    }
+
+    /// Everything an entry puts back that is NOT the view, so the way back from a fight can keep the camera he left. `enter` solves a fresh one over it.
+    pub fn reopen(self: *Editor) void {
+        self.on = true;
         self.selecting = false;
         self.panning = false;
         self.dragging = false;
@@ -1115,6 +1172,7 @@ pub const Editor = struct {
         self.hover = .none;
         self.hoverLive = false;
         self.wipe = .{};
+        self.clear = .{};
         self.menuOpen = false;
         self.marquee = false;
         self.moving = false;
@@ -1128,9 +1186,7 @@ pub const Editor = struct {
         self.hotFrame = false;
         self.editing = false;
         if (self.pathLen == 0) self.setPath(wf.START_MAP);
-        undoReset();
         self.touchFolk();
-        self.say("Editor ready");
     }
 
     fn setPath(self: *Editor, p: []const u8) void {
@@ -1154,6 +1210,53 @@ pub const Editor = struct {
     fn sayFmt(self: *Editor, comptime fmt: []const u8, args: anytype) void {
         var buf: [ui.MSG_CAP]u8 = undefined;
         self.say(std.fmt.bufPrint(&buf, fmt, args) catch fmt);
+    }
+
+    /// THE CREATURE THE FIGHT IS AGAINST: the one selected if there is one, else the one the brush is holding.
+    pub fn sparTarget(self: *const Editor, m: *const wf.Map) ?wf.FoeKind {
+        if (self.selUnit) |s| switch (s) {
+            .foe => |i| if (i < m.nfoes) return m.foes[i].kind,
+            else => {},
+        };
+        if (self.layer != .units) return null;
+        const bi = self.brush[@intFromEnum(Layer.units)];
+        if (bi >= NFOE_KIND) return null;
+        return @enumFromInt(bi);
+    }
+
+    /// Takes the world for one fight and keeps his own map, path and dirty flag aside. His camera, layer and brush are untouched — he comes back to the view he left.
+    pub fn beginSpar(self: *Editor, m: *wf.Map, env: *envmod.Env, kind: wf.FoeKind) void {
+        if (!sparHeld) {
+            sparStash = m.*;
+            sparPath = self.path;
+            sparPathLen = self.pathLen;
+            sparWasDirty = self.dirty;
+            sparHeld = true;
+        }
+        spar.author(m, kind);
+        self.setPath(SPAR_PATH);
+        self.adopt(m, env, false);
+    }
+
+    /// Hands the stashed map back. False when no fight was ever started, which is the ordinary way back into the editor.
+    pub fn endSpar(self: *Editor, m: *wf.Map, env: *envmod.Env) bool {
+        if (!sparHeld) return false;
+        m.* = sparStash;
+        self.path = sparPath;
+        self.pathLen = sparPathLen;
+        sparHeld = false;
+        self.adopt(m, env, sparWasDirty);
+        self.say("back from the fight - your map is as you left it");
+        return true;
+    }
+
+    pub fn sparring() bool {
+        return sparHeld;
+    }
+
+    /// His own map is set aside and unsaved. The window may not close on that any more than on a dirty editor.
+    pub fn sparStashDirty() bool {
+        return sparHeld and sparWasDirty;
     }
 
     fn brushIdx(self: *const Editor) usize {
@@ -1586,6 +1689,7 @@ pub const Editor = struct {
         self.world = env;
         self.statusT = @max(0, self.statusT - dt);
         self.wipe.t += dt;
+        self.clear.t += dt;
         self.tickRebuild(m, env, dt);
 
         if (self.modal != .none) {
@@ -1713,6 +1817,12 @@ pub const Editor = struct {
             return .none;
         }
         if (rl.isKeyPressed(.f5)) return .playtest;
+        const askedSpar = self.sparWanted;
+        self.sparWanted = false;
+        if (rl.isKeyPressed(.f6) or askedSpar) {
+            if (self.sparTarget(m) != null) return .spar;
+            self.say("F6 FIGHTS ONE CREATURE: pick one in the Units layer first, or select one already placed");
+        }
 
         if (!self.textFocus) {
             if (rl.isKeyPressed(.tab)) {
@@ -2012,6 +2122,7 @@ pub const Editor = struct {
                             env.uploadWater(m);
                             self.wetStroke = true;
                         },
+                        .reset => self.resetAt(m, env, g),
                         .erase => {
                             if (m.paintSoil(g.x, g.z, self.radius, .none, 1, null)) env.uploadSoil(m);
                             if (m.paintWater(g.x, g.z, self.radius, false, null, .water)) {
@@ -2111,8 +2222,70 @@ pub const Editor = struct {
         }
     }
 
+    /// BACK TO BARE FLOOR, EVERY LAYER AT ONCE: the ground to the datum with no feather, the cliff flags, the cave, the
+    /// water, the soil, and everything standing in the disc. Zones, locations, arenas and clearings stay — a disc cannot
+    /// say which part of a rectangle to take.
+    fn resetAt(self: *Editor, m: *wf.Map, env: *envmod.Env, g: rl.Vector3) void {
+        var span: [4]usize = wf.EMPTY_SPAN;
+        if (m.levelRegion(g.x, g.z, self.radius, 0, &span)) {
+            env.sculptHeight(m, span);
+            self.heightStroke = true;
+        }
+        if (m.paintCliff(g.x, g.z, self.radius, wf.CLIFF_NONE, &span)) {
+            env.sculptHeight(m, span);
+            self.heightStroke = true;
+        }
+        if (caves.fill(caves.gridsOf(m), .{ .px = g.x, .pz = g.z, .r = self.radius, .floor = 0, .roof = 0 }, &span)) {
+            env.carveCave(m, span);
+            self.heightStroke = true;
+        }
+        if (m.paintWater(g.x, g.z, self.radius, false, null, .water)) {
+            env.uploadWater(m);
+            self.wetStroke = true;
+        }
+        if (m.paintSoil(g.x, g.z, self.radius, .none, 1, null)) env.uploadSoil(m);
+
+        // THE SWEEP RIDES THE ERASER'S OWN THROTTLE, and only that half of the stroke does. The five field strokes
+        // above are each guarded and stop moving the moment the disc has nothing left to change; the sweep's rebuild
+        // is a whole `materialize` — MEASURED 4.0 ms on `01_fallen_plain`'s 16,988 ops — so a stroke dragged across a
+        // wood would spend a quarter of all sixty frames on it. `eraseAt` has held the same work to `ERASE_HZ` since
+        // the freeze that made `blitMinimap` a held texture.
+        if (!strokeDue(self.clear, g)) return;
+        self.clear.on = true;
+        self.clear.at = g;
+        self.clear.t = 0;
+
+        const r2 = self.radius * self.radius;
+        var gone: usize = m.removeInDisc(g.x, g.z, self.radius);
+        var f: usize = m.nfoes;
+        while (f > 0) {
+            f -= 1;
+            if (mathx.dist2XZ(v3(m.foes[f].x, 0, m.foes[f].z), g) > r2) continue;
+            wf.removeFoe(m, f);
+            gone += 1;
+        }
+        var p: usize = m.nnpcs;
+        var broke: usize = 0;
+        while (p > 0) {
+            p -= 1;
+            if (mathx.dist2XZ(v3(m.npcs[p].x, 0, m.npcs[p].z), g) > r2) continue;
+            broke += self.removeFolk(m, p).conds;
+            gone += 1;
+        }
+        if (gone == 0) return;
+        self.dropSelection();
+        self.rebuild(m, env);
+        // The same shout every other delete path makes: a `near` condition whose body is gone is a trigger that never fires.
+        if (broke > 0) {
+            self.sayFmt("reset - {d} placement(s) gone; {d} `near` condition(s) now never", .{ gone, broke });
+        } else {
+            self.sayFmt("reset - {d} placement(s) gone", .{gone});
+        }
+    }
+
     fn endPaint(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
         self.painting = false;
+        self.clear = .{};
         if (self.wetStroke or self.heightStroke) {
             self.wetStroke = false;
             self.heightStroke = false;
@@ -2843,12 +3016,9 @@ pub const Editor = struct {
 
     fn wipeStep(self: *Editor, m: *wf.Map, env: *envmod.Env, g: rl.Vector3) void {
         const first = !self.wipe.on;
-        if (first) {
-            self.wipe = .{ .on = true, .at = g };
-        } else {
-            if (self.wipe.t < 1.0 / ERASE_HZ) return;
-            if (mathx.dist2XZ(g, self.wipe.at) < ERASE_STEP * ERASE_STEP) return;
-        }
+        if (!strokeDue(self.wipe, g)) return;
+        if (first) self.wipe.n = 0;
+        self.wipe.on = true;
         self.wipe.at = g;
         self.wipe.t = 0;
         if (self.eraseAt(m, env, g)) {
@@ -2877,8 +3047,7 @@ pub const Editor = struct {
                     const f = m.foes[i - 1];
                     if (mathx.dist2XZ(v3(f.x, 0, f.z), g) > self.radius * self.radius) continue;
                     self.bankStroke(m);
-                    std.mem.copyForwards(wf.Foe, m.foes[i - 1 .. m.nfoes - 1], m.foes[i..m.nfoes]);
-                    m.nfoes -= 1;
+                    wf.removeFoe(m, i - 1);
                     self.dropSelection();
                     self.sayFmt("-foe ({d:.0}, {d:.0})", .{ f.x, f.z });
                     return true;
@@ -3000,8 +3169,7 @@ pub const Editor = struct {
                 .foe => |f| {
                     if (f >= m.nfoes) return;
                     self.bank(m);
-                    std.mem.copyForwards(wf.Foe, m.foes[f .. m.nfoes - 1], m.foes[f + 1 .. m.nfoes]);
-                    m.nfoes -= 1;
+                    wf.removeFoe(m, f);
                 },
                 .npc => |i| {
                     if (i >= m.nnpcs) return;
@@ -3237,8 +3405,7 @@ pub const Editor = struct {
         for (idx[0..self.nMarked]) |i| {
             if (self.layer == .units) {
                 if (i >= m.nfoes) continue;
-                std.mem.copyForwards(wf.Foe, m.foes[i .. m.nfoes - 1], m.foes[i + 1 .. m.nfoes]);
-                m.nfoes -= 1;
+                wf.removeFoe(m, i);
             } else {
                 if (i >= m.nops) continue;
                 m.remove(i);
@@ -3354,25 +3521,18 @@ pub const Editor = struct {
     var barFitFor: i32 = -1;
     var barFit = false;
 
+    /// Whether the layer strip can carry its NAMES. It has the second row to itself, so this is the strip's own width and nothing else's.
     fn barWide(sw: i32) bool {
         if (barFitFor == sw) return barFit;
-        const step = BarRow.GAP;
-        const sq = BAR_H - 10;
         var w: i32 = 8;
         inline for (@typeInfo(Layer).@"enum".fields) |f| {
             const l: Layer = @enumFromInt(f.value);
-            w += ui.layerButtonW(l.label(), hud.MONO) + step;
-        }
-        w += 14 + 7 * (sq + step) + 10 + 10; // the seven verbs and the gaps that group them
-        inline for (.{ "Objects", "World", "Script", "Sounds", "Options" }) |lab| {
-            w += hud.monoW(lab, hud.MONO) + BarRow.PAD + step;
+            w += ui.layerButtonW(l.label(), hud.MONO) + BarRow.GAP;
         }
         barFitFor = sw;
-        barFit = w + DIRTY_W <= sw;
+        barFit = w <= sw;
         return barFit;
     }
-
-    const DIRTY_W: i32 = 20;
 
     fn drawRectHandles(self: *const Editor, x: f32, z: f32, x1: f32, z1: f32, y: f32, comptime which: std.meta.Tag(Grab)) void {
         for (0..4) |i| {
@@ -3660,6 +3820,7 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .druidess => ui.col(112, 96, 140, 255),
         .bone_mimic => ui.col(120, 160, 230, 255),
         .mastodon => ui.col(132, 112, 92, 255),
+        .corrupt_ent => ui.col(108, 128, 62, 255),
         .blinkbat => ui.col(170, 108, 176, 255),
         .fungal_swordsman => ui.col(196, 176, 132, 255),
         .fungal_magus => ui.col(112, 140, 96, 255),
@@ -3762,6 +3923,8 @@ fn ringSeg(cx: f32, cz: f32, r: f32, y: f32, col: rl.Color, seg: i32) void {
 
 
 const BAR_H: i32 = 34;
+/// TWO ROWS: the file verbs and the panel buttons on top, the layer strip under them with room for its names.
+const BARS_H: i32 = BAR_H * 2;
 const SIDE_W: i32 = 268;
 const PROP_W: i32 = 300;
 const STATUS_H: i32 = 28;
@@ -3834,6 +3997,8 @@ pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene,
 const BarRow = struct {
     ctx: *ui.Ctx,
     x: i32,
+    /// The top of the row this one draws in — 5 for the first, `BAR_H + 5` for the second.
+    y: i32 = 5,
 
     const GAP: i32 = 3;
     const PAD: i32 = 18;
@@ -3841,13 +4006,13 @@ const BarRow = struct {
     fn button(r: *BarRow, label: [:0]const u8, active: bool, tip: [:0]const u8) bool {
         const w = hud.monoW(label, hud.MONO) + PAD;
         defer r.x += w + GAP;
-        return ui.button(r.ctx, ui.rect(r.x, 5, w, BAR_H - 10), label, hud.MONO, active, tip);
+        return ui.button(r.ctx, ui.rect(r.x, r.y, w, BAR_H - 10), label, hud.MONO, active, tip);
     }
 
     fn layer(r: *BarRow, ic: ui.Icon, label: [:0]const u8, active: bool, shown: bool, tip: [:0]const u8) ui.LayerHit {
         const w = ui.layerButtonW(label, hud.MONO);
         defer r.x += w + GAP;
-        const rect = ui.rect(r.x, 5, w, BAR_H - 10);
+        const rect = ui.rect(r.x, r.y, w, BAR_H - 10);
         ui.tipFor(r.ctx, rect, tip);
         return ui.layerButton(r.ctx, rect, ic, label, hud.MONO, active, shown);
     }
@@ -3855,7 +4020,7 @@ const BarRow = struct {
     fn verb(r: *BarRow, ic: ui.Icon, tip: [:0]const u8) bool {
         const w = BAR_H - 10;
         defer r.x += w + GAP;
-        return ui.iconOnly(r.ctx, ui.rect(r.x, 5, w, w), ic, false, tip);
+        return ui.iconOnly(r.ctx, ui.rect(r.x, r.y, w, w), ic, false, tip);
     }
 
     fn gap(r: *BarRow, px: i32) void {
@@ -3864,18 +4029,8 @@ const BarRow = struct {
 };
 
 fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) void {
-    ui.panel(ctx, ui.rect(0, 0, sw, BAR_H), null);
+    ui.panel(ctx, ui.rect(0, 0, sw, BARS_H), null);
     var row = BarRow{ .ctx = ctx, .x = 8 };
-    const named = Editor.barWide(sw);
-    inline for (@typeInfo(Layer).@"enum".fields) |f| {
-        const l: Layer = @enumFromInt(f.value);
-        switch (row.layer(layerIcon(l), if (named) l.label() else "", ed.layer == l, ed.shown[f.value], layerTips[f.value])) {
-            .select => ed.setLayer(l),
-            .toggle => ed.shown[f.value] = !ed.shown[f.value],
-            .none => {},
-        }
-    }
-    row.gap(14);
     if (row.verb(.new, "New - start an empty map (Ctrl+N)")) ed.request(.new);
     if (row.verb(.open, "Open - a map from worlds/ (Ctrl+O)")) ed.request(.open);
     if (row.verb(.save, "Save - write the map to disk (Ctrl+S)")) _ = ed.saveNow(m);
@@ -3925,8 +4080,24 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
         ed.menuOpen = false;
         ed.modal = .options;
     }
-
     if (ed.dirty) hud.mono("*", row.x + 8, 8, hud.MONO, ui.HOT);
+
+    // A LINE UNDER THE WHOLE BAR WHILE HE IS LOOKING UNDER THE GROUND. It is the one state that silently changes
+    // where a click lands, it cannot be mistaken for content, and in the ordinary view it is not there at all.
+    if (ed.caveView and m.anyCave()) {
+        rl.drawRectangle(0, BARS_H - 2, sw, 2, ui.alpha(ui.LIVE, 190));
+    }
+
+    var tabs = BarRow{ .ctx = ctx, .x = 8, .y = BAR_H + 5 };
+    const named = Editor.barWide(sw);
+    inline for (@typeInfo(Layer).@"enum".fields) |f| {
+        const l: Layer = @enumFromInt(f.value);
+        switch (tabs.layer(layerIcon(l), if (named) l.label() else "", ed.layer == l, ed.shown[f.value], layerTips[f.value])) {
+            .select => ed.setLayer(l),
+            .toggle => ed.shown[f.value] = !ed.shown[f.value],
+            .none => {},
+        }
+    }
 }
 
 fn drawRoomsPanel(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y0: i32, w: i32) i32 {
@@ -4047,8 +4218,8 @@ fn drawRoomsPanel(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y0: i32, w: i32
 }
 
 fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
-    ui.panel(ctx, ui.rect(0, BAR_H, SIDE_W, sh - BAR_H - STATUS_H), null);
-    var y: i32 = BAR_H + 8;
+    ui.panel(ctx, ui.rect(0, BARS_H, SIDE_W, sh - BARS_H - STATUS_H), null);
+    var y: i32 = BARS_H + 8;
 
     const selR = ui.rect(8, y, SIDE_W - 16, ROW_H - 2);
     if (ui.iconButton(ctx, selR, .select, "Select", hud.MONO, ed.selecting, "Left-click picks objects; left-drag pans the map (Esc)")) {
@@ -4074,11 +4245,12 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
         const s = if (slot < DIGIT_KEYS) (std.fmt.bufPrintZ(&lab, "{d} {s}", .{ slot + 1, b }) catch b) else b;
         const r = ui.rect(8, y, SIDE_W - 16, ROW_H - 4);
         const on = !ed.selecting and ed.brushIdx() == i;
+        const gone = brushRemoves(ed.layer, i);
         const hit = if (glyphs) |g|
-            ui.iconButton(ctx, r, g[i], s, hud.MONO, on, tips[i])
+            ui.iconButtonIn(ctx, r, g[i], s, hud.MONO, on, if (gone) GONE else ui.VALUE, tips[i])
         else
             (if (i + 1 == brushes.len)
-                ui.iconButton(ctx, r, .erase, s, hud.MONO, on, tips[i])
+                ui.iconButtonIn(ctx, r, .erase, s, hud.MONO, on, if (gone) GONE else ui.VALUE, tips[i])
             else switch (@as(GroundBrush, @enumFromInt(i))) {
                 .raise => ui.swatchButton(ctx, r, RAISE_SWATCH, s, hud.MONO, on, tips[i]),
                 .lower => ui.swatchButton(ctx, r, LOWER_SWATCH, s, hud.MONO, on, tips[i]),
@@ -4087,6 +4259,7 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
                 .stair => ui.swatchButton(ctx, r, STAIR_SWATCH, s, hud.MONO, on, tips[i]),
                 .ramp => ui.swatchButton(ctx, r, RAMP_SWATCH, s, hud.MONO, on, tips[i]),
                 .slope => ui.swatchButton(ctx, r, SLOPE_SWATCH, s, hud.MONO, on, tips[i]),
+                .reset => ui.swatchButton(ctx, r, GONE, s, hud.MONO, on, tips[i]),
                 .water, .oil, .fungal, .lava => |lq| ui.swatchButton(ctx, r, mapart.liquidSwatch(liquidOf(lq).?), s, hud.MONO, on, tips[i]),
                 else => |sl| ui.swatchButton(ctx, r, soilSwatch(soilOf(sl) orelse .none), s, hud.MONO, on, tips[i]),
             });
@@ -4229,10 +4402,10 @@ fn gradientRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op, s: *wf.Scatter
 fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32, sh: i32) void {
     ed.textFocus = false;
     const x0 = sw - PROP_W;
-    ui.panel(ctx, ui.rect(x0, BAR_H, PROP_W, sh - BAR_H - STATUS_H), null);
+    ui.panel(ctx, ui.rect(x0, BARS_H, PROP_W, sh - BARS_H - STATUS_H), null);
     const x = x0 + 10;
     const w = PROP_W - 20;
-    var y = BAR_H + 8;
+    var y = BARS_H + 8;
 
     // THE VIEWING CHOICE FOLLOWS THE AUTHOR OUT OF THE CAVES LAYER, so a chamber can be furnished without the roof coming back on.
     if (ed.layer != .caves and ed.layer != .ground and m.anyCave()) {
@@ -4290,10 +4463,10 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         const wet = liquid != null;
         const cliffing = cliffCaseOf(brush) != null;
         const sculpting = cliffing or switch (brush) {
-            .raise, .lower, .smooth, .flat, .pool, .ramp => true,
+            .raise, .lower, .smooth, .flat, .pool, .ramp, .reset => true,
             else => false,
         };
-        const title: [:0]const u8 = if (cliffing) "RELIEF" else if (sculpting) "SCULPT" else if (liquid) |l| switch (l) {
+        const title: [:0]const u8 = if (brush == .reset) "RESET" else if (cliffing) "RELIEF" else if (sculpting) "SCULPT" else if (liquid) |l| switch (l) {
             .water => "WATER BRUSH",
             .oil => "OIL BRUSH",
             .fungal => "FUNGAL BRUSH",
@@ -4327,7 +4500,8 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             }
         }
         if (sculpting) {
-            if (!cliffing) {
+            // Reset takes the whole disc to the datum in one pass, so it has no rate to show.
+            if (!cliffing and brush != .reset) {
                 _ = ui.slider(ctx, x, y, w, "strength", &ed.sculptRate, 0.5, 12, "How fast raise, lower and smooth move the ground under the brush");
                 y += ROW_H + SLIDER_DROP;
             }
@@ -4422,6 +4596,12 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     if (ed.layer == .units) {
         hud.mono("SPAWNS", x, y, hud.MONO, ui.TITLE);
         y += ROW_H + 4;
+        if (ed.sparTarget(m)) |k| {
+            var fbuf: [72]u8 = undefined;
+            const label = std.fmt.bufPrintZ(&fbuf, "FIGHT THE {s}", .{wf.foeName(k)}) catch "FIGHT IT";
+            if (ui.button(ctx, ui.rect(x, y, w, 24), label, hud.MONO, false, "Drop into a walled arena against this one creature and nothing else (F6). Your map is kept aside; the menu's Editor brings it back")) ed.sparWanted = true;
+            y += ROW_H + 8;
+        }
         const which = ed.selUnit orelse {
             var buf: [64]u8 = undefined;
             const s = std.fmt.bufPrintZ(&buf, "{d} foes, {d} folk", .{ m.nfoes, m.nnpcs }) catch "";
@@ -5029,7 +5209,8 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
         (std.fmt.bufPrintZ(&hbuf, ",{d:.1}m", .{g.y - envmod.groundY()}) catch "")
     else
         "";
-    const right = std.fmt.bufPrintZ(&buf, "{s}{s} {d}ops {d}props {d}drawn   {s}  {d:.0},{d:.0}{s}  r{d:.0}{s}", .{
+    var tailBuf: [24]u8 = undefined;
+    const head = std.fmt.bufPrintZ(&buf, "{s}{s} {d}ops {d}props {d}drawn   {s}  {d:.0},{d:.0}", .{
         m.label(),
         if (ed.dirty) "*" else "",
         m.nops,
@@ -5038,12 +5219,17 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
         ed.layer.label(),
         g.x,
         g.z,
-        hs,
-        ed.radius,
-        if (ed.snap) "  SNAP" else "",
     }) catch "";
-    const rightX = sw - hud.monoW(right, hud.MONO) - CHROME_PAD;
-    hud.mono(right, rightX, ty, hud.MONO, if (ed.dirty) ui.HOT else ui.LABEL);
+    const tail = std.fmt.bufPrintZ(&tailBuf, "  r{d:.0}{s}", .{ ed.radius, if (ed.snap) "  SNAP" else "" }) catch "";
+    const wHead = hud.monoW(head, hud.MONO);
+    const wHgt = hud.monoW(hs, hud.MONO);
+    const base = if (ed.dirty) ui.HOT else ui.LABEL;
+    const rightX = sw - (wHead + wHgt + hud.monoW(tail, hud.MONO)) - CHROME_PAD;
+    hud.mono(head, rightX, ty, hud.MONO, base);
+    // THE HEIGHT READS TEAL WHEN THE POINT UNDER THE CURSOR IS A CHAMBER FLOOR and not the land over it — the
+    // same teal the bar's own rule uses for the same fact, in the one place he is already reading a number.
+    hud.mono(hs, rightX + wHead, ty, hud.MONO, if (hs.len > 0 and env.underground(g.x, g.z, g.y)) ui.LIVE else base);
+    hud.mono(tail, rightX + wHead + wHgt, ty, hud.MONO, base);
 
     var capBuf: [56]u8 = undefined;
     if (env.opsCapped > 0 or env.lightsCapped > 0) {
@@ -5081,9 +5267,9 @@ const EDIT_HOUR_RATE: f32 = 6.0;
 const EDIT_HOUR_FAST: f32 = 24.0;
 
 const CRIBS = [_][:0]const u8{
-    "LMB brush   Shift+LMB marquee   RMB menu / deselect, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   Ctrl+Z/Y undo   Ctrl+C/X/V copy   Ctrl+A all   Del delete   R re-roll   G grid   [ ] size   ,/. time   Ctrl+S save   F5 play   Esc back",
-    "LMB brush   Shift+LMB marquee   RMB menu/rotate   wheel zoom   WASD pan   Tab layer   Ctrl+Z undo   Ctrl+C/V copy   Del delete   G grid   [ ] size   ,/. time   F5 play   Esc back",
-    "LMB brush   Shift+LMB marquee   RMB menu/rotate   wheel zoom   WASD pan   Tab layer   Ctrl+Z undo   Del delete   G grid   F5 play",
+    "LMB brush   Shift+LMB marquee   RMB menu / deselect, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   Ctrl+Z/Y undo   Ctrl+C/X/V copy   Ctrl+A all   Del delete   R re-roll   G grid   [ ] size   ,/. time   Ctrl+S save   F5 play   F6 fight one   Esc back",
+    "LMB brush   Shift+LMB marquee   RMB menu/rotate   wheel zoom   WASD pan   Tab layer   Ctrl+Z undo   Ctrl+C/V copy   Del delete   G grid   [ ] size   ,/. time   F5 play   F6 fight one   Esc back",
+    "LMB brush   Shift+LMB marquee   RMB menu/rotate   wheel zoom   WASD pan   Tab layer   Ctrl+Z undo   Del delete   G grid   F5 play   F6 fight one",
     "LMB brush   Shift+LMB marquee   RMB menu, drag rotates   wheel zoom   WASD pan   Tab layer   ,/. time",
     "LMB brush   Shift+LMB marquee   RMB menu/rotate   wheel zoom   WASD pan   Tab layer",
     "LMB brush   Shift marquee   Tab layer   Esc back",
@@ -5787,7 +5973,7 @@ fn drawOptionsModal(ed: *Editor, ctx: *ui.Ctx) void {
     hud.mono("VIEW", x, y, hud.MONO, ui.TITLE);
     y += ROW_H + 4;
 
-    _ = ui.checkbox(ctx, x, y, "distance fog", &ed.showFog, "The clear-air haze the world is sized for. Off, everything out to its view distance draws at full contrast and the far edge of a 560 m map reads as a wall of props");
+    _ = ui.checkbox(ctx, x, y, "distance fog", &ed.showFog, "The clear-air haze the world is sized for. Off, everything out to its view distance draws at full contrast and the far edge of a 1000 m map reads as a wall of props");
     y += ROW_H;
     hud.mono("the far falloff - on, and cheaper to look at", x + 24, y, hud.MONO, ui.alpha(ui.LABEL, 160));
     y += hud.monoLineH(hud.MONO) + 8;
@@ -6669,6 +6855,35 @@ fn testEnv(alloc: std.mem.Allocator) !*envmod.Env {
     return e;
 }
 
+test "BOTH REMOVE-STROKES ANSWER ONE CLOCK: the first tap lands, then it owes the rate AND the step" {
+    const here = v3(0, 0, 0);
+    try std.testing.expect(strokeDue(.{}, here));
+
+    // Held still with the clock long paid: the step is what says the disc has moved.
+    try std.testing.expect(!strokeDue(.{ .on = true, .at = here, .t = 10.0 }, here));
+    // Moved far with no time on the clock: the rate is what says a frame is not a stroke.
+    try std.testing.expect(!strokeDue(.{ .on = true, .at = here, .t = 0 }, v3(50, 0, 0)));
+    // Both paid.
+    try std.testing.expect(strokeDue(.{ .on = true, .at = here, .t = 1.0 / ERASE_HZ }, v3(ERASE_STEP, 0, 0)));
+    // Exactly under either bar is refused.
+    try std.testing.expect(!strokeDue(.{ .on = true, .at = here, .t = 1.0 / ERASE_HZ }, v3(ERASE_STEP * 0.99, 0, 0)));
+    try std.testing.expect(!strokeDue(.{ .on = true, .at = here, .t = 0.99 / ERASE_HZ }, v3(ERASE_STEP, 0, 0)));
+
+    // A 60 fps drag at walking pace, to say what the gate is actually worth: the sweep behind it costs a whole
+    // `materialize`, so this is the share of frames that pay for one.
+    var w = Wipe{};
+    var fired: usize = 0;
+    for (0..120) |i| {
+        const at = v3(@as(f32, @floatFromInt(i)) * (2.0 / 60.0), 0, 0);
+        w.t += 1.0 / 60.0;
+        if (!strokeDue(w, at)) continue;
+        w = .{ .on = true, .at = at };
+        fired += 1;
+    }
+    std.debug.print("\n  remove-stroke gate: a 2 m/s drag over 2 s sweeps {d} of 120 frames ({d:.0} Hz cap, {d:.1} m step)\n", .{ fired, ERASE_HZ, ERASE_STEP });
+    try std.testing.expect(fired <= 2 + @as(usize, @intFromFloat(2.0 * ERASE_HZ)));
+}
+
 test "a held eraser sweeps, and holding still erases exactly once" {
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
@@ -6805,7 +7020,7 @@ test "EVERY UNIT IS REACHABLE FROM EXACTLY ONE TAB, and the tallest list now fit
     }
     try std.testing.expectEqual(kingdoms + 1, reach[unitBrushes.len - 1]);
 
-    const panel = SCREEN_H - BAR_H - STATUS_H;
+    const panel = SCREEN_H - BARS_H - STATUS_H;
     const rows0 = 8 + (ROW_H + 8) + ROW_H;
     const was = @as(i32, @intCast(unitBrushes.len)) * ROW_H;
     const head = ui.TAB_H + 6 + 28 * @as(i32, @intCast((kingdoms + 1) / 2)) + 34;
@@ -7164,4 +7379,26 @@ test "a quit with edits stops at the prompt; a clean one goes straight through" 
     ed.modal = .none;
     ed.commitPending(ed.pending);
     try std.testing.expectEqual(Pending.quit, ed.pending);
+}
+
+test "THE REMOVAL COLOUR IS WORN BY THE TOOLS THAT REMOVE, and by nothing else" {
+    var worn: usize = 0;
+    inline for (@typeInfo(Layer).@"enum".fields) |f| {
+        const l: Layer = @enumFromInt(f.value);
+        const brushes = brushesFor(l);
+        for (brushes, 0..) |name, i| {
+            const gone = brushRemoves(l, i);
+            if (gone) worn += 1;
+            const removes = std.mem.eql(u8, name, "Erase") or
+                (l == .ground and std.mem.eql(u8, name, "Reset")) or
+                (l == .caves and std.mem.eql(u8, name, "Fill"));
+            if (gone != removes) {
+                std.debug.print("\n  {s} > {s}: coloured {}, removes {}\n", .{ @tagName(l), name, gone, removes });
+                return error.TestUnexpectedResult;
+            }
+        }
+    }
+    std.debug.print("\n  removal colour: {d} of the editor's brushes wear it\n", .{worn});
+    // One eraser a layer, plus Ground's Reset and Caves' Fill — and Caves has no eraser of its own.
+    try std.testing.expect(worn == @typeInfo(Layer).@"enum".fields.len + 1);
 }

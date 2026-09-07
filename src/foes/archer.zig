@@ -220,7 +220,7 @@ const ARROW_STICK_FADE = 1.4;
 pub fn lingerOf(s: Shot) f32 {
     return switch (s) {
         .arrow, .firearrow => ARROW_STICK_FADE,
-        .clump, .crock, .venom, .bolt, .wisp, .emberball, .sac, .spark, .powder, .rock => 0,
+        .clump, .crock, .venom, .bolt, .wisp, .emberball, .sac, .spark, .powder, .rock, .acorn => 0,
     };
 }
 pub const ARROW_COVER_MARGIN: f32 = 0.04;
@@ -254,12 +254,15 @@ fn trailCol(s: Shot) rl.Color {
         .spark => TRAIL_SPARK,
         .powder => TRAIL_POWDER,
         .rock => TRAIL_ROCK,
+        .acorn => TRAIL_ACORN,
         .arrow, .venom => TRAIL_COL,
     };
 }
 const TRAIL_ROCK = rgba(150, 132, 96, 255);
+/// The ent's nut is the only GREEN thing in the air, so a falling volley is not read as a fire arrow.
+const TRAIL_ACORN = rgba(146, 168, 84, 255);
 
-pub const Shot = enum { arrow, clump, venom, firearrow, bolt, wisp, crock, emberball, sac, spark, powder, rock };
+pub const Shot = enum { arrow, clump, venom, firearrow, bolt, wisp, crock, emberball, sac, spark, powder, rock, acorn };
 
 pub fn dropOf(s: Shot) f32 {
     return switch (s) {
@@ -273,16 +276,19 @@ pub fn dropOf(s: Shot) f32 {
         .emberball => EMBER_GRAV,
         .powder => POWDER_GRAV,
         .rock => ROCK_GRAV,
+        .acorn => ACORN_GRAV,
     };
 }
 /// The delver's stone: the heaviest thing in the air, so the lob is a real arc you watch come down.
 const ROCK_GRAV: f32 = 14.0;
+/// A nut is light and falls slower than the stone, which is what gives a volley time to be walked out of.
+const ACORN_GRAV: f32 = 11.0;
 
 /// **HOW MUCH OF THE BALLISTIC SOLVE A SHOT ACTUALLY TAKES.** 1.0 is the honest arc that lands on the target;
 fn loftOf(s: Shot) f32 {
     return switch (s) {
         .emberball => EMBER_LOFT,
-        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder, .rock => 1.0,
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder, .rock, .acorn => 1.0,
     };
 }
 pub const EMBER_LOFT: f32 = 0.52;
@@ -299,7 +305,7 @@ const EMBER_KEEP_XZ: f32 = 0.66;
 pub fn bouncesOf(s: Shot) u8 {
     return switch (s) {
         .emberball => EMBER_BOUNCES,
-        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder, .rock => 0,
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder, .rock, .acorn => 0,
     };
 }
 const EMBER_BOUNCES: u8 = 3;
@@ -315,7 +321,7 @@ fn minUp(s: Shot) f32 {
 fn lifeOf(s: Shot) f32 {
     return switch (s) {
         .emberball => EMBER_LIFE,
-        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder, .rock => ARROW_LIFE,
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder, .rock, .acorn => ARROW_LIFE,
     };
 }
 const EMBER_LIFE: f32 = 6.0;
@@ -476,9 +482,12 @@ fn hitBoxOf(s: Shot) struct { r: f32, halfH: f32 } {
         .emberball => .{ .r = EMBER_HIT_R, .halfH = EMBER_HIT_HALF_H },
         .sac => .{ .r = SAC_HIT_R, .halfH = SAC_HIT_HALF_H },
         .rock => .{ .r = ROCK_HIT_R, .halfH = ROCK_HIT_HALF_H },
+        .acorn => .{ .r = ACORN_HIT_R, .halfH = ACORN_HIT_HALF_H },
         .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .spark, .powder => .{ .r = ARROW_HIT_R, .halfH = ARROW_HIT_HALF_H },
     };
 }
+const ACORN_HIT_R: f32 = 0.40;
+const ACORN_HIT_HALF_H: f32 = 1.10;
 const ROCK_HIT_R: f32 = 0.62;
 const ROCK_HIT_HALF_H: f32 = 1.15;
 const EMBER_HIT_R: f32 = 0.62;
@@ -795,23 +804,11 @@ pub const Archer = struct {
                 if (self.routine.running) {
                     const w = self.routine.step(dt, .{ .at = self.pos, .facing = self.facing, .quarry = hero, .nav = self.nav });
                     self.faceToward(w.look orelse hero, dt);
-                    if (w.go) |g| {
-                        const go = mathx.dirXZ(self.pos, g);
-                        if (mathx.lenXZ(go) > 1e-3) {
-                            const moved = WALK_SPEED * dt;
-                            mathx.stepXZ(&self.pos, go, moved, bounds);
-                            movedDist = moved;
-                            moveYaw = mathx.headingXZ(go);
-                        }
-                    }
+                    if (behave.heading(w, self.pos)) |go| behave.walk(&self.pos, go, dt, bounds, WALK_SPEED, &movedDist, null, &moveYaw);
                     if (!self.routine.running) self.decide(d);
                 } else {
                     foe.faceToward(self.pos, &self.facing, mathx.addV(self.pos, self.kiteDir), TURN_RATE, dt);
-                    const go = self.nav.along(self.kiteDir);
-                    const moved = WALK_SPEED * dt;
-                    mathx.stepXZ(&self.pos, go, moved, bounds);
-                    movedDist = moved;
-                    moveYaw = mathx.headingXZ(go);
+                    behave.walk(&self.pos, self.nav.along(self.kiteDir), dt, bounds, WALK_SPEED, &movedDist, null, &moveYaw);
                     if (self.t >= REPOSITION_DUR) self.decide(d);
                 }
             },

@@ -689,15 +689,8 @@ pub const Warrior = struct {
             .circle => {
                 const w = self.routine.step(dt, .{ .at = self.pos, .facing = self.facing, .quarry = hero, .nav = self.nav });
                 self.faceToward(w.look orelse hero, dt);
-                if (w.go) |g| {
-                    const go = mathx.dirXZ(self.pos, g);
-                    if (mathx.lenXZ(go) > 1e-3) {
-                        moveSpeed = WALK_SPEED * sp.speed * 0.72;
-                        const moved = moveSpeed * dt;
-                        mathx.stepXZ(&self.pos, go, moved, bounds);
-                        movedDist = moved;
-                        moveYaw = mathx.headingXZ(go);
-                    }
+                if (behave.heading(w, self.pos)) |go| {
+                    behave.walk(&self.pos, go, dt, bounds, WALK_SPEED * sp.speed * 0.72, &movedDist, &moveSpeed, &moveYaw);
                 }
                 self.setCarry(dt);
                 if (!self.routine.running) self.decide(d);

@@ -604,6 +604,12 @@ pub const Id = enum {
     druid_hurt,
     druid_die,
     veil_break,
+    // AN `Id` IS APPEND-ONLY, and the family it belongs to is named by the NAME. `crossingsPerSec` seeds every take
+    // off `0x9E3779B9 *% (idx + 1)`, so a row inserted in the middle re-rolls the noise of every voice under it:
+    // slipping these two in beside `lurker_lash` moved the knight's slam onto the ogre's to within 1% and the test
+    // that keeps the boss his own throat went red on a file it had nothing to do with.
+    lurker_gape,
+    lurker_tongue,
 };
 const NV = @typeInfo(Id).@"enum".fields.len;
 
@@ -2592,6 +2598,24 @@ fn mkLurkerLash(r: *Rack) void {
     r.master(2.0, 3100);
 }
 
+// THE GAPE IS A TELL AND IT IS THE ONE THING IT DOES THAT CARRIES: a wet throat coming open and drawing in, no crack
+// anywhere in it. What cracks is the tongue behind it, and putting the crack here would spend the surprise early.
+fn mkLurkerGape(r: *Rack) void {
+    r.air(0.0, 0.48, 0.40, 560, 2000, 0.52, 1.8);
+    r.growl(0.05, 0.30, 185, 124, 0.44, 0.46, 0.10);
+    r.grit(0.10, 0.22, 0.17, 1250, 0.42, 2.0);
+    r.master(1.6, 2600);
+}
+
+// FIVE METRES OF WET MUSCLE LEAVING A MOUTH. Over before it is read: a crack over one body thump, and it reaches
+// further than the lash so it is baked a shade under it — the heavier blow keeps the top of the family.
+fn mkLurkerTongue(r: *Rack) void {
+    r.air(0.0, 0.17, 0.62, 3300, 520, 0.72, 4.2);
+    r.body(0.0, 0.06, 188, 60, 0.80, 5.4);
+    r.grit(0.0, 0.11, 0.34, 2750, 0.56, 3.6);
+    r.master(2.2, 3400);
+}
+
 fn mkLurkerSink(r: *Rack) void {
     r.air(0.0, 0.62, 0.30, 1400, 190, 0.44, 1.4);
     r.body(0.05, 0.30, 72, 30, 0.34, 2.4);
@@ -2950,6 +2974,9 @@ const BANK = [NV]Row{
     .{ .id = .druid_hurt, .make = mkDruidHurt, .gain = battle(0.56), .mix = .combat, .jit = 0.10, .vjit = 0.18, .vars = 6, .poly = 3, .reach = 44 },
     .{ .id = .druid_die, .make = mkDruidDie, .gain = battle(0.70), .mix = .combat, .jit = 0.0, .vjit = 0.0, .vars = 1, .poly = 1, .reach = 90 },
     .{ .id = .veil_break, .make = mkVeilBreak, .gain = 0.58, .jit = 0.03, .vjit = 0.06, .vars = 2, .poly = 1, .reach = 60 },
+    // Appended with their `Id`s: the comptime block under this table pins `BANK[i].id == i`.
+    .{ .id = .lurker_gape, .make = mkLurkerGape, .gain = battle(0.78), .mix = .combat, .jit = 0.10, .vjit = 0.16, .vars = 4, .poly = 3, .reach = 38 },
+    .{ .id = .lurker_tongue, .make = mkLurkerTongue, .gain = battle(0.80), .mix = .combat, .jit = 0.06, .vjit = 0.12, .vars = 4, .poly = 4, .reach = 34 },
 };
 
 fn seconds(id: Id) f32 {

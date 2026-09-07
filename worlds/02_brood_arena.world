@@ -2,6 +2,7 @@ version: 1
 name: Brood Arena
 half: 70.0
 runway: -3.40 -30.00 3.40 20.00
+start: 0.00 4.00 180.0
 
 zone: plain -400.0 -400.0 400.0 400.0 0.620 grasstall,grasstall,patch,patch,tuft,clover,moss,shrub,wildflowers,thistle
 

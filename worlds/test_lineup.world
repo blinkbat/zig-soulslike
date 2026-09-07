@@ -1,9 +1,8 @@
 version: 1
 name: Roster Lineup
 half: 90.0
-
-# EVERY MAN-SHAPE AND KIT-BEARER ON ONE FIELD, each facing the shot camera's own bearing, spaced so no
-# body stands in a neighbour's frame. The art pass's bench: `--map worlds/test_lineup.world --shot`.
+runway: -3.40 -44.00 3.40 30.00
+start: 0.00 4.00 180.0
 
 zone: meadow -400.0 -400.0 400.0 400.0 0.100 grasstall,tuft
 clear: 0.0 0.0 60.0

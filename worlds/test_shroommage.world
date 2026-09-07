@@ -2,6 +2,7 @@ version: 1
 name: Mushroom Mage Test
 half: 80.0
 runway: -6.00 -20.00 6.00 10.00
+start: 0.00 4.00 180.0
 
 zone: plain -400.0 -400.0 400.0 400.0 0.580 grasstall,grasstall,patch,tuft,clover,moss,mushrooms,wildflowers
 clear: 0.0 0.0 30.0
@@ -1001,4 +1002,4 @@ foe: mushroom_mage 6.40 21.50 194.0 0.92 0.61
 foe: mushroom_mage -6.10 22.20 168.0 1.08 0.87
 foe: mushroom_mage 26.00 4.00 250.0 1.00 0.44
 foe: shroom -20.00 10.00 90.0 1.00 0.55
-foe: florid_ravager -24.00 16.00 120.0 1.00 0.33
+foe: fungal_deer -24.00 16.00 120.0 1.00 0.33

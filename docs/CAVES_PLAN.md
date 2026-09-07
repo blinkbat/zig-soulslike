@@ -17,7 +17,7 @@ Runtime digging, destructible terrain, independent underground liquid levels, ne
 | Area | Current behavior and consequence |
 | --- | --- |
 | src/world/worldfmt.zig | Terrain is a quantized height lattice with a cliff field; byte grids round-trip as run-length encoded text. Map also owns actor placements, locations, and starts. |
-| src/gfx/gfx.zig | HEIGHT_N = 224, so the 560 m map has roughly 2.51 m between terrain vertices. Do not assume narrow passages will look or collide well at this spacing. |
+| src/gfx/gfx.zig | HEIGHT_N = 400, so the 1000 m map has roughly 2.51 m between terrain vertices. Do not assume narrow passages will look or collide well at this spacing. |
 | src/world/env.zig | standAt takes the maximum of terrain and an eligible deck. A cave floor below terrain cannot work through this function unchanged. |
 | src/world/env.zig | Terrain uses tiled meshes and partial sculpt rebuilds. replay, adoptHeight, heightStale, sculptHeight, and buildTile jointly own synchronization. |
 | src/core/collision.zig | Solids have an XZ shape and a vertical interval. Actor push-out is lateral; this does not supply a general ceiling solver. |

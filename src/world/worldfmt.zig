@@ -10,9 +10,18 @@ const Kind = props.Kind;
 
 pub const VERSION: u32 = 1;
 
-pub const DEFAULT_HALF: f32 = 280.0;
+pub const DEFAULT_HALF: f32 = 500.0;
 
-pub const MAX_DECLARED_HALF: f32 = 312.0;
+pub const MAX_DECLARED_HALF: f32 = 512.0;
+
+/// THE GRIDS AS THEY WERE BEFORE THE WORLD GREW TO 1000 m. A record of this length is a map written by the old
+/// build: `gridRead` EMBEDS it in the middle of today's lattice and `grownHalf` grows the map's own half by the
+/// same ratio, so the cell size is unchanged and the land does not move. Resampling is `regrid`, and it is the
+/// `--grow` tool's path, not the loader's — a bilinear pass blunts every authored step.
+pub const LEGACY_SOIL_N: usize = 112;
+pub const LEGACY_WATER_N: usize = 224;
+pub const LEGACY_HEIGHT_N: usize = 224;
+pub const LEGACY_CAVE_N: usize = 2 * LEGACY_HEIGHT_N - 1;
 
 /// Raised from 2048 when the global cover op was baked into ordinary decor, again when the WOOD went the same way (`env.explodeOp`), and again once `Scatter` took 80 bytes off every row. This number IS memory: the editor's 24-deep undo ring is whole-`Map` copies, at 64 B an op across 25 live maps.
 pub const MAX_OPS: usize = 40960;
@@ -436,7 +445,7 @@ pub const Arena = struct {
 };
 
 /// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at comptime, and each `roleOf` reads its own entries as a CONTIGUOUS RUN off the first of them.
-pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, fungal_deer, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow, mourner, slumber_bloom, cinder_wake, rotgorger, birchwight, salt_husk, fish_spearman, fish_netter, fish_shaman, blinkbat, fungal_swordsman, fungal_magus, owlbear, druidess, bone_mimic, mastodon };
+pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, fungal_deer, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow, mourner, slumber_bloom, cinder_wake, rotgorger, birchwight, salt_husk, fish_spearman, fish_netter, fish_shaman, blinkbat, fungal_swordsman, fungal_magus, owlbear, druidess, bone_mimic, mastodon, corrupt_ent };
 
 pub const NFOE = @typeInfo(FoeKind).@"enum".fields.len;
 
@@ -483,6 +492,7 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
         .druidess => "Corrupted Druidess",
         .bone_mimic => "Bone Mimic",
         .mastodon => "Mastodon",
+        .corrupt_ent => "Corrupt Ent",
     };
 }
 
@@ -515,7 +525,7 @@ pub fn foeWhen(k: FoeKind) FoeWhen {
         .bone_skitterer, .ancient_priest, .tolling_hollow => .any,
         .slumber_bloom, .cinder_wake, .rotgorger, .birchwight, .salt_husk => .any,
         .fish_spearman, .fish_netter, .fish_shaman => .any,
-        .blinkbat, .fungal_swordsman, .fungal_magus, .owlbear, .druidess, .bone_mimic, .mastodon => .any,
+        .blinkbat, .fungal_swordsman, .fungal_magus, .owlbear, .druidess, .bone_mimic, .mastodon, .corrupt_ent => .any,
     };
 }
 
@@ -550,7 +560,6 @@ pub const Foe = struct {
     wp: [MAX_WP]Wp = [_]Wp{.{}} ** MAX_WP,
     nwp: u8 = 0,
 
-    /// The window this body actually keeps — `derived` answered by the kind.
     pub fn window(self: *const Foe) FoeWhen {
         return if (self.when == .derived) foeWhen(self.kind) else self.when;
     }
@@ -1062,6 +1071,14 @@ fn eachAct(m: *Map, ctx: anytype, comptime visit: fn (@TypeOf(ctx), *Act) void) 
 
 pub const Broke = struct { conds: usize = 0 };
 
+/// The FOE table's counterpart to `removeNpc`. Nothing refers to a foe by index — a trigger names a `FoeKind` —
+/// so there is no reference to patch, and the editor's four delete paths owe the shift to one place.
+pub fn removeFoe(m: *Map, i: usize) void {
+    if (i >= m.nfoes) return;
+    std.mem.copyForwards(Foe, m.foes[i .. m.nfoes - 1], m.foes[i + 1 .. m.nfoes]);
+    m.nfoes -= 1;
+}
+
 pub fn removeNpc(m: *Map, i: usize) Broke {
     var broke = Broke{};
     if (i >= m.nnpcs) return broke;
@@ -1384,7 +1401,7 @@ pub const HEIGHT_ZERO: u8 = 64;
 pub const HEIGHT_MIN: f32 = -@as(f32, @floatFromInt(HEIGHT_ZERO)) * HEIGHT_STEP;
 pub const HEIGHT_MAX: f32 = @as(f32, @floatFromInt(255 - HEIGHT_ZERO)) * HEIGHT_STEP;
 
-/// THE CAVE LATTICE HALVES THE TERRAIN'S CELL — 1.26 m on the shipped 560 m map, where the terrain's 2.51 m cell cannot hold a passage at all. `2n-1` points, so cave point (2i,2j) IS terrain point (i,j) and a mouth can share its vertices with the hill.
+/// THE CAVE LATTICE HALVES THE TERRAIN'S CELL — 1.25 m on the shipped 1000 m map, where the terrain's 2.51 m cell cannot hold a passage at all. `2n-1` points, so cave point (2i,2j) IS terrain point (i,j) and a mouth can share its vertices with the hill.
 pub const CAVE_N: usize = 2 * HEIGHT_N - 1;
 pub const CAVE_CELLS: usize = CAVE_N * CAVE_N;
 
@@ -1496,7 +1513,6 @@ fn sideOf(a: [2]f32, b: [2]f32, x: f32, z: f32) f32 {
     return (b[0] - a[0]) * (z - a[1]) - (b[1] - a[1]) * (x - a[0]);
 }
 
-/// Which side of the cut a point of the cell is on.
 pub fn cliffHigh(c: CliffCut, u: f32, v: f32) bool {
     if (c.n == 0) return c.high[0];
     if (c.n == 4) {
@@ -1719,7 +1735,7 @@ pub const Map = struct {
         self.zones[0] = z;
         self.nzones = 1;
 
-        // NO GROUND COVER: a blank map used to open with a global `cover:` op. Cover is ordinary `at:` decor now.
+        // NO GROUND COVER: cover is ordinary `at:` decor, not a global op.
     }
 
     /// The scatter block behind an op, or a default-valued one when it has none — so a read never has to branch on the op kind.
@@ -1783,6 +1799,26 @@ pub const Map = struct {
         std.mem.copyForwards(Op, self.ops[i .. self.nops - 1], self.ops[i + 1 .. self.nops]);
         self.nops -= 1;
         self.compactScats();
+    }
+
+    /// EVERY OP ANCHORED UNDER A DISC, IN ONE PASS. `remove` in a loop memmoves the whole tail and compacts the
+    /// scatter table once PER OP: on a map near `MAX_OPS` a brush that clears 200 of them is 8 M `Op` copies and
+    /// 200 full walks, every frame the stroke is held. Order is kept, so a later op still draws over an earlier one.
+    pub fn removeInDisc(self: *Map, px: f32, pz: f32, radius: f32) usize {
+        const r2 = radius * radius;
+        var kept: usize = 0;
+        for (self.ops[0..self.nops]) |o| {
+            const dx = o.x - px;
+            const dz = o.z - pz;
+            if (dx * dx + dz * dz <= r2) continue;
+            self.ops[kept] = o;
+            kept += 1;
+        }
+        const gone = self.nops - kept;
+        if (gone == 0) return 0;
+        self.nops = kept;
+        self.compactScats();
+        return gone;
     }
 
     pub fn splice(self: *Map, i: usize, n: usize) !void {
@@ -2060,12 +2096,9 @@ pub const Map = struct {
 
     /// Paints the CASE onto every cell the disc touches. A cell is its low corner, so the span is the same lattice span a sculpt stroke dirties.
     pub fn paintCliff(self: *Map, px: f32, pz: f32, radius: f32, case: u8, out: *[4]usize) bool {
-        const step = 2 * self.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
-        const r = mathx.maxF(radius, step * 0.5);
-        out.* = EMPTY_SPAN;
-        const xs = pointSpan(px, r, self.half, step, HEIGHT_N) orelse return false;
-        const zs = pointSpan(pz, r, self.half, step, HEIGHT_N) orelse return false;
-        out.* = .{ xs[0], zs[0], xs[1], zs[1] };
+        const r = self.brushSpan(px, pz, radius, out) orelse return false;
+        const xs = [2]usize{ out[0], out[2] };
+        const zs = [2]usize{ out[1], out[3] };
         var changed = false;
         var iz = zs[0];
         while (iz <= zs[1]) : (iz += 1) {
@@ -2084,8 +2117,26 @@ pub const Map = struct {
         return changed;
     }
 
+    /// The terrain lattice's spacing on THIS map: `2 * half` over the CELLS between the points, never over the points.
+    pub fn heightStep(self: *const Map) f32 {
+        return 2 * self.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
+    }
+
+    /// THE LATTICE SPAN A DISC BRUSH DIRTIES, and the one place a radius is widened to half a cell — under that a
+    /// stroke falls between two points and moves nothing. `out` is written either way, so a stroke off the map
+    /// still reports the empty span its caller checks.
+    fn brushSpan(self: *const Map, px: f32, pz: f32, radius: f32, out: *[4]usize) ?f32 {
+        const step = self.heightStep();
+        const r = mathx.maxF(radius, step * 0.5);
+        out.* = EMPTY_SPAN;
+        const xs = pointSpan(px, r, self.half, step, HEIGHT_N) orelse return null;
+        const zs = pointSpan(pz, r, self.half, step, HEIGHT_N) orelse return null;
+        out.* = .{ xs[0], zs[0], xs[1], zs[1] };
+        return r;
+    }
+
     pub fn heightPoint(self: *const Map, ix: usize, iz: usize) [2]f32 {
-        const step = 2 * self.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
+        const step = self.heightStep();
         return .{ -self.half + @as(f32, @floatFromInt(ix)) * step, -self.half + @as(f32, @floatFromInt(iz)) * step };
     }
 
@@ -2098,13 +2149,34 @@ pub const Map = struct {
         return self.sculptTo(px, pz, radius, .flatten, target, amount, out);
     }
 
+    /// EVERY POINT UNDER THE DISC AT ONE HEIGHT AND NO FEATHER — the editor's Reset. A graded rim is more terrain to undo, not less.
+    pub fn levelRegion(self: *Map, px: f32, pz: f32, radius: f32, target: f32, out: *[4]usize) bool {
+        const r = self.brushSpan(px, pz, radius, out) orelse return false;
+        const xs = [2]usize{ out[0], out[2] };
+        const zs = [2]usize{ out[1], out[3] };
+        const v = heightByte(mathx.clampF(target, HEIGHT_MIN, HEIGHT_MAX));
+        var changed = false;
+        var iz = zs[0];
+        while (iz <= zs[1]) : (iz += 1) {
+            var ix = xs[0];
+            while (ix <= xs[1]) : (ix += 1) {
+                const p = self.heightPoint(ix, iz);
+                const dx = p[0] - px;
+                const dz = p[1] - pz;
+                if (dx * dx + dz * dz > r * r) continue;
+                const i = iz * HEIGHT_N + ix;
+                if (self.height[i] == v) continue;
+                self.height[i] = v;
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
     fn sculptTo(self: *Map, px: f32, pz: f32, radius: f32, mode: Sculpt, target: f32, amount: f32, out: *[4]usize) bool {
-        const step = 2 * self.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
-        const r = mathx.maxF(radius, step * 0.5);
-        out.* = EMPTY_SPAN;
-        const xs = pointSpan(px, r, self.half, step, HEIGHT_N) orelse return false;
-        const zs = pointSpan(pz, r, self.half, step, HEIGHT_N) orelse return false;
-        out.* = .{ xs[0], zs[0], xs[1], zs[1] };
+        const r = self.brushSpan(px, pz, radius, out) orelse return false;
+        const xs = [2]usize{ out[0], out[2] };
+        const zs = [2]usize{ out[1], out[3] };
         const lo = xs[0];
         const hi = xs[1];
         const zlo = zs[0];
@@ -2655,17 +2727,22 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
         }
     }
     if (!seenVersion) return ParseError.BadVersion;
-    if (soilAt != 0 and soilAt != m.soil.len) return ParseError.MissingField;
-    if (covAt != 0 and covAt != m.soilCov.len) return ParseError.MissingField;
-    if (edgeAt != 0 and edgeAt != m.soilEdge.len) return ParseError.MissingField;
-    if (waterAt != 0 and waterAt != m.water.len) return ParseError.MissingField;
-    if (wEdgeAt != 0 and wEdgeAt != m.waterEdge.len) return ParseError.MissingField;
-    if (wKindAt != 0 and wKindAt != m.waterKind.len) return ParseError.MissingField;
-    if (hgtAt != 0 and hgtAt != m.height.len) return ParseError.MissingField;
-    if (cliffAt != 0 and cliffAt != m.cliff.len) return ParseError.MissingField;
-    if (caveAt != 0 and caveAt != m.caveCov.len) return ParseError.MissingField;
-    if (caveFAt != 0 and caveFAt != m.caveFloor.len) return ParseError.MissingField;
-    if (caveRAt != 0 and caveRAt != m.caveRoof.len) return ParseError.MissingField;
+    var grown = false;
+    grown = try gridRead(soilAt, &m.soil, SOIL_N, LEGACY_SOIL_N, 0) or grown;
+    grown = try gridRead(covAt, &m.soilCov, SOIL_N, LEGACY_SOIL_N, COV_FULL) or grown;
+    grown = try gridRead(edgeAt, &m.soilEdge, SOIL_N, LEGACY_SOIL_N, @intFromEnum(Edge.natural)) or grown;
+    grown = try gridRead(waterAt, &m.water, WATER_N, LEGACY_WATER_N, 0) or grown;
+    grown = try gridRead(wEdgeAt, &m.waterEdge, WATER_N, LEGACY_WATER_N, @intFromEnum(Edge.natural)) or grown;
+    grown = try gridRead(wKindAt, &m.waterKind, WATER_N, LEGACY_WATER_N, @intFromEnum(Liquid.water)) or grown;
+    grown = try gridRead(hgtAt, &m.height, HEIGHT_N, LEGACY_HEIGHT_N, HEIGHT_ZERO) or grown;
+    grown = try gridRead(cliffAt, &m.cliff, HEIGHT_N, LEGACY_HEIGHT_N, CLIFF_NONE) or grown;
+    grown = try gridRead(caveAt, &m.caveCov, CAVE_N, LEGACY_CAVE_N, 0) or grown;
+    grown = try gridRead(caveFAt, &m.caveFloor, CAVE_N, LEGACY_CAVE_N, HEIGHT_ZERO) or grown;
+    grown = try gridRead(caveRAt, &m.caveRoof, CAVE_N, LEGACY_CAVE_N, HEIGHT_ZERO) or grown;
+    if (grown) {
+        m.half = grownHalf(m.half);
+        if (m.half > MAX_DECLARED_HALF) return ParseError.BadNumber;
+    }
     // A floor at or over its ceiling is not a chamber; the sampler would hand back a surface with no air over it.
     if (caveAt != 0) {
         for (m.caveCov, m.caveFloor, m.caveRoof) |c, f, r| {
@@ -2675,6 +2752,111 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     if (edgeAt == 0) fillLegacyEdges(m);
     lineOut.* = 0;
     try link(m);
+}
+
+/// THE TWO LATTICES A GRID CAN BE ON. Height, cliff and the cave grids are `n` POINTS with `n-1` cells between them,
+/// so the first and last sit exactly on the map's edge. Soil and water are `n` CELLS sampled at their centres, which
+/// is also how the shader's bilinear filter reads them as a texture. They invert differently at the rim.
+pub const Lattice = enum { point, cell };
+
+fn latticeWorld(half: f32, n: usize, i: usize, kind: Lattice) f32 {
+    const fi: f32 = @floatFromInt(i);
+    const fn_: f32 = @floatFromInt(n);
+    return switch (kind) {
+        .point => -half + fi * (2 * half / (fn_ - 1)),
+        .cell => -half + (fi + 0.5) * (2 * half / fn_),
+    };
+}
+
+fn latticeIndex(half: f32, n: usize, w: f32, kind: Lattice) f32 {
+    const fn_: f32 = @floatFromInt(n);
+    const raw = switch (kind) {
+        .point => (w + half) * (fn_ - 1) / (2 * half),
+        .cell => (w + half) * fn_ / (2 * half) - 0.5,
+    };
+    return mathx.clampF(raw, 0, fn_ - 1);
+}
+
+fn bilerpGrid(src: []const u8, n: usize, fx: f32, fz: f32) f32 {
+    const x0: usize = @intFromFloat(@floor(fx));
+    const z0: usize = @intFromFloat(@floor(fz));
+    const x1 = @min(x0 + 1, n - 1);
+    const z1 = @min(z0 + 1, n - 1);
+    const tx = fx - @floor(fx);
+    const tz = fz - @floor(fz);
+    const v = [4]f32{
+        @floatFromInt(src[z0 * n + x0]),
+        @floatFromInt(src[z0 * n + x1]),
+        @floatFromInt(src[z1 * n + x0]),
+        @floatFromInt(src[z1 * n + x1]),
+    };
+    return mathx.lerpF(mathx.lerpF(v[0], v[1], tx), mathx.lerpF(v[2], v[3], tx), tz);
+}
+
+/// THE SAME LAND ON A DIFFERENT LATTICE. Serves both the legacy refine (one extent, more points) and `grow` (the same
+/// land in a bigger world) — outside the source extent it CLAMPS, so a grown map's new margin is the old rim carried
+/// outward and not a cliff. `smooth` is for fields; an ID or a flag is nearest, because an interpolated soil id is a
+/// material nobody painted.
+pub fn regrid(
+    dst: []u8,
+    dn: usize,
+    dstHalf: f32,
+    src: []const u8,
+    sn: usize,
+    srcHalf: f32,
+    kind: Lattice,
+    smooth: bool,
+) void {
+    for (0..dn) |jz| {
+        const wz = latticeWorld(dstHalf, dn, jz, kind);
+        const fz = latticeIndex(srcHalf, sn, wz, kind);
+        for (0..dn) |jx| {
+            const wx = latticeWorld(dstHalf, dn, jx, kind);
+            const fx = latticeIndex(srcHalf, sn, wx, kind);
+            dst[jz * dn + jx] = if (smooth)
+                @intFromFloat(mathx.clampF(@round(bilerpGrid(src, sn, fx, fz)), 0, 255))
+            else
+                src[@as(usize, @intFromFloat(@round(fz))) * sn + @as(usize, @intFromFloat(@round(fx)))];
+        }
+    }
+}
+
+/// One legacy grid's worth of source, so an embed can read the record it is overwriting.
+var regridScratch: [LEGACY_CAVE_N * LEGACY_CAVE_N]u8 = undefined;
+
+/// WHAT A MAP FROM THE OLD BUILD IS WORTH IN THE NEW WORLD. Every lattice gained the same number of points, so grow
+/// the map's own half by that ratio and the CELL SIZE IS UNCHANGED: each old sample lands exactly on a new lattice
+/// point, the land keeps its world coordinates, and no authored step is resampled into a slope. What appears around
+/// it is the flat plain the apron used to be pretending to be.
+pub fn grownHalf(half: f32) f32 {
+    return half * @as(f32, @floatFromInt(HEIGHT_N - 1)) / @as(f32, @floatFromInt(LEGACY_HEIGHT_N - 1));
+}
+
+comptime {
+    // The point lattices must gain an EVEN number of points or the old centre lands between two new ones.
+    std.debug.assert((HEIGHT_N - LEGACY_HEIGHT_N) % 2 == 0);
+    std.debug.assert((CAVE_N - LEGACY_CAVE_N) % 2 == 0);
+    std.debug.assert((SOIL_N - LEGACY_SOIL_N) % 2 == 0);
+    std.debug.assert((WATER_N - LEGACY_WATER_N) % 2 == 0);
+    // AND THE CELL SIZE IS WHAT THE GROWTH PRESERVES — the whole reason the embed is exact rather than resampled.
+    // `N` here, not `N - 1`, is the wrong inverse and answers a number nothing loads.
+    const legacyCell = 2 * DEFAULT_HALF / @as(f32, @floatFromInt(LEGACY_HEIGHT_N - 1));
+    std.debug.assert(@abs(2 * grownHalf(DEFAULT_HALF) / @as(f32, @floatFromInt(HEIGHT_N - 1)) - legacyCell) < 1e-4);
+    std.debug.assert(grownHalf(DEFAULT_HALF) > DEFAULT_HALF);
+}
+
+/// A grid record is either today's length or the old build's. Anything else is a truncated file. Returns whether it
+/// was the old build's, because that is what says the map's half has to grow with it.
+fn gridRead(at: usize, cells: []u8, dn: usize, sn: usize, blank: u8) !bool {
+    if (at == 0 or at == dn * dn) return false;
+    if (at != sn * sn) return ParseError.MissingField;
+    @memcpy(regridScratch[0 .. sn * sn], cells[0 .. sn * sn]);
+    @memset(cells, blank);
+    const off = (dn - sn) / 2;
+    for (0..sn) |iz| {
+        @memcpy(cells[(iz + off) * dn + off ..][0..sn], regridScratch[iz * sn ..][0..sn]);
+    }
+    return true;
 }
 
 fn readGrid(it: *std.mem.TokenIterator(u8, .any), cells: []u8, at: usize, lim: u16) !usize {
@@ -3272,7 +3454,9 @@ pub const TEXT_CAP: usize =
     MAX_CLEARINGS * 48 +
     MAX_ARENAS * (NAME_CAP + 16 + MAX_SEAL * (longestTag(FoeKind) + 1) + MAX_ARENA_VERTS * 22) +
     MAX_OPS * OP_LINE_TYPICAL +
-    (3 * SOIL_CELLS + 3 * WATER_CELLS + HEIGHT_CELLS) * GRID_CELL_CAP +
+    // EVERY grid the writer can emit, at its worst case. The cliff and the three cave grids were missing, which on a
+    // map with an incompressible cave was a legal map `save` refused and `load` could not read back.
+    (3 * SOIL_CELLS + 3 * WATER_CELLS + 2 * HEIGHT_CELLS + 3 * CAVE_CELLS) * GRID_CELL_CAP +
     MAX_FOES * (longestTag(FoeKind) + 48) +
     (MAX_FLAGS + MAX_COUNTERS + MAX_TIMERS) * (ID_CAP + 2) + 64 +
     MAX_NPCS * (ID_CAP + NAME_CAP + 128) +
@@ -3771,15 +3955,28 @@ test "THE SHIPPED MAPS SIT INSIDE THE READ BUFFER, and `save` refuses to write o
     try std.testing.expectEqual(m.nops, back.nops);
     try std.testing.expectEqual(at.x, back.ops[0].x);
 
+    // THE BUFFER IS DERIVED TO HOLD THE WORST MAP, so the fullest one there can be still writes and reads back:
+    // every op slot spent on the fattest row, and grids that defeat the run encoding outright.
     var o = defaults(.at);
     o.kind = .pillar;
     o.nloot = MAX_LOOT;
     for (&o.loot) |*k| k.* = .smithing_stone;
     while (m.nops < MAX_OPS) _ = try m.add(o);
-    try std.testing.expectError(error.MapTooLarge, save(kept, m));
-    try std.testing.expectError(error.FileNotFound, std.fs.cwd().access(kept ++ ".tmp", .{}));
+    for (&m.height, 0..) |*h, i| h.* = @intCast(i % 2);
+    for (&m.caveCov, 0..) |*c, i| c.* = @intCast(CAVE_EDGE + i % 2);
+    for (&m.caveFloor, &m.caveRoof) |*f, *r| {
+        f.* = HEIGHT_ZERO - 8;
+        r.* = HEIGHT_ZERO;
+    }
+    try save(kept, m);
+    const worstSaved = (try std.fs.cwd().statFile(kept)).size;
+    std.debug.print("  fullest map {d} B, {d:.0}% of the buffer\n", .{
+        worstSaved, 100.0 * @as(f64, @floatFromInt(worstSaved)) / @as(f64, @floatFromInt(TEXT_CAP)),
+    });
     try load(kept, back, &line);
-    try std.testing.expectEqual(@as(usize, 1), back.nops);
+    try std.testing.expectEqual(MAX_OPS, back.nops);
+    try std.testing.expectEqualSlices(u8, &m.height, &back.height);
+    try std.testing.expectEqualSlices(u8, &m.caveCov, &back.caveCov);
 }
 
 test "EVERY MAP SURVIVES A REWRITE — an op row is two records now and the file may not say so" {
@@ -4154,6 +4351,49 @@ test "the height field round-trips, and a FLAT map writes no height record at al
     try std.testing.expectApproxEqAbs(@as(f32, 0), back.heightAt(0, 200), 1e-6);
 }
 
+test "removeInDisc takes the whole disc in one pass, keeps the rest in order, and compacts the scatters once" {
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("Disc");
+    for (0..8) |i| {
+        const a = std.math.tau * @as(f32, @floatFromInt(i)) / 8.0;
+        for ([_]f32{ 10, 40 }) |r| {
+            var o = defaults(.at);
+            o.kind = .pillar;
+            o.x = @cos(a) * r;
+            o.z = @sin(a) * r;
+            _ = try m.add(o);
+        }
+        var s = defaults(.disc);
+        s.kind = .pillar;
+        s.x = @cos(a) * 40;
+        s.z = @sin(a) * 40;
+        s.r1 = 3;
+        const at = try m.add(s);
+        _ = try m.scatMut(at);
+    }
+    const before = m.nops;
+    const scats0 = m.nscats;
+    try std.testing.expectEqual(@as(usize, 8), scats0);
+
+    try std.testing.expectEqual(@as(usize, 0), m.removeInDisc(0, 0, 4));
+    try std.testing.expectEqual(before, m.nops);
+
+    try std.testing.expectEqual(@as(usize, 8), m.removeInDisc(0, 0, 15));
+    try std.testing.expectEqual(before - 8, m.nops);
+    try std.testing.expectEqual(scats0, m.nscats);
+    for (m.ops[0..m.nops]) |o| try std.testing.expect(o.x * o.x + o.z * o.z > 15 * 15);
+    // Every surviving handle still points at a live record, and the run is dense.
+    var seen: usize = 0;
+    for (m.ops[0..m.nops]) |o| {
+        if (o.scat == 0) continue;
+        seen += 1;
+        try std.testing.expectEqual(seen, @as(usize, o.scat));
+    }
+    try std.testing.expectEqual(m.nscats, seen);
+    std.debug.print("\n  removeInDisc: {d} ops -> {d}, {d} scatter records held\n", .{ before, m.nops, m.nscats });
+}
+
 test "sculpt: the brush tapers, respects its radius, and cannot leave the encoding's range" {
     const m = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(m);
@@ -4195,17 +4435,41 @@ test "sculpt: the brush tapers, respects its radius, and cannot leave the encodi
     try std.testing.expect(out[0] > out[2] and out[1] > out[3]);
 }
 
+test "levelRegion takes the whole disc to the datum in ONE pass, and leaves the land outside it alone" {
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("Reset");
+    var span: [4]usize = undefined;
+    _ = m.sculpt(0, 0, 60, .raise, 9.0, &span);
+    const outside = m.heightAt(48, 0);
+    try std.testing.expect(m.heightAt(0, 0) > 8.0);
+
+    try std.testing.expect(m.levelRegion(0, 0, 20, 0, &span));
+    for ([_][2]f32{ .{ 0, 0 }, .{ 14, 0 }, .{ 0, -14 }, .{ 11, 11 } }) |p| {
+        try std.testing.expectApproxEqAbs(@as(f32, 0), m.heightAt(p[0], p[1]), 1e-4);
+    }
+    try std.testing.expectApproxEqAbs(outside, m.heightAt(48, 0), 1e-6);
+    try std.testing.expect(!m.levelRegion(0, 0, 20, 0, &span));
+
+    try std.testing.expect(!m.levelRegion(9000, 9000, 5, 0, &span));
+    try std.testing.expect(span[0] > span[2] and span[1] > span[3]);
+}
+
 test "the height sampler is bilinear, edge-clamped, and its gradient points UPHILL" {
     const m = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(m);
     m.blank("Ramp");
+    // A RISER A COLUMN, MEASURED FROM THE MIDDLE: a quarter-metre step across every column of the lattice is 100 m of
+    // ramp, which the encoding cannot hold end to end. Centred, the middle band it is sampled in is inside the range.
+    const mid: usize = HEIGHT_N / 2;
     for (0..HEIGHT_N) |iz| {
         for (0..HEIGHT_N) |ix| {
-            m.height[iz * HEIGHT_N + ix] = heightByte(@as(f32, @floatFromInt(ix)) * 0.25);
+            const rise = (@as(f32, @floatFromInt(ix)) - @as(f32, @floatFromInt(mid))) * 0.25;
+            m.height[iz * HEIGHT_N + ix] = heightByte(rise);
         }
     }
     const step = 2 * m.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
-    const x0 = -m.half + 10 * step;
+    const x0 = -m.half + @as(f32, @floatFromInt(mid + 10)) * step;
     try std.testing.expectApproxEqAbs(@as(f32, 2.5), m.heightAt(x0, 0), 1e-3);
     try std.testing.expectApproxEqAbs(@as(f32, 2.625), m.heightAt(x0 + step * 0.5, 0), 1e-3);
     try std.testing.expectApproxEqAbs(m.heightAt(-m.half, 0), m.heightAt(-m.half - 60, 0), 1e-4);
@@ -4289,10 +4553,10 @@ test "a value that only LOOKS parseable is a load error too" {
     try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: inf\n" ++ head[11..], &m, &ln));
     try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 0\n" ++ head[11..], &m, &ln));
     try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 99999\n" ++ head[11..], &m, &ln));
-    try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 313\n" ++ head[11..], &m, &ln));
-    try parse("version: 1\nhalf: 312\n" ++ head[11..], &m, &ln);
+    try std.testing.expectError(ParseError.BadNumber, parse("version: 1\nhalf: 513\n" ++ head[11..], &m, &ln));
+    try parse("version: 1\nhalf: 512\n" ++ head[11..], &m, &ln);
     try std.testing.expectApproxEqAbs(MAX_DECLARED_HALF, m.half, 1e-4);
-    try parse("version: 1\nhalf: 280\n" ++ head[11..], &m, &ln);
+    try parse("version: 1\nhalf: 500\n" ++ head[11..], &m, &ln);
     try std.testing.expectApproxEqAbs(DEFAULT_HALF, m.half, 1e-4);
     try std.testing.expect(DEFAULT_HALF <= MAX_DECLARED_HALF);
     try std.testing.expectError(ParseError.BadNumber, parse(head ++ "foe: toad 0 0 0 1 1e20\n", &m, &ln));
@@ -5149,7 +5413,6 @@ test "A SPAWN'S HOUR IS DERIVED UNTIL THE EDITOR SAYS OTHERWISE, and an old map 
     try write(&m, fbs.writer());
     try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "when=") == null);
 
-    // …and an override rides out and back.
     m.foes[0].when = .day;
     fbs.reset();
     try write(&m, fbs.writer());

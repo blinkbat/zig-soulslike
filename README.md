@@ -9,6 +9,7 @@ See `AGENTS.md` for architecture, laws and the rendering invariants inherited fr
 
 ```
 build.cmd          debug build -> zig-out\bin\zig-soulslike.exe
+check.cmd          type-check only, no codegen and no link
 run.cmd            build + launch
 shot.cmd           build + headless screenshots into shots\
 build-release.cmd  use this for playtesting at full prop density
@@ -21,7 +22,9 @@ from source — there is no `raylib.dll`. `zig build test` runs the unit tests.
 Flags: `--shot` (headless screenshot harness), `--shot-only <stage>` (one stage of it), `--shot-props` (every prop
 kind alone), `--shot-art` (the 2D set on contact sheets), `--shot-land` (the loaded map, overhead and at eye level), `--bright` (magenta
 clear, no sky), `--map worlds/x.world`, `--explode worlds/x.world` (break every generator op into one `at:` per
-prop, in place), `--fix-lurkers [map]` (dig every lurker pool to the dweller floor), `--bake [--force]` (emit the
+prop, in place), `--fix-lurkers [map]` (dig every lurker pool to the dweller floor), `--fix-caves [map] [--write]` (drop
+every chamber the land cannot roof, keep the largest walkable one and cut it an entrance), `--grow <map> [half] [--write]`
+(put a map in a bigger world without moving the land under it), `--bake [--force]` (emit the
 code-authored map; refuses to overwrite).
 
 ## What exists
@@ -35,16 +38,18 @@ each), bow, wand, torch. A faint, steady body light reaches 3 m; the carried tor
 block, L2 parry with a 0.16 s window, four PoE2 resistances plus an armour curve, ten status meters built the
 way poison is — poison, burning, chill, stun, bleed, sleep, confusion, charm, berserk, stupefy.
 
-**Foes.** 41 kinds in 33 groups: toad, skeletal archer, ogre, kobold warband (3 roles), brood mother + sacs +
+**Foes.** 42 kinds in 33 groups: toad, skeletal archer, ogre, kobold warband (3 roles), brood mother + sacs +
 broodlings, skeletal warriors (2), Bone Knight (boss, with boss bar and fog gate), shade + mourner, leechfly,
-rooted, sporeling, delver, necromancer, fungal deer, mushroom mage, fen lurker, spore homunculus, bone
+rooted, sporeling, delver, necromancer, fungal deer, mushroom mage, fen lurker (a 5 m tongue that hauls you into the pool), spore homunculus, bone
 skitterer, ancient priest, tolling hollow, slumber bloom, cinder wake, rotgorger, birchwight, salt husk,
 fishman shoal (3 roles), blinkbat, the fungal duo (second boss, two bars), the owlbear (a carving that wakes
-when you walk up to it), the corrupted druidess (third boss), the bone mimic and the mastodon, plus the spirit wolf that fights on your side. Shared leash, sight, parry, nav-steering
+when you walk up to it), the corrupted druidess (third boss), the bone mimic, the mastodon and the corrupt ent, plus the spirit wolf that fights on your side. Shared leash, sight, parry, nav-steering
 and dissipation contracts in `foe.zig`.
 
-**World.** 560 m square ringed by cliffs, five regions, 181 prop kinds in three layers each. Sculptable
-heightfield (40° slope limit, 0.55 m step). Painted soil with coverage and eight edge shapes; painted liquid
+**World.** 1000 m square ringed by cliffs, ten regions, 211 prop kinds in three layers each. Sculptable
+heightfield (40° slope limit, 0.55 m step). Caves are a second surface under it — carve a floor and a headroom,
+cut an entrance through a hillside, and the hill overhead stays walkable; rock is opaque, so nothing on it sees
+or shoots what is in the chamber below. Painted soil with coverage and eight edge shapes; painted liquid
 with a derived coast you wade, in four kinds — water, tar, fungal soup (poison) and lava (burning, and it
 bites). All four wade the same; the look, the status and the voice are what differ. Day/night clock (~20 min day) driving every colour and shadow; sun 6→20 then the
 moon as anti-sun. Intermittent rain in two strengths with lightning, late thunder and stray mist banks.
@@ -60,9 +65,10 @@ dialog with live-rendered speaker portraits, three NPC kinds (wanderer, merchant
 merchant and the smith open off a trigger — one screen, buy and sell on the shelf, stone-and-coin weapon tiers
 at the anvil. All of it authored in the `.world` file, not in Zig — grammar in `AGENTS.md`.
 
-**Editor** (Menu > Editor). Layered StarEdit-style: ground sculpt, soil and liquid brushes, prop and unit
-placement (foes and NPCs alike), zones, clearings, loot, undo/redo, cut/copy/paste, grid snap, object viewer,
-sound jukebox, FX bench, bake-time sound filter rack. Cannot yet author triggers or dialogs.
+**Editor** (Menu > Editor). Layered StarEdit-style: ground sculpt, cave carve and entrance brushes, soil and
+liquid brushes, prop and unit placement (foes and NPCs alike), zones, clearings, loot, triggers, dialog trees,
+undo/redo, cut/copy/paste, grid snap, object viewer, sound jukebox, FX bench, bake-time sound filter rack. F6
+drops into a walled arena against the one creature under the cursor and hands your map back when you leave.
 
 **Save.** Three slots, written only by sitting at a bonfire, each with the thumbnail taken there. Text files in
 the map's own `key: value` grammar.
@@ -73,10 +79,10 @@ presets.
 
 ## Performance
 
-**17,272 static props and 1,819 colliders; a frame draws about 975 in the city and 1,250 in the wood** — read
-off Debug > Stats in `shots/91_stats_city.png` and `92_stats_wood.png`. The first two numbers are pinned by
-`env`'s "replaying the SHIPPED map produces a stable world" test. **This paragraph is the copy that goes stale
-when a props rework moves them — move it together with that test, all of it or none.**
+**Roughly 17,000 static props and 1,800 colliders; a frame draws about 975 in the city and 1,250 in the wood** —
+read off Debug > Stats in `shots/91_stats_city.png` and `92_stats_wood.png`. Nothing pins them: `env`'s
+"replaying the SHIPPED map produces a stable world" test asks only that a replay match itself and stay inside
+`MAX_PROPS` / `MAX_SOLIDS`, so the figures drift with every pass over the map.
 
 Props are indexed into a uniform grid and culled per cell against the view frustum, per-kind view distances,
 and — for the sun's depth pass — whether a caster's shadow can physically reach the shadow box. Collision and
@@ -119,7 +125,7 @@ the roll are committed, with a one-slot input buffer that fires at the earliest 
 backpedals with real footing; a hold-B sprint faces travel instead.
 
 The jump costs no stamina and is committed: no double jump, and a swing pressed mid-air buffers and fires on
-landing. Heading and speed are set at takeoff; the stick only bends the arc. He clears 1 m — three terrain
+landing. Heading and speed are set at takeoff; the stick only bends the arc. He clears 1.4 m — five terrain
 risers where a walk climbs two — and flies over what he is above and nothing else, creatures included. No jump
 attack, no fall damage.
 

@@ -299,6 +299,7 @@ pub const sceneFS =
     \\uniform vec3 lightPos[16];  // MAX_LIGHTS point lights: the nearest world fires, plus any CARRIED one
     \\uniform vec3 lightCol[16];  // colour * intensity (pre-gamma)
     \\uniform float lightRad[16];
+    \\uniform float lightUnder[16];
     \\uniform int nLights;
     \\out vec4 finalColor;
     \\// HOW SOLID A FLAME IS (owner's call: all flames somewhat transparent).
@@ -788,7 +789,7 @@ pub const sceneFS =
     \\                         : vec2(0.24, 1.00);
     \\}
     \\// Torch/fire light: quadratic falloff reaching exactly 0 at the radius (so a light can never leak out of its room), lambert wrapped hard so one flame fills a chamber.
-    \\vec3 pointLights(vec3 pos, vec3 n){
+    \\vec3 pointLights(vec3 pos, vec3 n, float shelter){
     \\  vec3 sum = vec3(0.0);
     \\  for (int i = 0; i < nLights; i++){
     \\    vec3 d = lightPos[i] - pos;
@@ -801,6 +802,8 @@ pub const sceneFS =
     \\    att *= att;
     \\    // Wrapped, but not so hard that every surface in the room gets the same value — the wrap is there so a torch FILLS a chamber, not so it erases form.
     \\    float ndl = clamp((dot(n, d/max(dist, 1e-4)) + 0.22)/1.22, 0.0, 1.0);
+    \\    // ROCK IS OPAQUE TO A FLAME TOO: a light and a surface on opposite sides of a roof do not meet.
+    \\    att *= 1.0 - abs(shelter - lightUnder[i]);
     \\    sum += lightCol[i]*att*ndl;
     \\  }
     \\  return sum;
@@ -861,7 +864,7 @@ pub const sceneFS =
     \\  float shelter = shelterAt(fragPosition);
     \\  hemi *= mix(1.0, 0.16, shelter);   // a chamber with no torch reads as gloom, not as a black screen
     \\  vec3 lit = base*(hemi*(1.0 - 0.62*sh) + keyCol*diff*1.72*(1.0 - sh)*(1.0 - shelter)
-    \\                   + pointLights(fragPosition, n));                                   // + torch/firelight
+    \\                   + pointLights(fragPosition, n, shelter));                                   // + torch/firelight
     \\  if (groundMode == 0){
     \\    // Cool sky rim on props/hero — lifts silhouettes off the dark ground (cheap atmospheric backlight; NOT on terrain, where grazing angles would sheen it all).
     \\    float rim = (mi == 9) ? 0.0 : pow(1.0 - nv, 2.6);

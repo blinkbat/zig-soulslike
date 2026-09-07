@@ -617,12 +617,12 @@ pub fn runLandShots(g: *Game) void {
     if (std.mem.startsWith(u8, stem, "test_caves")) {
         const CAM_CLEAR: f32 = 0.45;
         const views = [_]struct { tag: []const u8, hx: f32, hz: f32, under: bool, ax: f32, az: f32, up: f32, yaw: f32, pitch: f32, dist: f32 }{
-            .{ .tag = "mouth", .hx = 56, .hz = 20, .under = false, .ax = 49, .az = 20, .up = 1.4, .yaw = 90, .pitch = 0.10, .dist = 14.0 },
-            .{ .tag = "inside", .hx = 45, .hz = 20, .under = true, .ax = 42, .az = 20, .up = 1.2, .yaw = 90, .pitch = 0.06, .dist = 7.0 },
-            .{ .tag = "lookingout", .hx = 43, .hz = 20, .under = true, .ax = 48, .az = 20, .up = 1.2, .yaw = 270, .pitch = 0.04, .dist = 8.0 },
-            .{ .tag = "bend", .hx = 24, .hz = 2, .under = true, .ax = 22, .az = 0, .up = 1.2, .yaw = 60, .pitch = 0.10, .dist = 9.0 },
+            .{ .tag = "mouth", .hx = 34, .hz = 18, .under = false, .ax = 28, .az = 15, .up = 1.4, .yaw = 118, .pitch = 0.12, .dist = 13.0 },
+            .{ .tag = "inside", .hx = 26, .hz = 13, .under = true, .ax = 24, .az = 11, .up = 1.2, .yaw = 118, .pitch = 0.06, .dist = 6.5 },
+            .{ .tag = "lookingout", .hx = 23, .hz = 10, .under = true, .ax = 27, .az = 14, .up = 1.2, .yaw = 298, .pitch = 0.04, .dist = 7.0 },
+            .{ .tag = "bend", .hx = 15, .hz = 4, .under = true, .ax = 13, .az = 2, .up = 1.2, .yaw = 60, .pitch = 0.10, .dist = 8.0 },
             .{ .tag = "chamber", .hx = 0, .hz = 0, .under = true, .ax = 0, .az = 0, .up = 1.0, .yaw = 45, .pitch = 0.16, .dist = 15.0 },
-            .{ .tag = "overhead", .hx = 0, .hz = 0, .under = false, .ax = 20, .az = 10, .up = 4.0, .yaw = 200, .pitch = 1.10, .dist = 62.0 },
+            .{ .tag = "overhead", .hx = 0, .hz = 0, .under = false, .ax = 16, .az = 10, .up = 4.0, .yaw = 200, .pitch = 1.10, .dist = 56.0 },
         };
         for (views, 0..) |f, i| {
             standHero(g, f.hx, f.hz, std.math.pi);
@@ -645,9 +645,9 @@ pub fn runLandShots(g: *Game) void {
         frames += views.len;
         const probes = [_]struct { tag: []const u8, x: f32, z: f32 }{
             .{ .tag = "chamber", .x = 0, .z = 0 },
-            .{ .tag = "bend", .x = 22, .z = 0 },
-            .{ .tag = "low", .x = 28, .z = 6 },
-            .{ .tag = "mouth", .x = 50, .z = 20 },
+            .{ .tag = "bend", .x = 13, .z = 2 },
+            .{ .tag = "low", .x = 17, .z = 5 },
+            .{ .tag = "mouth", .x = 28, .z = 15 },
         };
         for (probes) |q| {
             const land = g.env.groundAt(q.x, q.z);

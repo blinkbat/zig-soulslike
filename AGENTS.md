@@ -2513,7 +2513,7 @@ Ground layer > Cliff paints it, Slope takes it back.
 A heightfield holds one height per lattice point, so the land can never be over anything. A cave is a
 SECOND surface: three grids on their own lattice (`wf.CAVE_N`, 447 points, **half the terrain's cell** and
 sharing its points, so cave point 2i IS terrain point i) holding COVERAGE, a FLOOR and a CEILING.
-Ground layer > Caves paints them; no `cave:` row means the map loads and walks exactly as it did.
+The CAVES layer paints them; no `cave:` row means the map loads and walks exactly as it did.
 
 - **THE CEILING DECIDES WHICH WORLD A BODY IS IN** (`caves.supportAt`, and `env.standAt` routes through it).
   Feet under a chamber's roof are in the chamber; feet at or over it are on the land. Height alone cannot
@@ -2559,7 +2559,7 @@ Ground layer > Caves paints them; no `cave:` row means the map loads and walks e
   fire on the chamber floor. `--shot-land --map worlds/test_caves.world` frames the mouth, the inside,
   looking out, the bend, the chamber and the hill overhead, and prints the roof thickness at each.
 
-**Authoring one** (Ground > Caves): set FLOOR and HEADROOM, then Carve under a hill — the cursor rides the
+**Authoring one** (the Caves layer): set FLOOR and HEADROOM, then Carve under a hill — the cursor rides the
 floor plane, not the hill, or it would climb the very rock you are carving under. Drag Entrance from open
 ground toward it and the grade and the opening come out walkable. Fill puts rock back. Cutaway takes the
 hill off every chamber, and that viewing choice FOLLOWS YOU into Props and Units, so a chamber can be

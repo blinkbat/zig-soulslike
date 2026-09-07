@@ -96,6 +96,8 @@ pub const Light = struct {
     pos: rl.Vector3,
     col: rl.Vector3,
     radius: f32,
+    /// How sheltered the FLAME is. A fire in a chamber does not light the hillside over it, and one on the hill does not light the chamber.
+    under: f32 = 0,
 };
 
 pub const Sky = struct {
@@ -425,6 +427,7 @@ pub const Scene = struct {
     loc_lightPos: i32,
     loc_lightCol: i32,
     loc_lightRad: i32,
+    loc_lightUnder: i32 = -1,
     loc_nLights: i32,
     loc_sun: i32,
     loc_key: i32,
@@ -524,6 +527,7 @@ pub const Scene = struct {
             .loc_lightPos = rl.getShaderLocation(shader, "lightPos"),
             .loc_lightCol = rl.getShaderLocation(shader, "lightCol"),
             .loc_lightRad = rl.getShaderLocation(shader, "lightRad"),
+            .loc_lightUnder = rl.getShaderLocation(shader, "lightUnder"),
             .loc_nLights = rl.getShaderLocation(shader, "nLights"),
             .loc_sun = rl.getShaderLocation(shader, "sunDir"),
             .loc_key = rl.getShaderLocation(shader, "keyCol"),
@@ -618,6 +622,7 @@ pub const Scene = struct {
         var pos: [MAX_LIGHTS * 3]f32 = undefined;
         var col: [MAX_LIGHTS * 3]f32 = undefined;
         var rad: [MAX_LIGHTS]f32 = undefined;
+        var under: [MAX_LIGHTS]f32 = undefined;
         const n = @min(lights.len, MAX_LIGHTS);
         for (lights[0..n], 0..) |l, i| {
             pos[i * 3 + 0] = l.pos.x;
@@ -627,6 +632,7 @@ pub const Scene = struct {
             col[i * 3 + 1] = l.col.y;
             col[i * 3 + 2] = l.col.z;
             rad[i] = l.radius;
+            under[i] = l.under;
         }
         var ni: i32 = @intCast(n);
         rl.setShaderValue(self.shader, self.loc_nLights, &ni, .int);
@@ -634,6 +640,7 @@ pub const Scene = struct {
         rl.setShaderValueV(self.shader, self.loc_lightPos, &pos, .vec3, ni);
         rl.setShaderValueV(self.shader, self.loc_lightCol, &col, .vec3, ni);
         rl.setShaderValueV(self.shader, self.loc_lightRad, &rad, .float, ni);
+        rl.setShaderValueV(self.shader, self.loc_lightUnder, &under, .float, ni);
     }
 
     pub fn setGround(self: *Scene, on: bool) void {

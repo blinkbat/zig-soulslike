@@ -6,8 +6,6 @@ const NL = "\n";
 pub const N = wf.CAVE_N;
 pub const CELLS = wf.CAVE_CELLS;
 
-pub const SOLID: u8 = 0;
-pub const OPEN: u8 = 255;
 pub const EDGE = wf.CAVE_EDGE;
 
 /// The floor a body stands on, and WHICH world it stands in. Height alone cannot tell the hillside from the chamber under it.
@@ -101,6 +99,12 @@ pub const Fields = struct {
     base: f32 = 0,
 };
 
+/// Coverage alone — a quarter of the reads `sampleAt` costs, and it is the only one a ray march or a sight line needs to reject a point.
+pub fn openAt(f: Fields, px: f32, pz: f32) f32 {
+    if (!f.any) return 0;
+    return Lerp.of(f.half, px, pz).cov(f.cov);
+}
+
 pub fn sampleAt(f: Fields, px: f32, pz: f32) Sample {
     if (!f.any) return .{ .open = 0, .floor = 0, .roof = 0 };
     const l = Lerp.of(f.half, px, pz);
@@ -116,26 +120,30 @@ pub fn supportAt(f: Fields, land: f32, px: f32, pz: f32, fromY: f32) Support {
 
 pub fn spaceAt(f: Fields, land: f32, px: f32, py: f32, pz: f32) Space {
     if (py > land) return .sky;
+    // Rock is the common answer along a sight line, and coverage alone settles it.
+    if (openAt(f, px, pz) < EDGE_F) return .rock;
     const s = sampleAt(f, px, pz);
     if (!s.hollow()) return .rock;
     if (py >= s.floor and py <= s.roof) return .cave;
     return .rock;
 }
 
-/// Rock left between a chamber's ceiling and the hillside. Negative means the carve has eaten the hill.
-pub fn roofThickAt(f: Fields, land: f32, px: f32, pz: f32) f32 {
-    const s = sampleAt(f, px, pz);
-    if (!s.hollow()) return land;
-    return land - s.roof;
-}
+/// Metres of rock over a ceiling before the inside is fully sheltered — the mouth's own daylight reaches this far in.
+pub const SHELTER_FADE: f32 = 2.0;
+/// How far ABOVE a ceiling the shelter has faded out. Below the roof it is already full: keyed to the ceiling itself it fades out on the very surface it shades.
+pub const SHELTER_LID: f32 = 0.75;
 
-/// 1 under solid roof, easing to 0 as the rock over the ceiling thins out at a mouth. `fade` is the metres that transition takes.
-pub fn shelterAt(f: Fields, land: f32, px: f32, py: f32, pz: f32, fade: f32) f32 {
+/// 1 under solid roof, 0 out under the sky. **THE FRAGMENT SHADER RUNS THIS SAME ARITHMETIC** (`shelterAt`
+/// in `shaders.zig`, off a field `env.cutShelter` has already multiplied by the rock over the ceiling), and
+/// the two cannot drift apart: this one decides which lights reach a fragment that one shades.
+pub fn shelterAt(f: Fields, land: f32, px: f32, py: f32, pz: f32) f32 {
     const s = sampleAt(f, px, pz);
-    if (!s.hollow() or py > s.roof) return 0;
+    if (!s.hollow()) return 0;
     const thick = land - s.roof;
     if (thick <= 0) return 0;
-    return mathx.clampF(thick / fade, 0, 1);
+    const cov = s.open * mathx.clampF(thick / SHELTER_FADE, 0, 1);
+    const lid = mathx.clampF((s.roof - py) / SHELTER_LID + 1.0, 0, 1);
+    return lid * mathx.clampF(cov * 2.0, 0, 1);
 }
 
 pub const Brush = struct {
@@ -162,9 +170,14 @@ pub const Grids = struct {
     half: f32,
 };
 
+/// A brush narrower than half a cell would fall between the lattice points and paint nothing.
+fn brushR(half: f32, r: f32) f32 {
+    return mathx.maxF(r, cellStep(half) * 0.5);
+}
+
 fn strokeSpan(g: Grids, b: Brush, out: *[4]usize) ?[4]usize {
     const step = cellStep(g.half);
-    const r = mathx.maxF(b.r, step * 0.5);
+    const r = brushR(g.half, b.r);
     out.* = wf.EMPTY_SPAN;
     const xs = wf.pointSpan(b.px, r, g.half, step, N) orelse return null;
     const zs = wf.pointSpan(b.pz, r, g.half, step, N) orelse return null;
@@ -181,7 +194,7 @@ fn falloff(step: f32, r: f32, d: f32) f32 {
 pub fn carve(g: Grids, b: Brush, out: *[4]usize) bool {
     const sp = strokeSpan(g, b, out) orelse return false;
     const step = cellStep(g.half);
-    const r = mathx.maxF(b.r, step * 0.5);
+    const r = brushR(g.half, b.r);
     const head = b.roof - b.floor;
     var changed = false;
     var iz = sp[1];
@@ -217,7 +230,7 @@ pub fn carve(g: Grids, b: Brush, out: *[4]usize) bool {
 pub fn fill(g: Grids, b: Brush, out: *[4]usize) bool {
     const sp = strokeSpan(g, b, out) orelse return false;
     const step = cellStep(g.half);
-    const r = mathx.maxF(b.r, step * 0.5);
+    const r = brushR(g.half, b.r);
     var changed = false;
     var iz = sp[1];
     while (iz <= sp[3]) : (iz += 1) {
@@ -420,13 +433,6 @@ pub fn homeY(m: *const wf.Map, px: f32, pz: f32, under: bool) f32 {
     return if (s.hollow()) s.floor else land;
 }
 
-pub fn anyOpen(cov: []const u8) bool {
-    for (cov) |v| {
-        if (v >= EDGE) return true;
-    }
-    return false;
-}
-
 
 /// THE BENCH: a hill with a chamber under it, a bent passage out to a mouth on the flat, and a low stretch on the way. Authored here so the editor, the tests and the shot harness all stand on the same map.
 pub const bench = struct {
@@ -435,10 +441,10 @@ pub const bench = struct {
     pub const LOW_HEAD: f32 = 2.2;
     pub const HILL: f32 = 8.0;
     /// The mouth is out on the flat, east of the hill.
-    pub const MOUTH = [2]f32{ 52, 20 };
+    pub const MOUTH = [2]f32{ 30, 16 };
     pub const CHAMBER = [2]f32{ 0, 0 };
     /// The bend, so a foe has to steer around a corner rather than down a tube.
-    pub const BEND = [2]f32{ 22, 0 };
+    pub const BEND = [2]f32{ 13, 2 };
     pub const PASSAGE_R: f32 = 2.6;
     pub const CHAMBER_R: f32 = 11.0;
 
@@ -493,15 +499,14 @@ pub const bench = struct {
         m.blank("test caves");
         var span: [4]usize = wf.EMPTY_SPAN;
         // One hill, wide enough that the passage runs out from under it before the mouth.
-        _ = m.sculpt(CHAMBER[0], CHAMBER[1], 42, .raise, HILL, &span);
-        _ = m.sculpt(CHAMBER[0], CHAMBER[1], 24, .raise, 2.0, &span);
+        _ = m.sculpt(CHAMBER[0], CHAMBER[1], 30, .raise, HILL, &span);
+        _ = m.sculpt(CHAMBER[0], CHAMBER[1], 18, .raise, 2.0, &span);
 
         stroke(m, CHAMBER, CHAMBER, CHAMBER_R, FLOOR, HEAD);
         stroke(m, CHAMBER, BEND, PASSAGE_R, FLOOR, HEAD);
         // The low stretch: the same passage with the ceiling brought down.
-        stroke(m, BEND, .{ 34, 12 }, PASSAGE_R, FLOOR, LOW_HEAD);
-        stroke(m, .{ 34, 12 }, .{ 40, 20 }, PASSAGE_R, FLOOR, HEAD);
-        entrance(m, MOUTH, .{ 40, 20 }, PASSAGE_R, HEAD, 0.5, 0.25);
+        stroke(m, BEND, .{ 20, 8 }, PASSAGE_R, FLOOR, LOW_HEAD);
+        entrance(m, MOUTH, .{ 20, 8 }, PASSAGE_R, HEAD, 0.5, 0.25);
 
         // A LIGHT IN THE CHAMBER AND ONE AT THE MOUTH: the chamber's is the only thing down there that lights anything.
         _ = m.add(.{ .op = .at, .kind = .campfire_lit, .x = CHAMBER[0] + 3, .z = CHAMBER[1] + 2, .under = true }) catch {};
@@ -648,8 +653,7 @@ test "the bench walks: every metre from the mouth to the chamber has a floor, an
 
     const route = [_][2]f32{
         bench.MOUTH,
-        .{ 40, 20 },
-        .{ 34, 12 },
+        .{ 20, 8 },
         bench.BEND,
         bench.CHAMBER,
     };
@@ -688,7 +692,7 @@ test "a body too tall for the low stretch is refused it, and one that fits is no
     m.* = .{};
     bench.author(m);
     const f = fieldsOf(m);
-    const low = [2]f32{ 28, 6 };
+    const low = [2]f32{ 17, 5 };
     const s = sampleAt(f, low[0], low[1]);
     std.debug.print("bench low stretch: {d:.2} m of room\n", .{s.headroom()});
     try std.testing.expect(roomAt(f, low[0], low[1], 0.36, 1.8));

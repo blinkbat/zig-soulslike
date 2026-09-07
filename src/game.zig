@@ -4,6 +4,7 @@ const mathx = @import("core/mathx.zig");
 const gfx = @import("gfx/gfx.zig");
 pub const daynight = @import("world/daynight.zig");
 const envmod = @import("world/env.zig");
+const caves = @import("world/caves.zig");
 const propsmod = @import("props/props.zig");
 const worldfmt = @import("world/worldfmt.zig");
 const editormod = @import("ui/editor.zig");
@@ -515,6 +516,7 @@ pub fn bootCam(g: *Game, t: f32) void {
 
 fn beginGame(g: *Game) void {
     var start = g.map.start.at();
+    start.y = caves.homeY(&g.map, start.x, start.z, g.map.start.under);
     plantActor(g, &start);
     g.hero.setSpawn(start, g.map.start.facing());
     g.hero.souls = .{};
@@ -1568,7 +1570,7 @@ test "AND THE ROOM'S SEAL IS SOLVED OFF THE SAME TALLY THE GATE'S IS" {
 }
 
 fn sealedInWith(g: *const Game, k: FoeKind) bool {
-    const i = g.map.arenaIndexAt(g.hero.pos.x, g.hero.pos.z) orelse return false;
+    const i = g.map.arenaIndexOn(g.hero.pos.x, g.hero.pos.z, g.env.underground(g.hero.pos.x, g.hero.pos.z, g.hero.footY())) orelse return false;
     if (i >= g.arenaShut.len or !g.arenaShut[i]) return false;
     return g.map.arenas[i].sealsOn(k);
 }
@@ -1929,7 +1931,7 @@ fn heroFooting(g: *Game, was_: rl.Vector3) void {
         h.startFall(h.pos.y, mathx.dirXZ(was_, h.pos), h.speedS);
     }
     g.heroDeck = if (h.airborne()) null else g.env.deckAt(h.pos.x, h.pos.z, h.pos.y);
-    if (g.env.ceilingAt(h.pos.x, h.pos.z, h.footY())) |roof| h.capUnderRoof(roof);
+    if (g.env.ceilingAt(h.pos.x, h.pos.z, h.pos.y)) |roof| h.capUnderRoof(roof);
 }
 
 pub fn envGroundAt(e: *const envmod.Env, x: f32, z: f32) f32 {
@@ -1950,7 +1952,7 @@ pub const CamFloor = struct {
 };
 
 pub fn camFloor(g: *const Game) CamFloor {
-    return .{ .e = &g.env, .footY = g.hero.footY() };
+    return .{ .e = &g.env, .footY = g.hero.pos.y };
 }
 
 fn snapshotPos(foes: anytype, out: []rl.Vector3) void {
@@ -2429,7 +2431,7 @@ pub fn flyingPointForShot(g: *Game, kind: archermod.Shot) ?rl.Vector3 {
 
 fn flyArrow(g: *Game, ar: *archermod.Arrow, dt: f32) void {
     ar.hit = false;
-    archermod.stepArrow(ar, g.hero.pos, heroCenterY(g), g.env.groundAt(ar.pos.x, ar.pos.z), g.hero.iFramed(), arrowCover(g, ar, dt), dt);
+    archermod.stepArrow(ar, g.hero.pos, heroCenterY(g), g.env.floorUnder(ar.pos), g.hero.iFramed(), arrowCover(g, ar, dt), dt);
 }
 
 pub fn stepAirForShot(g: *Game, dt: f32) void {
@@ -2533,11 +2535,11 @@ pub fn forceEmberForShot(g: *Game, level: ?f32) void {
     g.emberNow = level orelse 0;
 }
 pub fn forceMistForShot(g: *Game, ahead: f32) void {
-    const p = v3(g.hero.pos.x, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), g.hero.pos.z);
+    const p = v3(g.hero.pos.x, g.env.floorUnder(g.hero.pos), g.hero.pos.z);
     g.mist.stageOne(p, ahead, g.hero.facing);
 }
 pub fn forceSkeinForShot(g: *Game, across: f32) void {
-    g.skein.stageOne(g.hero.pos, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), g.hero.facing + across);
+    g.skein.stageOne(g.hero.pos, g.env.floorUnder(g.hero.pos), g.hero.facing + across);
 }
 pub fn skeinLeadForShot(g: *const Game) rl.Vector3 {
     return g.skein.leadAt();
@@ -3620,7 +3622,7 @@ pub fn pinSkyForShot(g: *Game) void {
     g.sporeNow = mathx.clampF(if (here) |l| l.spore orelse 0 else 0, 0, 1);
     g.emberNow = mathx.clampF(g.emberForce orelse (if (here) |l| l.ember orelse 0 else 0), 0, 1);
     if (g.sporeNow > weathermod.MIST_MIN or g.emberNow > weathermod.MIST_MIN) {
-        g.mist.tick(SHOT_SETTLE, g.hero.pos, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), fogAmt(g));
+        g.mist.tick(SHOT_SETTLE, g.hero.pos, g.env.floorUnder(g.hero.pos), fogAmt(g));
     }
     applyHour(g);
 }
@@ -3703,7 +3705,7 @@ fn whisperAt(g: *Game) void {
         return;
     };
     const hit = strikeOne(g, pick, blow) orelse return;
-    g.hero.dustPuff(v3(hit.at.x, g.env.groundAt(hit.at.x, hit.at.z), hit.at.z), WHISPER_R, tint, g.hero.casts);
+    g.hero.dustPuff(v3(hit.at.x, g.env.floorUnder(hit.at), hit.at.z), WHISPER_R, tint, g.hero.casts);
     sfx.play(.hollow_toll);
 }
 
@@ -3751,7 +3753,7 @@ fn strikeSunder(g: *Game) void {
         return;
     };
     const hit = strikeOne(g, pick, blow) orelse return;
-    g.hero.sunderBurst(v3(hit.at.x, g.env.groundAt(hit.at.x, hit.at.z), hit.at.z), true, g.hero.casts);
+    g.hero.sunderBurst(v3(hit.at.x, g.env.floorUnder(hit.at), hit.at.z), true, g.hero.casts);
     g.rumble.play(rumblemod.hit_heavy);
     g.rig.addShake(SHAKE_ROOTS_BITE);
 }
@@ -3769,12 +3771,12 @@ const ROOT_THROW: f32 = 7.0;
 fn rootMark(g: *const Game) rl.Vector3 {
     if (activeLock(g)) |li| {
         const p = foePos(g, li);
-        return v3(p.x, g.env.groundAt(p.x, p.z), p.z);
+        return v3(p.x, g.env.floorUnder(p), p.z);
     }
     const d = mathx.headingDir(g.hero.facing);
     const x = g.hero.pos.x + d.x * ROOT_THROW;
     const z = g.hero.pos.z + d.z * ROOT_THROW;
-    return v3(x, g.env.groundAt(x, z), z);
+    return v3(x, g.env.floorUnder(v3(x, g.hero.pos.y, z)), z);
 }
 
 comptime {
@@ -3812,7 +3814,7 @@ fn seedRoots(g: *Game, at: rl.Vector3) ?rl.Vector3 {
             const a = &@field(g, f.field).live()[pick.idx];
             a.root.grab();
             a.leash.provoke();
-            mark = v3(a.pos.x, g.env.groundAt(a.pos.x, a.pos.z), a.pos.z);
+            mark = v3(a.pos.x, g.env.floorUnder(a.pos), a.pos.z);
         }
     }
     g.hero.rootsBurst(mark, true);
@@ -3925,7 +3927,7 @@ fn strikeMissAt(g: *const Game, reach: f32) rl.Vector3 {
     const d = mathx.headingDir(g.hero.facing);
     const x = g.hero.pos.x + d.x * reach * 0.5;
     const z = g.hero.pos.z + d.z * reach * 0.5;
-    return v3(x, g.env.groundAt(x, z), z);
+    return v3(x, g.env.floorUnder(v3(x, g.hero.pos.y, z)), z);
 }
 
 fn strikeLevin(g: *Game) void {
@@ -3941,7 +3943,7 @@ fn strikeLevin(g: *Game) void {
         return;
     };
     const hit = strikeOne(g, pick, blow) orelse return;
-    g.hero.levinStroke(hit.from, hit.at, g.env.groundAt(hit.at.x, hit.at.z), g.hero.casts);
+    g.hero.levinStroke(hit.from, hit.at, g.env.floorUnder(hit.at), g.hero.casts);
     g.rumble.play(rumblemod.hit_heavy);
     g.rig.addShake(SHAKE_ROOTS_BITE);
 }
@@ -4051,10 +4053,17 @@ fn rayFoeDist(g: *const Game, origin: rl.Vector3, dir: rl.Vector3) ?f32 {
 fn stepShafts(g: *Game, dt: f32) void {
     for (&g.shafts) |*ar| {
         if (!ar.live) continue;
-        const seg = archermod.stepShaft(ar, g.env.groundAt(ar.pos.x, ar.pos.z), arrowCover(g, ar, dt), dt) orelse {
+        const from = ar.pos;
+        const seg = archermod.stepShaft(ar, g.env.floorUnder(ar.pos), arrowCover(g, ar, dt), dt) orelse {
             planted(g, ar, true);
             continue;
         };
+        // ROCK STOPS A SHAFT: the wall of a passage is not a solid, so the sweep has to ask the stone itself.
+        if (g.env.rockBetween(from, ar.pos)) {
+            archermod.plantShaft(ar);
+            planted(g, ar, true);
+            continue;
+        }
         const blade = foemod.Blade{
             .active = true,
             .pierce = true,
@@ -4412,7 +4421,7 @@ fn stampRooms(g: *Game) void {
         const M = memberOf(gr.field);
         if (comptime !@hasField(M, "room") and !@hasField(M, "ground")) continue;
         for (@field(g, gr.field).live()) |*f| {
-            if (comptime @hasField(M, "room")) f.room = if (g.map.arenaIndexAt(f.pos.x, f.pos.z)) |i| g.map.arenas[i] else null;
+            if (comptime @hasField(M, "room")) f.room = if (g.map.arenaIndexOn(f.pos.x, f.pos.z, g.env.underground(f.pos.x, f.pos.z, f.pos.y))) |i| g.map.arenas[i] else null;
             if (comptime @hasField(M, "ground")) f.ground = .{ .ctx = &g.env, .depthAt = envDepthAt };
         }
     }
@@ -4455,7 +4464,7 @@ fn summonWave(g: *Game, d: *const druidmod.Druidess, w: druidmod.Wave) void {
     var i: u8 = 0;
     while (i < n) : (i += 1) {
         const spot = d.summonSpot(i, n);
-        const at = v3(spot.x, g.env.groundAt(spot.x, spot.z), spot.z);
+        const at = v3(spot.x, g.env.floorUnder(v3(spot.x, g.hero.pos.y, spot.z)), spot.z);
         const yaw = mathx.headingXZ(mathx.dirXZ(at, g.hero.pos));
         const seed = 0.17 + 0.23 * @as(f32, @floatFromInt(i));
         inline for (WAVES) |row| {
@@ -4505,7 +4514,7 @@ fn planted(g: *Game, ar: *const archermod.Arrow, his: bool) void {
 }
 
 fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
-    const ground = v3(ar.pos.x, g.env.groundAt(ar.pos.x, ar.pos.z), ar.pos.z);
+    const ground = v3(ar.pos.x, g.env.floorUnder(ar.pos), ar.pos.z);
     switch (ar.shot) {
         .venom => g.brood.splash(ground),
         .clump => g.band.splash(ar.pos),
@@ -4678,7 +4687,7 @@ fn tickWeather(g: *Game, dt: f32) void {
     sfx.setRain(g.wetNow);
     sfx.setTorch(if (g.hero.torchLit()) 1.0 else 0.0);
     if (g.weather.thunder()) |gain| sfx.playAt(.thunder, gain);
-    const under = g.env.groundAt(g.hero.pos.x, g.hero.pos.z);
+    const under = g.env.floorUnder(g.hero.pos);
     g.mist.tick(dt, g.hero.pos, under, fogAmt(g));
     if (g.menu.takeBirds()) g.skein.stageOne(g.hero.pos, under, g.hero.facing + std.math.pi * 0.5);
     g.skein.tick(dt, g.hero.pos, under, g.wetNow);
@@ -5075,6 +5084,19 @@ pub const Mode = enum { play, shots, props, land, art };
 /// `arrowCover` queries a radius of `speed * dt` against a `MAX_NEAR` pinned over a 2x2 cell window: at 40 m/s a 0.35 s stall asks for a 3-wide one and the overflow DROPS SILENTLY.
 const DT_MAX: f32 = 1.0 / 30.0;
 
+/// Alt+F4 and the close box both land here: raylib clears its own close flag every `windowShouldClose`,
+/// so ignoring one frame's request is enough to hold the window open for the save/discard prompt.
+fn quitBlocked(g: *Game) bool {
+    if (!g.editor.dirty) return false;
+    if (!g.editor.on) {
+        g.lock = null;
+        leavePlace(g);
+        g.editor.enter(g.hero.pos);
+    }
+    g.editor.requestQuit();
+    return true;
+}
+
 pub fn run(mode: Mode) void {
     const shot = mode != .play;
     var runTimer = std.time.Timer.start() catch unreachable;
@@ -5154,7 +5176,8 @@ pub fn run(mode: Mode) void {
     var homedStamp: u64 = 0;
     var wasEditing = false;
     defer g.rumble.stop();
-    while (!rl.windowShouldClose()) {
+    while (true) {
+        if (rl.windowShouldClose() and !quitBlocked(g)) break;
         const rawDt = rl.getFrameTime();
         const dt = mathx.minF(rawDt, DT_MAX) * g.menu.timeScale;
         g.drawDt = rawDt;
@@ -5203,6 +5226,7 @@ pub fn run(mode: Mode) void {
                     rl.hideCursor();
                     armScript(g);
                 },
+                .quit => break,
                 .playtest => {
                     g.editor.flushRebuild(&g.map, &g.env);
                     g.editor.on = false;
@@ -5247,7 +5271,7 @@ pub fn run(mode: Mode) void {
         g.hero.held = g.menu.isOpen();
         if (g.menu.isOpen()) {
             switch (g.menu.update(&g.retro, &g.day, &g.weather, rawDt, bookView(g), &g.shelf)) {
-                .quit => break,
+                .quit => if (!quitBlocked(g)) break,
                 .editor => {
                     g.lock = null;
                     leavePlace(g);
@@ -5711,7 +5735,7 @@ pub fn run(mode: Mode) void {
             if (p.justDied) sfx.world(.bone_die, p.pos);
             if (p.raised) {
                 const spot = mathx.clampXZ(p.raiseAt, PLAY_HALF);
-                const at = v3(spot.x, g.env.groundAt(spot.x, spot.z), spot.z);
+                const at = v3(spot.x, g.env.floorUnder(v3(spot.x, g.hero.pos.y, spot.z)), spot.z);
                 g.clatter.raise(at, mathx.headingXZ(mathx.dirXZ(at, g.hero.pos)));
                 sfx.world(.sac_hatch, at);
                 g.rumble.play(rumblemod.hit_heavy);
@@ -6276,7 +6300,7 @@ fn useItem(g: *Game, k: item.Kind) void {
         .toll => |t| {
             if (!g.hero.fp.spend(t.fp)) return;
             const n = doseRing(g, g.hero.pos, t.r, combat.ailOfName(t.ail), t.amt);
-            const at = v3(g.hero.pos.x, g.env.groundAt(g.hero.pos.x, g.hero.pos.z), g.hero.pos.z);
+            const at = v3(g.hero.pos.x, g.env.floorUnder(g.hero.pos), g.hero.pos.z);
             g.hero.sunderBurst(at, n > 0, g.hero.casts);
             sfx.play(.hollow_toll);
             g.rumble.play(rumblemod.cast_throw);
@@ -6474,7 +6498,7 @@ fn tickBoltGas(g: *Game, dt: f32) void {
 
 fn layBoltGas(g: *Game, at: rl.Vector3) void {
     g.boltGas[g.boltGasHead] = .{
-        .pos = v3(at.x, g.env.groundAt(at.x, at.z), at.z),
+        .pos = v3(at.x, g.env.floorUnder(at), at.z),
         .scale = 1.0,
         .live = true,
         .fxRng = foemod.fxStream(at.x + at.z, 641.0, 0x8017),

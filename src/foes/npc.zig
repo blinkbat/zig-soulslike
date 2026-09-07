@@ -4,6 +4,7 @@ const gfx = @import("../gfx/gfx.zig");
 const mathx = @import("../core/mathx.zig");
 const heromod = @import("../play/hero.zig");
 const wf = @import("../world/worldfmt.zig");
+const caves = @import("../world/caves.zig");
 const art = @import("../props/propart.zig");
 const forge = @import("../props/propforge.zig");
 const envmod = @import("../world/env.zig");
@@ -996,7 +997,7 @@ pub const Folk = struct {
             self.list[self.n] = Wanderer.spawnAs(
                 p.kind,
                 @intCast(i),
-                v3(p.x, m.heightAt(p.x, p.z), p.z),
+                v3(p.x, caves.homeY(m, p.x, p.z, p.under), p.z),
                 mathx.radians(p.yaw),
                 p.scale,
                 p.seed,

@@ -446,6 +446,7 @@ comptime {
     std.debug.assert(interactIcons.len == interactBrushes.len);
     std.debug.assert(unitIcons.len == unitBrushes.len);
     std.debug.assert(groundTips.len == groundBrushes.len);
+    std.debug.assert(caveTips.len == caveBrushes.len);
     std.debug.assert(locationTips.len == locationBrushes.len);
     std.debug.assert(decorTips.len == decorBrushes.len);
     std.debug.assert(propTips.len == propBrushes.len);
@@ -735,7 +736,7 @@ fn layerOf(o: *const wf.Op) Layer {
     };
 }
 
-pub const Action = enum { none, leave, playtest };
+pub const Action = enum { none, leave, playtest, quit };
 
 pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, boss, jukebox, stats, world, zonemix, script, talk, options };
 
@@ -768,7 +769,7 @@ fn lootModalH(rows: i32) i32 {
     return LOOT_TOP + LOOT_TAB_ROWS * TAB_H + rows * LOOT_ROW_H + LOOT_GOLD_H + 8 + DLG_FOOT;
 }
 
-pub const Pending = enum { none, new, open, leave };
+pub const Pending = enum { none, new, open, leave, quit };
 
 const Rect = struct {
     x0: f32,
@@ -1314,6 +1315,8 @@ pub const Editor = struct {
         var s: f32 = 1.0;
         while (s < CAVE_PICK_REACH) : (s += CAVE_PICK_STEP) {
             const p = mathx.addV(ray.position, mathx.scaleV(ray.direction, s));
+            // Coverage rejects most of a 400 m march at a quarter of the reads a full sample costs.
+            if (caves.openAt(w.caveFields(), p.x, p.z) < caves.EDGE_F) continue;
             const c = caves.sampleAt(w.caveFields(), p.x, p.z);
             if (!c.hollow() or p.y > c.roof) continue;
             if (p.y > c.floor) continue;
@@ -1610,9 +1613,10 @@ pub const Editor = struct {
         self.orbitCam(ctrl);
         self.resolveCursor();
         sfx.listen(self.cam.position, self.right());
-        if (self.pending == .leave) {
+        if (self.pending == .leave or self.pending == .quit) {
+            const p = self.pending;
             self.pending = .none;
-            return .leave;
+            return if (p == .quit) .quit else .leave;
         }
 
         if (ctrl and rl.isKeyPressed(.s)) {
@@ -2362,6 +2366,7 @@ pub const Editor = struct {
         var o = wf.defaults(.at);
         o.kind = self.kindForLayer();
         o.rise = props.info(o.kind).stack * 4.0;
+        o.under = self.caveView and caves.sampleAt(caves.fieldsOf(m), a.x, a.z).hollow();
         var sc = wf.Scatter{};
         switch (self.layer) {
             .ground, .caves, .units => return,
@@ -2779,6 +2784,7 @@ pub const Editor = struct {
             a.boss = o.boss;
             a.nboss = o.nboss;
         }
+        a.under = self.caveView and caves.sampleAt(caves.fieldsOf(m), a.vx[0], a.vz[0]).hollow();
         std.mem.copyBackwards(wf.Arena, m.arenas[1 .. m.narenas + 1], m.arenas[0..m.narenas]);
         m.arenas[0] = a;
         m.narenas += 1;
@@ -2814,7 +2820,7 @@ pub const Editor = struct {
             const kind: wf.NpcKind = @enumFromInt(bi - NFOE_KIND);
             self.bank(m);
             const seed = @as(f32, @floatFromInt((m.nnpcs * 53) % 100)) / 100.0;
-            m.npcs[m.nnpcs] = .{ .kind = kind, .x = at.x, .z = at.z, .yaw = 0, .scale = 1, .seed = seed };
+            m.npcs[m.nnpcs] = .{ .kind = kind, .x = at.x, .z = at.z, .yaw = 0, .scale = 1, .seed = seed, .under = self.caveView and caves.sampleAt(caves.fieldsOf(m), at.x, at.z).hollow() };
             self.selUnit = .{ .npc = m.nnpcs };
             m.nnpcs += 1;
             self.touchFolk();
@@ -3246,6 +3252,11 @@ pub const Editor = struct {
 
 
 
+    /// The window close button and Alt+F4 come in from the main loop, not from a widget.
+    pub fn requestQuit(self: *Editor) void {
+        self.request(.quit);
+    }
+
     fn request(self: *Editor, what: Pending) void {
         self.menuOpen = false;
         if (!self.dirty) {
@@ -3257,7 +3268,10 @@ pub const Editor = struct {
     }
 
     fn commitPending(self: *Editor, what: Pending) void {
-        self.pending = if (what == .leave) .leave else .none;
+        self.pending = switch (what) {
+            .leave, .quit => what,
+            else => .none,
+        };
         switch (what) {
             .none => {},
             .new => {
@@ -3270,7 +3284,7 @@ pub const Editor = struct {
                 self.fileScroll = 0;
                 self.modal = .open_map;
             },
-            .leave => self.modal = .none,
+            .leave, .quit => self.modal = .none,
         }
     }
 
@@ -5351,6 +5365,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
                 if (ed.groundAt()) |g2| {
                     m.start.x = g2.x;
                     m.start.z = g2.z;
+                    m.start.under = ed.caveView and caves.sampleAt(caves.fieldsOf(m), g2.x, g2.z).hollow();
                     changed = true;
                 }
             }
@@ -7125,4 +7140,28 @@ test "WHAT THE EMPTY-CONTAINER COUNT COSTS A FRAME — the button's label is a w
         m.nops, raw, raw / 16700.0 * 100.0, held,
     });
     try std.testing.expect(held < raw);
+}
+
+test "a quit with edits stops at the prompt; a clean one goes straight through" {
+    var clean = Editor{};
+    clean.requestQuit();
+    try std.testing.expectEqual(Modal.none, clean.modal);
+    try std.testing.expectEqual(Pending.quit, clean.pending);
+
+    var ed = Editor{};
+    ed.dirty = true;
+    ed.requestQuit();
+    try std.testing.expectEqual(Modal.confirm, ed.modal);
+    try std.testing.expectEqual(Pending.quit, ed.pending);
+
+    // Cancel is the Esc path in `drawModal`: the window stays open and the edits stay dirty.
+    ed.modal = .none;
+    ed.pending = .none;
+    try std.testing.expect(ed.dirty);
+
+    ed.requestQuit();
+    ed.dirty = false;
+    ed.modal = .none;
+    ed.commitPending(ed.pending);
+    try std.testing.expectEqual(Pending.quit, ed.pending);
 }

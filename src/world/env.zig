@@ -626,34 +626,45 @@ pub const Env = struct {
     }
 
     pub fn adoptCave(self: *Env, m: *const wf.Map) void {
+        self.adoptCaveSpan(m, .{ 0, 0, caves.N - 1, caves.N - 1 });
+    }
+
+    /// `span` is the CAVE-lattice rect whose shelter has to be recut. A stroke dirties a few dozen points, and cutting the whole field for one is 200,000 terrain samples a frame.
+    pub fn adoptCaveSpan(self: *Env, m: *const wf.Map, span: [4]usize) void {
         self.caveCovSrc = m.caveCov;
         self.caveFloorSrc = m.caveFloor;
         self.caveRoofSrc = m.caveRoof;
         self.caveHalf = m.half;
         self.caveAny = m.anyCave();
-        self.cutShelter();
+        self.cutShelter(span);
         if (self.scene) |sc| sc.setCave(&self.caveShelterSrc, &self.caveRoofSrc, self.caveHalf, GROUND_Y, self.caveAny);
     }
 
     /// Only the OPEN points cost a terrain sample; solid rock is a byte compare.
-    fn cutShelter(self: *Env) void {
+    fn cutShelter(self: *Env, span: [4]usize) void {
         if (!self.caveAny) {
             @memset(&self.caveShelterSrc, 0);
             return;
         }
-        for (self.caveCovSrc, self.caveRoofSrc, 0..) |cov, rb, i| {
-            if (cov < caves.EDGE) {
-                self.caveShelterSrc[i] = 0;
-                continue;
-            }
-            const ix = i % caves.N;
-            const iz = i / caves.N;
-            const p = caves.pointAt(self.caveHalf, ix, iz);
-            const thick = self.groundAt(p[0], p[1]) - (GROUND_Y + wf.heightOf(rb));
-            // COVERAGE TIMES HOW MUCH ROCK IS OVER IT, so the field the shader interpolates falls to nothing at a mouth instead of stepping off a sentinel.
-            const roofed = mathx.clampF(thick / SHELTER_FADE, 0, 1);
-            self.caveShelterSrc[i] = @intFromFloat(@round(@as(f32, @floatFromInt(cov)) * roofed));
+        var iz = span[1];
+        while (iz <= @min(span[3], caves.N - 1)) : (iz += 1) {
+            var ix = span[0];
+            while (ix <= @min(span[2], caves.N - 1)) : (ix += 1) self.cutShelterAt(ix, iz);
         }
+    }
+
+    fn cutShelterAt(self: *Env, ix: usize, iz: usize) void {
+        const i = iz * caves.N + ix;
+        const cov = self.caveCovSrc[i];
+        if (cov < caves.EDGE) {
+            self.caveShelterSrc[i] = 0;
+            return;
+        }
+        const p = caves.pointAt(self.caveHalf, ix, iz);
+        const thick = self.groundAt(p[0], p[1]) - (GROUND_Y + wf.heightOf(self.caveRoofSrc[i]));
+        // COVERAGE TIMES HOW MUCH ROCK IS OVER IT, so the field the shader interpolates falls to nothing at a mouth instead of stepping off a sentinel.
+        const roofed = mathx.clampF(thick / caves.SHELTER_FADE, 0, 1);
+        self.caveShelterSrc[i] = @intFromFloat(@round(@as(f32, @floatFromInt(cov)) * roofed));
     }
 
 
@@ -667,7 +678,7 @@ pub const Env = struct {
     /// A carve stroke's rebuild. `span` is a CAVE-lattice rect; the hill over it is rebuilt too, because a mouth is a hole in the terrain.
     pub fn carveCave(self: *Env, m: *const wf.Map, span: [4]usize) void {
         const wasAny = self.caveAny;
-        self.adoptCave(m);
+        self.adoptCaveSpan(m, .{ span[0] -| 1, span[1] -| 1, span[2] + 1, span[3] + 1 });
         if (wasAny != self.caveAny) return self.rebuildTerrain();
         if (!self.tiled() or span[0] > span[2] or span[1] > span[3]) return;
         const lo = tileOf((span[0] -| 1) / 2);
@@ -766,7 +777,7 @@ pub const Env = struct {
 
 
     fn caveBreachedAt(self: *const Env, cx: usize, cz: usize) bool {
-        if (!self.caveAny) return false;
+        if (!self.caveAny or !self.caveOpenNear(cx, cz)) return false;
         const step = caves.cellStep(self.caveHalf);
         const p = caves.pointAt(self.caveHalf, cx, cz);
         const mx = p[0] + step * 0.5;
@@ -1307,7 +1318,7 @@ pub const Env = struct {
         self.noccl = 0;
         @memset(&self.sgrid_start, 0);
 
-        var p = Placer{ .e = self, .m = m, .flat = !m.anyHeight() };
+        var p = Placer{ .e = self, .m = m, .flat = !m.anyHeight() and !m.anyCave() };
         for (m.slice(), 0..) |*o, i| {
             p.cur = @intCast(i);
             p.under = o.under;
@@ -1833,10 +1844,15 @@ pub const Env = struct {
         return self.supportAt(x, z, footY).surface == .cave;
     }
 
+    /// THE FLOOR A FLYING THING WILL MEET, chosen by where it IS: an arrow loosed in a chamber plants on its floor, not on the hill over its head.
+    pub fn floorUnder(self: *const Env, p: rl.Vector3) f32 {
+        return self.standAt(p.x, p.z, p.y);
+    }
+
     /// How covered a point is, 0 out under the sky and 1 under solid rock. The CPU's read of what the shader shades by.
     pub fn shelterAt(self: *const Env, x: f32, y: f32, z: f32) f32 {
         if (!self.caveAny) return 0;
-        return caves.shelterAt(self.caveFields(), self.groundAt(x, z), x, y, z, SHELTER_FADE);
+        return caves.shelterAt(self.caveFields(), self.groundAt(x, z), x, y, z);
     }
 
     /// The chamber floor here, or nothing where there is no chamber.
@@ -2555,6 +2571,7 @@ pub const Env = struct {
             .pos = wl.base.pos,
             .col = mathx.scaleV(wl.base.col, mathx.maxF(k, 0.05) * owner.shrink),
             .radius = wl.base.radius,
+            .under = self.shelterAt(wl.base.pos.x, wl.base.pos.y, wl.base.pos.z),
         };
     }
 
@@ -2594,8 +2611,8 @@ pub const Env = struct {
 
 
 const MOUTH_EPS: f32 = 0.02;
-/// Metres of rock over a ceiling before the inside is fully sheltered. The mouth's own daylight reaches this far in.
-const SHELTER_FADE: f32 = 2.0;
+/// How tall a course of strata is on a cave wall. Keyed on world height like a cliff face's, so a band runs level through every cell of a chamber.
+const SHELL_COURSE: f32 = 0.85;
 /// How finely a sight line is walked for rock. Half a passage's width, so a wall between two bodies is never stepped over.
 const ROCK_PROBE: f32 = 1.0;
 
@@ -2649,6 +2666,7 @@ const CaveCell = struct {
 fn shellFan(b: *gfx.Builder, c: *const CaveCell, s: *const caves.Shape, y: [4]f32, up: bool) void {
     if (s.n < 3) return;
     const n = if (up) v3(0, 1, 0) else v3(0, -1, 0);
+    const tone = if (up) art.CLIFF_ROCK else art.CLIFF_DK;
     var i: usize = 1;
     while (i + 1 < s.n) : (i += 1) {
         const a = s.pts[0];
@@ -2658,9 +2676,9 @@ fn shellFan(b: *gfx.Builder, c: *const CaveCell, s: *const caves.Shape, y: [4]f3
         const vp = c.world(p, c.at(p, y));
         const vq = c.world(q, c.at(q, y));
         if (up) {
-            b.triSmooth(va, vp, vq, n, n, n, rl.Color.white);
+            b.triSmooth(va, vp, vq, n, n, n, tone);
         } else {
-            b.triSmooth(va, vq, vp, n, n, n, rl.Color.white);
+            b.triSmooth(va, vq, vp, n, n, n, tone);
         }
     }
 }
@@ -2692,24 +2710,19 @@ fn shellWalls(b: *gfx.Builder, c: *const CaveCell, s: *const caves.Shape) void {
         const e1 = rl.Vector3{ .x = d.x - a.x, .y = d.y - a.y, .z = d.z - a.z };
         const gx = e0.y * e1.z - e0.z * e1.y;
         const gz = e0.x * e1.y - e0.y * e1.x;
+        const tone = strataTone((f0 + t0) * 0.5, SHELL_COURSE);
         if (gx * nx + gz * nz >= 0) {
-            b.quad(a, bb, cc, d, n, rl.Color.white);
+            b.quad(a, bb, cc, d, n, tone);
         } else {
-            b.quad(a, d, cc, bb, n, rl.Color.white);
+            b.quad(a, d, cc, bb, n, tone);
         }
     }
 }
 
 /// The cut edge of the hillside at a mouth: from the ceiling the neighbour still has, up to the hill this cell has lost.
 fn mouthBand(b: *gfx.Builder, c: *const CaveCell, side: usize) void {
-    const ring = [4][2][2]f32{
-        .{ .{ 0, 0 }, .{ 0, 1 } },
-        .{ .{ 0, 1 }, .{ 1, 1 } },
-        .{ .{ 1, 1 }, .{ 1, 0 } },
-        .{ .{ 1, 0 }, .{ 0, 0 } },
-    };
-    const ua = ring[side][0];
-    const ub = ring[side][1];
+    const ua = wf.CLIFF_RING[side];
+    const ub = wf.CLIFF_RING[(side + 1) % 4];
     const r0 = c.at(ua, c.roof);
     const r1 = c.at(ub, c.roof);
     const l0 = c.at(ua, c.land);
@@ -2722,7 +2735,7 @@ fn mouthBand(b: *gfx.Builder, c: *const CaveCell, side: usize) void {
     nx /= len;
     nz /= len;
     const n = v3(nx, 0, nz);
-    b.quad(c.world(ua, r0), c.world(ua, l0), c.world(ub, l1), c.world(ub, r1), n, rl.Color.white);
+    b.quad(c.world(ua, r0), c.world(ua, l0), c.world(ub, l1), c.world(ub, r1), n, strataTone((r0 + l0) * 0.5, SHELL_COURSE));
 }
 
 pub fn castsInto(focus: rl.Vector3, pos: rl.Vector3, bound: f32, top: f32) bool {

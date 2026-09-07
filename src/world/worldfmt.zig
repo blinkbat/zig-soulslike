@@ -302,6 +302,8 @@ pub const Start = struct {
     x: f32 = 0,
     z: f32 = 4,
     yaw: f32 = 180,
+    /// He begins in the chamber rather than on the hill over it.
+    under: bool = false,
 
     pub fn at(self: *const Start) rl.Vector3 {
         return mathx.ground(self.x, self.z);
@@ -319,6 +321,8 @@ pub const Arena = struct {
     n: u8 = 0,
     boss: [MAX_SEAL]FoeKind = [_]FoeKind{.bone_knight} ** MAX_SEAL,
     nboss: u8 = 1,
+    /// A ROOM UNDERGROUND IS NOT THE GROUND OVER IT: an arena claims only bodies standing on its own surface.
+    under: bool = false,
 
     pub fn seal(self: *const Arena) []const FoeKind {
         return sealList(&self.boss, self.nboss);
@@ -1188,6 +1192,8 @@ pub const Npc = struct {
     call: Span = .{},
     dlgRef: Span = .{},
     dlg: u16 = NO_DIALOG,
+    /// Posted in the chamber rather than on the hill over it.
+    under: bool = false,
 };
 
 pub const SOIL_N: usize = @intCast(gfx.SOIL_N);
@@ -1891,8 +1897,13 @@ pub const Map = struct {
     }
 
     pub fn arenaIndexAt(self: *const Map, px: f32, pz: f32) ?usize {
+        return self.arenaIndexOn(px, pz, false);
+    }
+
+    /// The room a body on THIS surface is in. A boss room on the hill does not seal a passage under it.
+    pub fn arenaIndexOn(self: *const Map, px: f32, pz: f32, under: bool) ?usize {
         for (self.arenas[0..self.narenas], 0..) |*a, i| {
-            if (a.contains(px, pz)) return i;
+            if (a.under == under and a.contains(px, pz)) return i;
         }
         return null;
     }
@@ -2199,6 +2210,7 @@ pub fn write(m: *const Map, w: anytype) !void {
     for (m.arenas[0..m.narenas]) |*a| {
         try w.print("arena: {s}", .{a.label()});
         try writeSeal(w, a.seal());
+        if (a.under) try w.writeAll(" under=1");
         for (0..a.verts()) |i| try w.print(" {d:.2} {d:.2}", .{ a.vx[i], a.vz[i] });
         try w.writeAll("\n");
     }
@@ -2290,6 +2302,7 @@ fn writeScript(m: *const Map, w: anytype) !void {
     for (m.npcSlice()) |*p| {
         try w.print("npc: {s} {d:.2} {d:.2} {d:.1} {d:.2} {d:.2}", .{ @tagName(p.kind), p.x, p.z, p.yaw, p.scale, p.seed });
         if (p.roam != 0) try w.print(" roam={d}", .{p.roam});
+        if (p.under) try w.writeAll(" under=1");
         if (p.dlgRef.len > 0) try w.print(" dlg={s}", .{m.spanText(p.dlgRef)});
         try w.writeAll("\n");
         if (p.call.len > 0) try w.print("  call: {s}\n", .{m.spanText(p.call)});
@@ -2551,6 +2564,11 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             m.runway = .{ .x = try nextFloat(&it), .z = try nextFloat(&it), .x1 = try nextFloat(&it), .z1 = try nextFloat(&it) };
         } else if (std.mem.eql(u8, rec, "start")) {
             m.start = .{ .x = try nextFloat(&it), .z = try nextFloat(&it), .yaw = try nextFloat(&it) };
+            if (it.next()) |tail| {
+                const eq = std.mem.indexOfScalar(u8, tail, '=') orelse return ParseError.UnknownKey;
+                if (!std.mem.eql(u8, tail[0..eq], "under")) return ParseError.UnknownKey;
+                m.start.under = !std.mem.eql(u8, tail[eq + 1 ..], "0");
+            }
         } else if (std.mem.eql(u8, rec, "zone")) {
             if (m.nzones >= MAX_ZONES) return ParseError.TooManyZones;
             m.zones[m.nzones] = try parseZone(&it);
@@ -2703,7 +2721,9 @@ fn parseScript(m: *Map, rec: []const u8, rest: []const u8, it: *Toks, cur: *Curs
             const eq = std.mem.indexOfScalar(u8, tok, '=') orelse return ParseError.UnknownKey;
             const key = tok[0..eq];
             const val = tok[eq + 1 ..];
-            if (std.mem.eql(u8, key, "roam")) {
+            if (std.mem.eql(u8, key, "under")) {
+                p.under = !std.mem.eql(u8, val, "0");
+            } else if (std.mem.eql(u8, key, "roam")) {
                 p.roam = try finiteFloat(f32, val);
                 if (p.roam < 0 or p.roam > NPC_ROAM_MAX) return ParseError.BadNumber;
             } else if (std.mem.eql(u8, key, "dlg")) {
@@ -3087,6 +3107,11 @@ fn parseArena(it: *std.mem.TokenIterator(u8, .any)) !Arena {
     if (!std.mem.eql(u8, tok[0..eq], "boss")) return ParseError.UnknownKey;
     a.nboss = try parseSeal(tok[eq + 1 ..], &a.boss);
     while (it.next()) |xt| {
+        if (std.mem.indexOfScalar(u8, xt, '=')) |e| {
+            if (!std.mem.eql(u8, xt[0..e], "under")) return ParseError.UnknownKey;
+            a.under = !std.mem.eql(u8, xt[e + 1 ..], "0");
+            continue;
+        }
         if (a.n >= MAX_ARENA_VERTS) return ParseError.ExtraField;
         a.vx[a.n] = try finiteFloat(f32, xt);
         a.vz[a.n] = try nextFloat(it);

@@ -369,6 +369,5 @@ test "NO TIP THE BENCH CARRIES IS WIDER THAN THE BUFFER THAT COPIES IT, OR CARRI
     }
     try std.testing.expectEqual(@as(usize, 0), tofu);
     std.debug.print("\n  widest bench tip: {d} of {d} chars — \"{s}\"\n", .{ widest, ui.MSG_CAP - 1, which });
-    // `ui.Ctx.setTip` copies into `MSG_CAP` bytes and drops the rest without a word.
     try std.testing.expect(widest < ui.MSG_CAP);
 }

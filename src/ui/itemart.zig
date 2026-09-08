@@ -1752,7 +1752,6 @@ fn goldPurse(cx: f32, cy: f32, px: f32) void {
     const pi = std.math.pi;
 
     ellipseV(cx + 1.0 * k, bellyY + 1.5 * k, rx, ry, SHADOW);
-    // Two swells rather than one circle: the weight sits low in a sack.
     ellipseV(cx, bellyY - ry * 0.10, rx * 0.90, ry * 0.86, GRIP);
     ellipseV(cx - s * 0.008, bellyY + ry * 0.24, rx, ry * 0.72, GRIP);
 
@@ -1764,7 +1763,6 @@ fn goldPurse(cx: f32, cy: f32, px: f32) void {
         v2(cx + lean - gather * 0.64, neckY - ry * 0.34),
         mathx.lerpColor(GRIP, BOARD_JOINT, 0.34),
     );
-    // Folds FAN OUT OF THE CINCH. Banded round the belly instead, it read as a barrel.
     for (0..3) |i| {
         const t = -0.9 + @as(f32, @floatFromInt(i)) * 0.9;
         const top = v2(cx + lean + gather * 0.5 * t, neckY + ry * 0.30);
@@ -1773,16 +1771,13 @@ fn goldPurse(cx: f32, cy: f32, px: f32) void {
     }
     arc(cx, bellyY - ry * 0.06, rx * 0.68, pi * 1.02, pi * 1.46, 10, 2.8 * k, 0.9 * k, mathx.lerpColor(GRIP, GRIP_LT, 0.80));
 
-    // The cinch bows DOWN round the narrowest point. Bowed up over it, it read as a bail handle.
     arc(cx + lean * 0.5, neckY - gather * 0.42, gather * 1.30, pi * 0.16, pi * 0.84, 8, 2.6 * k, 2.6 * k, CORD);
-    // …and the ends hang off the knot, near enough straight: a curl makes another loop.
     const knot = v2(cx + lean + gather * 1.02, neckY + ry * 0.02);
     const bend = v2(knot.x + gather * 0.62, knot.y + ry * 0.30);
     rl.drawLineEx(knot, bend, 1.6 * k, CORD);
     rl.drawLineEx(bend, v2(bend.x + gather * 0.20, bend.y + ry * 0.30), 1.1 * k, CORD);
     rl.drawLineEx(knot, v2(knot.x - gather * 0.30, knot.y + ry * 0.34), 1.3 * k, CORD);
 
-    // Coin out on the ground to one side, overlapped and uneven — a sack with nothing showing is a bag of anything.
     const coinR = s * 0.082;
     for (0..3) |i| {
         const f = @as(f32, @floatFromInt(i));

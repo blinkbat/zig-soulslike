@@ -109,7 +109,6 @@ const HIT_CHIP_LIGHT = 8;
 const HIT_CHIP_HEAVY = 14;
 const PARTS = 40;
 comptime {
-    // A heavy blow wounding it on the frame its beak is still drinking.
     std.debug.assert(PARTS >= 1 + foe.hitParts(HIT_CHIP_HEAVY) + foe.WOUND_PARTS);
 }
 
@@ -304,7 +303,6 @@ pub const Leechfly = struct {
         return f;
     }
 
-    // EVERY WORLD POINT IS MEASURED OFF `pos.y` PLUS THE HOVER — `pos.y` is the ground under it and `hover` is how far it is flying above that, so one over a bank keeps its bar over its own head.
     fn lift(self: *const Leechfly) f32 {
         return self.hover * self.scale;
     }
@@ -338,7 +336,7 @@ pub const Leechfly = struct {
     pub fn flashFrac(self: *const Leechfly) f32 {
         return foe.flashFrac(self.flash);
     }
-    /// Where the beak's point is this frame — what the feed is measured from and where its blood flies off.
+        /// Where the beak's point is this frame — what the feed is measured from and where its blood flies off.
     pub fn beakWorld(self: *const Leechfly) rl.Vector3 {
         return foe.markOn(self.xf[PROB], v3(0, 0, PROB_LEN * H));
     }

@@ -461,7 +461,6 @@ test "A DUNE IS ASYMMETRIC OR IT IS A PUDDING — the long ramp and the short sl
 }
 
 test "the coals are EMISSIVE and the ash around them is not" {
-    // Vertex alpha is the emissive channel (255 = fully lit), so a coal must sit well under it and the crust it lies in must not — the two together are the whole effect.
     try std.testing.expect(EMBER_LIVE.a < 128);
     try std.testing.expectEqual(@as(u8, 255), CINDER_GREY.a);
     try std.testing.expectEqual(@as(u8, 255), DRIFT_DK.a);

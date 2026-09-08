@@ -86,7 +86,7 @@ const MOVES_BANK = [_]Attack{
     .{ .windDur = 0.70, .strikeDur = 0.32, .recoverDur = 0.80, .cd = 2.8, .minR = 1.2, .maxR = 3.8, .arc = 82.0, .hit = SWEEP_HIT, .limb = LIMB_L },
     .{ .windDur = 0.66, .strikeDur = 0.30, .recoverDur = 1.15, .cd = 5.0, .minR = 2.8, .maxR = 4.25, .arc = 58.0, .hit = HOOK_HIT, .limb = LIMB_R },
 };
-/// the bench can reach is `MOVES[i].hit`, so a move retuned in the source flows through (`play/tune.zig`).
+/// Live, because all the bench can reach is `MOVES[i].hit` — a move retuned in the source flows through (`play/tune.zig`).
 pub var MOVES = MOVES_BANK;
 
 comptime {
@@ -116,7 +116,6 @@ const HIT_CHIP_HEAVY = 16;
 const STRIKE_SPLINTERS: i32 = 15;
 const PARTS = 56;
 comptime {
-    // Its tip landing a blow on the same frame a heavy of his wounds the trunk.
     std.debug.assert(PARTS >= STRIKE_SPLINTERS + foe.hitParts(HIT_CHIP_HEAVY) + foe.WOUND_PARTS);
 }
 
@@ -331,12 +330,14 @@ pub const Rooted = struct {
         const limbWas = self.limbWorld(self.move().limb);
         var striking = false;
         const d = mathx.distXZ(self.pos, hero);
+        // Every DECISION reads the bent range; the aim and the eyes read the metres that are actually there.
+        const sensed = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
 
         switch (self.state) {
             .dormant => {
                 self.open = mathx.approach(self.open, 0, dt * 1.6);
                 self.swing = mathx.approach(self.swing, 0, dt * 2.0);
-                if (d <= WAKE_R) self.beginWake();
+                if (sensed <= WAKE_R) self.beginWake();
             },
             .wake => {
                 self.open = mathx.maxF(self.open, mathx.smoothstep(0, WAKE_DUR, self.t));
@@ -347,7 +348,7 @@ pub const Rooted = struct {
                 self.open = mathx.approach(self.open, 1.0, dt * 3.0);
                 self.swing = mathx.approach(self.swing, 0, dt * 2.4);
                 self.faceToward(hero, dt);
-                self.decide(d);
+                self.decide(sensed);
             },
             .wind => {
                 const a = self.move();
@@ -369,12 +370,12 @@ pub const Rooted = struct {
             .recover => {
                 self.swing = anim.keyAt(&RECOVER_KEYS, self.t / self.move().recoverDur);
                 self.faceToward(hero, dt);
-                if (self.t >= self.move().recoverDur) self.decide(d);
+                if (self.t >= self.move().recoverDur) self.decide(sensed);
             },
             .sleep => {
                 self.open = 1.0 - mathx.smoothstep(0, SLEEP_DUR, self.t);
                 self.swing = mathx.approach(self.swing, 0, dt * 1.6);
-                if (d <= WAKE_R) return self.wokeAgain(hero, dt, blade);
+                if (sensed <= WAKE_R) return self.wokeAgain(hero, dt, blade);
                 if (self.t >= SLEEP_DUR) {
                     self.open = 0;
                     self.enter(.dormant);
@@ -1116,7 +1117,6 @@ test "every band is answered, so it cannot be kited" {
     try std.testing.expect(SLEEP_R > MOVES[HOOK].maxR);
     try std.testing.expectEqual(Choice.hold, classify(1.0, 1.0, [_]bool{ false, false, false }));
 
-    // AND AT EVERY SCALE THE MAP CAN POST IT. A fixture cannot walk out of a gap, so a near edge left at the authored metre while the far edge scales is a ring of ground it owns and never swings at.
     for ([_]f32{ wf.FOE_SCALE_LO, 1.0, wf.FOE_SCALE_HI }) |scale| {
         const far = bandR(MOVES[HOOK], scale);
         try std.testing.expect(nearR(MOVES[HOOK], scale) < far);
@@ -1133,7 +1133,6 @@ test "every band is answered, so it cannot be kited" {
 }
 
 test "A LIMB GOES WHERE ITS BILL SAYS: the tip crosses the hero column, out near the band's edge" {
-    // Walk each move's strike and measure the POSED tip: a hook billed at 7.4 m off a limb whose tip hung 2.8 m over the hero's head.
     for (0..MOVES.len) |which| {
         const a = MOVES[which];
         var t = Rooted.spawn(mathx.zero3, 0, 1.0, 0.3);

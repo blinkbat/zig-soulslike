@@ -24,7 +24,6 @@ const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 const approach = mathx.approach;
 
-// THE RIG: a low bone body on four short legs, a neck of vertebrae, and the CHEST for a head with its lid for an upper jaw.
 const ROOT = 0;
 const HIP_FL = 1;
 const KNEE_FL = 2;
@@ -109,7 +108,6 @@ const POISE_MAX: f32 = 22.0;
 const STANCE_MAX: f32 = 60.0;
 const RESISTS = combat.resists(.{ .fire = -20, .cold = 30, .lightning = -30, .chaos = 40 });
 
-/// DANGEROUS (owner): the bite is a knight's overhead worth of a blow, off a thing you walked up to and pressed Y on.
 pub var BITE_HIT = combat.Hit{ .dmg = 30, .poise = 40, .stance = 16 };
 pub var SWING_HIT = combat.Hit{ .dmg = 22, .poise = 34, .stance = 12 };
 
@@ -271,7 +269,6 @@ pub const Mimic = struct {
     pub fn kind(_: *const Mimic) wf.FoeKind {
         return .bone_mimic;
     }
-    /// The chest is the head, and the head is the mark: awake it is up on the stalk, asleep it is the box on the ground.
     pub fn lockPoint(self: *const Mimic) rl.Vector3 {
         return foe.markOn(self.xf[HEAD], v3(0, village.CHEST_HINGE_Y * 0.7, 0));
     }
@@ -312,7 +309,6 @@ pub const Mimic = struct {
     pub fn asleep(self: *const Mimic) bool {
         return self.state == .chest;
     }
-    /// How lit the seam is: the box glows steady; woken, the throat blazes and beats.
     pub fn glowAmt(self: *const Mimic) f32 {
         if (self.state == .dead) return mathx.maxF(0, 1.0 - self.t / (DEATH_DUR * 0.5));
         if (self.state == .chest) return 0.75 + 0.10 * mathx.sinf(self.elapsed * 1.6 + self.seed * 6.28);
@@ -333,7 +329,7 @@ pub const Mimic = struct {
         return foe.bearingDeg(self.pos, self.facing, hero);
     }
 
-    /// The man tried to open it, or hit it: the box comes up on its stalk. Reported by `justWoke` for one frame.
+        /// The man tried to open it, or hit it. Reported by `justWoke` for one frame.
     pub fn wake(self: *Mimic) void {
         if (self.state != .chest) return;
         self.justWoke = true;
@@ -394,7 +390,7 @@ pub const Mimic = struct {
                 self.speed = 0;
                 self.rise = 0;
                 self.lid = 0;
-                // AN ORDERED ONE IS AWAKE FROM THE FIRST FRAME (the owlbear's rule): a box cannot walk a route, and `ai=` on it used to be swallowed by the sleep.
+                                // AN ORDERED ONE IS AWAKE FROM THE FIRST FRAME (the owlbear's rule): a box cannot walk a route, and `ai=` on it used to be swallowed by the sleep.
                 if (self.post.idles()) {
                     self.rise = 1.0;
                     self.enter(.idle);
@@ -403,7 +399,6 @@ pub const Mimic = struct {
             .rise => {
                 self.speed = 0;
                 self.rise = mathx.smoothstep(0, 1, mathx.clampF(self.t / RISE_DUR, 0, 1));
-                // The lid gapes as it comes up: the FIRST thing you see is the teeth.
                 self.lid = mathx.smoothstep(0.2, 0.9, self.rise) * 0.8;
                 if (self.rise > 0.5) self.faceToward(hero, dt);
                 if (self.t >= RISE_DUR) {
@@ -553,7 +548,6 @@ pub const Mimic = struct {
             foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, .{ .light = 0.5, .heavy = 1.1 });
         self.chips(s.contact, s.dir, if (heavy) CHIP_HEAVY else CHIP_LIGHT, if (heavy) 3.0 else 2.0);
-        // A BLOW WAKES IT AS SURELY AS A HAND ON THE LID: the box was a body all along.
         if (self.state == .chest) self.wake();
         switch (s.reaction) {
             .death => {
@@ -625,7 +619,6 @@ pub const Mimic = struct {
         if (s < BITE_STRIKE) return lerpF(-1.0, 1.0, foe.swingCurve(s / BITE_STRIKE));
         return 1.0 - mathx.smoothstep(BITE_STRIKE, BITE_STRIKE + BITE_RECOVER * 0.7, s);
     }
-    /// The lid: wide through the rear-back, SHUT at the snap, ajar after.
     fn gapeAmt(self: *const Mimic) f32 {
         if (self.state != .bite) return 0;
         if (self.t < BITE_WIND) return 0.15 + 0.85 * mathx.smoothstep(0, BITE_WIND * 0.8, self.t);
@@ -669,7 +662,6 @@ pub const Mimic = struct {
         const breathe = mathx.sinf(self.elapsed * 1.3 + self.seed * 6.28) * 0.008 * up;
 
         var wx: [N]rl.Matrix = undefined;
-        // THE BODY COMES UP OUT OF THE BOX: root from the ground to its stance, and the whole stalk telescopes on `rise`. Dead, it sits back down.
         const rootY = lerpF(0.0, ROOT_Y, up) * (1.0 - 0.7 * dk) + bob + breathe;
         wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
             mul(rz(4.0 * mathx.sinf(self.phase * std.math.tau) * m + 26.0 * dk), rx(-6.0 * stun + 14.0 * dk)),
@@ -677,7 +669,6 @@ pub const Mimic = struct {
             heromod.rootAt(self.pos),
         ));
 
-        // FOUR SHORT LEGS, folded flat inside the box and unfolding as it stands; a scuttle in diagonal pairs when it walks.
         inline for (LEGS, 0..) |L, i| {
             const pairPhase = if (i == 0 or i == 3) self.phase else self.phase + 0.5;
             const swingL = mathx.sinf(pairPhase * std.math.tau) * 26.0 * m;
@@ -687,7 +678,6 @@ pub const Mimic = struct {
             heromod.setJoint(&wx, &self.rest, L.knee, L.hip, mul(rx(L.fore * (28.0 + lift) + tuck * L.fore * 0.6), rz(-L.side * 8.0)));
         }
 
-        // THE NECK: rears up and back through the bite's wind, whips down and forward at the snap; coils sideways and sweeps for the swing.
         const rear = mathx.maxF(0, -bite);
         const drive = mathx.maxF(0, bite);
         const pitch = -26.0 * rear + 34.0 * drive - 18.0 * stun + 40.0 * dk;
@@ -703,17 +693,15 @@ pub const Mimic = struct {
         }
         {
             const off = mathx.scaleV(mathx.subV(self.rest[HEAD], self.rest[NECK3]), grow);
-            // The chest sits level on the stalk; at the snap it pitches down onto him, and the swing carries it round.
             const headRot = mul3(rx(pitch * 0.4), ry(yaw * 0.25), rz(0));
             wx[HEAD] = mul(mul(headRot, tr(off.x, off.y, off.z)), wx[NECK3]);
         }
-        // THE CHEST ON THE GROUND IS EXACTLY THE PROP: the box's own frame, on the ground, facing the way it was posted.
+                // THE CHEST ON THE GROUND IS EXACTLY THE PROP: the box's own frame, on the ground, facing the way it was posted.
         if (up <= 0.001 and !dead) {
             wx[HEAD] = mul(scaleM(fs, fs, fs), mul(ry(facingDeg), heromod.rootAt(self.pos)));
         }
         const open = mathx.clampF(self.lid, 0, 1);
         heromod.setJoint(&wx, &self.rest, LID, HEAD, rx(-chestmod.OPEN_DEG * 0.75 * open));
-        // The teeth GROW with the wake: nothing on the box until it stirs.
         const teeth = mathx.smoothstep(0.15, 0.85, up);
         wx[FANGS] = mul(mul(scaleM(1.0, teeth, 1.0), tr(0, village.CHEST_HINGE_Y, 0)), wx[HEAD]);
         wx[LIDFANGS] = mul(scaleM(1.0, teeth, 1.0), wx[LID]);
@@ -727,7 +715,7 @@ pub const Hoard = struct {
     model: Model,
     band: [CAP_N]Mimic = undefined,
     n: usize = 0,
-    /// The SLEEPING one inside `chest.REACH` of the man, if any — what the prompt asks about and what Y wakes.
+        /// The SLEEPING one inside `chest.REACH` of the man, if any — what the prompt asks about and what Y wakes.
     near: ?usize = null,
 
     pub fn init(shader: rl.Shader) Hoard {
@@ -773,7 +761,6 @@ pub const Hoard = struct {
     }
     pub fn draw(self: *const Hoard, scene: ?*gfx.Scene) void {
         foe.drawGroup(self.liveConst(), &self.model, scene);
-        // The seam glows blue, box or beast: the one thing that tells it from the chest beside it, and the thing you are looking at when it opens.
         const sc = scene orelse return;
         rl.gl.rlDisableDepthMask();
         for (self.liveConst()) |*m| {
@@ -894,7 +881,7 @@ fn throatMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// The teeth round the box's mouth — down off the lid's rim, up off the carcase's — with the gum they grow from. Authored at full height; the wake scales them up out of nothing.
+/// The teeth round the box's mouth, with the gum they grow from. Authored at full height; the wake scales them up out of nothing.
 fn fangsMesh(dir: f32) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(if (dir > 0) 0x1C20 else 0x1C21);
@@ -934,7 +921,6 @@ test "ASLEEP IT IS A CHEST: on the ground, hidden from the lock, glowing, and th
     const m = &h.band[0];
     try std.testing.expect(m.asleep() and m.hidden() and m.alive() and !m.staggered());
     try std.testing.expect(m.glowAmt() > 0.5);
-    // The box's frame IS the prop's: base on the ground, top at the prop's own top.
     try std.testing.expectApproxEqAbs(@as(f32, 0), foe.markOn(m.xf[HEAD], mathx.zero3).y, 1e-4);
     try std.testing.expectApproxEqAbs(village.CHEST_TOP, m.topWorld().y, 1e-4);
     _ = h.update(1.0 / 60.0, mathx.ground(0, chestmod.REACH - 0.2), 400.0, .{});

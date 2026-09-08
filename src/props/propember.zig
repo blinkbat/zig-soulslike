@@ -148,7 +148,6 @@ pub fn burningRockMesh(shader: rl.Shader) rl.Model {
     const c = v3(0, 0.62, 0);
     const r = v3(0.98, 0.70, 0.88);
     b.addBlob(c, r, 5, 10, BASALT);
-    // The cleft: two shoulders either side of the flame's seat, so the fire sits IN the rock rather than on it.
     b.addBlob(v3(-0.42, 1.12, 0.10), v3(0.46, 0.26, 0.40), 4, 8, BASALT_LT);
     b.addBlob(v3(0.44, 1.08, -0.14), v3(0.42, 0.24, 0.38), 4, 8, BASALT_DK);
     b.addBlob(v3(0, 1.10, 0), v3(0.30, 0.06, 0.26), 2, 8, SEAM_HOT);

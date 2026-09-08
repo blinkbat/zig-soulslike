@@ -476,7 +476,6 @@ pub const Game = struct {
 const SHOT_CLEAR: f32 = 0.02;
 
 
-// Owner: away from the tower. The old mark (-104, 18) drifted under the watchtower at (-119, 23); the wooded downs here have the well, the graves and the big trees, and nothing tall for seventy metres.
 const BOOT_AT_X: f32 = -60.0;
 const BOOT_AT_Z: f32 = 60.0;
 const BOOT_DRIFT_R: f32 = 26.0;
@@ -536,7 +535,7 @@ fn beginGame(g: *Game) void {
     g.hero.setSpawn(start, g.map.start.facing());
     g.hero.souls = .{};
     g.hero.gold = .{};
-    // The rack holds four DISTINCT armaments (`tidyHands`), so the two stowed cells are the other melee class and a torch — nothing in the off hand that would fight the sword for the one held bone.
+        // The rack holds four DISTINCT armaments (`tidyHands`), so the two stowed cells are the other melee class and a torch.
     g.hero.arm = .sword;
     g.hero.armAlt = .dagger;
     g.hero.off = .shield;
@@ -898,8 +897,7 @@ test "EVERY FOE_GROUPS ROW IS ACTUALLY UPDATED BY `run` — a row nothing drives
     std.debug.print("\n  all {d} foe groups are driven from run\n", .{FOE_GROUPS.len});
 }
 
-/// A creature whose rig may NOT skip its chain, and why. `foe.posed` is a per-file line rather than
-/// something the standard calls for it, so nothing but this reads whether a new creature took it.
+/// A creature whose rig may NOT skip its chain, and why. `foe.posed` is a per-file line, so nothing but this reads whether a new creature took it.
 const NO_POSE_CULL = [_]struct { field: []const u8, why: []const u8 }{};
 
 fn foeFileOf(comptime T: type) []const u8 {
@@ -946,7 +944,7 @@ comptime {
 }
 
 test "EVERY FIELD ON `Game` IS ASSIGNED — `= .{}` never runs on an `alloc.create`, and a field nothing names is the fill byte" {
-    // It has bitten twice: `pack.n` came up as the fill byte, and `g.day` was never assigned (rate 0 is a held clock, and a NaN hour renders as the anchor hour).
+        // It has bitten twice: `pack.n` came up as the fill byte, and `g.day` was never assigned (rate 0 is a held clock, and a NaN hour renders as the anchor hour).
     const src = try worldfmt.readForTest(std.testing.allocator, "src/game.zig", 1 << 22);
     defer std.testing.allocator.free(src);
     var defaulted: usize = 0;
@@ -960,7 +958,6 @@ test "EVERY FIELD ON `Game` IS ASSIGNED — `= .{}` never runs on an `alloc.crea
         for (SEATED_BY) |row| {
             if (std.mem.eql(u8, row.field, f.name)) seated = true;
         }
-        // The group fields are seated by the `inline for (FOE_GROUPS)` in `init`, so no literal `g.<name> =` exists for them.
         for (FOE_GROUPS) |gr| {
             if (std.mem.eql(u8, gr.field, f.name)) {
                 seated = true;
@@ -1130,17 +1127,15 @@ comptime {
         if (!excused) @compileError("game: `" ++ gr.field ++ "` has no `setParry`, so nothing it swings can " ++
             "ever be caught. Give it `parryable`/`takeParry` off `foe.inParryWindow`, or say why not in NO_PARRY");
     }
-    // BOTH HALVES OF THE PAIR OR NEITHER — `setParry` stamps the shield and `anyParried` is the only way a catch
-    // is ever reported, and each is reached by a bare `@hasDecl`, so one without the other fails SILENTLY: a group
-    // that stamps and never answers eats every catch on its own bodies.
+        // BOTH HALVES OF THE PAIR OR NEITHER — `setParry` stamps the shield and `anyParried` is the only way a catch is
+        // ever reported, and each is reached by a bare `@hasDecl`, so one without the other fails SILENTLY.
     for (FOE_GROUPS) |gr| {
         const G = @FieldType(Game, gr.field);
         if (@hasDecl(G, "setParry") != @hasDecl(G, "anyParried")) @compileError("game: `" ++ gr.field ++
             "` has one of `setParry`/`anyParried` and not the other — `parryBeat` never fires for it");
     }
-    // THE SAME PAIR ONE LEVEL DOWN, on the BODY: `partsOf` and `lockPointOf` each reach their half by a bare
-    // `@hasDecl` and fall back silently. `lockParts` alone rides every extra slot on `lockPoint`, so the flick
-    // walks points that never move; `lockPointAt` alone is offered one part, so every extra point is unreachable.
+        // THE SAME PAIR ONE LEVEL DOWN, on the BODY: `partsOf` and `lockPointOf` each reach their half by a bare
+        // `@hasDecl` and fall back silently — `lockParts` alone walks points that never move, `lockPointAt` alone leaves every extra point unreachable.
     for (FOE_GROUPS) |gr| {
         const B = memberOf(gr.field);
         if (@hasDecl(B, "lockParts") != @hasDecl(B, "lockPointAt")) @compileError("game: `" ++ gr.field ++
@@ -1469,9 +1464,8 @@ const WADE_SLOWEST: f32 = 0.8;
 /// HE STARTS WITH NOTHING BUT WHAT IS IN HIS HANDS: every scroll was granted here, so a fresh run opened the book already holding the whole spell list.
 const STARTING_KIT = [_]item.Kind{};
 
-/// **AND THE FIGHT'S KIT DIES WITH THE FIGHT.** `saveNow` refuses to write a slot while `sparring()`, which is
-/// worth nothing if the whole list walks out of the room in his bag and lands in his file at the next fire.
-/// Taken where the MAP is (`editor.beginSpar`) and handed back at the one door out (`leaveSpar`).
+/// AND THE FIGHT'S KIT DIES WITH THE FIGHT: `saveNow` refuses to write a slot while `sparring()`, which is worth
+/// nothing if the list walks out of the room in his bag. Taken where the MAP is (`editor.beginSpar`), handed back at `leaveSpar`.
 const SparKept = struct {
     bag: item.Bag,
     worn: heromod.Worn,
@@ -1484,9 +1478,7 @@ const SparKept = struct {
 };
 var sparKept: ?SparKept = null;
 
-/// **THE CREATURE IS THE TEST, NOT THE KIT** — the sparring room hands him every armament and every scroll, so
-/// what is under the knife is the thing he came to fight and never what he happened to be carrying when he
-/// opened the editor. ASKED for and never listed: a tenth sorcery is in his hands the build it is written.
+/// ASKED for and never listed: a tenth sorcery is in his hands the build it is written.
 fn sparKit(g: *Game) void {
     sparKept = .{
         .bag = g.bag,
@@ -1511,8 +1503,7 @@ fn sparKit(g: *Game) void {
     }
 }
 
-/// THE ONE DOOR OUT OF THE SPARRING ROOM — the editor hands the MAP back and this hands the KIT back. `wear` is
-/// the door for a socket, so the sheet, the bars and the body are re-derived rather than assigned round.
+/// THE ONE DOOR OUT OF THE SPARRING ROOM — the editor hands the MAP back and this hands the KIT back. `wear` is the door for a socket, so the sheet, the bars and the body are re-derived rather than assigned round.
 fn leaveSpar(g: *Game) bool {
     if (!g.editor.endSpar(&g.map, &g.env)) return false;
     if (sparKept) |k| {
@@ -1545,7 +1536,6 @@ test "THE KIT COMES OFF AT THE SAME DOOR THE MAP DOES — nothing reaches `endSp
     }
     try std.testing.expectEqual(@as(usize, 1), doors);
     try std.testing.expect(std.mem.indexOf(u8, src, "fn leaveSpar(") != null);
-    // Every socket `sparKit`'s grant can reach through the book comes back with it.
     inline for (.{ "bag", "worn", "arm", "armAlt", "off", "offAlt", "mem", "spell" }) |f| {
         try std.testing.expect(@hasField(SparKept, f));
     }
@@ -1950,7 +1940,6 @@ test "THE JUMP IS SIZED AGAINST THE TERRAIN IT EXISTS TO CROSS, not against a nu
     try std.testing.expect(heromod.JUMP_APEX > envmod.STEP_UP);
     try std.testing.expect(heromod.JUMP_APEX < 6.0 * worldfmt.HEIGHT_STEP);
     try std.testing.expect(heromod.SPRINT_SPEED * heromod.JUMP_AIR > heromod.ROLL_DIST);
-    // A painted face on the default lattice is a wall to the jump too: his feet plus the walk's allowance stop under the least drop that cuts.
     const step = 2.0 * worldfmt.DEFAULT_HALF / @as(f32, @floatFromInt(worldfmt.HEIGHT_N - 1));
     std.debug.print("\n  jump reach {d:.2} m against the least cut {d:.2} m; melee reach refused over {d:.2} m\n", .{ heromod.JUMP_APEX + envmod.STEP_UP, worldfmt.cliffMinDrop(step), foemod.REACH_RISE });
     try std.testing.expect(heromod.JUMP_APEX + envmod.STEP_UP < worldfmt.cliffMinDrop(step));
@@ -2064,7 +2053,6 @@ fn heroFooting(g: *Game, was_: rl.Vector3) void {
     if (g.heroDeck) |was| {
         if (!h.airborne() and under < was - envmod.STEP_UP) h.startFall(was, mathx.dirXZ(was_, h.pos), h.speedS);
     } else if (!h.airborne() and under < h.pos.y - envmod.STEP_UP) {
-        // The LAND cannot drop this far in one step unless a cliff cut it; a bilinear ramp is bounded by MAX_SLOPE.
         h.startFall(h.pos.y, mathx.dirXZ(was_, h.pos), h.speedS);
     }
     g.heroDeck = if (h.airborne()) null else g.env.deckAt(h.pos.x, h.pos.z, h.pos.y);
@@ -2269,7 +2257,6 @@ test "THE ROLL OBEYS THE GROUND — a committed move may not take him up what a 
     e.* = .{ .ground = undefined, .models = undefined };
     e.heightAny = true;
     e.heightHalf = 100.0;
-    // One lattice pitch is 2*half/(N-1) ≈ 0.90 m, so the riser is far past `STEP_UP` and its slope far past `MAX_SLOPE` (tan 40).
     const pitch = 2 * e.heightHalf / @as(f32, @floatFromInt(worldfmt.HEIGHT_N - 1));
     for (0..worldfmt.HEIGHT_N) |zi| {
         for (0..worldfmt.HEIGHT_N) |xi| {
@@ -2355,7 +2342,7 @@ fn shows(g: *const Game, l: editormod.Layer) bool {
 }
 
 fn drawCasters(g: *Game, cull: envmod.Cull) void {
-    // Bodies have no cell to be culled by, so the pass they are drawn for is the gate — set for the whole call and cleared at its end, because the object viewer draws the same groups under a lens of its own.
+        // Bodies have no cell to be culled by, so the pass they are drawn for is the gate — set for the whole call and cleared at its end, because the object viewer draws the same groups under a lens of its own.
     foemod.setCull(cull, drawFar(g));
     defer foemod.setCull(null, 0);
     if (shows(g, .props)) g.env.drawProps(cull);
@@ -3519,7 +3506,6 @@ test "A CLIFF TURNS THE ANVIL INTO A HINT — the ring carries in the open and i
     e.materialize(m);
 
     const ear = v3(0, foemod.HERO_EYE, 0);
-    // The cliff's colliders are its five lobes, 10.4 m across the run (`props.partsOf`).
     const behindTheCliff = v3(34, ANVIL_EAR, 0);
     const sameSide = v3(3, ANVIL_EAR, 0);
     try std.testing.expect(!e.sees(ear, behindTheCliff));
@@ -3699,9 +3685,6 @@ fn bonfirePick(g: *Game, pick: restmod.Pick) void {
 const SaveShot = enum { withShot, noShot };
 
 fn saveNow(g: *Game, shot: SaveShot) void {
-    // A FIGHT IS NOT A RUN. The sparring room's fire is a rest kind and a death in there respawns him, so both
-    // reached here: the hero's position in a 96 m test room, and a rail bit for the boss he just killed, written
-    // into his real slot with a fresh picture over it. The rail only ever GAINS a bit, so that one does not wash out.
     if (editormod.Editor.sparring()) return;
     snapBosses(g);
     if (!savemod.write(g.slot, slotOf(g))) {
@@ -4397,8 +4380,7 @@ fn markHour(g: *Game, flame: ?gfx.Light) void {
         const M = std.meta.Child(@TypeOf(@field(g, gr.field).live()));
         for (@field(g, gr.field).live()) |*f| {
             const share = foemod.Win.shareOf(f.leash.win.when, day);
-            // A FIGHT IN PROGRESS OUTRANKS THE HOUR, as it outranks the tether: a body cannot go unhittable
-            // mid-stroke and bill the blow out of nothing.
+                        // A FIGHT IN PROGRESS OUTRANKS THE HOUR, as it outranks the tether: a body cannot go unhittable mid-stroke and bill the blow out of nothing.
             f.leash.win.in = if (f.leash.roused()) mathx.maxF(share, foemod.WIN_SOLID) else share;
             f.leash.sight = foemod.sightShare(night, flameShare(flame, f.pos));
             if (comptime @hasField(M, "sky")) f.sky.night = night;
@@ -4565,7 +4547,7 @@ fn envDepthAt(ctx: *const anyopaque, x: f32, z: f32) f32 {
     return e.wadeDepth(x, z);
 }
 
-/// THE ROOM A BODY FIGHTS IN IS STAMPED, NOT ASKED FOR: any creature with a `room` field gets a copy of the arena it stands in each frame (null on open ground), and one with a `ground` field gets the world's water to ask, so its own moves can keep to dry ground inside the walls before the hold ever has to.
+/// THE ROOM A BODY FIGHTS IN IS STAMPED, NOT ASKED FOR: any creature with a `room` field gets the arena it stands in each frame (null on open ground), and one with a `ground` field gets the world's water to ask.
 fn stampRooms(g: *Game) void {
     inline for (FOE_GROUPS) |gr| {
         const M = memberOf(gr.field);
@@ -4687,7 +4669,7 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
     }
 }
 
-/// THE DELVER'S STONE COMES DOWN: a ring about where it lands, billed once whether it met him in the air or on the ground (`detonates`), and a roll through it is a roll through it.
+/// THE DELVER'S STONE COMES DOWN: a ring about where it lands, billed once whether it met him in the air or on the ground (`detonates`).
 fn rockBurst(g: *Game, ground: rl.Vector3) void {
     sfx.world(.ogre_slam, ground);
     g.rig.addShake(SHAKE_HIT_HEAVY);
@@ -4697,7 +4679,7 @@ fn rockBurst(g: *Game, ground: rl.Vector3) void {
     _ = heroTakes(g, .{ .hit = delvermod.ROCK_HIT, .from = ground }, true, true);
 }
 
-/// A NUT COMES DOWN AND CRACKS: a small ring where it lands, and the volley's whole answer is not to be standing in one. Billed once, in the air or on the ground (`detonates`).
+/// A NUT COMES DOWN AND CRACKS: a small ring where it lands, billed once, in the air or on the ground (`detonates`).
 fn acornBurst(g: *Game, ground: rl.Vector3) void {
     sfx.world(.wood_hit, ground);
     g.rig.addShake(SHAKE_HIT_LIGHT);
@@ -5007,7 +4989,6 @@ pub fn drawScene(g: *Game) void {
     }
     if (g.editor.on) g.editor.draw3D(&g.map, &g.env);
     if (skyLive(g)) {
-        // THE SKY'S OWN WEATHER STOPS AT A ROOF. The fall is a column on the man, so it fades as he takes cover and comes back as he steps out.
         const open = 1.0 - g.env.shelterAt(g.hero.pos.x, g.hero.footY(), g.hero.pos.z);
         if (!g.editor.on) g.rainfall.draw(&g.scene, cam.position, g.hero.pos, g.wetNow * open, g.weather.t);
         if (!g.editor.on) g.mist.draw(&g.scene, cam.position, fogAmt(g), bankTint(g));
@@ -5352,7 +5333,7 @@ pub fn run(mode: Mode) void {
         const dt = mathx.minF(rawDt, DT_MAX) * g.menu.timeScale;
         g.drawDt = rawDt;
         PLAY_HALF = playHalfOf(g.map.half);
-        // The hour holds while he rests or talks; the weather does NOT — a frozen sheet hung in the air over the bonfire scene and the bed stopped answering the storm.
+                // The hour holds while he rests or talks; the weather does NOT — a frozen sheet hung in the air over the bonfire scene and the bed stopped answering the storm.
         if (!g.editor.on and !g.menu.isOpen() and !g.rest.active() and !g.talk.active() and !g.award.carding()) g.day.tick(dt);
         if (!g.editor.on and !g.menu.isOpen()) {
             tickWeather(g, dt);
@@ -5368,7 +5349,7 @@ pub fn run(mode: Mode) void {
             std.debug.print("INIT: {s: <10} {d:.1} ms (behind the menu)\n", .{ "audio rest", bankT * 1000.0 });
             bankT = -1;
         }
-        // ONE DRIVER, above every branch that `continue`s: the editor and the boot menu did not pump the streams, so a title track fading out under either stalled.
+                // ONE DRIVER, above every branch that `continue`s: the editor and the boot menu did not pump the streams, so a title track fading out under either stalled.
         tickAudioFades(g, rawDt);
         sfx.tickStreams();
 
@@ -5397,7 +5378,6 @@ pub fn run(mode: Mode) void {
                     armScript(g);
                 },
                 .quit => break,
-                // ONE CREATURE, IN A ROOM, WITH EVERY ARMAMENT AND EVERY SCROLL. His own map is set aside, not reloaded.
                 .spar => {
                     const kind = g.editor.sparTarget(&g.map) orelse .toad;
                     g.editor.flushRebuild(&g.map, &g.env);
@@ -5421,7 +5401,6 @@ pub fn run(mode: Mode) void {
                     rl.hideCursor();
                     armScript(g);
                     g.hero.pos = mathx.ground(g.editor.cam.target.x, g.editor.cam.target.z);
-                    // PLAY HERE MEANS HERE: from the underground view he starts on the chamber floor, not on the hill over it.
                     if (g.editor.caveView) {
                         if (g.env.caveStandAt(g.hero.pos.x, g.hero.pos.z)) |y| g.hero.pos.y = y;
                     }
@@ -5462,13 +5441,10 @@ pub fn run(mode: Mode) void {
                 .editor => {
                     g.lock = null;
                     leavePlace(g);
-                    // BACK TO THE VIEW HE LEFT: `enter` re-solves the camera onto the hero, which after a fight is the
-                    // middle of the sparring room — and its "Editor ready" would bury what `endSpar` just said.
                     if (leaveSpar(g)) g.editor.reopen() else g.editor.enter(g.hero.pos);
                 },
                 .toTitle => {
-                    // THE STASH MAY NOT OUTLIVE THE WORLD IT BELONGS TO: from the title he can start or load a
-                    // game, and a stash still held then lands his old map over the one he is playing.
+                                        // THE STASH MAY NOT OUTLIVE THE WORLD IT BELONGS TO: a stash still held from the title lands his old map over the one he is playing.
                     _ = leaveSpar(g);
                     g.menu.toTitle();
                 },
@@ -5580,7 +5556,7 @@ pub fn run(mode: Mode) void {
             }
         }
         if (g.lock) |*li| {
-            // The rider is shot off: the point it rode is gone, and the lock falls back onto the body that carried it.
+                        // The rider is shot off: the point it rode is gone, and the lock falls back onto the body that carried it.
             if (refInBounds(g, li.*) and li.part >= foeParts(g, li.*)) li.part = 0;
         }
         if (g.lock) |li| {
@@ -5894,8 +5870,7 @@ pub fn run(mode: Mode) void {
                 spawnSac(g, from);
             }
         }
-        // OFF `billGroup` because the TONGUE HAULS: the lurker answers with a blow and a pull the way the rooted's
-        // hook does, and `g.hook` has to be cleared before the group can set it.
+                // OFF `billGroup` because the TONGUE HAULS: `g.hook` has to be cleared before the group can set it.
         g.hook = null;
         if (g.marsh.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, noteYank)) |b| {
             applyYank(g, heroTakes(g, b, b.hit.heavy(), true));
@@ -7283,7 +7258,6 @@ test "the editor's re-home stamp trips on every edit a placed body can take, and
     try std.testing.expectEqual(at0, foePlacementStamp(m));
 
     const hb = m.height;
-    // WRAPPING: a map sculpted to the encoding's ceiling holds 255s, and the point is only to move the field.
     for (&m.height) |*c| c.* +%= 3;
     try std.testing.expect(foePlacementStamp(m) != at0);
     m.height = hb;
@@ -7296,7 +7270,7 @@ test "the editor's re-home stamp trips on every edit a placed body can take, and
     try std.testing.expectEqual(at0, foePlacementStamp(m));
 }
 
-// The CEILING, not the live figure: `markWays` asks only the bodies whose `navWant` is non-null. At ~0.9 us a body it is the dearest walk in the loop by 50x — each ask is a `walkStep` plus two `blockedNear` against the prop grid, and the fan is ten more.
+// The CEILING, not the live figure: `markWays` asks only the bodies whose `navWant` is non-null. At ~0.9 us a body it is the dearest walk in the loop by 50x.
 test "WHAT THE WAY-FINDING COSTS A FRAME — every placed body asking the prop grid for a way past it" {
     const ta = std.testing.allocator;
     const m = try ta.create(worldfmt.Map);

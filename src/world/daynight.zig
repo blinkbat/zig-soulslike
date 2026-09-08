@@ -391,7 +391,6 @@ test "SMOKE IS A LAYER ON THE HOUR — darker and warmer than the hour's own air
     try std.testing.expect(luma(dark.ambGround) <= luma(night.ambGround) * SMOLDER_GROUND + 1e-5);
     try std.testing.expect(luma(dark.key) <= luma(night.key) + 1e-5);
     try std.testing.expect(dark.stars < night.stars);
-    // Half is halfway: the layer is a ramp, never a switch.
     const half = smolder(noon, 0.5);
     try std.testing.expect(luma(half.haze) < luma(noon.haze) and luma(half.haze) > luma(lit.haze));
 }
@@ -837,7 +836,6 @@ test "THE CASTER CHANGES HANDS OVER THE TOP, IN THE DARK — a pole's shadow mov
     std.debug.print("\n  pole shadow, m per 0.01 h lit: day {d:.4} at {d:.2}, swap {d:.4} at {d:.2}; fastest unlit {d:.3}\n", .{ worstDay, dayAt, worstSwap, swapAt, worstRaw });
     try std.testing.expect(worstSwap < worstDay * 0.5);
     try std.testing.expect(worstRaw < 0.2);
-    // Over the top, never around: the key stays in the sun's own vertical plane at every hour, so its bearing is the sun's or the moon's and nothing between.
     h = 0;
     while (h < HOURS) : (h += STEP) {
         const k = keyDir(h);
@@ -917,7 +915,6 @@ test "A BLOOM BRIGHTENS THE DISTANCE, and it thins with altitude — every other
         try std.testing.expect(w.skyLow.x >= q.skyLow.x);
         try std.testing.expect(w.haze.x > q.haze.x);
         try std.testing.expect(w.haze.x > w.haze.z);
-        // …and NOTHING CLIPS. A band over 1.0 is a white hole in the dome, not a brighter sky.
         inline for (.{ w.skyLow, w.skyMid, w.skyHigh, w.hazeBank, w.cloudLit }) |c| {
             hi = @max(hi, @max(c.x, @max(c.y, c.z)));
         }
@@ -937,7 +934,6 @@ test "THE HOUR A BODY READS IS A RAMP ACROSS THE HORIZON, not the sun's height" 
     try std.testing.expectEqual(@as(f32, 0.0), dayShare(0.0));
     try std.testing.expectEqual(@as(f32, 0.0), dayShare(23.5));
     try std.testing.expectEqual(@as(f32, 1.0), nightShare(0.0));
-    // The sun's height is the thing this is NOT: half a day's worth of it is gone by mid-morning.
     try std.testing.expect(dayShare(8.0) > 0.99 and dayAmt(8.0) < 0.5);
     const secs = 2.0 * WINDOW_FADE * (DAY_MINUTES * 60.0 / HOURS);
     std.debug.print("\n  window: {d:.2} h of fade either side of the horizon, {d:.0} s of real time end to end\n", .{ WINDOW_FADE, secs });

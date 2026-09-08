@@ -1577,7 +1577,6 @@ fn sectH() i32 {
     return hud.lineH(hud.TINY) + 8;
 }
 
-/// A section head: the title in small gilt caps, and a rule running from it to the panel's edge.
 fn head(inner: Box, y: i32, title: [:0]const u8) i32 {
     const tw = hud.textW(title, hud.TINY);
     const ty = y + 4;
@@ -1599,7 +1598,6 @@ fn unitStrOpt(u: Unit, x: ?f32) [:0]const u8 {
     return unitStr(u, x orelse 0);
 }
 
-/// One line of a comparison: the label, NOW dim, a chevron when it moves, THEN in the colour of the news, and the difference at the edge.
 fn cmpRow(cols: Cols, y: i32, size: i32, label: [:0]const u8, u: Unit, av: ?f32, bv: ?f32, cost: bool, comptime show: fn (Unit, ?f32) [:0]const u8) void {
     const a = av orelse 0;
     const b = bv orelse 0;
@@ -2173,7 +2171,6 @@ fn drawPicker(self: *const Book, col: Box, s: SlotId, v: View) void {
             const tag = "EQUIPPED";
             hud.text(tag, right - hud.textW(tag, hud.TINY), y + 3, hud.TINY, mathx.withAlpha(uiart.GILT, 200));
         } else if (headline(c, v, base, now)) |h| {
-            // THE ROW SAYS WHAT IT IS WORTH before it is picked: the biggest thing it moves, in the colour of the news.
             hud.text(h.text, right - hud.textW(h.text, hud.TINY), y + 3, hud.TINY, if (h.good) uiart.GOOD else uiart.BAD);
         }
     }
@@ -2405,7 +2402,6 @@ fn drawAttributes(self: *const Book, col: Box, v: View) void {
         const val = fmt("{d}", .{v.sheet.at(a)});
         const valX = inner.right() - hud.textW(val, hud.BODY);
         hud.text(val, valX, y, hud.BODY, col2);
-        // What the points are worth, in the unit they govern, beside the count.
         const fig = attrFigure(a, v.sheet);
         hud.text(fig, valX - 14 - hud.textW(fig, hud.TINY), y + @divTrunc(hud.lineH(hud.BODY) - hud.lineH(hud.TINY), 2), hud.TINY, mathx.withAlpha(uiart.TEXT_DIM, if (on) 230 else 170));
         const barY = y + hud.lineH(hud.BODY) + 1;
@@ -3033,8 +3029,6 @@ test "the bag cursor is pulled back onto a real cell when the last of something 
     bag.add(.bloodgrass, 1);
     bag.add(.kobold_fang, 1);
     bag.add(.iron_key, 1);
-    // Named, not counted — a positional literal goes stale the moment a page is added. Cell 0 is the PURSE, so
-    // three carried kinds are cells 1..3.
     var b = Book{ .page = .inventory };
     b.cur[idx(.inventory)] = 3;
     b.clamp(testView(&bag, &sheet, &res, &flasks, &quiver, .sword));
@@ -3101,7 +3095,6 @@ test "THE QUICK PICKER OFFERS ONLY WHAT HE HAS — and the flasks, which are nev
 }
 
 test "THE SCRATCH FITS THE LONGEST LIST ANY SOCKET CAN OFFER, empty row and all" {
-    // `CAND_MAX` sized the buffer at `item.NK` and the quick picker writes `item.NK + 1` rows in the worst case — the "(empty)" one is a row like the others. It cannot be reached with today's six quickable kinds, which is why it has to be arithmetic.
     try std.testing.expect(CAND_MAX >= item.NK + 1);
     var bag = item.Bag{};
     for (0..item.NK) |i| bag.add(@enumFromInt(i), 1);

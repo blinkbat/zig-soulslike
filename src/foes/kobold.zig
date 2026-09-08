@@ -75,7 +75,7 @@ const KIT = heromod.HELD;
 
 
 const H: f32 = heromod.H;
-// The LEGS and ARMS take the hero's fractions from the shared source: `legChain`'s strafe geometry is measured off the leg pair, so a local copy that drifted would make a kobold's planted feet skate.
+// The LEGS and ARMS take the hero's fractions from the shared source: `legChain`'s strafe geometry is measured off the leg pair, and a local copy that drifted would make planted feet skate.
 const SEG_THIGH = heromod.SEG_THIGH;
 const SEG_SHANK = heromod.SEG_SHANK;
 const SEG_UPARM = heromod.SEG_UPARM;
@@ -212,7 +212,7 @@ const BITE_HIT_A = 0.55;
 const BITE_HIT_B = 0.76;
 const BITE_CD = 1.15;
 const BITE_ARCH = 14.0;
-// The snap: the waist throwing the whole head at you (degrees through the lumbar; the chest adds 0.65 of it again and the pelvis its small share).
+// Degrees through the lumbar; the chest adds 0.65 of it again and the pelvis its small share.
 const BITE_FOLD = 42.0;
 const BITE_GAZE = 26.0;
 const BITE_ARM_BACK = 30.0;
@@ -243,7 +243,6 @@ fn legSink(crouch: f32) f32 {
 /// ARITHMETIC over the worst frame (the ring law): the bloom's 34 on the ~14 `emitCastMotes` leaves resident (34/s at a 0.42 s life), with a blow landing the same frame for `emitBlood`'s 14 and the wound — 65.
 const NPART = 68;
 comptime {
-    // THE RING LAW, EXECUTABLE — the assert that was missing when 22 could not hold HEAL_BLOOM's 34.
     std.debug.assert(NPART >= HEAL_BLOOM + 14 + foe.hitParts(9) + foe.WOUND_PARTS);
 }
 const BLOOD = rgba(104, 26, 22, 200);
@@ -541,7 +540,7 @@ pub const Kobold = struct {
                 self.hop = DASH_RISE * mathx.sinf(dashU(self.t) * std.math.pi);
                 if (self.t >= DASH_GATHER + DASH_FLIGHT + DASH_LAND) {
                     self.hop = 0;
-                    // RE-MEASURED (it moved), BUT STILL THROUGH THE LEASH: on the raw distance a dash was the one exit that re-engaged a foe walking home, or one that cannot see him.
+                                        // RE-MEASURED (it moved), BUT STILL THROUGH THE LEASH: on the raw distance a dash was the one exit that re-engaged a foe walking home, or one that cannot see him.
                     self.decide(foe.senseHero(&self.leash, self.pos, hero, AGGRO_R));
                 }
             },
@@ -2001,7 +2000,6 @@ test "BOTH KOBOLD STROKES CAN BE CAUGHT, and the DASH cannot — a leap is not a
 test "NO ATTACK COMES OUT OF NOWHERE: every kobold move is visible before it can hurt" {
     try std.testing.expect(ZERK_CHOP * ZERK_HIT_A >= foe.TELL_MIN);
     try std.testing.expect(ZERK_CHOP * (ZERK_HIT_B - ZERK_HIT_A) > 0.10);
-    // IN SECONDS, NOT AS A FRACTION — the old `BITE_HIT_A >= TELL_MIN` compared 0.30 of a clock against 0.30 of a second and passed while the snap landed at 0.156 s.
     try std.testing.expect(BITE_DUR * BITE_HIT_A >= foe.TELL_MIN);
     try std.testing.expect(BITE_DUR * BITE_HIT_A > foe.PARRY_LEAD * 1.5);
     try std.testing.expect(WHIRL_DUR >= foe.TELL_MIN);

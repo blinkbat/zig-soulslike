@@ -663,7 +663,6 @@ test "THE HOMUNCULUS IS ANSWERED WITH FIRE, NOT WITH A SWORD" {
     try std.testing.expect(took_l < 13.0 * 0.55);
     try std.testing.expect(took_h < 27.0 * 0.70);
     try std.testing.expect(took_f > 27.0 * 1.5);
-    // A MARGIN, NOT A WALL. Bounded at BOTH ends: under 2 the armour says nothing, over 3.5 the sword stops being a choice a player can make badly.
     const margin = took_f / took_h;
     try std.testing.expect(margin > 2.0 and margin < 3.5);
     try std.testing.expect(HP_MAX / took_h < 300.0 / 27.0 * 1.25);
@@ -935,7 +934,6 @@ test "THE DISC IS DRAWN BEFORE IT IS BILLED — the smash walks its own rim thro
     }
     try std.testing.expect(wound);
     try std.testing.expect(g.struck);
-    // ~30/s across a 0.92 s wind, and every mote sits ON the rim — the blow's own radius off its own centre.
     const centre = g.reachPoint(SMASH_R * 0.62);
     const rim = SMASH_R * g.scale;
     var on: usize = 0;

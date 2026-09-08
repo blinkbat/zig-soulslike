@@ -1321,17 +1321,14 @@ test "SOUP CLOSES THE DISTANCE AND NOTHING ELSE, and soup=1 is the debug Soup ov
     const soup = hazeDensityOf(0, 1, 0, 0, 1);
     try std.testing.expectApproxEqAbs(clear * HAZE_SOUP_D, soup, 1e-9);
     try std.testing.expectApproxEqAbs(hazeDensityOf(0, HAZE_SOUP_D, 0, 0, 0), soup, 1e-9);
-    // Off the bottom of the slider a location costs nothing, and the band is clamped, not extrapolated.
     try std.testing.expectApproxEqAbs(clear, hazeDensityOf(0, 1, 0, 0, -3), 1e-9);
     try std.testing.expectApproxEqAbs(soup, hazeDensityOf(0, 1, 0, 0, 4), 1e-9);
-    // The debug Fog: Off override still wins over any soup a location asks for.
     try std.testing.expectEqual(@as(f32, 0), hazeDensityOf(1, 0, 1, 1, 1));
     std.debug.print("\n  soup: half-veil {d:.0} m clear -> {d:.0} m at soup 0.5 -> {d:.0} m at soup 1\n", .{
         hazeHalfM(clear),
         hazeHalfM(hazeDensityOf(0, 1, 0, 0, 0.5)),
         hazeHalfM(soup),
     });
-    // A storm and a soup MULTIPLY, so the two together shut the world in harder than either.
     const storm = hazeDensityOf(1, 1, 0, 0, 0);
     try std.testing.expect(hazeDensityOf(1, 1, 0, 0, 1) > storm * 5.0);
     std.debug.print("  ...and a storm alone is {d:.0} m, a storm in the soup {d:.0} m\n", .{
@@ -1344,7 +1341,6 @@ test "THE CHAIN AND ITS INVERSE ARE ONE SOLVE — an albedo run through both com
     for ([_]f32{ 8, 22, 45, 76, 95, 109, 148 }) |albedo| {
         try std.testing.expectApproxEqAbs(albedo, albedoFor(screenOf(albedo)), 0.01);
     }
-    // …and past the clip the chain is one-way: the key saturates at 255/1.72, so anything over that is white.
     const ceiling = 255.0 / KEY_HOT;
     try std.testing.expectApproxEqAbs(@as(f32, 255), screenOf(ceiling), 0.01);
     try std.testing.expectApproxEqAbs(@as(f32, 255), screenOf(ceiling + 40), 0.01);

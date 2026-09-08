@@ -232,7 +232,6 @@ const TRAIL_LIFE = 0.17;
 const TRAIL_W = 0.055;
 const TRAIL_COL = rgba(214, 198, 158, 255);
 const TRAIL_FIRE = rgba(255, 146, 40, 255);
-/// THE FUNGAL DETONATOR IS NOT A CAMPFIRE: it shares the fire trail's heat and disagrees with it in hue, so a mage's shot is legible against an archer's fire arrow at a glance.
 const TRAIL_SPORE = rgba(255, 108, 152, 255);
 const TRAIL_BOLT = rgba(178, 92, 224, 255);
 const TRAIL_WISP = rgba(96, 118, 176, 255);
@@ -240,7 +239,6 @@ const TRAIL_CROCK = rgba(198, 228, 252, 255);
 
 const TRAIL_SAC = rgba(206, 186, 202, 255);
 const TRAIL_POWDER = rgba(186, 208, 96, 255);
-/// …AND THE GREMLIN'S SPARK IS THE ONLY COLD-BLUE THING IN THE AIR: the one lightning shot in the game may not be mistaken for an arrow at a glance.
 const TRAIL_SPARK = rgba(196, 214, 255, 255);
 
 fn trailCol(s: Shot) rl.Color {
@@ -259,7 +257,6 @@ fn trailCol(s: Shot) rl.Color {
     };
 }
 const TRAIL_ROCK = rgba(150, 132, 96, 255);
-/// The ent's nut is the only GREEN thing in the air, so a falling volley is not read as a fire arrow.
 const TRAIL_ACORN = rgba(146, 168, 84, 255);
 
 pub const Shot = enum { arrow, clump, venom, firearrow, bolt, wisp, crock, emberball, sac, spark, powder, rock, acorn };
@@ -279,9 +276,7 @@ pub fn dropOf(s: Shot) f32 {
         .acorn => ACORN_GRAV,
     };
 }
-/// The delver's stone: the heaviest thing in the air, so the lob is a real arc you watch come down.
 const ROCK_GRAV: f32 = 14.0;
-/// A nut is light and falls slower than the stone, which is what gives a volley time to be walked out of.
 const ACORN_GRAV: f32 = 11.0;
 
 /// **HOW MUCH OF THE BALLISTIC SOLVE A SHOT ACTUALLY TAKES.** 1.0 is the honest arc that lands on the target;
@@ -334,7 +329,7 @@ pub const Arrow = struct {
     stuck: bool = false,
     age: f32 = 0,
     hit: bool = false,
-    /// IT CAME OFF THE GROUND THIS FRAME — a one-frame edge like `hit`, and `game.zig` turns it into a thud and a puff. The creature that threw it is long out of the conversation, so the flag rides the shot.
+        /// A one-frame edge like `hit`; `game.zig` turns it into a thud and a puff. The thrower is long out of the conversation, so the flag rides the shot.
     bounced: bool = false,
     bounces: u8 = 0,
     struck: ?collision.Surface = null,
@@ -1222,7 +1217,6 @@ pub const Archer = struct {
 
         const armStun = -70.0 * stun;
         const bowT = mathx.clampF(at * 1.7, 0, 1);
-        // `buttK` is -1 cocked, +1 driven out, and every channel below reads that ONE number, so nothing can promise a jab the blow is not throwing.
         const bk = self.buttK;
         const flat = @abs(bk);
         const bowShFwd = mathx.lerpF(-26.0, -88.0, bowT) + 5.0 * self.kick + armStun + 2.2 * swyLag - 54.0 * bk + swing;
@@ -1484,7 +1478,7 @@ fn tibiaMesh(seed: u64) rl.Mesh {
     return b.toMesh();
 }
 
-/// PUBLIC for `solePatches`' own reason: the same dead man stands on the same feet, and this is the one thing a sole patch is measured off. The necromancer replaces every other bone with robe and needs this one alone.
+/// PUBLIC because `solePatches` is measured off it — the necromancer replaces every other bone with robe and needs this one.
 pub fn footMesh(side: f32, seed: u64) rl.Mesh {
     var b = Builder.init();
     b.setMat(.plain);
@@ -1723,7 +1717,6 @@ test "the backstep fires only when crowded, off cooldown, interruptible — and 
 }
 
 test "THE BUTT IS THE LEAP'S UNDERSTUDY: it covers the leap's cooldown, and a ROOT is no objection" {
-    // The hole it fills: the leap answers a crowd for 0.87 s and then cannot be thrown again for 7.0 s.
     try std.testing.expect(BUTT_CD < BACKSTEP_CD * 0.5);
     try std.testing.expect(BUTT_R < BACKSTEP_R);
     try std.testing.expect(BUTT_WIND > foe.TELL_MIN);
@@ -1944,7 +1937,6 @@ test "a shot that is aimed at a standing hero HITS him, at every range and eithe
 }
 
 test "COVER IS SAMPLED BY LENGTH, so a fast shaft cannot tunnel a thin post" {
-    // Midpoint + endpoint was honest at a skeleton's 15 m/s and stopped being honest at the hero's 40 m/s aimed shaft, which opens the gaps to 0.33 m at 60 fps and 0.67 m on a slow frame.
     var post = [_]collision.Solid{collision.circle(-0.5, 0, 0.09)};
     post[0].h = 4.0;
     const prev = v3(-1, 1, 0);
@@ -2032,7 +2024,6 @@ test "A FIREBALL BOUNCES, AND EACH ARC IS SHORTER THAN THE ONE BEFORE IT" {
     try std.testing.expect(n >= 2 and n <= bouncesOf(.emberball));
     try std.testing.expect(a.stuck);
 
-    // IT LANDS SHORT ON PURPOSE (`EMBER_LOFT`): a detonator dropped on your head is undodgeable, so its FIRST touch is roughly the loft's share of the way there and the rest is the bounce line.
     try std.testing.expect(touches[0] < 11.0 * 0.85);
     try std.testing.expect(touches[0] > 11.0 * EMBER_LOFT * 0.7);
     try std.testing.expect(a.pos.z > touches[0] + 2.0);

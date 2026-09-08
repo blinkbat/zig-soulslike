@@ -177,7 +177,6 @@ test "level is COUNTED off the points, and a fresh sheet is level 1" {
     s.set(.vitality, START + 5);
     s.set(.luck, START + 2);
     try std.testing.expectEqual(@as(u32, 8), s.level());
-    // A sheet driven BELOW the start (nothing does, but `set` allows it) may not push the level under 1.
     s.set(.vitality, 1);
     s.set(.luck, 1);
     try std.testing.expectEqual(@as(u32, 1), s.level());

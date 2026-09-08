@@ -776,7 +776,6 @@ pub fn giltFinialMesh(shader: rl.Shader) rl.Model {
 
 test "the family's forms are the ARABIC ones, and its three layers are three heights" {
     try std.testing.expect(HORSE_EXTRA > 20.0); // a horseshoe, not a Roman arch
-    // MEASURED: the top tier hangs `MUQ_STEP * (MUQ_TIERS - 1)` of the rise past the wall, which is 0.45 of it.
     try std.testing.expect(art.MUQ_TIERS >= 3);
     try std.testing.expect(art.MUQ_STEP > 0.08 and art.MUQ_STEP * @as(f32, @floatFromInt(art.MUQ_TIERS - 1)) < 0.6);
     try std.testing.expect(JALI_LEAN > 5.0); // propped, not built

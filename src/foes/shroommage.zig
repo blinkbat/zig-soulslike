@@ -60,7 +60,6 @@ const SOLES = [_]heromod.SolePatch{
     .{ .bone = ANKR, .heel = 0.045 * H, .toe = 0.180 * H, .halfW = 0.058 * H, .drop = 0.036 * H },
 };
 
-// AUTHOR DARK AND SOLVE IT — screen goes as albedo^(1/2.2), so the bigger and smoother the mass the darker it has to start. The cloak is the biggest face here.
 
 /// Damp and GREEN-BLACK, and it may NOT go blue-black: that is the necromancer's separation. SOLVED OFF THE RENDER: at (16,22,15) it sampled 83 luma against ground at 102, and wanted 0.64 of its field, so the albedo factor is 0.79^2.2 = 0.59.
 const CLOAK = rgba(10, 13, 9, 255);
@@ -1066,7 +1065,6 @@ const EMBER_PARTS = 120;
 const BOUNCE_PUFF: usize = 10;
 const BURST_PUFF: usize = 26;
 comptime {
-    // What IS pinnable: four balls ending together still fit, which is more than a ring of mages puts in the air.
     std.debug.assert(EMBER_PARTS >= 4 * BURST_PUFF);
 }
 
@@ -1294,7 +1292,6 @@ test "THE CUP IS BETWEEN THE HANDS AND IN FRONT OF THE BODY, at the frame it thr
     const apart = mathx.lenV(mathx.subV(l, r));
     const tall = H * SCALE;
     std.debug.print("  mushroom mage cup: {d:.2} m up of {d:.2}, {d:.2} m out, hands {d:.2} m apart, ball {d:.2} across\n", .{ at.y, tall, at.z, apart, BALL_R * 2.0 * SCALE });
-    // In FRONT of it (it faces +Z at yaw 0) and up at its own chest.
     try std.testing.expect(at.z > 0.10);
     try std.testing.expect(at.y > tall * 0.30 and at.y < tall * 0.85);
     try std.testing.expect(apart < BALL_R * 4.0 * SCALE);

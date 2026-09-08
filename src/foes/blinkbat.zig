@@ -27,7 +27,7 @@ pub const H: f32 = 2.35;
 const HIP_HALF = heromod.HIP_HALF * 0.86;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 1.26;
 
-/// **THE ARMS ARE THE WINGS** — which is what "weirdly humanoid" is: the hero's own 18-bone scaffold.
+/// THE ARMS ARE THE WINGS: the hero's own 18-bone scaffold.
 const UPPER_LEN: f32 = 0.255;
 const FORE_LEN: f32 = 0.395;
 
@@ -110,7 +110,6 @@ const BLINK_ARC_MAX: f32 = 168.0;
 
 const BITE_WIND: f32 = 0.44;
 const BITE_STRIKE: f32 = 0.13;
-/// The jaws are still open at the strike's first frame; they close from here.
 const BITE_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const BITE_RECOVER: f32 = 0.46;
 const BITE_R: f32 = 2.05;
@@ -121,15 +120,12 @@ const RETREAT_SPEED: f32 = DRIFT_SPEED * 1.7;
 const RETREAT_MAX: f32 = 1.70;
 const RETREAT_R: f32 = BLINK_FAR * 0.82;
 
-/// **IT FLIES AFTER DARK AND HANGS THROUGH THE DAY.** Its own name so it can be retuned off the horizon.
+/// Its own name so the roost can be retuned off the horizon.
 const ROOST_NIGHT: f32 = foe.NIGHTFALL;
-/// Hung by its feet the anatomy is upside down, so the hover is RE-SOLVED to put the body back in the band it
-/// occupies coming in to bite — which is what leaves it inside sword reach, since a roost nobody can strike
-/// cannot be the thing that wakes the rest of them.
+/// Hung by its feet the anatomy is upside down, so the hover is RE-SOLVED to put the body back in the band it bites from — a roost nobody can strike cannot wake the rest.
 const ROOST_HOVER: f32 = HOVER_BITE + TOP_F * H - 2.0 * REST[ROOT].y;
 /// Seconds^-1 of the fold and the barrel-roll back upright — the 180 degrees are lerped, so waking IS the roll.
 const ROOST_FURL: f32 = 2.6;
-/// How far the shriek off a struck roost carries. Every bat inside it is on the wing by the time you look up.
 const ROOST_CALL_R: f32 = 9.0;
 const ROOST_R: f32 = HOME_R;
 
@@ -183,9 +179,8 @@ comptime {
     std.debug.assert(BLINK_OUT + BLINK_IN + BITE_WIND + BITE_STRIKE + BITE_RECOVER > FEED_DUR);
 }
 
-// Screen goes as albedo^(1/2.2) through a x1.72 key: at the (46, 34, 40) this was first written on, the lit
-// torso SAMPLED 135,108,102 against a field of 99,102,64 — a nocturnal animal reading BRIGHTER and PINKER
-// than the grass it hangs over. Wanted ~85 on screen, i.e. (85/135)^2.2 = 0.36 of the albedo.
+// Screen goes as albedo^(1/2.2) through a x1.72 key: at (46, 34, 40) the lit torso SAMPLED 135,108,102 against a
+// field of 99,102,64. Wanted ~85 on screen, i.e. (85/135)^2.2 = 0.36 of the albedo.
 const HIDE = rgba(13, 11, 17, 255);
 const HIDE_DK = rgba(8, 7, 11, 255);
 const MEMBRANE = rgba(26, 14, 16, 255);
@@ -221,7 +216,6 @@ const DRINK_RATE: f32 = 26.0;
 const DRINK_LIFE_HI: f32 = 0.46;
 const PARTS: usize = 96;
 comptime {
-    // The worst frame: the drink stream stood up, a rift, a killing blow's two chip sprays and a caught bite's own.
     std.debug.assert(@as(f32, PARTS) >= DRINK_RATE * DRINK_LIFE_HI +
         @as(f32, @floatFromInt(RIFT_MOTES + CHIP_HEAVY + CHIP_DEATH + PARRY_CHIPS + foe.WOUND_PARTS)));
 }
@@ -830,7 +824,6 @@ pub const Bat = struct {
         setLocal(&wx, EARL, self.rest, mul(rz(-16.0 - 10.0 * bite + flick), rx(-10.0)));
         setLocal(&wx, EARR, self.rest, mul(rz(16.0 + 10.0 * bite - flick), rx(-10.0)));
 
-        // Wrapped: the wings come DOWN the body it is hanging from and the elbows shut over it.
         const sweep = 62.0 + 26.0 * wing - 34.0 * bite + 18.0 * dk - 46.0 * furl + 32.0 * @abs(deflect);
         const fold = 34.0 - 22.0 * wing + 40.0 * bite + 30.0 * feed - 44.0 * dk + 62.0 * furl;
         const cam = 12.0 + 16.0 * wing;
@@ -843,7 +836,6 @@ pub const Bat = struct {
             setLocal(&wx, w[2], self.rest, mul(rz(side * (fold * 0.7 + 18.0 * lagW)), rx(-6.0 - 12.0 * lagW)));
         }
 
-        // …and the legs go STRAIGHT, because they are what it is hanging by.
         const tuck = (46.0 + 16.0 * bite + 26.0 * feed - 30.0 * dk) * (1.0 - furl);
         const swayL = mathx.sinf((self.elapsed * 1.1 + self.seed) * std.math.tau) * 4.0;
         inline for (.{ .{ HIPL, KNEEL, ANKL, 1.0 }, .{ HIPR, KNEER, ANKR, -1.0 } }) |l| {
@@ -925,7 +917,7 @@ pub const Roost = struct {
             }
             if (b.startled) shrieked = b.pos;
         }
-        // **STRIKE ONE AND THE ROOST IS AWAKE.** A `call` and not a `provoke`: the shriek is a sound, so it is measured from where the blow landed.
+                // A `call` and not a `provoke`: the shriek is a sound, so it is measured from where the blow landed.
         if (shrieked) |at| {
             if (foe.rouseWithin(self.live(), at, ROOST_CALL_R) > 0) sfx.world(.leech_wing, at);
         }
@@ -1155,7 +1147,6 @@ fn boneMesh(i: usize) rl.Mesh {
 }
 
 
-/// AFTER DARK, which is the only hour it is on the wing.
 fn testBat() Bat {
     var b = Bat.spawn(mathx.ground(0, 0), 0, 1.0, 0.31);
     b.sky.night = 1.0;
@@ -1444,13 +1435,11 @@ test "IT HANGS THROUGH THE DAY, AND STRIKING ONE PUTS THE WHOLE ROOST ON THE WIN
     try std.testing.expectApproxEqAbs(@as(f32, 1), b.roostK, 1e-3);
     try std.testing.expect(b.heroHit == null);
 
-    // A ROOST NOBODY CAN REACH CANNOT BE THE THING THAT WAKES THE REST: it hangs no higher than it bites from.
     const hung = b.centerWorld().y;
     const biting = foe.bodyPoint(b.pos, CENTER_F * H, b.scale, HOVER_BITE * b.scale).y;
     std.debug.print("\n  blinkbat: roosts at hover {d:.2} m, hurt sphere at {d:.2} m against {d:.2} m coming in to bite (r {d:.2})\n", .{ ROOST_HOVER, hung, biting, b.hurtRadius() });
     try std.testing.expect(hung <= biting);
 
-    // Night alone puts it back on the wing.
     b.sky.night = 1.0;
     _ = b.update(dt, hero, 400, .{});
     try std.testing.expect(!b.roosting());

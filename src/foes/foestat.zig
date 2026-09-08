@@ -1,7 +1,7 @@
 const std = @import("std");
 const wf = @import("../world/worldfmt.zig");
 
-/// WHAT A BODY IS GIVEN WHEN IT IS MADE (`play/tune.zig`'s Foes sheet). Every creature's pools are authored in its own file and half of them are folded into a struct's field default at comptime.
+/// WHAT A BODY IS GIVEN WHEN IT IS MADE (`play/tune.zig`'s Foes sheet).
 pub const N = wf.NFOE;
 
 pub const Mult = struct {

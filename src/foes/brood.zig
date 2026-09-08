@@ -57,7 +57,6 @@ const GORE_SPD_LIGHT = 4.2;
 const GORE_SPD_HEAVY = 5.8;
 const GORE_SPD_DEATH = 5.0;
 comptime {
-    // THE RING LAW, EXECUTABLE: a killing heavy blow's two sprays and the shared wound, on the ~21 the mother's drag leaves resident (26/s against a 0.8 s life).
     std.debug.assert(SPIDER_PARTS >= 21 + foe.hitParts(GORE_HEAVY) + foe.hitParts(GORE_DEATH) + foe.WOUND_PARTS);
     std.debug.assert(SAC_PARTS >= 14 + foe.WOUND_PARTS);
 }
@@ -213,8 +212,6 @@ const POOL_FLOOR: f32 = 4.0;
 const POOL_LIFE_MAX: f32 = 0.75;
 const POOL_PARTS = 26;
 comptime {
-    // The ring law, and the only pool here whose worst frame is a STEADY STATE rather than a burst: resident is
-    // the whole rate over a mote's longest life, plus the one frame the cap can pay on top of it.
     std.debug.assert(@as(f32, POOL_PARTS) >= (POOL_RATE + POOL_FLOOR) * POOL_LIFE_MAX +
         @as(f32, @floatFromInt(foe.emitCap(POOL_RATE + POOL_FLOOR))));
 }
@@ -274,7 +271,6 @@ const MChoice = enum { hold, close, spit, bite, lay, shirk };
 fn classifyMother(dist: f32, scale: f32, tether: f32, spitReady: bool, biteReady: bool, layWanted: bool, shy: bool) MChoice {
     if (dist > M_AGGRO) return .hold;
     if (dist <= foe.triggerBand(M_BITE_R, M_SCALE, scale)) return if (biteReady) .bite else .hold;
-    // **FLAME STOPS HER COMING ON, NOT HER SPITTING** — cornered she still bites, and held off she answers at range.
     if (shy) return if (spitReady and dist >= M_SPIT_MIN) .spit else .shirk;
     if (layWanted and dist > M_BITE_R * 1.6) return .lay;
     if (dist <= M_SPIT_MAX and dist >= M_SPIT_MIN) return if (spitReady) .spit else .hold;
@@ -287,7 +283,6 @@ const BChoice = enum { idle, chase, leap, bite, shirk };
 fn classifyBroodling(dist: f32, scale: f32, leapReady: bool, biteReady: bool, shy: bool) BChoice {
     if (dist > B_AGGRO) return .idle;
     if (dist <= foe.triggerBand(B_BITE_R, B_SCALE, scale)) return if (biteReady) .bite else .idle;
-    // Nothing to throw, so a torch really does hold them off — until one of them is hit.
     if (shy) return .shirk;
     if (leapReady and dist >= B_LEAP_MIN and dist <= B_LEAP_MAX) return .leap;
     return .chase;
@@ -428,7 +423,7 @@ fn furOver(b: *Builder, rng: *mathx.Rng, c: rl.Vector3, r: rl.Vector3, n: u32, l
 const M_HEAD_CENTER = v3(0, BODY_Y + 0.10, 0.46);
 const M_HEAD_RADII = v3(0.44, 0.42, 0.42);
 
-/// A pure function of `MOTHER_SKIN.seed`, so it is solved ONCE: `pose` walked it per frame per mother, rebuilding a PRNG and 12 draws to get the same table back.
+/// A pure function of `MOTHER_SKIN.seed`, solved ONCE: `pose` walked it per frame per mother, rebuilding a PRNG and 12 draws to get the same table back.
 const MOTHER_FANGS: [2][6]rl.Vector3 = motherFangs();
 
 fn motherFangs() [2][6]rl.Vector3 {
@@ -445,11 +440,7 @@ fn motherFangs() [2][6]rl.Vector3 {
 }
 
 fn shellBottom(xf: rl.Matrix, center: rl.Vector3, radii: rl.Vector3) f32 {
-    const at = foe.markOn(xf, center);
-    const x = radii.x * xf.m1;
-    const y = radii.y * xf.m5;
-    const z = radii.z * xf.m9;
-    return at.y - @sqrt(x * x + y * y + z * z);
+    return foe.markOn(xf, center).y - foe.hullHalfY(xf, radii);
 }
 fn cephaloMesh(sk: Skin) rl.Mesh {
     var b = Builder.init();
@@ -902,7 +893,7 @@ pub const Sac = struct {
             return false;
         }
         foe.fadeFlash(&self.flash, dt);
-        // A SAC IS A TARGET, so its vitals run like every other target's: `sinceHurt` gates the floating HP bar, and left frozen at 0 the bar never goes away again.
+                // A SAC IS A TARGET, so its vitals run like one: left frozen at 0, `sinceHurt` never closes and the bar never goes away.
         self.vit.tick(dt);
         self.t += dt;
         _ = self.recoil.step(0, 1600, 0.34, dt);
@@ -1582,7 +1573,7 @@ pub const Spider = struct {
         }
     }
 
-    /// The fangs are at the FRONT: a man who got round behind her through the windup is not bitten by it.
+        /// The fangs are at the FRONT: a man who got round behind her through the windup is not bitten.
     fn tryReach(self: *Spider, hero: rl.Vector3, range: f32, h: combat.Hit) void {
         if (self.heroLatch) return;
         if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(range, self.scale), BITE_FRONT_DOT)) return;
@@ -2233,11 +2224,9 @@ test "the roles ARE the map's foe kinds, by name" {
 
 test "HER BITE IS AN INSTANT FROM BEING CAUGHT, and nothing else of hers is catchable at all" {
     try std.testing.expect(PARRY_LEAD > 0);
-    // It is an INSTANT, not a slice of the tell: her 0.40 s gape must not be catchable for a third of itself.
     try std.testing.expect(PARRY_LEAD < BITE_WINDUP * 0.4);
 
     var m = Spider.spawnAs(.mother, mathx.ground(0, 0), 0, 1.0, 0.0);
-    // MEASURED off the state machine: the bite is walked from the first frame of its windup and the parryable span collected, plus where the fangs actually arrive.
     const step = 1.0 / 600.0;
     var open: f32 = -1;
     var shut: f32 = -1;
@@ -2396,7 +2385,6 @@ test "A SAC IS A TARGET, and answers everything a target has to answer" {
 }
 
 test "A STRUCK SAC'S BAR GOES AWAY AGAIN — its vitals actually run" {
-    // THE bug: `Sac.update` was the one `combat.Vitals` owner in the game that never ticked, so its clocks stayed pinned at 0 and `game.drawFoeBars`' recent-hit window never closed again.
     var s = Sac.lay(mathx.ground(0, 0), 0.5, 1.0);
     try std.testing.expect(s.vit.sinceHurt > 100.0);
     s.tryHit(.{
@@ -2414,7 +2402,6 @@ test "A STRUCK SAC'S BAR GOES AWAY AGAIN — its vitals actually run" {
 }
 
 test "a hatchling's recovery is its OWN length, not its mother's" {
-    // `resolveRecover` scales the pose to `recoverDur`, and the state exits on the same number — given the mother's 0.50 s a broodling played half a recovery and then snapped to idle.
     var b = Spider.spawnAs(.broodling, mathx.ground(0, 0), 0, 1.0, 0.4);
     try std.testing.expectApproxEqAbs(B_BITE_RECOVER, b.recoverDur(), 1e-6);
     var m = Spider.spawnAs(.mother, mathx.ground(0, 0), 0, 1.0, 0.4);
@@ -2580,7 +2567,6 @@ test "she cannot outstay her own leash, and one shaft still rouses her" {
 test "NO ATTACK COMES OUT OF NOWHERE: both ages telegraph before they can hurt" {
     try std.testing.expect(SPIT_WINDUP >= foe.TELL_MIN);
     try std.testing.expect(BITE_WINDUP >= foe.TELL_MIN);
-    // 0.29 s, which is under what an eye resolves.
     try std.testing.expect(B_BITE_WINDUP >= foe.TELL_MIN);
     try std.testing.expect(B_LEAP_COIL >= foe.TELL_MIN);
     try std.testing.expect(BITE_WINDUP > B_BITE_WINDUP);

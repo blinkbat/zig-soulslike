@@ -86,9 +86,9 @@ const CENTER_F: f32 = 0.54;
 const TOP_F: f32 = 1.04;
 const LOCK_AT = v3(0, 0.06 * H, 0);
 
-/// TOUGH IS HP AND POISE, NOT SPEED (owner: tougher). Over the birchwight's 180, well under the mastodon's 560.
+/// TOUGH IS HP AND POISE, NOT SPEED. Over the birchwight's 180, well under the mastodon's 560.
 const HP_MAX: f32 = 300.0;
-/// **STONE DOES NOT FLINCH OFF A POKE, NOR OFF TWO.** Over two of the hero's heavies (22 each).
+/// Over two of the hero's heavies (22 each).
 const POISE_MAX: f32 = 48.0;
 const STANCE_MAX: f32 = 72.0;
 const RESISTS = combat.resists(.{ .fire = 55, .cold = -45, .lightning = -30, .chaos = 25 });
@@ -102,11 +102,9 @@ const DISSOLVE = foe.Dissolve{ .rate = 54.0, .spread = 0.75, .rise = 0.45, .flak
 pub const SHOVE = foe.Push{ .light = 0.55, .heavy = 1.35 };
 
 
-/// The carving is a carving while the sun is up however close you stand, and the ring is live from the moment
-/// it goes down. Its own name so it can be retuned deeper into the night than the horizon.
+/// Its own name so it can be retuned deeper into the night than the horizon.
 const WAKE_NIGHT: f32 = foe.NIGHTFALL;
-/// How lit a SLEEPING one's eyes are once night is full, and the share of the night the catch starts at — the
-/// tell is that you can see which carvings are somebody tonight before any of them has moved.
+/// How lit a SLEEPING one's eyes are once night is full, and the share of the night the catch starts at.
 const STONE_EYE: f32 = 0.55;
 const STONE_EYE_FROM: f32 = 0.18;
 
@@ -195,7 +193,6 @@ const WAKE_GRIT: usize = 22;
 const PARRY_CHIPS = 12;
 const PARTS = 74;
 comptime {
-    // A caught stroke chips on the same frame the hero's own blow can wound it, over the grit of the waking.
     std.debug.assert(@as(f32, PARTS) >= @as(f32, @floatFromInt(WAKE_GRIT + PARRY_CHIPS + foe.hitParts(HIT_CHIP_HEAVY) + foe.WOUND_PARTS)));
 }
 
@@ -475,9 +472,7 @@ pub const Owlbear = struct {
                 const sensed = if (self.dozing()) mathx.LONG_AGO else foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
                 const gap = mathx.maxF(0, sensed - foe.closestApproach(self.bodyR()));
                 const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
-                // **A CARVING PUTS ITSELF BACK ON ITS OWN PLINTH, and it has to be WALKED there.** `classify`
-                // stops a walk home at `HOME_R`, which is wider than the plinth, so the seat was unreachable and
-                // a woken one never went back into the stone at all: measured, it stalled at 2.20 m for 90 s.
+                                // A CARVING PUTS ITSELF BACK ON ITS OWN PLINTH, and it has to be WALKED there: `classify` stops a walk home at `HOME_R`, which is wider than the plinth, so a woken one stalled at 2.20 m for 90 s.
                 const seating = !self.post.idles() and sensed > AGGRO_R and (self.leash.goingHome() or self.dozing());
                 if (seating and homeGap <= SEAT_R) {
                     self.enter(.seat);
@@ -731,7 +726,6 @@ pub const Owlbear = struct {
         const u = self.leapU();
         const tuck = if (self.state == .burst) mathx.sinf(u * std.math.pi) else 0;
 
-        // THE CARVING'S OWN POSE IS A CROUCH, and `w` is what lets it out: hunched over its feet at 0, standing at 1.
         const settle = (1.0 - w) * (1.0 - dk);
         const sway = SWAY_DEG * mathx.gutter(self.elapsed * SWAY_HZ + self.seed * 6.28, self.seed * 3.7) * (1.0 - m) * w;
         const bodyPitch = 26.0 * self.motion.drive - 15.0 * self.motion.load - 20.0 * stun + 68.0 * dk + 30.0 * settle - 22.0 * tuck;
@@ -807,7 +801,6 @@ const SHATTER_HIT: usize = 7;
 const SHATTER_SPENT: usize = 5;
 const PERCH_PARTS: usize = 64;
 comptime {
-    // The ring law: a whole burst arriving on one frame — the fan is thrown together, so it lands together.
     std.debug.assert(PERCH_PARTS >= QUILLS_PER_BURST * SHATTER_HIT);
 }
 
@@ -1155,7 +1148,6 @@ fn lichen(b: *Builder, rx0: f32, ry0: f32, rng: *mathx.Rng, n: u32) void {
     b.setMat(.stone);
 }
 
-/// AFTER DARK, which is the only hour it is a creature at all.
 fn testBear() Owlbear {
     var o = Owlbear.spawn(mathx.ground(0, 0), 0, 1.0, 0.31);
     o.sky.night = 1.0;
@@ -1176,14 +1168,12 @@ test "IT IS STONE WHILE THE SUN IS UP, and the eyes catch before any of them has
     try std.testing.expectEqual(State.stone, day.state);
     try std.testing.expectEqual(@as(f32, 0), day.eyeGlow());
 
-    // …and the hour alone brings the eyes up, with the body still stone.
     day.sky.night = 1.0;
     try std.testing.expectApproxEqAbs(STONE_EYE, day.eyeGlow(), 1e-4);
     try std.testing.expectEqual(State.stone, day.state);
     _ = day.update(dt, under, 400, .{});
     try std.testing.expectEqual(State.wake, day.state);
 
-    // A DAWN FIGHT FINISHES: a blow outranks the hour the way it outranks blindness.
     var struck = testBear();
     struck.rouse = 1.0;
     struck.state = .idle;

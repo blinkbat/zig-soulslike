@@ -11,7 +11,7 @@ pub const MAX_DIST = 9.0;
 pub const DEFAULT_DIST = 4.6;
 pub const DEFAULT_PITCH = 0.28;
 const ZOOM_STEP = 0.6;
-/// Radians per pixel of mouse motion. Public because the EDITOR's fly camera looks with the same hand.
+/// Radians per pixel of mouse motion. The editor's fly camera looks with the same hand.
 pub const LOOK_SENS = 0.0032;
 /// ~ -22 deg, looking UP from below. Wider than the -0.20 the free look ever asked for, because the LOCK tilts the rig onto whatever it is fixed on (`game.lockPitch`).
 const PITCH_MIN = -0.38;
@@ -20,7 +20,7 @@ pub const SHOULDER = 0.55;
 pub const TARGET_RAISE = 0.15;
 pub const FOVY: f32 = 55.0;
 
-/// **THE SKY IS SMALLER THAN IT LOOKS** — 0.200 rad, 11.5 deg.
+/// The sky is smaller than it looks — 0.200 rad, 11.5 deg.
 pub fn skyTop() f32 {
     return std.math.degreesToRadians(FOVY * 0.5) - DEFAULT_PITCH;
 }
@@ -218,7 +218,6 @@ test "AN UP-TILT IS NOT A ZOOM — flat ground costs no boom, a hill behind stil
     };
     var rig = CamRig{ .cam = undefined, .yaw = 0, .pitch = PITCH_MIN, .dist = DEFAULT_DIST };
     rig.followClear(v3(0, 1.4, 0), {}, Flat.ground, 1.0);
-    // The skim clamp lifts the eye a little, so measure against 0.9.
     const boomKept = mathx.lenV(mathx.subV(rig.cam.position, rig.cam.target));
     try std.testing.expect(boomKept > DEFAULT_DIST * 0.9);
     try std.testing.expect(rig.cam.position.y >= GROUND_CLEAR - 1e-4);
@@ -297,7 +296,6 @@ pub fn newCamRig(shoulder: rl.Vector3, yaw0: f32) CamRig {
 }
 
 test "UNDER A ROOF THE BOOM DOES NOT GO THROUGH IT, and it does not go into the rock either" {
-    // A chamber 3 m tall from -3 to 0, under a hill at 10 m; rock everywhere past 6 m of the middle.
     const Cave = struct {
         fn ground(_: void, x: f32, z: f32) f32 {
             return if (@sqrt(x * x + z * z) > 6.0) 10.0 else -3.0;
@@ -313,7 +311,6 @@ test "UNDER A ROOF THE BOOM DOES NOT GO THROUGH IT, and it does not go into the 
     while (i < 120) : (i += 1) rig.followRoofed(shoulder, {}, Cave.ground, Cave.roof, 1.0 / 60.0);
 
     const p = rig.cam.position;
-    // Under the ceiling, over the floor, and inside the room rather than buried in the hillside.
     try std.testing.expect(p.y <= 0.0);
     try std.testing.expect(p.y >= -3.0);
     try std.testing.expect(@sqrt(p.x * p.x + p.z * p.z) <= 6.0);

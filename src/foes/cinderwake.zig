@@ -88,7 +88,6 @@ const RAKE_R: f32 = 1.95;
 const RAKE_FRONT_DOT: f32 = 0.42;
 const RAKE_WIND: f32 = 0.44;
 const RAKE_STRIKE: f32 = 0.20;
-/// The hands are still up at the strike's first frame; the rake arrives from here.
 const RAKE_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const RAKE_RECOVER: f32 = 0.72;
 const RAKE_CD: f32 = 2.4;
@@ -124,7 +123,6 @@ const HIT_ASH_HEAVY = 9;
 const PARRY_ASH = 9;
 const PARTS = 60;
 comptime {
-    // A caught rake bursts ash on the same frame the hero's own blow can wound it, over the raking seam rate.
     std.debug.assert(@as(f32, PARTS) >= SEAM_RATE_RAKE * 0.52 +
         @as(f32, @floatFromInt(PARRY_ASH + foe.hitParts(HIT_ASH_HEAVY) + foe.WOUND_PARTS)));
 }
@@ -544,7 +542,7 @@ pub const Ember = struct {
     }
 };
 
-/// **THE WHOLE FIELD'S TRAIL IN ONE RING.** At `CHASE_SPEED` one wake keeps 27 embers alive (asserted).
+/// THE WHOLE FIELD'S TRAIL IN ONE RING. At `CHASE_SPEED` one wake keeps 27 embers alive (asserted).
 const TRAIL_CAP: usize = 256;
 const PER_WAKE = @as(usize, @intFromFloat(@ceil(CHASE_SPEED * EMBER_LIFE / TRAIL_SPACING)));
 comptime {
@@ -932,7 +930,6 @@ test "ONE CROSSING IS A BILL, NOT A BURN — the entry bolus alone never breaks 
     const inside = v3(0.1, 0, 0);
     const outside = v3(20, 0, 20);
 
-    // A hero at 3.4 m/s crosses a 1.04 m patch in 0.31 s.
     var t: f32 = 0;
     while (t < 0.31) : (t += 1.0 / 60.0) {
         burn.add(B, s.scorching(1.0 / 60.0, inside));

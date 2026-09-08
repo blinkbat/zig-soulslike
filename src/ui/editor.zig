@@ -966,10 +966,8 @@ const Wipe = struct {
     n: usize = 0,
 };
 
-/// WHETHER A HELD REMOVE-STROKE MAY BITE AGAIN. The first tap of one always lands; after that it owes both the clock
-/// and the step, because what is behind it is a whole `materialize` — MEASURED 4.0 ms over `01_fallen_plain`'s 16,988
-/// ops — and a sixty-frame drag across a wood would spend a quarter of every frame on it. The eraser and Ground >
-/// Reset are the two, and they answer here so a rate tuned for one is the rate for both.
+/// WHETHER A HELD REMOVE-STROKE MAY BITE AGAIN. The first tap always lands; after that it owes both the clock and the
+/// step, because behind it is a whole `materialize` — MEASURED 4.0 ms over `01_fallen_plain`'s 16,988 ops. The eraser and Ground > Reset both answer here.
 fn strokeDue(w: Wipe, g: rl.Vector3) bool {
     if (!w.on) return true;
     return w.t >= 1.0 / ERASE_HZ and mathx.dist2XZ(g, w.at) >= ERASE_STEP * ERASE_STEP;
@@ -4091,8 +4089,7 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
     }
     if (ed.dirty) hud.mono("*", row.x + 8, 8, hud.MONO, ui.HOT);
 
-    // A LINE UNDER THE WHOLE BAR WHILE HE IS LOOKING UNDER THE GROUND. It is the one state that silently changes
-    // where a click lands, it cannot be mistaken for content, and in the ordinary view it is not there at all.
+        // A LINE UNDER THE WHOLE BAR WHILE HE IS LOOKING UNDER THE GROUND: it is the one state that silently changes where a click lands.
     if (ed.caveView and m.anyCave()) {
         rl.drawRectangle(0, BARS_H - 2, sw, 2, ui.alpha(ui.LIVE, 190));
     }
@@ -5242,8 +5239,7 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
     const base = if (ed.dirty) ui.HOT else ui.LABEL;
     const rightX = sw - (wHead + wHgt + hud.monoW(tail, hud.MONO)) - CHROME_PAD;
     hud.mono(head, rightX, ty, hud.MONO, base);
-    // THE HEIGHT READS TEAL WHEN THE POINT UNDER THE CURSOR IS A CHAMBER FLOOR and not the land over it — the
-    // same teal the bar's own rule uses for the same fact, in the one place he is already reading a number.
+        // THE HEIGHT READS TEAL WHEN THE POINT UNDER THE CURSOR IS A CHAMBER FLOOR and not the land over it — the same teal the bar's own rule uses.
     hud.mono(hs, rightX + wHead, ty, hud.MONO, if (hs.len > 0 and env.underground(g.x, g.z, g.y)) ui.LIVE else base);
     hud.mono(tail, rightX + wHead + wHgt, ty, hud.MONO, base);
 
@@ -6875,18 +6871,12 @@ test "BOTH REMOVE-STROKES ANSWER ONE CLOCK: the first tap lands, then it owes th
     const here = v3(0, 0, 0);
     try std.testing.expect(strokeDue(.{}, here));
 
-    // Held still with the clock long paid: the step is what says the disc has moved.
     try std.testing.expect(!strokeDue(.{ .on = true, .at = here, .t = 10.0 }, here));
-    // Moved far with no time on the clock: the rate is what says a frame is not a stroke.
     try std.testing.expect(!strokeDue(.{ .on = true, .at = here, .t = 0 }, v3(50, 0, 0)));
-    // Both paid.
     try std.testing.expect(strokeDue(.{ .on = true, .at = here, .t = 1.0 / ERASE_HZ }, v3(ERASE_STEP, 0, 0)));
-    // Exactly under either bar is refused.
     try std.testing.expect(!strokeDue(.{ .on = true, .at = here, .t = 1.0 / ERASE_HZ }, v3(ERASE_STEP * 0.99, 0, 0)));
     try std.testing.expect(!strokeDue(.{ .on = true, .at = here, .t = 0.99 / ERASE_HZ }, v3(ERASE_STEP, 0, 0)));
 
-    // A 60 fps drag at walking pace, to say what the gate is actually worth: the sweep behind it costs a whole
-    // `materialize`, so this is the share of frames that pay for one.
     var w = Wipe{};
     var fired: usize = 0;
     for (0..120) |i| {
@@ -7064,7 +7054,6 @@ test "EVERY LIST MODAL FITS THE WINDOW IT OPENS IN" {
     for (perShelf) |n| shelved += n;
     try std.testing.expectEqual(item.NK, shelved);
 
-    // Counted in CHARACTERS because `hud.monoW` answers 0 with no atlas loaded, which made the pixel form of this vacuous.
     const tabW: i32 = @divTrunc(LOOT_W - DLG_PAD * 2 - (LOOT_TAB_COLS - 1) * 3, LOOT_TAB_COLS);
     var widest: usize = 0;
     var widestName: []const u8 = "";
@@ -7116,7 +7105,6 @@ test "EVERY LIST MODAL FITS THE WINDOW IT OPENS IN" {
     try std.testing.expect(sealH <= SCREEN_H);
     try std.testing.expect(mixH <= SCREEN_H);
 
-    // EVERY MODAL, MEASURED IN ONE PLACE: `beginModal` centres on the window, so one that is taller runs off BOTH ends and its title and its Done button are the halves you lose.
     const boxes = [_]struct { name: []const u8, h: i32 }{
         .{ .name = "items    ", .h = lootModalH(lootRowsIn(deepest)) },
         .{ .name = "gate seal", .h = sealH },
@@ -7339,7 +7327,6 @@ test "THE COUNT IS HELD, AND AN EDIT MOVES IT — a stale label sends the author
     _ = try m.add(o);
     var ed = Editor{};
     try std.testing.expectEqual(@as(usize, 2), unfilledCount(&ed, m));
-    // Filled WITHOUT banking, so a cache is entitled to be stale here.
     m.ops[0].gold = 40;
     try std.testing.expectEqual(@as(usize, 2), unfilledCount(&ed, m));
     ed.bank(m);
@@ -7385,7 +7372,6 @@ test "a quit with edits stops at the prompt; a clean one goes straight through" 
     try std.testing.expectEqual(Modal.confirm, ed.modal);
     try std.testing.expectEqual(Pending.quit, ed.pending);
 
-    // Cancel is the Esc path in `drawModal`: the window stays open and the edits stay dirty.
     ed.modal = .none;
     ed.pending = .none;
     try std.testing.expect(ed.dirty);
@@ -7415,6 +7401,5 @@ test "THE REMOVAL COLOUR IS WORN BY THE TOOLS THAT REMOVE, and by nothing else" 
         }
     }
     std.debug.print("\n  removal colour: {d} of the editor's brushes wear it\n", .{worn});
-    // One eraser a layer, plus Ground's Reset and Caves' Fill — and Caves has no eraser of its own.
     try std.testing.expect(worn == @typeInfo(Layer).@"enum".fields.len + 1);
 }

@@ -55,7 +55,6 @@ const OPEN_PETALS: i32 = 6;
 
 const PARTS = 58;
 comptime {
-    // The ring law: a heavy wounding a deer whose flower is all the way open, over the dissolve.
     std.debug.assert(PARTS >= HIT_PETALS_HEAVY + OPEN_PETALS + foe.WOUND_PARTS +
         @as(i32, @intCast(foe.emitCap(DISSOLVE.rate))));
 }
@@ -476,7 +475,7 @@ pub const Deer = struct {
         return 1.0 + BLOOM_FRAIL * mathx.clampF(self.openAmt(), 0, 1);
     }
 
-    /// The GATHER, 0..1 — the load under the charge, spent by the drive.
+        /// The GATHER, 0..1 — the load under the charge, spent by the drive.
     fn gatherAmt(self: *const Deer) f32 {
         if (self.state != .butt) return 0;
         return mathx.pulse(self.t, 0, BUTT_WIND * 0.74, BUTT_WIND * 0.90, BUTT_WIND + BUTT_STRIKE);
@@ -895,7 +894,6 @@ const SPORE_PUFF_HIT: usize = 8;
 const SPORE_PUFF_SPENT: usize = 6;
 const HERD_PARTS: usize = 72;
 comptime {
-    // The ring law: one deer's whole volley reaching him on the same frame — they are thrown together, so they land together.
     std.debug.assert(HERD_PARTS >= SPORES_PER_VOLLEY * SPORE_PUFF_HIT);
 }
 
@@ -1462,7 +1460,6 @@ test "THE FLOWER OPENS FOR THE VOLLEY AND NEVER MOVES HOUSE — the tell is the 
     std.debug.print("\n  deer: the bloom stands {d:.2} m at rest and {d:.2} m at the volley on a {d:.2} m animal\n", .{ atRest.y, atSpit.y, W });
     try std.testing.expect(@abs(atSpit.y - atRest.y) < 0.12);
     try std.testing.expect(atRest.y > heromod.H);
-    // AND IT STANDS OVER ITS OWN BACK, NOT OVER THE ANIMAL'S HEAD — measured against the WITHERS.
     const withers = rl.math.vector3Transform(mathx.zero3, d.xf[CHEST]).z;
     std.debug.print("    fore-aft: withers at {d:.2} m, the flower at {d:.2} m — {d:.2} m BEHIND the shoulder\n", .{ withers, atSpit.z, withers - atSpit.z });
     try std.testing.expect(atSpit.z < withers and atRest.z < withers);

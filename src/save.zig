@@ -761,7 +761,6 @@ fn sample() Data {
     d.pickupTaken[3] = true;
     d.ground[0] = .{ .at = .{ .x = -12.5, .y = 0.75, .z = 4.25 }, .n = 1, .loot = .{ .kobold_fang, .kobold_fang }, .gold = 41 };
     d.ground[1] = .{ .at = .{ .x = 3.0, .y = 0.0, .z = -8.5 }, .n = 2, .loot = .{ .mushroom_jerky, .quilted_gambeson } };
-    // A PURSE WITH NO ITEM UNDER IT IS A ROW: `pickup.spawn` makes one whenever the coin roll lands and the item roll does not.
     d.ground[2] = .{ .at = .{ .x = -30.25, .y = 1.5, .z = 19.0 }, .n = 0, .gold = 7 };
     d.groundN = 3;
     d.bossDead[0][0] = true;
@@ -812,7 +811,6 @@ test "a save round-trips through its own text" {
     const d = sample();
     const back = try roundTrip(&d);
     inline for (@typeInfo(Data).@"struct".fields) |f| {
-        // Only the first `groundN` drops are written, and `Drop.loot` past that is `undefined` on both sides.
         if (comptime std.mem.eql(u8, f.name, "ground")) continue;
         try expectSame(f.type, f.name, @field(d, f.name), @field(back, f.name));
     }

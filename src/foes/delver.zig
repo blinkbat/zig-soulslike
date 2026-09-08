@@ -62,13 +62,13 @@ pub const BURST_R: f32 = 1.9;
 const WALK_SPEED: f32 = 2.2;
 const CHASE_SPEED: f32 = 3.9;
 const TURN_RATE: f32 = 4.2;
-/// MEASURED, NOT ARGUED — a test walks the stroke frame by frame and brackets it from both sides, which caught the first pass declaring 2.9 m off a limb that arrived at 1.19.
+/// MEASURED, not argued: a test walks the stroke frame by frame and brackets it, which caught a first pass declaring 2.9 m off a limb that arrived at 1.19.
 const CLAW_REACH: f32 = 2.02;
 const CLAW_SWEEP_R: f32 = 0.34;
 /// WHAT A BAND PROMISES IS THAT THE ARC CROSSES HIM, NOT HOW FAR THE TIP GETS: `CLAW_REACH + CLAW_SWEEP_R` is the tip's RADIAL reach, achieved out to the SIDE, so at 2.09 the outer fifth of the trigger band could not land by construction.
 const CLAW_BAND: f32 = 1.65;
 const CLAW_KEEP: f32 = CLAW_BAND - 0.5;
-/// `foe.triggerBand`'s law: the arc is the rig's, so it scales, and a band held at the authored metre only agrees at scale 1. The STAND-OFF rides the band as a share, or at `wf.FOE_SCALE_LO` it lands outside it and the body waits in a ring it can neither claw from nor close out of.
+/// `foe.triggerBand`'s law: the arc is the rig's, so it scales. Held at the authored metre the stand-off lands outside the band at `wf.FOE_SCALE_LO`.
 const CLAW_KEEP_SHARE: f32 = CLAW_KEEP / CLAW_BAND;
 fn clawBand(scale: f32) f32 {
     return foe.triggerBand(CLAW_BAND, 1.0, scale);
@@ -104,7 +104,7 @@ const BURST_RECOVER: f32 = 0.95;
 const DIVE_CD: f32 = 6.5;
 /// **A RETRIGGER, NOT A LOOP** (raylib cannot loop a synthesized take), and the voice is cut a hair longer than this so consecutive ones overlap.
 pub const CHURN_EVERY: f32 = 0.72;
-/// The stride the limb phase is measured in — one number, read by the surface walk and by the swim under it.
+/// The stride the limb phase is measured in — one number, read by the surface walk and the swim under it.
 const STRIDE: f32 = 0.92;
 
 comptime {
@@ -129,7 +129,6 @@ const MOUND_PLOUGH_R: f32 = MOUND_TRAVEL_R * 1.1;
 const MOUND_PLOUGH_H: f32 = MOUND_TRAVEL_H * 1.45;
 const MOUND_PLOUGH_LONG: f32 = 2.8;
 
-/// THE ROCK (owner: dig up and throw a rock at range, long cd). Surfaced and far, with the dive cooling, it claws a stone out of the ground — the dig IS the tell, and the earth flying is what you read — heaves it overhead and lobs it at where you stand. It comes down hard in a ring (`game.rockBurst`); the counter is to be somewhere else, since the lob is aimed at a standing man.
 pub const ROCK_MIN: f32 = 6.5;
 pub const DIG_DUR: f32 = 0.95;
 pub const HEAVE_DUR: f32 = 0.40;
@@ -175,12 +174,11 @@ const DISSOLVE = foe.Dissolve{ .rate = 58.0, .spread = 0.9, .rise = 0.75, .flake
 
 const HIT_CHIP_LIGHT = 5;
 const HIT_CHIP_HEAVY = 9;
-/// The furrow's own burst as it takes him, the heave that ends the run, and `burstDirt` at the surface.
 const PLOUGH_CLODS: i32 = 18;
 const HEAVE_CLODS: i32 = 21;
 const BURST_CLODS: i32 = 26;
 
-/// ARITHMETIC over the worst frame (the ring law), and it is the PLOUGH'S LAST frame: the furrow lands its blow as the run ends, so all three clod bursts go in together, over the one mote `emitWake`/`emitSpray` share out of `fxAccum`, under a heavy landing on the same frame.
+/// ARITHMETIC over the worst frame, and it is the PLOUGH'S LAST: all three clod bursts go in together, over the one mote `emitWake`/`emitSpray` share, under a heavy landing on the same frame.
 const PARTS = 96;
 comptime {
     std.debug.assert(PARTS >= 1 + PLOUGH_CLODS + BURST_CLODS + HEAVE_CLODS +
@@ -237,7 +235,7 @@ const REST = [N]rl.Vector3{
     HIND_LOWER,
 };
 
-/// The far end of the middle digging claw, in the claw bone's own frame — what the stroke actually swings, and what `parryable` hands over as its reach. MEASURED off the mesh, never argued (the ogre's club law).
+/// The far end of the middle digging claw, in the CLAW BONE'S own frame — what the stroke swings and what `parryable` hands over. MEASURED off the mesh (the ogre's club law).
 const NAILS = [_][8]f32{
     .{ 0.11, -0.12, 0.50, 0.13, -0.30, 0.92, 0.056, 0.020 },
     .{ 0.00, -0.13, 0.51, 0.00, -0.33, 1.02, 0.062, 0.022 },
@@ -255,7 +253,6 @@ const SWING_YAW: f32 = 46.0;
 const State = enum { idle, walk, claw, rake, recover, dig, throw, dive, under, surge, plough, burst, heave, stunlight, stunheavy, dead };
 
 const Choice = enum { rest, wait, walk, claw, dive, dig };
-/// The dive is the answer to range while it has one; the rock is what it does with range when the dive is cooling, and only from outside its own claw's world.
 fn classify(dist: f32, scale: f32, clawReady: bool, diveReady: bool, rooted: bool, rockReady: bool) Choice {
     if (dist > AGGRO_R) return .rest;
     if (diveReady and !rooted) return .dive;
@@ -308,7 +305,7 @@ pub const Delver = struct {
     idleWait: f32 = 0.3,
     clawCd: f32 = 0,
     diveCd: f32 = 0,
-    /// Never a rock in the first breath of a fight: a fresh body waits this long before the dig is a choice.
+        /// Never a rock in the first breath of a fight.
     rockCd: f32 = 5.0,
     heroLatch: bool = false,
     raked: bool = false,
@@ -625,7 +622,6 @@ pub const Delver = struct {
 
     fn updateDig(self: *Delver, dt: f32, hero: rl.Vector3) void {
         self.faceToward(hero, TURN_RATE * 0.8, dt);
-        // Both claws in the ground and the body down over them, WORKING — the earth flying is the tell.
         const u = mathx.smoothstep(0, DIG_DUR * 0.35, self.t);
         self.crouch = lerpF(0.05, 0.34, u);
         self.rear = lerpF(0.04, -0.18, u);
@@ -641,7 +637,6 @@ pub const Delver = struct {
 
     fn updateThrow(self: *Delver, dt: f32, hero: rl.Vector3) void {
         if (self.t < HEAVE_DUR) {
-            // UP: the stone comes out and over the head, the body rearing under it.
             const u = mathx.smoothstep(0, HEAVE_DUR, self.t);
             self.faceToward(hero, TURN_RATE * 0.5, dt);
             self.crouch = lerpF(0.34, -0.06, u);
@@ -1582,14 +1577,13 @@ test "TWO WAYS OUT OF THE BURROW: under him it BURSTS, out in front of him it PL
 }
 
 test "SUBMERGED IT IS UNDER THE GROUND AT EVERY SCALE THE MAP CAN POST, not just at 1" {
-    // The comptime block above READS like a check that only speaks for scale 1. It is scale-invariant (`depth` is scale-1 metres, `ride()` scales it); this walks the band, so a reader who "fixes" the apparent gap by scaling `depth` at its writers is told that a 0.5 delver surfaces.
+        // Scale-invariant (`depth` is scale-1 metres, `ride()` scales it): this walks the band, so a reader who "fixes" the apparent gap by scaling `depth` at its writers is told a 0.5 delver surfaces.
     for ([_]f32{ wf.FOE_SCALE_LO, 1.0, 1.4, wf.FOE_SCALE_HI }) |sc| {
         var d = Delver.spawn(mathx.zero3, 0, sc, 0.3);
         d.debugDive();
         var fr: u32 = 0;
         while (fr < 60 * 6 and !d.deep()) : (fr += 1) _ = d.update(1.0 / 60.0, v3(0, 0, 1.2), 400, .{});
         try std.testing.expect(d.deep());
-        // The sphere the swept blade tests against, measured exactly as `foe.bodyPoint` builds it.
         const c = d.centerWorld();
         try std.testing.expect(c.y + d.hurtRadius() < d.pos.y);
     }
@@ -1805,7 +1799,6 @@ test "EVERY REACH IS MEASURED, NOT ARGUED — the claw arrives inside what `parr
     try std.testing.expect(far <= CLAW_REACH);
     try std.testing.expect(far > CLAW_REACH * 0.9);
     try std.testing.expect(CLAW_BAND > BODY_R + foe.HERO_R + 0.3);
-    // AND HEIGHT IS ITS OWN QUESTION: its shoulders sit at 0.40 m, so the stroke only ever crosses a standing man because the creature REARS for it. Held flat the rake topped out under his knee.
     var high: f32 = 0;
     var rise: f32 = CLAW_WIND;
     while (rise <= CLAW_WIND + CLAW_STRIKE) : (rise += 1.0 / 240.0) {
@@ -1875,7 +1868,6 @@ test "IT IS VICIOUS ON ITS FEET TOO — it runs him down and its stroke comes ro
 }
 
 test "THE STROKE CROSSES A MAN STANDING IN FRONT — every range inside its own band lands" {
-    // THE BUG THE REACH TEST COULD NOT SEE: RADIAL distance and HEIGHT are both satisfied by a swipe raked down the flank. At x −0.51 to −1.07 the closest the swept claw came on the facing line was 0.50 m against a 0.34 m blade.
     var dist: f32 = BODY_R + foe.HERO_R;
     var worst: f32 = 0;
     while (dist <= CLAW_BAND + 1e-3) : (dist += 0.05) {

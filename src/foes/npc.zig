@@ -1597,7 +1597,6 @@ test "he turns before he sets off, so his amble is never a sidestep" {
         p.update(1.0 / 60.0, v3(0, 0, 500), 200);
         worstLat = @max(worstLat, @abs(p.latB) * p.moving);
     }
-    // A CRAB-WALK IS A STRAFE, and the strafe path's foot clearance carries eight centimetres of tolerance (`hero`'s own budget at lat 0.7). Nothing here has any business needing it.
     try std.testing.expect(worstLat < 0.12);
 }
 
@@ -1707,7 +1706,6 @@ test "THE SMITH TRACKS YOU WITH HIS HEAD AND HIS BODY NEVER LEAVES THE ANVIL" {
     try std.testing.expect(spread > 0);
     try std.testing.expectApproxEqAbs(want * 0.5, a.headYaw, 6.0);
     try std.testing.expectApproxEqAbs(-want * 0.5, b.headYaw, 6.0);
-    // **THE BODY NEVER MOVES.** Placed at yaw 0 and still on it, with the hero well inside notice on both sides.
     try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.degrees(mathx.wrapPi(a.facing)), 1.0);
     try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.degrees(mathx.wrapPi(b.facing)), 1.0);
     const w = settle(.wanderer, right);
@@ -1814,7 +1812,6 @@ test "THE ANVIL IS SOLVED OFF THE STROKE, not the other way round" {
 }
 
 test "A BECKON WAVES IN FRONT OF THE BODY — the arm rises FORWARD and the elbow CURLS" {
-    // `rx(-sh)` raises the arm forward and `rx(-el)` flexes the elbow forward (`hero.BOW_SH_FLEX` 88 aims a bow).
     try std.testing.expect(FREE_EL > 0);
     try std.testing.expect(HOLD_EL > 0);
     const peak: f32 = 0.5; // `gfrac` at the middle of the gesture, where `sinf(pi*u)` is 1

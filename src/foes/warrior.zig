@@ -110,7 +110,7 @@ const KIT_R = [SPEC.len]f32{ MACE_FLANGE, GS_HALF_W };
 pub const Role = enum { shieldman, greatsword };
 
 comptime {
-    // …and a SPEC ROW PER ROLE, which `kobold.zig` and `brood.zig` both pin and this did not: `roleOf` measures the run with `SPEC.len`, so a role added without a row returns null for its own kind and `spec()` walks off the end.
+        // …and a SPEC ROW PER ROLE: `roleOf` measures the run with `SPEC.len`, so a role added without a row returns null for its own kind and `spec()` walks off the end.
     if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("warrior: a Role with no spec row");
     for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
         const fk: wf.FoeKind = @enumFromInt(@intFromEnum(wf.FoeKind.shieldman) + i);
@@ -221,9 +221,9 @@ const Spec = struct {
     souls: u32,
     moves: []const Attack,
 };
-/// the bench can reach is `MOVES[i].hit`, so a move retuned in the source flows through (`play/tune.zig`).
+/// Live, because all the bench can reach is `MOVES[i].hit` — a move retuned in the source flows through (`play/tune.zig`).
 pub var MOVES_GREATSWORD = MOVES_GREATSWORD_BANK;
-/// the bench can reach is `MOVES[i].hit`, so a move retuned in the source flows through (`play/tune.zig`).
+/// Live, because all the bench can reach is `MOVES[i].hit` — a move retuned in the source flows through (`play/tune.zig`).
 pub var MOVES_SHIELDMAN = MOVES_SHIELDMAN_BANK;
 
 const SPEC = [_]Spec{
@@ -369,7 +369,6 @@ const KNEEL_HEAD = 40.0;
 /// ARITHMETIC over the worst frame (the ring law): that frame is a killing blow landing on the KICK, which lays `kickBurst`'s 36 and `grit`'s 18 together — 54 + 66 = 120.
 const NPART = 124;
 comptime {
-    // THE RING LAW, EXECUTABLE: the kick's 36 + 18 with a killing heavy blow's two chip sprays and the shared wound.
     std.debug.assert(NPART >= 36 + 18 + foe.hitParts(20) + foe.hitParts(22) + foe.WOUND_PARTS);
 }
 
@@ -2009,7 +2008,6 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT, on every stroke a warrior throws"
         for (spec(role).moves, 0..) |a, mv| {
             const impact = a.swingDur * a.impactK;
             try std.testing.expect(PARRY_LEAD < a.windDur * 0.4);
-            // MEASURED off the state machine rather than asserted about the constants: the move is walked frame by frame from the first of its windup and the parryable span collected.
             const step = 1.0 / 600.0;
             var open: f32 = -1;
             var shut: f32 = -1;
@@ -2112,7 +2110,6 @@ test "parry lets both warriors swing into contact at 30, 60 and 144 Hz" {
                 try std.testing.expect(w.update(1 / hz, hero, 200, .{}) == null);
                 if (w.parry.pending != null) {
                     pending = true;
-                    // The successful timing must leave the incoming animation alone.
                     try std.testing.expectEqual(uncaught.state, w.state);
                     try std.testing.expectApproxEqAbs(uncaught.armSh, w.armSh, 0.0001);
                 }
@@ -2527,7 +2524,6 @@ test "A TELL YOU CAN SEE: both kits are carried ABOVE THE SKULL at the top of th
 }
 
 test "NO STROKE PLOUGHS THE TURF BESIDE HIM, and the slam's point really does reach the earth" {
-    // A weapon held radial to the arm through the bottom of an arc goes UNDER the ground — measured 0.44 m beneath it, which is why `swingTilt` drives the attitude instead.
     try std.testing.expect(swung(.shieldman, 0, 0, 1.2).lowY > 0.35);
     try std.testing.expect(swung(.greatsword, 1, 0, 2.0).lowY > 0.35);
     try std.testing.expect(swung(.greatsword, 2, 0, 2.0).lowY > 0.60);
@@ -2707,7 +2703,6 @@ test "THE LEAP IS FELT ONCE: one launch flag per lunge, and only the lunge raise
 
 test "THE HURT SPHERE IS ON THE BODY, AND IT KNEELS WHEN HE DOES" {
     var w = Warrior.spawnAs(.shieldman, mathx.zero3, 0, 1.0, 0.4);
-    // `rest` is the bare 1.8 m skeleton; the rig is drawn through `SCALE`, so the bar has to be scaled to meet it.
     const hip = w.rest[heromod.ROOT].y * w.scale;
     const skull = w.rest[SKULL].y * w.scale;
     const r = w.hurtRadius();

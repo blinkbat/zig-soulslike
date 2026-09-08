@@ -123,8 +123,7 @@ const EDGE_SHAPE_GLSL = blk: {
 };
 
 /// The three shapes the GLSL singles out, by name and not by number: `edgeWarp`, `waterAt` and `paintedSoil` each branch on one ordinal.
-/// `caves.shelterAt` RUNS THIS SAME ARITHMETIC and the two may not drift, so the four numbers come from there
-/// rather than being typed twice — the way `WATER_SHORE` above had to after 128 in Zig met two bare `0.5`s here.
+/// `caves.shelterAt` RUNS THIS SAME ARITHMETIC and the two may not drift, so the four numbers come from there rather than being typed twice.
 const CAVE_GLSL = std.fmt.comptimePrint(
     "const float CAVE_LID = {d:.5};\nconst float CAVE_CONTOUR = {d:.5};\n" ++
         "const float CAVE_H_BIAS = {d:.1};\nconst float CAVE_H_STEP = {d:.5};\n",

@@ -322,10 +322,8 @@ test "THE THREE LAYERS ARE ALL FUNGAL — canopy, understorey and floor, and the
 
 test "a hanging thing sways a BIT: the deepest bead's throw stays inside its own width" {
     const throw = DANGLE_DROP_MAX * DANGLE_PER_M * DANGLE_PEAK;
-    // 3.0 cm on a 4.5 cm bead. Under half its own width it reads as alive; over it, as blowing away.
     try std.testing.expect(throw < SPORE_R_HI * 2.0 * 0.75);
     try std.testing.expect(throw > 0.015);
-    // …AND IT IS THE WHOLE MESH-TO-SHADOW DIVORCE, because the depth pass has no wind term. Under three texels of the sun's map, which is 108 m over 8192.
     const texel = gfx.SHADOW_ORTHO / @as(f32, gfx.SHADOWMAP_RES);
     try std.testing.expect(throw < texel * 3.0);
     try std.testing.expect(LAMP_BULB_DROP < GLOW_SPORE_DROP_HI);
@@ -334,7 +332,6 @@ test "a hanging thing sways a BIT: the deepest bead's throw stays inside its own
 test "the glow's light sits under its own cap rather than on top of it" {
     try std.testing.expect(GLOW_LIGHT_Y < GLOW_H);
     try std.testing.expect(GLOW_LIGHT_Y > GLOW_H * 0.5);
-    // Emissive alpha, not opacity: both fungal glows read as self-lit to the scene shader.
     try std.testing.expect(CAP_GLOW.a < 255 and SPORE_GLOW.a < 255);
 }
 

@@ -125,7 +125,7 @@ const FROST_R_MIN: f32 = 3.0;
 const FROST_R_MAX: f32 = 18.0;
 
 comptime {
-    // The ring lands centred on him, so he must clear its radius plus his own footprint. MEASURED AT THE SCALE IT IS DRAWN AT — asserting the bare `FROST_R` would pass on a ring a third wider.
+        // MEASURED AT THE SCALE IT IS DRAWN AT — asserting the bare `FROST_R` would pass on a ring a third wider.
     std.debug.assert(FROST_FUSE * 1.7 > FROST_R * SCALE + foe.HERO_R);
     std.debug.assert(FROST_WIND >= foe.TELL_MIN);
     std.debug.assert(RAISE_WIND > FROST_WIND + FROST_CAST_DUR);
@@ -225,7 +225,6 @@ const RAISE_WIND_KEYS = [_]PK{
     .{ .t = 0.14, .p = RAISE_ANTIC, .ease = .decel },
     .{ .t = 0.50, .p = RAISE_DEEP, .ease = .accel },
     .{ .t = 0.66, .p = RAISE_HELD, .ease = .decel },
-    // THE BAIT IS THE FLAT PART. A held pose that creeps while it waits reads as the cast already starting.
     .{ .t = 1.00, .p = RAISE_HELD, .ease = .linear },
 };
 const RAISE_UP_KEYS = [_]PK{
@@ -340,8 +339,7 @@ const State = enum { idle, drift, leap, raise_wind, raise_up, frost_wind, frost_
 
 const Spent = enum { raise, frost };
 
-/// The recovery's LENGTH and its KEYS are one fact. Split across two switches they drift, and a table sampled
-/// against the wrong clock reads as a move that stops halfway.
+/// The recovery's LENGTH and its KEYS are one fact: split across two switches they drift, and a table sampled against the wrong clock reads as a move that stops halfway.
 const Recover = struct { dur: f32, keys: []const PK };
 fn recoverOf(spent: Spent) Recover {
     return switch (spent) {
@@ -607,7 +605,7 @@ pub const Necro = struct {
         self.raised = false;
         self.parried = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
-        // A rooted body still finishes the arc it is already in — held mid-air it would hang there.
+                // A rooted body still finishes the arc it is already in — held mid-air it would hang there.
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         if (grip.downed) self.stagger(true);
@@ -669,7 +667,7 @@ pub const Necro = struct {
                 } else if (self.t >= DRIFT_DUR) self.decide(d);
             },
             .raise_wind => {
-                // IT TURNS TO THE BODY IT COMMITTED TO, NOT TO HIM — and that IS the tell. `raiseAt` and never `vigil.at`: the spot is committed at the START of the gather.
+                                // `raiseAt` and never `vigil.at`: the spot is committed at the START of the gather, and turning to it IS the tell.
                 self.faceToward(self.raiseAt, dt);
                 const u = mathx.clampF(self.t / RAISE_WIND, 0, 1);
                 want = Poser.sample(&RAISE_WIND_KEYS, u);
@@ -721,7 +719,7 @@ pub const Necro = struct {
             },
         }
 
-        // A HOP CUT SHORT KEEPS ITS HEIGHT AND ITS RISE, then falls under the arc's own gravity — a stagger in flight must not freeze aloft or teleport down.
+                // A HOP CUT SHORT KEEPS ITS HEIGHT AND ITS RISE, then falls under the arc's own gravity — never frozen aloft, never teleported down.
         if (self.falling) {
             self.hop = mathx.maxF(0, self.hop + self.hopVel * dt - 0.5 * LEAP_GRAV * dt * dt);
             self.hopVel -= LEAP_GRAV * dt;
@@ -734,8 +732,7 @@ pub const Necro = struct {
         }
         if (self.landT < LAND_DUR) {
             self.landT += dt;
-            // WHICHEVER DEMAND IS LARGER, SIGN AND ALL. `maxF` against a floor of 0 clipped the rebound half of the
-            // landing curve, so the knees took the drop and then never gave it back.
+                        // WHICHEVER DEMAND IS LARGER, SIGN AND ALL: `maxF` against a floor of 0 clipped the rebound half of the landing curve, so the knees took the drop and never gave it back.
             const land = anim.keyAt(&LAND_KEYS, mathx.clampF(self.landT / LAND_DUR, 0, 1));
             if (@abs(land) > @abs(wantCrouch)) wantCrouch = land;
         }
@@ -752,7 +749,7 @@ pub const Necro = struct {
         self.pose();
         self.tickSigil(dt, hero);
         self.tryHit(blade);
-        // THE SPELL IS BILLED AFTER THE BLADE IS. A stroke landing on the release frame cancels the raise or the ring it was about to make; it does NOT cancel a ring already in the ground, nor damage due this frame.
+                // THE SPELL IS BILLED AFTER THE BLADE IS: a stroke on the release frame cancels the raise or the ring about to be made, but not a ring already in the ground.
         if (self.state != .dead and !self.staggered()) {
             if (self.pendRaise) {
                 self.raised = true;
@@ -763,8 +760,7 @@ pub const Necro = struct {
         }
         self.pendRaise = false;
         self.pendLay = null;
-        // Hand-attached FX are sampled off the pose that was actually drawn this frame — and a cut cast stops
-        // gathering on the frame it is cut, not the frame after.
+                // Hand-attached FX are sampled off the pose actually drawn this frame, and a cut cast stops gathering on the frame it is cut.
         if (!self.staggered()) {
             if (self.gatherU) |u| self.gather(dt, u);
         }
@@ -781,7 +777,7 @@ pub const Necro = struct {
         self.sigil.left = 0;
         self.sigil.blew = 0;
         self.burst();
-        // XZ ALONE GAVE THE RING UNLIMITED VERTICAL REACH — it billed a hero standing on the deck above it. The blow is the visible ground burst, so the hero's own capsule must overlap that band. `FROST_WALL_H` clears his 1.4 m jump apex on purpose: this is not a move you hop over.
+                // XZ ALONE GAVE THE RING UNLIMITED VERTICAL REACH — it billed a hero standing on the deck above it. `FROST_WALL_H` clears his 1.4 m jump apex on purpose.
         const at = self.sigil.at;
         const overlaps = hero.y + foe.HERO_LOW <= at.y + FROST_WALL_H and hero.y + foe.HERO_HIGH >= at.y;
         if (overlaps and mathx.distXZ(at, hero) <= FROST_R * self.scale + foe.HERO_R) {
@@ -923,8 +919,7 @@ pub const Necro = struct {
         const dead = self.state == .dead;
         const dk = if (dead) mathx.smoothstep(0, 0.45, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
 
-        // A braced body walks less: `legChain` only solves the knee under a pelvis it believes is STANDING, and it
-        // applies that solve by `1 - m`. Left at a walking `m` the half-applied solve put the soles 2.4 cm under.
+                // A braced body walks less: `legChain` only solves the knee under a pelvis it believes is STANDING and applies that solve by `1 - m`. Left at a walking `m` the half-applied solve put the soles 2.4 cm under.
         const m = self.moving * (1.0 - dk) * (1.0 - mathx.clampF(self.crouch * 1.7, 0, 1));
         const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);
         const bob = pel.bob;
@@ -949,7 +944,7 @@ pub const Necro = struct {
         }
         self.poseUpper(&wx, dk, prot);
         if (dead) heromod.deadLegs(&wx, self.rest, dk);
-        // The spring gives the tuck its LAG; the hop gives it the ground truth. Spring alone, the knees were still folded a frame after touchdown and drove the soles 4 cm under.
+                // The spring gives the tuck its LAG, the hop gives it the ground truth. Spring alone, the knees were still folded a frame after touchdown and drove the soles 4 cm under.
         const fly = self.tuck * mathx.clampF(self.hop / TUCK_LAND_BAND, 0, 1);
         if (fly > 0.001) tuckLegs(&wx, fly, self.pos.y);
         self.xf = wx;
@@ -1000,8 +995,8 @@ pub const Necro = struct {
         setLocal(wx, SHR, rest, mul3(rx(-staffSh), ry(0), rz(-self.posed[C_SABD] - wonk * 0.4)));
         setLocal(wx, ELR, rest, rx(-staffEl));
         setLocal(wx, WRR, rest, rz(4.0));
-        // The arm's own rx down this chain is `-(staffSh + staffEl)`; added instead, the pole read out at 93 degrees, flat like a lance.
-        // AND IT TURNS ABOUT THE GRIP. `staffFit` pivots on the bone origin, which is the WRIST — 0.09 H above the palm — so every degree of tilt swung the pole out of the hand that was supposed to be holding it.
+                // The arm's own rx down this chain is `-(staffSh + staffEl)`; added instead the pole read out at 93 degrees.
+                // AND IT TURNS ABOUT THE GRIP: `staffFit` pivots on the bone origin, the WRIST, 0.09 H above the palm.
         const tilt = self.posed[C_TILT] - CROUCH_TILT * self.crouch;
         setLocal(wx, STAFF, rest, mul3(tr(-GRIP.x, -GRIP.y, -GRIP.z), staffFit(tilt - staffSh - staffEl), tr(GRIP.x, GRIP.y, GRIP.z)));
     }
@@ -1091,7 +1086,7 @@ pub const Necro = struct {
     pub fn castPoint(self: *const Necro) rl.Vector3 {
         return foe.markOn(self.xf[WRL], v3(0, FIST_Y, FIST_Z));
     }
-    /// The STAFF hand's fist, which is where the pole is gripped.
+        /// The STAFF hand's fist, which is where the pole is gripped.
     pub fn castPointRight(self: *const Necro) rl.Vector3 {
         return foe.markOn(self.xf[WRR], v3(0, FIST_Y, FIST_Z));
     }
@@ -1253,7 +1248,7 @@ pub const Necro = struct {
 };
 
 
-/// AN EXTRA ROTATION FOLDED INTO A JOINT, carrying its children with it. The tuck rides ON TOP of `legChain`'s solve rather than replacing it, so the legs do not pop the frame the soles leave the floor — and a rotation cannot change a bone's length.
+/// AN EXTRA ROTATION FOLDED INTO A JOINT, carrying its children with it. It rides ON TOP of `legChain`'s solve rather than replacing it, so the legs do not pop the frame the soles leave the floor.
 fn foldInto(wx: *[N]rl.Matrix, joint: usize, kids: []const usize, extra: rl.Matrix) void {
     const was = wx[joint];
     const inv = rl.math.matrixInvert(was);
@@ -1270,7 +1265,7 @@ fn tuckLegs(wx: *[N]rl.Matrix, tuck: f32, groundY: f32) void {
     }
 }
 
-/// FEET DO NOT SINK: level the ANKLE, never lift the BODY. In flight the sole is nowhere near the turf and this is a no-op; on the way down it takes the tuck out of the foot exactly as fast as the floor arrives.
+/// FEET DO NOT SINK: level the ANKLE, never lift the BODY. In flight this is a no-op; on the way down it takes the tuck out of the foot exactly as fast as the floor arrives.
 fn levelSole(wx: *[N]rl.Matrix, sole: heromod.SolePatch, groundY: f32) void {
     var pass: u8 = 0;
     while (pass < 4) : (pass += 1) {
@@ -1444,7 +1439,7 @@ fn staffMesh() rl.Mesh {
     const p = STAFF_PATH;
 
     b.setMat(.bark);
-    // ONE WOOD, WEATHERED ALONG ITS LENGTH. Two tones alternated segment by segment banded the shaft like a barber's pole.
+        // ONE WOOD: two tones alternated segment by segment banded the shaft like a barber's pole.
     var i: usize = 0;
     while (i < STAFF_SEGS) : (i += 1) {
         const fi: f32 = @floatFromInt(i);
@@ -1453,7 +1448,6 @@ fn staffMesh() rl.Mesh {
         const rb = (0.0143 - 0.0007 * fi) * H * rng.range(0.95, 1.06);
         const col = mathx.lerpColor(propart.BARK_OLD, propart.BARK, k * 0.75 + rng.range(-0.05, 0.05));
         b.addCapsule(p[i], p[i + 1], ra, rb, 9, col);
-        // A bare joint between two tapers reads as cut pipe.
         if (i > 0) b.addBlob(p[i], v3(ra * 1.14, ra * 1.10, ra * 1.14), 3, 8, mathx.lerpColor(col, propart.BARK_DK, 0.35));
         if (rng.float() < 0.38) {
             const a = rng.angle();
@@ -1669,7 +1663,6 @@ fn sleeveMesh() rl.Mesh {
 fn forearmMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.cloth);
-    // The elbow's own mass: two tapers meeting at a bare joint show both their mouths the moment the arm flexes.
     b.addBlob(v3(0, 0, 0), v3(0.028 * H, 0.026 * H, 0.028 * H), 4, 10, ROBE);
     b.addCapsule(v3(0, 0, 0), v3(0, -0.070 * H, 0), 0.025 * H, 0.030 * H, 9, ROBE);
     b.setMat(.plain);
@@ -1855,7 +1848,6 @@ test "…AND IT STAYS A STAFF THROUGH BOTH CASTS — the trunk's own lean is bil
     const fSeg = f.staffSeg();
     std.debug.print("  necro frost: staff lean {d:.1} deg, ferrule y {d:.2}\n", .{ at(&f), fSeg[0].y });
     try std.testing.expect(fSeg[1].y > fSeg[0].y);
-    // The ORDER is what this pins: bent the right way the arm is pitch 40 and the ferrule 0.47, still clear of the planted raise's 0.31.
     try std.testing.expect(fSeg[0].y > rSeg[0].y + 0.12);
 }
 
@@ -2141,7 +2133,6 @@ test "THE POLE IS ONE PATH: the grip is ON the fist, the reported segment IS the
     var arc: f32 = 0;
     for (STAFF_PATH[0 .. STAFF_PATH.len - 1], STAFF_PATH[1..]) |a, b| arc += mathx.lenV(mathx.subV(b, a));
     try std.testing.expectApproxEqAbs(STAFF_UP + STAFF_DOWN, arc, 0.03);
-    // The head is a hand over the crown, not half a metre of pole above it.
     try std.testing.expect(mathx.lenV(mathx.subV(STAFF_HEAD, grip)) < mathx.lenV(mathx.subV(grip, STAFF_FOOT)) * 1.6);
 
     for (TEST_SCALES) |size| {
@@ -2168,7 +2159,6 @@ test "THE POLE IS ONE PATH: the grip is ON the fist, the reported segment IS the
                 try std.testing.expectApproxEqAbs(span, now, 1e-3);
                 try std.testing.expectApproxEqAbs(upper, up, 1e-3);
                 try std.testing.expectApproxEqAbs(fore, fw, 1e-3);
-                // The grip stays IN the fist: the pole turns about the real grip, never about the wrist origin.
                 const held = foe.markOn(k.xf[STAFF], GRIP);
                 try std.testing.expect(mathx.lenV(mathx.subV(held, k.castPointRight())) < 0.001 * size);
             }
@@ -2200,7 +2190,6 @@ test "THE HOP TRAVELS THE SAME GROUND AT 30, 60 AND 144 Hz, and it is AIRBORNE w
         if (far < 0) far = went;
         try std.testing.expectApproxEqAbs(far, went, 0.002);
     }
-    // The authored curve's own integral: 2 * speed * duration / pi.
     try std.testing.expectApproxEqAbs(2.0 * LEAP_SPEED * LEAP_DUR / std.math.pi, far, 0.01);
 }
 
@@ -2221,7 +2210,6 @@ test "A LANDING COMPRESSES AND GIVES IT BACK — the knees take the drop, then r
         }
         std.debug.print("  necro landing at {d: >5.1} Hz: compressed {d:.2}, rebounded to {d:.2}\n", .{ 1.0 / dt, deepest, highest });
         try std.testing.expect(deepest > 0.50);
-        // A glide back onto rest reads as weightless: the pelvis must cross it.
         try std.testing.expect(highest < -0.10);
         try std.testing.expect(@abs(k.crouch) < 0.05);
     }
@@ -2313,7 +2301,6 @@ test "A BLADE ON THE RELEASE FRAME CANCELS THE SPELL, and spends the cooldown al
             _ = k.update(dt, hero, 400, .{});
         }
         try std.testing.expect(guard < 1000);
-        // ONE more frame — the one the event is due on — with a stroke landing in it.
         const at = k.centerWorld();
         const blade = foe.Blade{ .active = true, .a = at, .b = at, .a0 = at, .b0 = at, .r = 0.2, .hit = .{ .dmg = 6, .stance = 100 } };
         k.vigil.at = body;
@@ -2369,7 +2356,6 @@ test "THE RING IS A BURST, NOT A COLUMN — it takes the floor it was laid on an
         }
     }.at;
     try std.testing.expect(bill(0));
-    // His own jump apex is 1.4 m and this is not a move he hops over.
     try std.testing.expect(bill(heromod.JUMP_APEX));
     try std.testing.expect(!bill(FROST_WALL_H + 1.0));
     try std.testing.expect(!bill(-(foe.HERO_HIGH + 0.5)));
@@ -2383,7 +2369,6 @@ test "THE BLADE FINDS THE WHOLE BODY — skull, shins and all — and finds noth
         for (HULLS) |hull| {
             const at = foe.markOn(k.xf[hull.bone], hull.center);
             try std.testing.expect(k.hullTouches(at, at, 0.01));
-            // The broad phase must enclose every hull, or `foe.reached` throws the stroke away before the narrow test runs.
             try std.testing.expect(mathx.lenV(mathx.subV(at, k.centerWorld())) <= k.hurtRadius());
         }
         const skull = k.lockPoint();
@@ -2395,7 +2380,6 @@ test "THE BLADE FINDS THE WHOLE BODY — skull, shins and all — and finds noth
         const overhead = v3(k.pos.x, k.pos.y + 3.6 * size, k.pos.z);
         try std.testing.expect(!k.hullTouches(overhead, overhead, 0.05));
 
-        // A swept stroke through the skull lands; the same sweep a metre to the side does not.
         var live = Necro.spawn(mathx.zero3, 0, size, 0.3);
         runFor(&live, 0.5, 1.0 / 120.0, v3(0, 0, 40));
         const through = foe.shaftThrough(live.lockPoint(), .{ .dmg = 3 });
@@ -2423,7 +2407,6 @@ test "AN INTERRUPT KEEPS THE POSE AND ITS VELOCITY — the springs carry every p
             k.vigil.at = v3(2, 0, 2);
             _ = k.update(dt, v3(0, 0, 9), 400, .{});
         }
-        // A stagger throws the TARGET back to carry from wherever the cast had it. The output may only crawl toward it: crossing a fifth of that gap in two 8.3 ms frames is a spring, crossing all of it is a cut.
         const at = k.posed;
         k.stagger(true);
         _ = k.update(dt, v3(0, 0, 9), 400, .{});
@@ -2435,7 +2418,6 @@ test "AN INTERRUPT KEEPS THE POSE AND ITS VELOCITY — the springs carry every p
             widest = mathx.maxF(widest, gap);
             if (gap > 20.0) crossed = mathx.maxF(crossed, @abs(now - was) / gap);
         }
-        // A phase whose pose already sits on carry has nothing to be continuous ABOUT; three of the four do.
         if (widest > 60.0) {
             wide += 1;
             try std.testing.expect(crossed < 0.30);
@@ -2455,7 +2437,6 @@ test "RECOVERY CROSSES REST BEFORE IT SETTLES, and it does so at every frame rat
         var t: f32 = 0;
         while (t < FROST_RECOVER + 1.4) : (t += dt) {
             _ = k.update(dt, v3(0, 0, 9), 400, .{});
-            // Carry lean is +6; a recovery that glides onto it never goes under it.
             if (k.posed[C_LEAN] < CARRY.lean - 1.5) past = true;
         }
         try std.testing.expect(past);
@@ -2482,7 +2463,6 @@ test "THE HEM IS THE LAST THING TO MOVE, and it moves the same at 30, 60 and 144
         deepest = mathx.minF(deepest, least);
         try std.testing.expect(@abs(k.hemLean) < 1.0);
     }
-    // Cloth is slower than the body, or it reads welded to it.
     try std.testing.expect(HEM_STIFF < POSE_STIFF * std.math.pow(f32, POSE_FALL, CH - 1) * 0.2);
     std.debug.print("  necro hem: settles at {d:.2} deg, overshoots to {d:.2} on the stop\n", .{ settled, deepest });
 }
@@ -2495,7 +2475,6 @@ test "A GATHER STILL COSTS THE COOLDOWN when it is cut, and the ring's own clock
     const cd = k.frostCd;
     k.stagger(true);
     runFor(&k, combat.FOE_HEAVY_STUN_DUR + 0.1, dt, v3(0, 0, 9));
-    // An interrupted GATHER never spent it — only a completed cast does, and that is the existing rule.
     try std.testing.expect(k.frostCd <= cd + 1e-4);
     try std.testing.expect(!k.sigil.live());
 }

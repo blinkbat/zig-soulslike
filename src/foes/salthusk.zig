@@ -85,7 +85,6 @@ const CLOUT_R: f32 = 1.72;
 const CLOUT_FRONT_DOT: f32 = 0.45;
 const CLOUT_WIND: f32 = 0.42;
 const CLOUT_STRIKE: f32 = 0.18;
-/// The arm is still back at the strike's first frame; the clout arrives from here.
 const CLOUT_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const CLOUT_RECOVER: f32 = 0.66;
 const CLOUT_CD: f32 = 2.2;
@@ -106,7 +105,6 @@ pub var SHATTER_HIT = combat.Hit{
 comptime {
     std.debug.assert(H > heromod.H);
     std.debug.assert(CLOUT_WIND >= foe.TELL_MIN);
-    // The SHORTEST fuse any husk can roll is what the tell floor has to be measured against.
     std.debug.assert(BURST_FUSE * FUSE_LO >= foe.TELL_MIN * 2.0);
     std.debug.assert(SHATTER_R > BODY_R * 4.0);
 }
@@ -127,7 +125,6 @@ const HIT_GRIT_HEAVY = 9;
 const PARRY_GRIT = 9;
 const PARTS = 128;
 comptime {
-    // A caught clout grits on the same frame the hero's own blow can wound it, over a lit fuse and its shards.
     std.debug.assert(@as(f32, PARTS) >= FUSE_RATE * 0.5 +
         @as(f32, @floatFromInt(SHARD_PARTS + PARRY_GRIT + foe.hitParts(HIT_GRIT_HEAVY) + foe.WOUND_PARTS)));
 }

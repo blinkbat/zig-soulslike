@@ -330,13 +330,11 @@ fn crossOf(v: [3]rl.Vector2) f32 {
 test "EVERY TRIANGLE COMES BACK ON THE DRAWABLE SIDE — apex up or apex down, and the shape is the same three points" {
     const up = [3]rl.Vector2{ .{ .x = 0, .y = -5 }, .{ .x = -4, .y = 3 }, .{ .x = 4, .y = 3 } };
     const down = [3]rl.Vector2{ .{ .x = -4, .y = -3 }, .{ .x = 4, .y = -3 }, .{ .x = 0, .y = 5 } };
-    // Apex-down is the half a call site gets wrong: cross above zero, which raylib culls.
     try std.testing.expect(crossOf(down) > 0);
     try std.testing.expect(crossOf(up) < 0);
     for ([_][3]rl.Vector2{ up, down }) |t| {
         const w = wound(t[0], t[1], t[2]);
         try std.testing.expect(crossOf(w) <= 0);
-        // The same three points, only re-ordered — a fix may not move the shape.
         var seen: usize = 0;
         for (t) |p| {
             for (w) |q| {
@@ -345,7 +343,6 @@ test "EVERY TRIANGLE COMES BACK ON THE DRAWABLE SIDE — apex up or apex down, a
         }
         try std.testing.expectEqual(@as(usize, 3), seen);
     }
-    // Degenerate stays as given rather than flipping on a rounding wobble.
     const flat = [3]rl.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 4, .y = 0 } };
     const fw = wound(flat[0], flat[1], flat[2]);
     try std.testing.expectEqual(flat[1].x, fw[1].x);

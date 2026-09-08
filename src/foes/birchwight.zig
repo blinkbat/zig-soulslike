@@ -88,7 +88,6 @@ const BOUGH_R: f32 = 2.30;
 const BOUGH_FRONT_DOT: f32 = 0.34;
 const BOUGH_WIND: f32 = 0.86;
 const BOUGH_STRIKE: f32 = 0.22;
-/// The bough is still back at the strike's first frame; it arrives from here.
 const BOUGH_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const BOUGH_RECOVER: f32 = 0.95;
 const BOUGH_CD: f32 = 3.0;
@@ -126,7 +125,6 @@ const HIT_CHIP_HEAVY = 11;
 const PARRY_CHIPS = 9;
 const PARTS = 68;
 comptime {
-    // A caught bough chips on the same frame the hero's own blow can wound it, over a lit wight's flame rate.
     std.debug.assert(@as(f32, PARTS) >= FLAME_RATE_LIT * 0.52 +
         @as(f32, @floatFromInt(PARRY_CHIPS + foe.hitParts(HIT_CHIP_HEAVY) + foe.WOUND_PARTS)));
 }

@@ -11,7 +11,7 @@ pub const Ctx = struct {
     at: rl.Vector3,
     facing: f32,
     quarry: rl.Vector3,
-    /// How wide that thing is. EVERY radius in a `Step` is measured to its SKIN, so one script reads the same on a toad and on the knight instead of being re-tuned per quarry.
+        /// How wide that thing is. EVERY radius in a `Step` is measured to its SKIN, so one script reads the same on a toad and on the knight.
     quarryR: f32 = 0,
     nav: foe.Nav = .{},
 };
@@ -25,7 +25,6 @@ pub const Want = struct {
 const ARRIVE: f32 = 0.45;
 const SHIFT_BAIL: f32 = 2.2;
 const BAND_SLOP: f32 = 0.35;
-/// How often a walk to a band is asked whether it is going anywhere, and the least ground that answers yes. A creature held where it stands — cornered, shoved, wading — must come back to its own mind, while one chasing a man who runs just as fast is getting nowhere and is not stuck.
 const STALL_BAIL: f32 = 1.2;
 const STALL_GO: f32 = 0.35;
 
@@ -35,17 +34,15 @@ pub const Step = union(enum) {
     orbit: struct { r: f32, secs: f32 },
     dwell: struct { secs: f32 },
     shift: struct { d: f32, turn: f32 },
-    /// **HOLD THE RANGE YOU ARE ON AND CIRCLE.** An orbit whose radius is taken from where the creature ALREADY stands, committed at the first frame — so one script serves a skirmisher at 9 m and at 19 without walking either of them to an authored ring.
+        /// HOLD THE RANGE YOU ARE ON AND CIRCLE: the orbit radius is taken from where the creature already stands, committed at the first frame.
     strafe: struct { secs: f32 },
-    /// **HOLD A RANGE AND CIRCLE IT.** Inside the band it strafes; outside it walks to the near edge and keeps circling on the way. Every caster and skirmisher used to spell this as `forward ± lateral` on a timer, which walks a heading committed before the quarry moved.
+        /// HOLD A RANGE AND CIRCLE IT. Inside the band it strafes; outside it walks to the near edge and keeps circling on the way.
     band: struct { min: f32, max: f32, secs: f32 },
-    /// **PLAY ANOTHER SCRIPT HERE**, `times` over, then carry on. The one part that makes the rest compose: a flow is written out of the flows already named.
     run: struct { script: []const Step, times: u8 = 1 },
 };
 
-/// A script may call into two more. Deeper than that is a behaviour tree, not a script.
 const DEPTH = 3;
-/// Steps one frame may finish and walk past. Held against a budget rather than the script in hand, which changes under a `run`.
+/// Steps one frame may finish and walk past. Held against a budget, not the script in hand, which changes under a `run`.
 const BUDGET = 32;
 
 const Frame = struct { script: []const Step = &.{}, call: usize = 0, left: u8 = 0 };
@@ -63,7 +60,7 @@ pub const Routine = struct {
     up: [DEPTH]Frame = [_]Frame{.{}} ** DEPTH,
     nup: usize = 0,
 
-    /// ARM IT. `side` is +1 or -1 and is what makes two creatures running the same script orbit opposite ways — a seeded roll at the call site, never inside here, so a routine stays pure of dice.
+        /// ARM IT. `side` is +1 or -1 — a seeded roll at the CALL SITE, never in here, so a routine stays pure of dice.
     pub fn start(self: *Routine, script: []const Step, side: f32) void {
         self.* = .{
             .script = script,
@@ -267,14 +264,14 @@ pub const Routine = struct {
 };
 
 
-/// The heading a `Want` asks for, or nothing when it asks for no ground. Split from `walk` so a creature with a last word on where it may tread — a room to stay inside, a shore to keep off — can bend the way before it takes it.
+/// The heading a `Want` asks for, or null when it asks for no ground.
 pub fn heading(w: Want, at: rl.Vector3) ?rl.Vector3 {
     const g = w.go orelse return null;
     const way = mathx.dirXZ(at, g);
     return if (mathx.lenXZ(way) > 1e-3) way else null;
 }
 
-/// Take the stride and fill in the figures the gait reads. `moveSpeed` is optional the way `foe.postDrive`'s is: a creature that reads its gait speed back off the distance keeps no channel for it.
+/// `moveSpeed` is optional the way `foe.postDrive`'s is: a creature that reads gait speed back off distance keeps no channel for it.
 pub fn walk(pos: *rl.Vector3, way: rl.Vector3, dt: f32, bounds: f32, speed: f32, movedDist: *f32, moveSpeed: ?*f32, moveYaw: *?f32) void {
     const moved = speed * dt;
     mathx.stepXZ(pos, way, moved, bounds);

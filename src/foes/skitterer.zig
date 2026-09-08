@@ -28,10 +28,8 @@ pub var AGGRO_R: f32 = 15.0;
 const HOME_R: f32 = 1.0;
 
 const BODY_R: f32 = 0.42;
-/// **THE SPHERE IS THE CAGE, AND THE BLADE IS DELIBERATELY OUTSIDE IT.** Measured: the cage runs 0 to 1.06 W
-/// and the spine's base to 1.8 W, while the reared tip stands at 3.5 W — 2.2 m. A sphere big enough to hold the
-/// tip is 1.1 m of radius on a body 0.99 m across, so half of every swing would connect with air a metre off it.
-/// Centre 0.90 W, radius 1.00 W spans -0.10 W to 1.90 W.
+/// THE SPHERE IS THE CAGE, AND THE BLADE IS DELIBERATELY OUTSIDE IT. Measured: the cage runs 0 to 1.06 W and the
+/// spine's base to 1.8 W, while the reared tip stands at 3.5 W. Centre 0.90 W, radius 1.00 W spans -0.10 W to 1.90 W.
 const HURT_R: f32 = 1.00;
 const CENTER_F: f32 = 0.90;
 const TOP_F: f32 = 3.60;
@@ -82,8 +80,7 @@ const REAR_BACK: f32 = 62.0;
 const SLICE_THROUGH: f32 = 158.0;
 const SLICE_SETTLE: f32 = 0.62;
 
-/// **IT WILL NOT WALK INTO A FLAME** — and a blow breaks that outright (`foe.shyOfFlame`). The share is the
-/// standard's, so what "backs off slower than it closes" means is one number for every light-shy body.
+/// IT WILL NOT WALK INTO A FLAME — and a blow breaks that outright (`foe.shyOfFlame`). The share is the standard's, one number for every light-shy body.
 const SHY_SPEED: f32 = RUN_SPEED * foe.SHY_SHARE;
 
 const RUN_SPEED: f32 = 6.4;
@@ -454,7 +451,6 @@ pub const Skitterer = struct {
             self.speed = 0;
             self.reared = true;
         } else if (foe.shyOfFlame(self)) {
-            // Eyes on him the whole way out: it is the FLAME it is backing away from, not the man carrying it.
             self.faceToward(hero, dt);
             self.speed = mathx.approach(self.speed, SHY_SPEED, ACCEL * dt);
             const back = foe.shyStep(self, dt, bounds, self.speed);
@@ -1077,7 +1073,6 @@ test "A CLAWED BODY CARRIES THE BENCH'S POOLS — the same door the map's own pl
 }
 
 test "A BIG PLACEMENT STILL ATTACKS — the stop ring may never grow past the trigger ring" {
-    // The bug this pins: a `stop` scaled by the body against a `triggerR` that is not — it halted outside its own attack ring at every scale over ~1.4.
     for ([_]f32{ wf.FOE_SCALE_LO, 1.0, 1.4, wf.FOE_SCALE_HI }) |sc| {
         var s = Skitterer.spawn(mathx.zero3, 0, sc, 0.3);
         s.leash.noteSeen();
@@ -1135,12 +1130,10 @@ test "A LIT TORCH HOLDS IT OFF, AND ONE BLOW UNDOES THAT" {
     const flame = mathx.ground(0, 1.6);
     var s = Skitterer.spawn(mathx.ground(0, 7.0), 0, 1.0, 0.3);
 
-    // No flame: it comes on.
     var t: f32 = 0;
     while (t < 1.5) : (t += dt) _ = s.update(dt, hero, 400, .{});
     try std.testing.expect(mathx.distXZ(s.pos, hero) < 7.0);
 
-    // Lit, and inside the shy share of its radius: it turns round and backs out.
     const was = mathx.distXZ(s.pos, flame);
     s.glare = .{ .k = foe.SHY_ON + 0.05, .at = flame, .shy = true };
     t = 0;
@@ -1153,7 +1146,6 @@ test "A LIT TORCH HOLDS IT OFF, AND ONE BLOW UNDOES THAT" {
     try std.testing.expect(off > was);
     try std.testing.expect(SHY_SPEED < RUN_SPEED);
 
-    // A BLOW OUTRANKS THE LIGHT: struck, it comes on with the torch still burning.
     s.leash.provoke();
     const before = mathx.distXZ(s.pos, hero);
     t = 0;

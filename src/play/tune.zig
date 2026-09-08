@@ -1860,7 +1860,6 @@ test "a pool is typed in absolute and kept as a ratio, so a re-authored creature
     setValue(foes, deer, 0, 192);
     try std.testing.expectEqual(@as(f32, 192), value(foes, deer, 0));
     try std.testing.expect(edited(foes, deer, 0));
-    // …and what lands in the file is the RATIO, which is what survives the 96 being re-authored.
     try std.testing.expectApproxEqAbs(@as(f32, 2.0), foestat.mult[deer].hp, 1e-4);
 
     revertRow(foes, deer);
@@ -1933,7 +1932,6 @@ test "WHAT A BODY LEAVES IS A CHOICE ON THE SHEET, AND THE FILE CARRIES ITS NAME
     try std.testing.expectEqual(item.Kind.smithing_stone, drops.TABLE[toad].common.?);
     try std.testing.expect(edited(dt, toad, cCommon));
 
-    // **NOTHING IS A VALUE YOU CAN LAND ON**, not a missing one: the sac leaves nothing and its cell reads 0.
     const sac: usize = @intFromEnum(wf.FoeKind.brood_sac);
     try std.testing.expectEqual(@as(f32, 0), value(dt, sac, cCommon));
     try std.testing.expectEqual(@as(?item.Kind, null), drops.TABLE[sac].rare);

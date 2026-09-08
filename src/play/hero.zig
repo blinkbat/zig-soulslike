@@ -4233,7 +4233,7 @@ pub const Hero = struct {
         for ([_]usize{ NECK, HEAD, SHL, ELL, WRL }) |i| wx[i] = dp[i];
     }
 
-    /// SOLVED ONTO THE INSTRUMENT, NOT POSED NEAR IT (owner: very important details): the guitar rides the ROOT, both hands are placed in the ROOT's own frame, and the arms are solved back from them (`armTo`).
+        /// SOLVED ONTO THE INSTRUMENT, NOT POSED NEAR IT: the guitar rides the ROOT, both hands are placed in the ROOT's own frame, and the arms are solved back from them (`armTo`).
     pub fn poseRest(self: *Hero, dt: f32) void {
         self.restT += dt;
         const t = self.restT;
@@ -4262,7 +4262,6 @@ pub const Hero = struct {
         setLocal(&wx, SPINE, self.rest, mul(rx(SIT_SPINE + 1.2 * attack), rz(lilt * 0.45)));
         setLocal(&wx, CHEST, self.rest, mul(rx(SIT_CHEST + 0.8 * attack), rz(lilt * 0.37)));
         setLocal(&wx, NECK, self.rest, mul(rx(5.0 + 4.0 * glance), rz(-lilt * 0.30)));
-        // Eased, never the strum's own jolt (owner: slower and gentler).
         const nod = 0.5 - 0.5 * mathx.cosf(beat * std.math.pi);
         setLocal(&wx, HEAD, self.rest, mul3(rx(HEAD_WALK + 11.0 - 4.0 * phrase + REST_NOD * nod + 9.0 * glance), ry(9.0 + 14.0 * glance), rz(-lilt * 0.40 - 4.0 * glance)));
         sitLeg(&wx, self.rest, 1.0, HIPL, KNEEL, ANKL);
@@ -5542,7 +5541,6 @@ test "A LARGE SLAM TAKES HIM OFF HIS FEET — measured: the apex, the airtime, t
 }
 
 test "A STOPPED WORLD BEATS THE THROW — no launch on a held frame, or it hangs in the air until the world runs" {
-    // `tickAir` refuses to integrate while `held`, so a launch granted here would never land.
     var h = testHero();
     h.held = true;
     try std.testing.expect(!h.startLaunch(mathx.headingDir(std.math.pi), combat.SLAM_LAUNCH));
@@ -5616,7 +5614,6 @@ fn flyJump(dt: f32) struct { apex: f32, air: f32, frames: usize } {
 }
 
 test "THE JUMP IS THE SAME JUMP AT EVERY FRAME RATE — and it always comes down" {
-    // Semi-implicit Euler's error is O(g·dt²) — 9 mm at 30 fps.
     for ([_]f32{ 1.0 / 30.0, 1.0 / 60.0, 1.0 / 144.0, 1.0 / 240.0 }) |dt| {
         const j = flyJump(dt);
         try std.testing.expect(j.frames < 100_000);
@@ -5782,7 +5779,6 @@ test "THE BRAND IS HELD CLEAR OF HIM — the flame's own height, reach and stand
     var h = testHero();
     try std.testing.expect(h.equip(LEFT, 0, .torch));
     try std.testing.expect(h.torchOut() and h.torchLeft());
-    // Past the swap's cross-fade, or this measures the pose he is blending OUT of.
     h.blendT = mathx.LONG_AGO;
     h.pose();
 
@@ -5906,7 +5902,6 @@ test "a blocked blow costs STAMINA and chip, and never poise" {
     const hp0 = h.vit.hp;
     try std.testing.expectEqual(combat.HitOutcome.taken, h.takeHit(club, fromAngle(140)));
     try std.testing.expectApproxEqAbs(hp0 - club.dmg, h.vit.hp, 1e-3);
-    // The pool is this club's own poise, so the flank blow spends all of it — the bill lands as the flinch.
     try std.testing.expect(h.staggered());
     try std.testing.expect(h.vit.stance < STANCE_MAX);
 }
@@ -6475,7 +6470,6 @@ test "feet do not RAKE through the floor — walking, running, sprinting or side
     try std.testing.expect(deepestSole(SPRINT_SPEED, 0.0) > SOLE_Y - 0.30);
 }
 
-/// How far the deepest sole sits under the actor's ground plane, and how bent the knee is; both must be equal at every elevation.
 fn strafeAtGround(groundY: f32) struct { sole: f32, knee: f32 } {
     var h = testHero();
     h.pos = v3(0, groundY, 0);
@@ -6627,7 +6621,6 @@ test "ALL THREE CLASSES WORK IN EITHER HAND — the mesh, the pose and the capsu
                 try std.testing.expect(mathx.distXZ(h.bladeA, own) < 0.5);
                 try std.testing.expect(mathx.distXZ(h.bladeA, own) < mathx.distXZ(h.bladeA, other));
             }
-            // The SAGITTAL half is never mirrored: both hands reach as far forward and as high.
             try std.testing.expectApproxEqAbs(right.bladeB.y, left.bladeB.y, 0.30);
             for ([_]*Hero{ &right, &left }) |h| h.attacking = false;
         }
@@ -6772,7 +6765,6 @@ test "THE HANG IS REAL AND THE SMASH ARRIVES OVERHEAD — measured off the posed
     const overhead = club.bladeB.y;
     const crown = club.pos.y + H;
 
-    // Measured across the LIVE WINDOW, not at its opening frame: the capsule goes live half way down.
     const span = tipSpan(.club, .greatclub, true, .y);
     std.debug.print("  smash tip: {d:.2} m overhead (crown {d:.2}); live window sweeps {d:.2} m -> {d:.2} m\n", .{ overhead, crown, span.hi, span.lo });
     try std.testing.expect(overhead > crown);
@@ -6786,7 +6778,6 @@ test "A CLUB IS SWUNG LIKE ONE — it sinks the hips, the dagger does not, and t
     var club = meleeHero(.club, .greatclub);
     var dagger = meleeHero(.dagger, .fang_dirk);
 
-    // Compared at each stroke's own deepest frame, not at a shared `u`: the smash's midpoint is the HANG.
     for ([_]Attack{ .light, .heavy }) |kind| {
         const heavy = kind == .heavy;
         var deep: [3]f32 = undefined;
@@ -6807,7 +6798,6 @@ test "A CLUB IS SWUNG LIKE ONE — it sinks the hips, the dagger does not, and t
         try std.testing.expect(deep[2] > deep[0]);
     }
 
-    // Measured as the LATERAL drift of the tip across the live window.
     const thrustLat = tipSpan(.dagger, .fang_dirk, true, .x);
     const flickLat = tipSpan(.dagger, .fang_dirk, false, .x);
     const thrust = thrustLat.hi - thrustLat.lo;
@@ -6837,7 +6827,6 @@ test "A SWEEP RUNS LEVEL AND A SMASH COMES DOWN — the blade's own pitch, not t
     std.debug.print("\n  blade pitch (+ = point below the grip): sweep {d:.1} deg, thrust {d:.1}, smash {d:.1}\n", .{ sweep, thrust, smash });
     try std.testing.expect(@abs(sweep) < 25);
     try std.testing.expect(@abs(thrust) < 25);
-    // Solved: a 1.44 m club on a 1.3 m shoulder reaches the earth with the shaft near 40 deg, so the steepness claim is RELATIVE to the club's own horizontal.
     try std.testing.expect(smash > 2.0 * @abs(sweep));
     try std.testing.expect(smash > 30);
 }
@@ -7147,7 +7136,6 @@ test "WHAT STARTS IS WHAT LANDS — a variant taken up mid-stroke cannot reach i
     try std.testing.expect(!h.hitActive());
     h.arm = .club; // `equip` refuses mid-swing; this is what holds if something reaches past it
 
-    // Read live, `atkT / dur` fell back to 0.52 of a club's longer clock — inside `AL_HIT_A`..`AL_HIT_B`, re-arming `foe.strike`'s one-hit latch.
     try std.testing.expectApproxEqAbs(dur, h.atkDur(false), 1e-6);
     try std.testing.expectApproxEqAbs(dmg, h.attackHit().dmg, 1e-4);
     try std.testing.expect(!h.hitActive());

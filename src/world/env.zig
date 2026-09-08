@@ -808,9 +808,9 @@ pub const Env = struct {
             .land = undefined,
             .breached = self.caveBreachedAt(cx, cz),
         };
-        for (wf.CLIFF_RING, 0..) |d, k| {
-            const ix = @min(cx + @as(usize, @intFromFloat(d[0])), caves.N - 1);
-            const iz = @min(cz + @as(usize, @intFromFloat(d[1])), caves.N - 1);
+        for (wf.RING_STEP, 0..) |d, k| {
+            const ix = @min(cx + d[0], caves.N - 1);
+            const iz = @min(cz + d[1], caves.N - 1);
             c.cov[k] = caves.covAt(f, ix, iz);
             c.floor[k] = caves.floorAtPoint(f, ix, iz);
             c.roof[k] = caves.roofAtPoint(f, ix, iz);
@@ -823,9 +823,9 @@ pub const Env = struct {
     fn caveOpenNear(self: *const Env, cx: usize, cz: usize) bool {
         if (!self.caveAny) return false;
         const f = self.caveFields();
-        for (wf.CLIFF_RING) |d| {
-            const ix = @min(cx + @as(usize, @intFromFloat(d[0])), caves.N - 1);
-            const iz = @min(cz + @as(usize, @intFromFloat(d[1])), caves.N - 1);
+        for (wf.RING_STEP) |d| {
+            const ix = @min(cx + d[0], caves.N - 1);
+            const iz = @min(cz + d[1], caves.N - 1);
             if (caves.covAt(f, ix, iz) >= caves.EDGE_F) return true;
         }
         return false;
@@ -3605,12 +3605,12 @@ pub const PropFrame = struct {
     }
 };
 
-/// 0 (solid) .. 1 (as thin as it gets). A conifer's collider is a 1.48 m cylinder against boughs that block the view at 3.8 m.
 /// **THE ONE SOLID THAT THINS**, and what thins is its VEIL: the arch is masonry and stays put, the sheet hung across it is the thing standing between the lens and him. `ward` is the fog gate's own mark (`collision.Solid.ward`).
 fn veilThins(nfo: *const props.Info) bool {
     return nfo.ward;
 }
 
+/// 0 (solid) .. 1 (as thin as it gets). A conifer's collider is a 1.48 m cylinder against boughs that block the view at 3.8 m.
 fn thinFor(pr: *const Prop, nfo: *const props.Info, eye: rl.Vector3, at: rl.Vector3) f32 {
     var thin: f32 = 0;
     const fr = PropFrame.of(pr);
@@ -4393,7 +4393,6 @@ test "THE FOG GATE THINS LIKE ANYTHING ELSE STANDING IN THE SIGHT LINE — the s
     try std.testing.expectEqual(@as(f32, 1), e.props[0].fade);
     try std.testing.expectEqual(@as(usize, 0), e.noccl);
 
-    // The arch stays in the ordinary pass at every fade, and never doubles into the thinned one.
     e.props[0].fade = OCCL_FLOOR;
     try std.testing.expect(veilThins(props.info(.foggate)));
     try std.testing.expect(!veilThins(props.info(.cottage)));
@@ -4681,7 +4680,6 @@ test "AN ILLUSORY WALL IS A WALL UNTIL IT IS TOUCHED — then a look and a step 
     const eye = v3(0, 1.3, -9);
     const far = v3(0, 1.3, 9);
     try std.testing.expect(!e.sees(eye, far));
-    // How far the stone stands toward -z: at x = 0 (`face`), and anywhere across the swing's width (`front`).
     var face: f32 = 0;
     var front: f32 = 0;
     for (props.partsOf(.illusory)) |p| {
@@ -4968,7 +4966,6 @@ test "rayGround finds the surface of a hill, not the plane under it" {
     defer std.testing.allocator.destroy(e);
     const hit = e.rayGround(v3(40, 200, 0), v3(0, -1, 0)) orelse return error.NoHit;
     try std.testing.expectApproxEqAbs(@as(f32, 40), hit.x, 0.05);
-    // The field is quantized to `HEIGHT_STEP`, so a ramp that does not land on the quantum reads within half of one.
     try std.testing.expectApproxEqAbs(@as(f32, 20) + GROUND_Y, hit.y, wf.HEIGHT_STEP * 0.5);
     const flatT = (GROUND_Y - 60.0) / -0.5;
     const oblique = e.rayGround(v3(-60, 60, 0), mathx.normV(v3(1, -0.5, 0))) orelse return error.NoHit;
@@ -5156,7 +5153,6 @@ test "A LADDER IS FOUND BY ITS CLIMBING LINE, from the foot of the run and from 
     e.materialize(m);
     const r = e.ladderNear(v3(3.7, 0, 0), 0, 1.5) orelse return error.TestUnexpectedResult;
     try std.testing.expectApproxEqAbs(@as(f32, 7.2), r.run, 1e-4);
-    // The axis stands off the rung plane on the ladder's own +Z — yaw 270 is world −x.
     try std.testing.expectApproxEqAbs(4.0 - props.LADDER_STANDOFF, r.axis.x, 1e-3);
     try std.testing.expectApproxEqAbs(@as(f32, 0), r.axis.z, 1e-3);
     try std.testing.expect(e.ladderNear(v3(3.7, 0, 0), 7.2, 1.5) != null);
@@ -5223,12 +5219,9 @@ test "THE FLOOR DRAWN IS THE FLOOR WALKED — a cliff cell's floors against `wf.
                     try std.testing.expect(onHi or onLo);
                 }
             } else {
-                // The only thing in the terrain builder that is not floor is a `cellSkirt`, and a skirt is
-                // VERTICAL: anything else here is a floor drawn on the slant, which is a floor you slide off.
                 try std.testing.expect(@abs(b.nrm.items[o + 1]) < 0.01);
             }
         }
-        // Every square metre of the cell is floored exactly once, or there is a hole to fall through.
         try std.testing.expectApproxEqAbs(@as(f32, 1.0), flat, 1e-4);
         try std.testing.expect(fb.pos.items.len / 9 >= 2 * 2 * 2);
         var faceArea: f32 = 0;
@@ -5248,7 +5241,6 @@ test "THE FLOOR DRAWN IS THE FLOOR WALKED — a cliff cell's floors against `wf.
         std.debug.print("  cliff cell {s}: face {d:.3} m2 against the cut's own {d:.3}\n", .{ c.name, faceArea, c.wall });
         try std.testing.expectApproxEqRel(c.wall, faceArea, 0.01);
 
-        // A fan of planar triangles over a bilinear misses it by up to a quarter of the TWIST (the corners' second difference), exactly as `quadSmooth` misses `wf.sampleHeight` on every plain cell.
         const twist = @max(
             @abs(c.hi[0] - c.hi[1] + c.hi[2] - c.hi[3]),
             @abs(c.lo[0] - c.lo[1] + c.lo[2] - c.lo[3]),
@@ -5287,7 +5279,6 @@ test "THE FLOOR DRAWN IS THE FLOOR WALKED — a cliff cell's floors against `wf.
     }
 }
 
-/// Two SCULPTED levels — a plain that wanders a riser either way, a floor twelve metres down that wanders the same — with the drop on one lattice row and cliff painted `bandCells` wide either side of it.
 fn envWithSculptedLip(drop: f32, lipRow: usize, bandCells: usize) !*Env {
     const e = try std.testing.allocator.create(Env);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -5369,7 +5360,6 @@ test "PAINT ON SCULPTED GROUND — no step but the cut itself, and nothing gets 
     try std.testing.expect(e.brink(v3(1, e.groundAt(1, lipZ - 1.5), lipZ - 1.5), v3(1, 0, lipZ - 0.5 * step + 0.05)));
 }
 
-/// Widest x over which the ground climbs from `lo` to `hi`, walked at a millimetre.
 fn faceWidth(e: *const Env, z: f32, x0: f32, x1: f32) struct { rise: f32, width: f32, at: f32 } {
     const fine: f32 = 0.001;
     var prev = e.groundAt(x0, z);
@@ -5425,7 +5415,6 @@ test "A PAINTED CLIFF IS A WALL AND A LIP — the bench's three faces, in metres
     }
     try std.testing.expectApproxEqAbs(g0 - 3.0, e.groundAt(-20, 0), 1e-3);
 
-    // NORTH: the flight. Its grade is past `MAX_SLOPE`, so a smooth ramp of the same heights is refused; it walks because each probe crosses at most one riser.
     const flightZ: f32 = -24;
     const foot = v3(12.0 - 6.0 / 0.90 - 0.5, 0, flightZ);
     try std.testing.expect(!e.walkableAt(foot.x + 1.0, flightZ));
@@ -5590,7 +5579,6 @@ test "A FLIGHT IS WALKED TO THE SHELF, AND ITS HEAD IS NOT A LIP" {
 }
 
 test "a cliff stood at the map's edge is still inside the grid" {
-    // CLIFF_BOUND is a hand-copied mirror of the mesh's own bound, because MAX_HALF has to be a comptime value and `props.info` is a runtime lookup.
     try std.testing.expectApproxEqAbs(CLIFF_BOUND, props.info(.cliff).bound, 1e-4);
     try std.testing.expect(wf.DEFAULT_HALF <= MAX_HALF);
     try std.testing.expect(wf.MAX_DECLARED_HALF <= MAX_HALF);
@@ -5858,7 +5846,6 @@ test "…AND NO HONEST OP IN THE SHIPPING MAP IS TRUNCATED BY IT" {
         e.lightsCapped,
     });
     try std.testing.expectEqual(@as(usize, 0), e.opsCapped);
-    // NOT asserted the way `opsCapped` is: the shipped map is over this budget TODAY (44 props placed unlit), and raising `MAX_LIGHTS` or thinning the glow is the author's call.
     {
         var cam: rl.Camera3D = undefined;
         cam.position = v3(0, 12, -20);
@@ -6199,7 +6186,6 @@ test "A FEN LURKER IS SUBMERGED WHEREVER IT IS POSTED, on every map but the benc
 
 
 test "EVERY FIELD ON `Env` IS ASSIGNED — `Game` is `alloc.create`d and `Env` sits inside it, so `= .{}` never runs here either" {
-    // The Game-side twin of this lives in game.zig. It has bitten here too: every counter `build` reads before the props exist came up as the fill byte.
     const src = try wf.readForTest(std.testing.allocator, "src/world/env.zig", 1 << 22);
     defer std.testing.allocator.free(src);
     var defaulted: usize = 0;

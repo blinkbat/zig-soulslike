@@ -105,7 +105,6 @@ test "the sparring room is walled, lit, and holds exactly the one creature asked
     try std.testing.expectEqual(wf.FoeWhen.any, m.foes[0].window());
     try std.testing.expect(m.anyHeight() and m.anyCliff());
 
-    // The floor is flat under both bodies, and the wall past it is unwalkable in every direction.
     const mid = m.heightAt(0, 0);
     try std.testing.expectApproxEqAbs(mid, m.heightAt(0, HERO_AT), wf.HEIGHT_STEP);
     try std.testing.expectApproxEqAbs(mid, m.heightAt(0, FOE_AT), wf.HEIGHT_STEP);
@@ -121,7 +120,6 @@ test "the sparring room is walled, lit, and holds exactly the one creature asked
     );
     try std.testing.expect(worst > env.STEP_UP);
 
-    // A water dweller gets its band AND is posted standing in it, which is the placement `foe.poolBand` gates.
     author(m, .fen_lurker);
     try std.testing.expect(m.anyWater());
     const wet = m.foes[0];
@@ -153,7 +151,6 @@ test "the room round-trips through the writer, so the shot harness can be pointe
     try wf.parse(text, back, &line);
     try std.testing.expectEqual(m.nfoes, back.nfoes);
     try std.testing.expectEqual(m.narenas, back.narenas);
-    // The room's own invariant: a gate stands on its wall, sealing on the one creature.
     try std.testing.expect(m.arenas[0].onWall(0, R));
     try std.testing.expectEqual(wf.FoeKind.bone_knight, m.arenas[0].boss[0]);
     try std.testing.expectEqualSlices(u8, &m.height, &back.height);

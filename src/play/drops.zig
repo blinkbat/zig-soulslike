@@ -218,7 +218,6 @@ test "A BODY MOSTLY LEAVES NOTHING, and what it does leave is its own row" {
             }
         }
         if (k == .brood_sac) try std.testing.expectEqual(@as(usize, 0), seen);
-        // NOT an equality: the knight carries a stone at `.chance`, so the count is a range.
         if (k == .bone_knight) {
             try std.testing.expect(seen >= 4000);
             try std.testing.expect(seen <= 8000);

@@ -200,7 +200,6 @@ pub fn saguaroOldMesh(shader: rl.Shader) rl.Model {
     _ = armInto(&b, &rng, R * 0.98, 4.60, 4.35, 1.05, 2.30, R * 0.60);
     _ = armInto(&b, &rng, R * 0.94, 5.90, 1.60, 0.88, 1.55, R * 0.52);
 
-    // THE FIFTH ARM IS GONE and what is left is the hole it left: a dark socket with the ribs showing.
     const sy: f32 = 5.7;
     const sa: f32 = 3.55;
     const sx = mathx.cosf(sa);
@@ -257,7 +256,7 @@ pub fn deadSaguaroMesh(shader: rl.Shader) rl.Model {
         const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, RIBS) + rng.signed() * 0.03;
         const snapped = i == 2 or i == 3 or i == 8;
         const top = if (snapped) rng.range(2.2, 3.6) else H * rng.range(0.90, 1.0);
-        // NOTHING DEAD IS STRAIGHT: every rib bows out at the waist and splays where the flesh let go.
+                // NOTHING DEAD IS STRAIGHT: every rib bows out at the waist and splays where the flesh let go.
         const bow = rng.range(0.10, 0.22);
         const splay = if (snapped) rng.range(0.30, 0.62) else rng.range(0.14, 0.34);
         const p0 = v3(mathx.cosf(a) * R, 0.20, mathx.sinf(a) * R);
@@ -382,7 +381,6 @@ pub fn ocotilloMesh(shader: rl.Shader) rl.Model {
         const len = rng.range(3.5, 5.15) * (if (dead) @as(f32, 0.78) else 1.0);
         const splay = rng.range(0.06, 0.16);
         const col = if (dead) DEADWOOD else STARVED;
-        // A WHIP IS A CURVE, NOT A SPOKE: three joints, each kinked off the last, and the tip BLUNT.
         var p = v3(mathx.cosf(a) * 0.20, 0.30, mathx.sinf(a) * 0.20);
         var out = splay;
         var yaw = a;
@@ -407,8 +405,7 @@ pub fn ocotilloMesh(shader: rl.Shader) rl.Model {
                 b.addBlob(v3(m.x + rng.signed() * s, m.y, m.z + rng.signed() * s), v3(s * 0.6, s * 0.6, s * 0.6), 2, 4, SPINE);
             }
             p = q;
-            // THE FAN COMES AFTER THE SEGMENT, not before it: grown first, the lowest joint already stands
-            // three quarters of a metre off the crown and the plant is a thicket at chest height.
+                        // THE FAN COMES AFTER THE SEGMENT: grown first, the lowest joint already stands three quarters of a metre off the crown and the plant is a thicket at chest height.
             out += rng.range(0.14, 0.30) * (if (dead and t == 1) @as(f32, 2.2) else 1.0);
             if (t == 2) b.addBlob(p, v3(r1 * 1.25, r1 * 1.10, r1 * 1.25), 2, 6, if (dead) DEADTWIG else col);
         }
@@ -621,7 +618,7 @@ pub fn pricklyPearMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5D_E5_09);
 
-    // A PAD GROWS OFF THE RIM OF THE ONE BELOW IT, edge on — a stack of parallel plates reads as a cactus made of coins.
+        // A PAD GROWS OFF THE RIM OF THE ONE BELOW IT, edge on — a stack of parallel plates reads as a cactus made of coins.
     const Pad = struct { c: rl.Vector3, yaw: f32, rad: f32 };
     var pads: [12]Pad = undefined;
     var n: usize = 0;
@@ -736,7 +733,6 @@ pub fn deadBrushMesh(shader: rl.Shader) rl.Model {
         const n: i32 = 2 + @as(i32, @intFromFloat(rng.range(0, 2.4)));
         var rad: f32 = rng.range(0.020, 0.034);
         while (j < n) : (j += 1) {
-            // NOTHING DEAD IS STRAIGHT: every joint kinks off the last bearing.
             yaw += rng.signed() * 0.95;
             pitch = mathx.clampF(pitch + rng.signed() * 0.42, 0.20, 1.45);
             const seg = rng.range(0.13, 0.28);
@@ -790,10 +786,8 @@ pub fn tumbleweedMesh(shader: rl.Shader) rl.Model {
 
 
 
-/// **A DUNE IS NOT A LOAF, AND IT IS NOT A RAMP EITHER.** The lee falls at the angle of repose (33 deg) and
-/// the windward back at well under half of it, so the crest sits hard over toward the lee — but a REAL dune's
-/// back is 11 deg over ten metres, which from any camera in this game is the ground. Two and a half metres of
-/// height over thirteen is the shallowest back that still reads as a hill: chest-high at the crest, walked up.
+/// A DUNE IS NOT A LOAF, AND IT IS NOT A RAMP EITHER. The lee falls at the angle of repose (33 deg) and the windward
+/// back at well under half of it. A real dune's back is 11 deg over ten metres; 2.5 m of height over 13 is the shallowest back that still reads as a hill.
 pub const DUNE_LEN: f32 = 15.0;
 pub const DUNE_WID: f32 = 13.0;
 pub const DUNE_H: f32 = 2.40;
@@ -822,8 +816,7 @@ pub fn sandDuneMesh(shader: rl.Shader) rl.Model {
     // At nineteen narrow stations the ellipsoids' own facets read as a row of tents: the mass has to be wider than the facet.
     const NX: i32 = 13;
 
-    // **A DUNE IS BLOBS, NOT PANELS.** Slabs laid on the two faces read as a ramp somebody put down — sand has
-    // no seams and no edges. Three rows per station, all centred at y = 0 so the bottom half is underground.
+        // A DUNE IS BLOBS, NOT PANELS: three rows per station, all centred at y = 0 so the bottom half is underground.
     b.setMat(.stone);
     const step = DUNE_LEN * 0.98 / @as(f32, @floatFromInt(NX));
     var i: i32 = 0;
@@ -831,7 +824,6 @@ pub fn sandDuneMesh(shader: rl.Shader) rl.Model {
         const x = ((@as(f32, @floatFromInt(i)) + 0.5) / @as(f32, @floatFromInt(NX)) - 0.5) * DUNE_LEN * 0.98;
         const st = stationAt(x);
         if (st.h < 0.06) continue;
-        // A CREST SNAKES. Straight, the whole hill reads as a wedge somebody laid down.
         const crest = st.crest + mathx.sinf(x * 0.46) * 0.62 + rng.signed() * 0.14;
         const hx = step * 1.45;
 

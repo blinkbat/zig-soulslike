@@ -55,7 +55,9 @@ pub fn bearingDeg(pos: rl.Vector3, facing: f32, at: rl.Vector3) f32 {
     return mathx.degrees(mathx.wrapPi(mathx.headingXZ(d) - facing));
 }
 
-/// A TRIGGER BAND HELD AT A CONSTANT WHILE ITS HURT BOX SCALES ONLY AGREES AT ONE SCALE. `worldR` is the band the author measured on the SHIPPED body; this re-solves it through `hurtReach`'s own triangle for the body actually standing there, so it returns `worldR` exactly at `scale == shipped` and tracks the box either side. Under it the creature commits to a blow that cannot land and — having chosen a strike rather than a step — never closes.
+/// A TRIGGER BAND HELD AT A CONSTANT WHILE ITS HURT BOX SCALES ONLY AGREES AT ONE SCALE. `worldR` is the band measured
+/// on the SHIPPED body; this re-solves it through `hurtReach`'s triangle for the body actually standing there. Under it
+/// the creature commits to a blow that cannot land and — having chosen a strike rather than a step — never closes.
 pub fn triggerBand(worldR: f32, shipped: f32, scale: f32) f32 {
     return hurtReach((worldR - HERO_REACH) / shipped, scale);
 }
@@ -145,7 +147,7 @@ pub fn homeOf(k: wf.FoeKind) props.Biome {
     };
 }
 
-/// HOW HARD A COHORT IS TO FLINCH, AS A MULTIPLE OF WHAT ITS OWN FILE AUTHORED. The curve is the MAP's order and not the creature's, so every body keeps its character against its neighbours; the bench (`foestat.mult`) still layers on top of it.
+/// HOW HARD A COHORT IS TO FLINCH, as a multiple of what its own file authored. The curve is the MAP's order, not the creature's; the bench (`foestat.mult`) layers on top.
 pub fn poiseCurve(k: wf.FoeKind) f32 {
     return switch (homeOf(k)) {
         .any, .ruins, .village, .wetland => 1.00,
@@ -253,17 +255,15 @@ pub const TELL_MIN: f32 = 0.30;
 
 pub const PARRY_LEAD: f32 = 0.18;
 
-/// The share of a strike that has run when the kit ARRIVES, for the families whose stroke is one plain swing
-/// through `catchMelee`. Per-move fractions stay per-move (the ogre's slam, the mastodon's tail); this is the
-/// one every ordinary limb bills at, and it is ONE number so a retune moves them together.
+/// The share of a strike run when the kit ARRIVES, for families whose stroke is one plain swing through `catchMelee`.
+/// Per-move fractions stay per-move (the ogre's slam, the mastodon's tail); this is ONE number, so a retune moves them together.
 pub const MELEE_IMPACT_K: f32 = 0.68;
 
 pub fn inParryWindow(left: f32) bool {
     return left >= 0 and left <= PARRY_LEAD;
 }
 
-/// The slowest frame a catch may not be skipped at — a blow whose impact fell between two frames still lands
-/// on the one that crossed it. `Parry.window` and `Parry.contact` are the two readers and must agree.
+/// The slowest frame a catch may not be skipped at. `Parry.window` and `Parry.contact` are the two readers and must agree.
 pub const CONTACT_FRAME: f32 = 1.0 / 30.0;
 
 pub fn setParry(foes: anytype, p: Parry) void {
@@ -314,12 +314,10 @@ pub fn leashR(aggroR: f32) f32 {
 
 pub const WIN_SOLID: f32 = 0.5;
 
-/// **WHETHER THIS BODY IS ON THE FIELD THIS HOUR** (`wf.Foe.window`, stamped by `game.markHour`). A SHARE and
-/// not a flag: `in` is what `drawGroup` hands the shader, so a body comes and goes across the horizon rather
-/// than popping. Under `WIN_SOLID` it is not there at all — nothing locks it, nothing collides with it, no
-/// blade reaches it, and `sensedDist` bends its sense of the hero past its own ring, which is what takes every
-/// state machine to a hold at home without a second decision tree in any of them. It rides the LEASH because
-/// that is the one struct every creature embeds and the one `senseHero` already has in its hand.
+/// WHETHER THIS BODY IS ON THE FIELD THIS HOUR (`wf.Foe.window`, stamped by `game.markHour`). A SHARE and not a flag:
+/// `in` is what `drawGroup` hands the shader. Under `WIN_SOLID` it is not there at all — nothing locks it, collides with
+/// it or reaches it, and `sensedDist` bends its sense of the hero past its own ring. It rides the LEASH because that is
+/// the one struct every creature embeds and the one `senseHero` already has in hand.
 pub const Win = struct {
     when: wf.FoeWhen = .any,
     in: f32 = 1,
@@ -328,8 +326,7 @@ pub const Win = struct {
         return self.in < WIN_SOLID;
     }
 
-    /// The share for an hour, `day` being `daynight.dayShare`. `armWindow` resolves `derived` off the KIND, so
-    /// one reaching here is a body nothing armed — always out, which is what an unarmed body was before this.
+        /// The share for an hour, `day` being `daynight.dayShare`. `armWindow` resolves `derived` off the KIND, so one reaching here is a body nothing armed — always out.
     pub fn shareOf(when: wf.FoeWhen, day: f32) f32 {
         return switch (when) {
             .derived, .any => 1.0,
@@ -339,18 +336,14 @@ pub const Win = struct {
     }
 };
 
-/// **THE WORLD'S NIGHT** — 0 broad day, 1 dead of night (`daynight.nightShare`), stamped by `game.markHour`
-/// on the creatures whose BEHAVIOUR turns on the clock. Presence is `Win`'s business; this is for a body that
-/// is there either way and does something else after dark.
+/// THE WORLD'S NIGHT — 0 broad day, 1 dead of night (`daynight.nightShare`), stamped by `game.markHour`. Presence is `Win`'s business; this is for a body that is there either way.
 pub const Sky = struct { night: f32 = 0 };
 
-/// **THE SUN IS DOWN.** `daynight.dayShare` is exactly 0.5 AT the horizon, so this is the one number every
-/// nocturnal gate compares against — named once, because two creatures reading 0.5 is two things to retune.
+/// THE SUN IS DOWN. `daynight.dayShare` is exactly 0.5 AT the horizon, so every nocturnal gate compares against this one name.
 pub const NIGHTFALL: f32 = 0.5;
 
-/// **A RING IS ONLY AS WIDE AS THE LIGHT ON IT.** Share of its own reach that anything — the hero's lock as
-/// much as a creature's aggro — keeps in the dead of night with no flame on it. Both directions read this one
-/// ramp, so darkness cannot be made to favour one of them.
+/// Share of its own reach that anything — the hero's lock as much as a creature's aggro — keeps in the dead of night
+/// with no flame on it. Both directions read this one ramp, so darkness cannot be made to favour one of them.
 pub const SIGHT_DARK: f32 = 0.72;
 
 /// `night` is `daynight.nightShare`, `lit` the share of a flame's radius standing on the body (`Glare.k`).
@@ -358,9 +351,7 @@ pub fn sightShare(night: f32, lit: f32) f32 {
     return mathx.lerpF(1.0, SIGHT_DARK, mathx.clampF(night, 0, 1) * (1.0 - mathx.clampF(lit, 0, 1)));
 }
 
-/// **DARK IS WHAT WAKES IT** — the shared gate behind `owlbear.dozing` and `blinkbat.dozing`. A blow outranks
-/// the hour the way it outranks blindness, so a fight carried into the dawn finishes; ORDERS outrank it
-/// outright, since a route the map authored is the author saying this one is about.
+/// DARK IS WHAT WAKES IT — the shared gate behind `owlbear.dozing` and `blinkbat.dozing`. A blow outranks the hour the way it outranks blindness; ORDERS outrank it outright.
 pub fn dozing(self: anytype, nightAt: f32) bool {
     if (self.post.idles()) return false;
     return self.sky.night < nightAt and !self.leash.roused();
@@ -375,9 +366,7 @@ pub const Leash = struct {
     breakLeft: f32 = 0,
     engagedLeft: f32 = 0,
     returning: bool = false,
-    /// **HOW MUCH OF ITS RING IT CAN SEE OVER** (`game.markHour`, off `sightShare`). Rides the leash for the
-    /// reason `win` does: `sensedDist` is the one place every creature's sense passes through, and it already
-    /// has this struct in its hand.
+        /// HOW MUCH OF ITS RING IT CAN SEE OVER (`game.markHour`, off `sightShare`). Rides the leash for the reason `win` does: `sensedDist` already has this struct in hand.
     sight: f32 = 1,
     /// Whether the rig has ever run its chain (`foe.posed`); nothing else may write it.
     posedOnce: bool = false,
@@ -470,13 +459,11 @@ test "THE DARK NARROWS THE RING IT IS MEASURED AGAINST, and a flame on the body 
     try std.testing.expectEqual(at - 0.1, sensedDist(&l, at - 0.1, R));
     try std.testing.expectEqual(mathx.LONG_AGO, sensedDist(&l, at + 0.1, R));
 
-    // The hero's own torch is what puts the metres back, on him and on them alike.
     l.sight = sightShare(1, SHY_ON);
     try std.testing.expect(sensedDist(&l, at + 0.1, R) < mathx.LONG_AGO);
     l.sight = sightShare(1, 1);
     try std.testing.expectEqual(R - 0.1, sensedDist(&l, R - 0.1, R));
 
-    // A blow outranks the hour the way it outranks blindness.
     l.sight = dark;
     l.provoke();
     try std.testing.expectEqual(R, sensedDist(&l, R * 4, R));
@@ -489,7 +476,7 @@ pub fn rouseWithin(foes: anytype, at: rl.Vector3, r: f32) u32 {
     var n: u32 = 0;
     for (foes) |*f| {
         if (!corporeal(f)) continue;
-        // A body that is not out at this hour cannot be called out of it — the bell would have raised a shade at noon.
+                // A body that is not out at this hour cannot be called out of it — the bell would have raised a shade at noon.
         if (offField(f)) continue;
         if (mathx.distXZ(f.pos, at) > r) continue;
         f.leash.call();
@@ -1103,19 +1090,16 @@ pub fn setWade(foes: anytype, at: anytype, quarry: f32, comptime depthAt: anytyp
     for (foes) |*f| f.wade = .{ .here = depthAt(at, f.pos), .quarry = quarry };
 }
 
-/// Share of a flame's own radius at which a light-shy body turns away, and the share it has to fall back to
-/// before it will come on again — a bare threshold flickers on the boundary while the hero walks it forward.
-/// At the torch's 8 m these are 3.60 m and 4.64 m.
+/// Share of a flame's own radius at which a light-shy body turns away, and the share it must fall back to before it
+/// comes on again — a bare threshold flickers on the boundary. At the torch's 8 m these are 3.60 m and 4.64 m.
 pub const SHY_ON: f32 = 0.55;
 pub const SHY_OFF: f32 = 0.42;
 
 /// Share of its OWN walk a light-shy body backs off at. Under 1, so a hero who wants the fight can close it.
 pub const SHY_SHARE: f32 = 0.58;
 
-/// **THE STRONGEST FLAME REACHING THIS BODY** (`game.markGlare`) — `k` as a share of that flame's own radius,
-/// 1 at the wick and 0 at its edge, and `at` where it burns. A fact about the light standing in the world,
-/// which is what keeps NO INPUT READING: nothing here asks what the hero is holding or doing. `shy` is the
-/// latch, held by the stamp for the same reason `Nav.side` is.
+/// THE STRONGEST FLAME REACHING THIS BODY (`game.markGlare`) — `k` as a share of that flame's own radius, 1 at the
+/// wick and 0 at its edge, and `at` where it burns. A fact about the light, which is what keeps NO INPUT READING.
 pub const Glare = struct {
     k: f32 = 0,
     at: rl.Vector3 = mathx.zero3,
@@ -1161,8 +1145,6 @@ test "A CREATURE THAT NEVER SEES WATER IS DRY BY CONSTRUCTION, and a wading one 
 }
 
 test "THE WATER GATE IS BOTH HALVES OR NEITHER — the field alone stamps a fact nothing reads, and the call alone answers DRY forever" {
-    // It has failed BOTH ways: `fishman` asked the gate with no field, so the shoal stained the fen on every hit;
-    // `mastodon` carried the field and never asked, so `markWade` paid for a fact its own blood ignored.
     var dir = std.fs.cwd().openDir("src/foes", .{ .iterate = true }) catch return error.SkipZigTest;
     defer dir.close();
     var carriers: usize = 0;
@@ -1181,7 +1163,6 @@ test "THE WATER GATE IS BOTH HALVES OR NEITHER — the field alone stamps a fact
         try std.testing.expectEqual(field, asks);
         if (field) carriers += 1;
     }
-    // AND EVERY WETLAND KIND IS ONE OF THEM, off the table that classifies it — a new one arrives with neither half.
     const wetland = comptime blk: {
         var n: usize = 0;
         for (std.enums.values(wf.FoeKind)) |k| {
@@ -1211,9 +1192,8 @@ pub fn applyShove(pos: *rl.Vector3, shove: *rl.Vector3, decay: f32, bounds: f32,
     shove.* = mathx.scaleV(shove.*, mathx.maxF(0, 1.0 - decay * dt));
 }
 
-/// THE FOUR THINGS EVERY BODY OWES ITS FRAME, IN THE ONE ORDER THEY MAY RUN — the tether is measured from where
-/// it stands NOW, the motes fly from the floor under it, and the shove is spent LAST so the step it takes is
-/// the one the state machine already decided against. A creature with its own clocks runs them either side.
+/// THE FOUR THINGS EVERY BODY OWES ITS FRAME, IN THE ONE ORDER THEY MAY RUN — the tether is measured from where it
+/// stands NOW, the motes fly from the floor under it, and the shove is spent LAST so the step it takes is the one the state machine already decided against.
 pub fn tickBody(self: anytype, dt: f32, quarry: rl.Vector3, bounds: f32, aggroR: f32, shoveDecay: f32) void {
     fadeFlash(&self.flash, dt);
     tickLeash(&self.leash, dt, self.pos, tetherFor(self), quarry, aggroR);
@@ -1288,8 +1268,7 @@ pub fn fxStream(seed: f32, mul: f32, salt: u64) mathx.Rng {
 const particleart = @import("../gfx/particleart.zig");
 pub const ParticleStyle = particleart.Style;
 
-/// The sprite atlas, made at BOOT. Solved on the first mote instead it is a 44 ms stall (measured, Debug:
-/// 44 cells of 96x96 of value noise) on the frame something first emits, which is the frame a fight starts.
+/// The sprite atlas, made at BOOT: solved on the first mote instead it is a 44 ms stall (measured, Debug, 44 cells of 96x96 of value noise) on the frame a fight starts.
 pub fn buildParticleAtlas() void {
     _ = particleart.texture();
 }
@@ -1569,7 +1548,7 @@ test "THE PUFF IS THE SIX HAND-WRITTEN LOOPS, MOTE FOR MOTE — and the flat fla
     std.debug.print("\n  puff: {d} motes identical to the hand-written loop; a flat flare shifts the stream\n", .{gotHead});
 }
 
-/// MATTER thrown off a plant or a bootfall: a ring with no bearing, scaled by the body, landing and bouncing. `Puff` is the LIGHT of the same event — that one is `DUST_GRAV` and a drag.
+/// MATTER thrown off a plant or a bootfall: a ring with no bearing, scaled by the body, landing and bouncing. `Puff` is the LIGHT of the same event.
 pub const Grit = struct {
     spdLo: f32,
     spdHi: f32,
@@ -2232,7 +2211,8 @@ pub fn homeFor(self: anytype) rl.Vector3 {
     return if (self.post.ai == .hold) self.home else self.pos;
 }
 
-/// A ROUTINE'S `.hold` ARM, WHICH IS THE SAME ON EVERY CREATURE: too far from home and it walks back, otherwise it stands. Answers whether to walk and leaves the caller its own state name — `.hold => if (foe.headHome(self)) self.enter(.drift) else self.enter(.idle)`. Bodies that steer without a `moveDir` just ignore the field.
+/// A ROUTINE'S `.hold` ARM, THE SAME ON EVERY CREATURE: too far from home it walks back, otherwise it stands. Answers
+/// whether to walk and leaves the caller its own state name. Bodies that steer without a `moveDir` just ignore the field.
 pub fn headHome(self: anytype) bool {
     if (mathx.distXZ(self.pos, homeFor(self)) <= LEASH_HOME_R) return false;
     self.homing = true;
@@ -2240,7 +2220,7 @@ pub fn headHome(self: anytype) bool {
     return true;
 }
 
-/// THE ANCHOR A GO-HOME WALKS TO, AND NEVER `self.home`: `Leash.tick` arms and releases `returning` against THIS point, so a patroller sent home to its spawn pin arrives where the tether is still out.
+/// THE ANCHOR A GO-HOME WALKS TO, AND NEVER `self.home`: `Leash.tick` arms and releases `returning` against THIS point.
 pub fn tetherFor(self: anytype) rl.Vector3 {
     const T = @TypeOf(self.*);
     if (comptime !@hasField(T, "post")) return self.home;
@@ -2309,7 +2289,7 @@ pub fn postAmble(
         self.speed = mathx.approach(self.speed, 0, accel * dt);
         return false;
     }
-    // THE EASE IS THE BODY'S, NOT THE GAIT BLEND'S: stepped by the speed asked for rather than the one reached, `accel` moved nothing and a round started at full pace.
+            // THE EASE IS THE BODY'S, NOT THE GAIT BLEND'S: stepped by the speed asked for rather than the one reached, `accel` moved nothing and a round started at full pace.
     self.speed = mathx.approach(self.speed, speed, accel * dt);
     const moved = self.speed * dt;
     const w = mathx.headingXZ(dir);
@@ -2359,7 +2339,7 @@ pub fn armStats(f: anytype, k: wf.FoeKind) void {
     foestat.arm(&f.vit, k);
 }
 
-/// THE GROUND UNDER A POINT, ASKED THROUGH THE GAME: stamped onto any creature with a `ground` field (`game.stampRooms`), so a body choosing where to LAND can refuse water it cannot walk out of. Unstamped — the test bench — every point is dry.
+/// THE GROUND UNDER A POINT, ASKED THROUGH THE GAME: stamped onto any creature with a `ground` field (`game.stampRooms`). Unstamped — the test bench — every point is dry.
 pub const Ground = struct {
     ctx: ?*const anyopaque = null,
     depthAt: ?*const fn (*const anyopaque, f32, f32) f32 = null,
@@ -2370,7 +2350,7 @@ pub const Ground = struct {
     }
 };
 
-/// A BODY CALLED ONTO THE FIELD MID-FIGHT — into a gone slot first, else appended, and the cap is the map's. It comes up roused, with the spot it stands on for a home.
+/// A BODY CALLED ONTO THE FIELD MID-FIGHT — into a gone slot first, else appended, and the cap is the map's.
 pub fn summonInto(comptime T: type, band: []T, n: *usize, kind: wf.FoeKind, body: T) void {
     var b = body;
     armStats(&b, kind);
@@ -2445,7 +2425,7 @@ pub fn drawGroup(foes: anytype, model: anytype, scene: ?*gfx.Scene) void {
             if (thin < 0.999) sc.beginFade(thin);
         }
         f.draw(model);
-        // THE DEPTH PASS HAS NO SCENE: a body fading in by the hour (a shade at dusk) is thin here too, and unwrapping the null was the crash in the shadow pass.
+                // THE DEPTH PASS HAS NO SCENE: a body fading in by the hour is thin here too, and unwrapping the null was the crash in the shadow pass.
         if (scene) |sc| {
             if (thin < 0.999) sc.endFade();
         }
@@ -3130,15 +3110,14 @@ pub fn setLens(at: rl.Vector3, fwd: rl.Vector3) void {
     }
 }
 
-/// THE SPHERE A BODY IS CULLED BY, centred on its FEET, because `pos` and `bodyR` are the only two reads that
-/// are valid before a rig's first `pose`. Over the longest thing anything here swings: the knight's overhead
-/// carries his sword tip 7.84 m up (`shots` pins it against this number).
+/// THE SPHERE A BODY IS CULLED BY, centred on its FEET, because `pos` and `bodyR` are the only two reads valid before
+/// a rig's first `pose`. Over the longest thing anything swings: the knight's overhead carries his tip 7.84 m up.
 pub const DRAW_BOUND: f32 = 10.0;
 
 var drawCull: ?env.Cull = null;
 var drawReach: f32 = 1e9;
 
-/// The pass being drawn, or null to draw every body — the object viewer stands its subject under a lens of its own.
+/// The pass being drawn, or null to draw every body.
 pub fn setCull(cull: ?env.Cull, reach: f32) void {
     drawCull = cull;
     drawReach = reach;
@@ -3154,9 +3133,8 @@ fn drawn(f: anytype) bool {
     return env.bodyDrawn(cull, f.pos, boundOf(f), drawReach);
 }
 
-/// Metres from what a body could TOUCH inside which it poses whatever the lens sees: over the shadow box
-/// (`env.shadowBox` is 76.4 m), over the widest aggro ring (30 m) so nothing can be mid-stroke unposed, and over
-/// every reach that reads a BONE — the hollow's `TOLL_R` 34 is the widest.
+/// Metres from what a body could TOUCH inside which it poses whatever the lens sees: over the shadow box (`env.shadowBox`
+/// is 76.4 m), over the widest aggro ring (30 m), and over every reach that reads a BONE (the hollow's `TOLL_R`, 34).
 pub const POSE_NEAR: f32 = 90.0;
 /// `pose` runs in `update` and the lens is set in `drawScene`, so the view test is a frame stale and carries a frame of travel.
 const POSE_SLACK: f32 = 6.0;
@@ -3171,8 +3149,7 @@ pub fn setPoseLens(at: rl.Vector3, view: ?env.View, reach: f32) void {
     poseReach = reach;
 }
 
-/// FALSE ONLY FOR A BODY NOTHING WILL SEE OR TOUCH THIS FRAME. `xf` holds its last pose while this answers false,
-/// so a rig may skip its chain — every reach that reads a bone, and every state that sweeps one, is inside `POSE_NEAR`.
+/// FALSE ONLY FOR A BODY NOTHING WILL SEE OR TOUCH THIS FRAME. `xf` holds its last pose while this answers false, so a rig may skip its chain.
 pub fn posed(f: anytype) bool {
     // `xf` is `undefined` until a rig has run once, and that once is inside `spawnAs`, before any lens is set.
     if (!f.leash.posedOnce) {
@@ -3546,7 +3523,6 @@ test "A BODY OUTSIDE ITS HOUR IS NOT THERE — the sense is bent, the blade miss
     try std.testing.expect(reached(&here, blade) != null);
     try std.testing.expect(here.vit.hp < 100);
 
-    // The three windows over one clock, and WIN_SOLID is where the fade stops being scenery.
     try std.testing.expectEqual(@as(f32, 1), Win.shareOf(.any, 0));
     try std.testing.expectEqual(@as(f32, 1), Win.shareOf(.any, 1));
     try std.testing.expectEqual(@as(f32, 0), Win.shareOf(.night, 1));
@@ -3558,7 +3534,6 @@ test "A BODY OUTSIDE ITS HOUR IS NOT THERE — the sense is bent, the blade miss
     try std.testing.expect(edge.shut());
     std.debug.print("\n  window: a body is real from {d:.2} of its share up, and that share IS its alpha\n", .{WIN_SOLID});
 
-    // A creature with no leash at all — a sac, a pool — is always on the field.
     var loose = struct { pos: rl.Vector3 = mathx.zero3 }{};
     try std.testing.expect(!offField(&loose));
 }

@@ -121,7 +121,6 @@ const BLOOD_SPD_LIGHT = 4.6;
 const BLOOD_SPD_HEAVY = 6.4;
 const BLOOD_SPD_DEATH = 5.4;
 comptime {
-    // THE RING LAW, EXECUTABLE: the lunge's 32 dust with a killing heavy blow's two sprays and the shared wound on top. A count raised without the pool is a burst that silently eats its own oldest.
     std.debug.assert(FX_MAX >= 32 + foe.hitParts(BLOOD_HEAVY) + foe.hitParts(BLOOD_DEATH) + foe.WOUND_PARTS);
 }
 
@@ -532,7 +531,6 @@ pub const Frog = struct {
         self.resolveIdle();
         const wait = if (d <= AGGRO_R) mathx.minF(self.idleWait, 0.16) else self.idleWait;
         if (self.t < wait) return;
-        // its round is pointing at, capped at its own reach, so a round reads as a frog and not as a glide.
         if (foe.postWant(self, dt, d, AGGRO_R)) |go| {
             const dir = self.nav.along(mathx.dirXZ(self.pos, go));
             const reach = mathx.minF(HOP_REACH, mathx.distXZ(self.pos, go));
@@ -617,7 +615,7 @@ pub const Frog = struct {
         self.sxz = 1.0 - 0.02 * br;
         self.sac = 1.0 + 0.06 * mathx.sinf(self.elapsed * 2.3 + self.seed * 3.0);
         self.jaw = 1.5 + 1.5 * mathx.maxF(0, br);
-        // …and every ~17 s a GULP — the throat balloons and the jaw works once. A discrete event on a slow clock incommensurate with the breath, which is what stops the idle reading as a loop.
+                // …and every ~17 s a GULP, on a slow clock incommensurate with the breath so the idle never reads as a loop.
         const gulp = mathx.smoothstep(0.90, 0.995, mathx.sinf(self.elapsed * 0.37 + self.seed * 9.1));
         self.sac += 0.55 * gulp;
         self.jaw += 7.0 * gulp;
@@ -1068,7 +1066,6 @@ fn bodyMesh() rl.Mesh {
     b.addBlob(v3(0, 0.13, 0.10), v3(0.27, 0.13, 0.27), 8, 13, BELLY);
     b.setMat(.hide);
 
-    // The head: one broad jowled mass jutting at the mouth line (~y0.24), never a slab.
     b.addBlob(v3(0, 0.345, 0.30), v3(0.33, 0.13, 0.22), 11, 20, HIDE);
     for ([_]f32{ -1, 1 }) |sgn| {
         const k: f32 = if (sgn < 0) 1.06 else 0.96;
@@ -1185,14 +1182,12 @@ fn armMesh(side: f32) rl.Mesh {
 
 test "THE LEAP IS AN INSTANT FROM BEING SWATTED, and nothing else the toad does is catchable" {
     try std.testing.expect(PARRY_LEAD > 0);
-    // An INSTANT, not a slice of the tell: its 0.70 s coil must not be catchable for a fifth of itself.
     try std.testing.expect(PARRY_LEAD < LUNGE_COIL * 0.25);
     try std.testing.expect(PARRY_LEAD < LUNGE_FLIGHT);
 
     var f = Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     f.startHop(mathx.ground(0, 4), 60.0, true);
     const impact = LUNGE_COIL + f.hopDur;
-    // MEASURED off the state machine: walk the leap from the first frame of its coil and collect the span that is actually parryable. ONE clock here — coil, arc and landing are all `.lunge`.
     const step = 1.0 / 600.0;
     var open: f32 = -1;
     var shut: f32 = -1;
@@ -1207,7 +1202,6 @@ test "THE LEAP IS AN INSTANT FROM BEING SWATTED, and nothing else the toad does 
     try std.testing.expect(open > 0);
     try std.testing.expectApproxEqAbs(impact, shut, 2.0 * step);
     try std.testing.expectApproxEqAbs(PARRY_LEAD, shut - open, 3.0 * step);
-    // …AT THE BODY'S OWN SCALE, not at 1.0: `foe.hurtReach`'s whole point is that a re-scaled placement's reach tracks its body, and pinned against the world-metre constant this passed only while SCALE was 1.
     try std.testing.expectApproxEqAbs(LUNGE_IMPACT_OWN * f.scale + foe.HERO_REACH, f.parryable().?, 1e-5);
 
     for ([_]State{ .idle, .hop, .recover, .chomp, .stunlight, .stunheavy, .dead }) |s| {

@@ -71,7 +71,7 @@ const EYE = rgba(214, 232, 150, 44);
 const CHAOS_CORE = elemfx.sig(.chaos).core;
 const CHAOS_EDGE = elemfx.sig(.chaos).edge;
 
-/// The ring as authored — what the comptime pin below is asked of, since the ring itself is live now. It must reach past where the pair themselves stand.
+/// The ring as authored — what the comptime pin below is asked of, since the ring itself is live now.
 pub const AGGRO_R_BANK: f32 = 30.0;
 pub var AGGRO_R: f32 = AGGRO_R_BANK;
 
@@ -221,7 +221,6 @@ const SW_VENOM_HEAVY: usize = 10;
 
 const SW_NPART = 40;
 comptime {
-    // The ring law: his stroke caught on the frame a heavy of his own wounds it back.
     std.debug.assert(SW_NPART >= SW_VENOM_PARRY + SW_VENOM_HEAVY + foe.WOUND_PARTS);
 }
 
@@ -403,7 +402,7 @@ const MG_BUNCH: usize = 4;
 const MG_BUNCH_R: f32 = 1.8;
 const CAP_STAGGER: f32 = 0.45;
 
-/// THE DUST IS HIS CLOSE ANSWER, not a step back: a lungful of spore blown into the man's face, and it HANGS where it was blown.
+/// THE DUST IS HIS CLOSE ANSWER, not a step back, and it HANGS where it was blown.
 const MG_PUFF_R: f32 = 4.2;
 pub const MG_PUFF_WIND: f32 = 0.34;
 pub const MG_PUFF_DUR: f32 = 0.24;
@@ -412,7 +411,6 @@ const MG_PUFF_CD: f32 = 3.4;
 pub const MG_PUFF_REACH: f32 = 4.1;
 /// HALF-angle either side of his facing (`foe.inArc` takes a half-width): an 80-degree cone.
 const MG_PUFF_ARC: f32 = 40.0;
-/// How far in front of him the cloud settles.
 pub const MG_PUFF_OUT: f32 = 1.5;
 pub var PUFF_HIT = combat.Hit{ .dmg = 6, .poise = 16, .stance = 8, .elem = combat.elems(.{ .chaos = 16 }), .venom = true };
 
@@ -440,7 +438,6 @@ const MG_HURT_HEAVY: usize = 10;
 
 const MG_NPART = 72;
 comptime {
-    // The ring law: a heavy wounding her at the top of a cast, when the staff's gather is owed its whole cap.
     std.debug.assert(MG_NPART >= MG_EMIT_CAP + MG_HURT_HEAVY + foe.WOUND_PARTS);
 }
 
@@ -490,7 +487,6 @@ const MG_SPROUT_KEYS = [_]PoseKey{
     .{ .t = 1.00, .p = .{ .lean = 20.0, .head = -11.0, .rsh = 48.0, .rabd = 8.0, .rel = 16.0, .lsh = 40.0, .lel = 20.0, .tilt = 22.0 } },
 };
 
-// THE DUST IS A BREATH: the free hand cupped up to his mouth and the head dropped into it, then the whole trunk snaps forward and the hand throws open.
 const MG_PUFF_WIND_KEYS = [_]PoseKey{
     .{ .t = 0.00, .p = MG_CARRY },
     .{ .t = 0.62, .p = .{ .lean = -12.0, .twist = 8.0, .head = -13.0, .rsh = 16.0, .rabd = 7.0, .rel = 38.0, .lsh = 84.0, .lel = 124.0, .tilt = 172.0 }, .ease = .accel },
@@ -530,7 +526,7 @@ const MgState = enum { idle, drift, orb_wind, orb_throw, sprout_wind, sprout, pu
 
 const MgChoice = enum { hold, back, keep, orb, sprout, puff, vanish };
 
-/// A MAN IN HIS FACE GETS THE DUST BEFORE HE GETS THE BACK OF THE MAGUS — the puff outranks both the retreat AND the blink, and he only vanishes once the breath is spent.
+/// The puff outranks both the retreat AND the blink; he only vanishes once the breath is spent.
 fn mgClassify(dist: f32, orbReady: bool, sproutReady: bool, fadeReady: bool, puffReady: bool, pressed: bool) MgChoice {
     if (dist > AGGRO_R) return .hold;
     if (dist <= MG_PUFF_R and puffReady) return .puff;
@@ -563,7 +559,6 @@ pub const Cap = struct {
     }
 };
 
-/// The cloud the breath leaves standing. It blooms fast, HANGS, then thins out.
 pub const Dust = struct {
     live: bool = false,
     at: rl.Vector3 = mathx.zero3,
@@ -1305,7 +1300,7 @@ pub const Magus = struct {
         return mathx.addV(self.pos, self.moveDir);
     }
 
-    /// Where the cloud settles: a stride in front of his own feet, on his facing.
+        /// Where the cloud settles: a stride in front of his own feet, on his facing.
     pub fn puffSpot(self: *const Magus) rl.Vector3 {
         const f = self.fdir();
         return v3(self.pos.x + f.x * MG_PUFF_OUT, self.pos.y, self.pos.z + f.z * MG_PUFF_OUT);
@@ -1706,7 +1701,6 @@ fn poseBody(self: anytype, deathDur: f32) void {
     setLocal(&wx, ELL, rest, mathx.rx(-(self.lel - wonk * 0.6)));
     setLocal(&wx, WRL, rest, mathx.rz(8.0));
 
-// After the fit, `tilt` is degrees the kit leads FORWARD of the forearm — 0 down, 90 level, 180 on end.
     setLocal(&wx, HELD, rest, heromod.staffFit(self.tilt - (self.rsh - swing)));
     self.xf = wx;
 }
@@ -2159,7 +2153,7 @@ pub const Conclave = struct {
         self.clearGround();
     }
 
-    /// Shot-stage only: wipe what is standing on the ground without touching the bodies.
+        /// Shot-stage only: wipe what is standing on the ground without touching the bodies.
     pub fn clearGroundForShot(self: *Conclave) void {
         self.clearGround();
     }
@@ -2355,7 +2349,6 @@ const ORB_SPLASH: usize = 9;
 const DUST_SPRAY: usize = 20;
 const DUO_PARTS: usize = 96;
 comptime {
-    // The ring law: a cap bursting and laying its cloud on the frame a pair of orbs go out with it. `blow` fills at most one dust slot a frame.
     std.debug.assert(DUO_PARTS >= CAP_SPLASH + DUST_SPRAY + 2 * ORB_SPLASH);
 }
 
@@ -2373,7 +2366,6 @@ const CAP_STEM_DK = rgba(46, 42, 33, 255);
 const CAP_LIT = mathx.withAlpha(CHAOS_CORE, 210);
 const CAP_LIT_DIM = mathx.withAlpha(CHAOS_EDGE, 185);
 
-/// A REAL MUSHROOM: a foot that swells out of the ground, a stem that narrows at the waist and flares back under the cap, a skirt, LIT GILLS, a domed cap and warts on it — wabi-sabi off a seeded rng so the build stays deterministic.
 pub fn capMesh(shader: rl.Shader) rl.Model {
     var rng = mathx.Rng.init(0xCA95);
     var b = Builder.init();
@@ -2384,7 +2376,6 @@ pub fn capMesh(shader: rl.Shader) rl.Model {
     b.addCapsule(v3(0.02, waist, -0.01), v3(0, CAP_STEM_H, 0), CAP_STIPE * 0.72, CAP_STIPE * 1.05, 9, CAP_STEM_DK);
     b.addBlob(v3(0, CAP_STEM_H * 0.76, 0), v3(CAP_STIPE * 1.90, CAP_STIPE * 0.20, CAP_STIPE * 1.85), 2, 9, CAP_STEM);
 
-    // The gills carry the light — the shroom is lit from UNDER its own cap, never from a lamp on top of it.
     var i: i32 = 0;
     while (i < CAP_GILLS) : (i += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(CAP_GILLS)) + rng.range(-0.04, 0.04);
@@ -2415,7 +2406,6 @@ pub fn capMesh(shader: rl.Shader) rl.Model {
         b.addBlob(v3(mathx.cosf(a) * d, CAP_STEM_H + up * 0.86, mathx.sinf(a) * d), v3(r, r * 0.48, r), 2, 6, WART);
     }
 
-    // THE LIGHT IS PART OF THE BODY, not a lamp put on top of it: a bead under the crown, one in the stem, and spores hung off the rim.
     b.setMat(.flame);
     b.addBlob(v3(0, CAP_STEM_H - CAP_DROP * 0.10, 0), v3(0.56, CAP_DROP * 0.54, 0.54), 4, 10, CAP_LIT);
     b.addBlob(v3(0, CAP_STEM_H * 0.84, 0), v3(CAP_STIPE * 0.62, CAP_STIPE * 1.10, CAP_STIPE * 0.62), 3, 7, CAP_LIT);
@@ -2435,7 +2425,6 @@ pub fn capRise(g: f32) f32 {
     return 1.0 - @exp(-5.0 * u) * mathx.cosf(7.0 * u);
 }
 
-/// The button pushes up first and the cap opens out after it.
 pub fn capSpread(g: f32) f32 {
     return 0.40 + 0.60 * mathx.smoothstep(0.18, 1.0, mathx.clampF(g, 0, 1));
 }
@@ -2455,10 +2444,8 @@ fn drawCap(model: *const rl.Model, c: *const Cap) void {
         v3(sxz, sy, sxz),
         mathx.lerpColor(rgba(214, 214, 214, 255), rl.Color.white, heat),
     );
-    // IT GLOWS FROM THE MOMENT IT IS UP and only brightens: the halo and the pool under it are always there, and the heat is how hard they burn.
     const head = v3(c.at.x, c.at.y + sy * CAP_STEM_H, c.at.z);
     const beat = 1.0 + 0.10 * mathx.sinf(c.t * 6.0 + c.seed * 6.28);
-    // UNDER the cap, not around it: a halo wide enough to hide the mushroom is a bubble, not a light.
     const lamp = v3(head.x, head.y - sy * CAP_DROP * 0.55, head.z);
     rl.drawSphereEx(lamp, sxz * (0.30 + 0.34 * heat) * beat, 8, 6, mathx.withAlpha(CHAOS_CORE, mathx.u8f(26.0 + 92.0 * heat)));
     const pool = sxz * (0.85 + 0.75 * heat);
@@ -2468,7 +2455,6 @@ fn drawCap(model: *const rl.Model, c: *const Cap) void {
 const DUST_COL = rgba(198, 184, 118, 255);
 const DUST_DK = rgba(138, 128, 82, 255);
 
-/// The motes thrown on the breath itself. They RISE — spore, not gravel — and are dragged to a stop where the cloud stands.
 const SPORE_SPRAY = foe.Spray{
     .fanLo = 1.1,  .fanHi = 3.2,
     .upLo = 0.5,   .upHi = 2.0,
@@ -2541,7 +2527,6 @@ test "THE MAGUS NEVER CLOSES, and being pressed outranks casting — but the DUS
     try std.testing.expectEqual(MgChoice.orb, mgClassify(MG_SPROUT_MIN + 0.1, true, false, false, true, false));
     try std.testing.expectEqual(MgChoice.hold, mgClassify(AGGRO_R + 1.0, true, true, true, true, true));
 
-    // In his face he blows dust rather than backing off, and rather than blinking out — the blink is what is left when the breath is spent.
     try std.testing.expectEqual(MgChoice.puff, mgClassify(MG_PUFF_R - 0.1, false, false, false, true, false));
     try std.testing.expectEqual(MgChoice.puff, mgClassify(MG_PUFF_R - 0.1, true, true, true, true, true));
     try std.testing.expectEqual(MgChoice.vanish, mgClassify(MG_PUFF_R - 0.1, true, true, true, false, true));
@@ -2582,7 +2567,6 @@ test "THE DUST IS BLOWN INTO A FRONTAL CONE AND THEN HANGS THERE, biting on its 
     try std.testing.expectEqual(@as(u32, 1), breath);
     try std.testing.expect(pulses >= 4);
 
-    // Behind him it is a cloud he is not standing in: no breath at all, and the cloud never reaches him.
     var away = Conclave{ .model = undefined, .orbModel = undefined, .capModel = undefined };
     away.n = 1;
     away.magi[0] = Magus.spawn(mathx.zero3, 0, 1.0, 0.3);
@@ -2799,7 +2783,6 @@ test "THE BLADE LANDS ON THE MAN WHERE HE STANDS - every stroke thrown for real,
 }
 
 test "AND THE BAND IS INSIDE THE REACH - the pick never hands out a stroke that goes past him" {
-// `SW_SLASH_R` is the measured reach and not a number beside one: measured dead ahead, through the real update.
     const dt = 1.0 / 120.0;
     const rows = [_]struct { name: []const u8, wind: SwState, band: f32 }{
         .{ .name = "slash", .wind = .slash_wind, .band = SW_SLASH_R },

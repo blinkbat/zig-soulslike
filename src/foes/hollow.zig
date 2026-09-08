@@ -125,7 +125,6 @@ const SPARK_RECOVER: f32 = 0.70;
 const SPARK_CD: f32 = 5.5;
 pub const SPARK_MAX: f32 = 16.0;
 pub const SPARK_SPEED: f32 = 17.0;
-/// THE VOLLEY CARRIES ITS DAMAGE, BECAUSE THE BITE MAY NOT. Pure lightning: resists answer.
 pub var SPARK_HIT = combat.Hit{ .poise = 8, .elem = combat.elems(.{ .lightning = 15 }) };
 
 fn volleySpan() f32 {
@@ -177,7 +176,7 @@ fn classify(dist: f32, biteR: f32, biteReady: bool, tollReady: bool, sparkReady:
 const BELL_STIFF: f32 = 165.0;
 const BELL_ZETA: f32 = 0.30;
 const BELL_DRAG: f32 = 5.2;
-/// Degrees the toll drives it through. THE TOLL IS THE ONLY TIME THE BELL IS A WEAPON.
+/// Degrees the toll drives it through.
 const BELL_HAUL: f32 = 52.0;
 /// CLEAR OF THE BACK, OR IT IS A LUMP: -0.215 H hangs the crown a hand's breadth off the spine.
 const BELL_AT = v3(0, 0.052 * H, -0.215 * H);
@@ -197,8 +196,7 @@ const G_LEGL = 5;
 const G_LEGR = 6;
 const G_N = 7;
 
-/// In the BELL's own frame: the crown blob rises `BELL_R * 0.30` off the bell's origin, and `G_REST[G_RUMP]`
-/// lifted the whole thing 0.3 m clear of the bronze.
+/// In the BELL's own frame: the crown blob rises `BELL_R * 0.30` off the bell's origin, and `G_REST[G_RUMP]` lifted the whole thing 0.3 m clear of the bronze.
 const G_SEAT: f32 = BELL_R * 0.30 + 0.008 * H;
 /// Degrees per degree the bell moves. Well under 1: mounted rigidly in the bell's frame it lay on its side the moment `HUNCH` went past forty.
 const G_BRACE: f32 = 0.34;
@@ -245,7 +243,7 @@ const G_CHIP_SPRAY = foe.Spray{
     .r1 = 0.006,   .col = G_HIDE_LT, .grav = 8.0,
     .stretch = 0.02, .bounce = 0.35,
 };
-/// Its lightning going out: fast, short, weightless, and the one cold-blue thing in the air (`archer.zig`'s law on the spark).
+/// Its lightning going out: the one cold-blue thing in the air (`archer.zig`'s law on the spark).
 const G_BURST = foe.Spray{
     .fanLo = 0.8,  .fanHi = 3.0,
     .upLo = 0.4,   .upHi = 2.6,
@@ -662,7 +660,6 @@ pub const Hollow = struct {
                 if (r.at.y > floor) return;
                 r.at.y = floor;
                 r.landings += 1;
-                // ONE bounce, then it lies: a mass in motion overshoots its rest.
                 if (r.landings == 1 and -r.vel.y > 1.2) {
                     r.vel = v3(r.vel.x * 0.5, -r.vel.y * G_BOUNCE, r.vel.z * 0.5);
                     r.spin *= 0.35;
@@ -872,7 +869,6 @@ pub const Hollow = struct {
         const swing = if (seated) mathx.clampF(self.bellAng / BELL_HAUL, -1, 1) else 0;
         const haul = if (seated) self.haulAmt() else 0;
         const aim = if (seated) self.aimAmt() else 0;
-        // Off the seat it is a thrown thing: limbs out through the air, and the host's own death channel is what lays it limp on the ground.
         const flung: f32 = if (self.rider.state == .flung) mathx.smoothstep(0, 0.12, self.rider.flungFor) else 0;
         const limp: f32 = if (self.rider.state == .down) 1 else 0;
         const dead_k = mathx.maxF(dk, limp);
@@ -934,7 +930,7 @@ pub const Hollow = struct {
         return mathx.scaleV(mathx.addV(l, r), 0.5);
     }
 
-    /// 0..1 off the toll's own clock and nothing else.
+        /// 0..1 off the toll's own clock and nothing else.
     fn haulAmt(self: *const Hollow) f32 {
         if (self.state != .toll) return 0;
         if (self.t < TOLL_WIND) return mathx.smoothstep(0, TOLL_WIND * 0.92, self.t);
@@ -1435,7 +1431,6 @@ test "THE RIDER SITS ON THE BELL AND THE SPARK LEAVES ITS FISTS — both measure
     const head = foe.markOn(h.gxf[G_HEAD], mathx.zero3);
     const fists = h.sparkWorld();
     std.debug.print("\n  hollow {d:.2} m tall, hunched {d:.0} deg; bell at {d:.2} m, rider's rump {d:.2} m, its head {d:.2} m\n", .{ h.topWorld().y - h.pos.y, HUNCH, bell.y, rump.y, head.y });
-    // ITS RUMP IS THE SEAT, to the millimetre: `G_REST[G_RUMP]` is the rig's zero, so no leg pose can lift the rider off the bronze.
     try std.testing.expectApproxEqAbs(@as(f32, 0), mathx.lenV(mathx.subV(rump, seat)), 1e-4);
     const crownTop = foe.markOn(h.bellMat, v3(0, BELL_R * 0.30, 0));
     try std.testing.expect(seat.y >= crownTop.y - 1e-4);
@@ -1551,7 +1546,6 @@ test "IT BITES ONCE PER GAPE, and only what is in front of it" {
 }
 
 test "A BIG PLACEMENT STILL BITES — the stop ring may never grow past the trigger ring" {
-    // The bug this pins: a `stop` scaled by the body against a `triggerR` that is not — it halted outside its own bite ring at every map scale over ~1.23.
     for ([_]f32{ wf.FOE_SCALE_LO, 1.0, 1.3, wf.FOE_SCALE_HI }) |sc| {
         var h = Hollow.spawn(mathx.zero3, 0, sc, 0.3);
         h.leash.noteSeen();

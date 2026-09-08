@@ -692,7 +692,7 @@ pub const Cloud = struct {
     parts: [CLOUD_PARTS]foe.Particle = [_]foe.Particle{.{}} ** CLOUD_PARTS,
     fxHead: usize = 0,
     fxAccum: f32 = 0,
-    /// Which puff this is over the cloud's WHOLE LIFE, and it has to be that rather than an index within the frame: the emitter lays about one puff a frame at 60, so a per-frame counter never reached the third and the boundary was drawn only on a frame long enough to emit three at once.
+        /// Which puff this is over the cloud's WHOLE LIFE, not an index within the frame: the emitter lays about one puff a frame at 60, so a per-frame counter never reached the third.
     rimTick: u32 = 0,
     fxRng: mathx.Rng = mathx.Rng.init(0x0C10),
 

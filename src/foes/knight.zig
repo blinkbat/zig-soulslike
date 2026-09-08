@@ -237,9 +237,8 @@ const Attack = struct {
     reachIn: f32 = 0,
 };
 
-/// PAST THE SHIPPED `SCALE` A STROKE ARRIVES NEARER THAN `hurtReach`'s TRIANGLE SAYS, so every band moves with
-/// the oversize rather than riding the kit's own metres. MEASURED against contact; metres per 1.0 of `scale`
-/// over `SCALE`, one per shape of stroke.
+/// PAST THE SHIPPED `SCALE` A STROKE ARRIVES NEARER THAN `hurtReach`'s TRIANGLE SAYS, so every band moves with the
+/// oversize rather than riding the kit's own metres. MEASURED against contact; metres per 1.0 of `scale` over `SCALE`.
 const GIANT_IN_SWUNG: f32 = 0.60; // no near edge — sweep, swat, bash
 const GIANT_IN_STEPPING: f32 = 0.35; // steps in behind itself (`reachIn > 0`)
 const GIANT_IN_CRUSHING: f32 = 0.0; // the overhead comes straight down
@@ -692,7 +691,6 @@ const SLAM_RING: i32 = 30;
 
 const NPART = 208;
 comptime {
-    // The ring law: the slam landing on the frame a killing heavy of his lands too, over the wind's own gather.
     std.debug.assert(NPART >= SLAM_DUST + SLAM_GRIT + SLAM_RING +
         HIT_CHIP_HEAVY + CHIP_DEATH + foe.WOUND_PARTS +
         @as(i32, @intCast(foe.emitCap(6.0 + 28.0 * GATHER_FALL))));
@@ -2765,9 +2763,8 @@ pub const Knight = struct {
                 sfx.world(.knight_die, self.pos);
                 self.enterDeath();
             },
-            // REFUSING THE FLINCH HANDS THE POOL BACK: `Vitals.strike` has already latched the stun, and a latched stun
-            // discards every later pour, so a body that keeps swinging would be immune to poise AND stance for the
-            // whole stagger it never took — 2.40 s off a floored heavy, which is the punish window itself.
+                        // REFUSING THE FLINCH HANDS THE POOL BACK: `Vitals.strike` has already latched the stun, and a latched stun
+                        // discards every later pour — so a body that kept swinging would be immune to poise AND stance for 2.40 s off a floored heavy.
             .heavy => if (self.floored() or self.transforming()) self.vit.refuseFlinch(poiseWas) else self.enterStun(.stunheavy),
             .light => if (self.floored() or self.inString() or self.transforming()) self.vit.refuseFlinch(poiseWas) else self.enterStun(.stunlight),
             .none => self.counterFlank(s),
@@ -3273,7 +3270,6 @@ pub const Knight = struct {
         ));
 
         if (dead) {
-            // A FELLED STATUE DOES NOT CURL — flat, both legs are STRAIGHT.
             setLocal(wx, HIPL, rest, mul(rx(-5.0 * dk), rz(-6.0)));
             setLocal(wx, KNEEL, rest, rx(6.0 + 5.0 * dk));
             setLocal(wx, ANKL, rest, rx(-9.0 * dk));
@@ -3732,7 +3728,6 @@ fn pelvisMesh() rl.Mesh {
     }
     b.addBlob(v3(mathx.cosf(4.5 / 7.0 * std.math.tau) * 0.118 * H, -0.128 * H, mathx.sinf(4.5 / 7.0 * std.math.tau) * 0.118 * H), v3(0.030 * H, 0.052 * H, 0.028 * H), 6, 10, KBONE);
     b.setMat(.leather);
-    // A BELT GOES ROUND HIM, SO ITS AXIS IS VERTICAL.
     b.addCylinder(v3(0, 0.034 * H, 0), v3(0, 0.078 * H, 0), 0.140 * H, 0.140 * H, 11, STRAP);
     b.setMat(BRIGHT);
     b.addBox(v3(0, 0.056 * H, 0.138 * H), v3(0.036 * H, 0, 0), v3(0, 0.030 * H, 0), v3(0, 0, 0.010 * H), BRASS);
@@ -4257,8 +4252,9 @@ fn shieldMesh() rl.Mesh {
 /// How far the FACE may tip off his own horizontal — the SINE of the tip, so 0.50 is 30°. The SLAM is the one move allowed past it (`doorNormal` y −0.95).
 const HANG_TIP: f32 = 0.50;
 
-/// A shield is CARRIED, not welded to the forearm: strapped rigidly the plank INVERTED, its own up axis at −0.82. The arm AIMS it in YAW and nothing else — the face may tip `HANG_TIP` off his horizontal and no further, and the plank's length is whatever is left of his up.
-/// The SLAM is the one exemption, and a FRACTION rather than a flag (`slamDrive`): laid flat there is no upright to solve for, so the length comes off his FORWARD instead.
+/// A shield is CARRIED, not welded to the forearm: strapped rigidly the plank INVERTED, its own up axis at −0.82. The
+/// arm AIMS it in YAW alone; the face may tip `HANG_TIP` off his horizontal and no further. The SLAM is the one
+/// exemption, and a FRACTION rather than a flag (`slamDrive`): laid flat the length comes off his FORWARD instead.
 fn hangUpright(k: *Knight, dt: f32, m: rl.Matrix, bodyUp: rl.Vector3, bodyFwd: rl.Vector3, laid: f32) rl.Matrix {
     const s = mathx.lenV(v3(m.m4, m.m5, m.m6));
     if (s < 1e-5) return m;
@@ -4538,7 +4534,6 @@ test "A BLOW ON THE DOOR TAKES NO POISE, BUT THE FOOTING BEHIND IT CAN BE WORN T
     back.state = .idle;
     back.covered = true;
     const q = v3(0, 2.6, -k.hurtRadius() * 0.5);
-    // A creature's flinch is health taken (`combat.FOE_POISE_PER_DMG`): 100 off his 900 pours 82 into a 78 pool.
     back.tryHit(.{ .active = true, .r = 0.2, .a = q, .b = q, .a0 = q, .b0 = q, .hit = .{ .dmg = 100, .poise = 90, .stance = 60 } });
     try std.testing.expectEqual(@as(u32, 0), back.blocks);
     try std.testing.expectEqual(@as(u32, 1), back.hits);
@@ -4546,7 +4541,6 @@ test "A BLOW ON THE DOOR TAKES NO POISE, BUT THE FOOTING BEHIND IT CAN BE WORN T
 }
 
 test "A BLOW THE DOOR STOPPED CANNOT FLINCH HIM — the pool, the footing, the stagger and the wear all refused" {
-// `Vitals.strike` empties the pool and begins the stagger before `tryHit` can answer for the block, and restoring only `poise` left him `stunned()`. The chip is 10% of `dmg` (`TOWER_NEGATE`).
     var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     k.state = .idle;
     k.covered = true;
@@ -4874,12 +4868,10 @@ test "the gas DOSES on its own clock, re-arms when he steps out, and thins to no
     while (t < GAS_DOSE_EVERY * 3.0) : (t += 1.0 / 60.0) {
         if (v.gasDose(1.0 / 60.0, at) != null) bites += 1;
     }
-    // The FIRST frame inside bills, so three intervals of standing there is four doses.
     try std.testing.expect(bites >= 3 and bites <= 5);
 
     const outside = v3(GAS_R * 4.0, 0, 0);
     try std.testing.expect(v.gasDose(1.0 / 60.0, outside) == null);
-    // **RE-ARMED, NOT ZEROED**: stepping out leaves it DUE, so stepping back in bills on the entry frame.
     try std.testing.expectApproxEqAbs(GAS_DOSE_EVERY, v.gasT, 1e-6);
     try std.testing.expect(v.gasDose(1.0 / 60.0, at) != null);
 
@@ -4893,7 +4885,6 @@ test "the gas DOSES on its own clock, re-arms when he steps out, and thins to no
     for (v.gas[0].parts) |p| try std.testing.expect(p.life <= 0);
 }
 
-/// A point held at `deg` off whatever he is facing RIGHT NOW, `out` metres away.
 fn flankOf(k: *const Knight, deg: f32, out: f32) rl.Vector3 {
     const a = k.facing + mathx.radians(deg);
     return v3(k.pos.x + mathx.sinf(a) * out, 0, k.pos.z + mathx.cosf(a) * out);

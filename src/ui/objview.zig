@@ -1626,7 +1626,6 @@ test "EVERY CREATURE ON THE BENCH CAN BE PLAYED, and the decoy is the only thing
     }
     try std.testing.expectEqual(CHAR_KINDS.len, kinds);
 
-    // The decoy is a POSITION at a range and nothing else — it carries no state a decision could read.
     try std.testing.expect(BENCH_NEAR > 0 and BENCH_FAR > BENCH_NEAR);
     var far: f32 = 0;
     var spin: f32 = 0;

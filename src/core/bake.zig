@@ -22,7 +22,6 @@ pub const Emit = struct {
         _ = self.m.add(o) catch @panic("bake: worldfmt.MAX_OPS exceeded — raise the cap");
     }
 
-    /// Lands a scatter op and hands back its stored block, which is what the callers that tune a gradient or an avoid list want.
     fn pushScat(self: *Emit, o: Op, s: wf.Scatter) *wf.Scatter {
         const i = self.m.addScat(o, s) catch @panic("bake: worldfmt.MAX_OPS or MAX_SCATTERS exceeded — raise the cap");
         return self.m.scatMut(i) catch unreachable;

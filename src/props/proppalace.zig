@@ -91,8 +91,7 @@ fn grecaInto(b: *Builder, r: *mathx.Rng, a: rl.Vector3, c: rl.Vector3, face: rl.
         );
     }
 
-    // ONE REPEAT PER BAND HEIGHT. At a third of that the keys are finer than the course they sit on and
-    // the whole frieze greys out at twenty metres.
+        // ONE REPEAT PER BAND HEIGHT: at a third of that the keys are finer than the course they sit on and the whole frieze greys out at twenty metres.
     const cells: i32 = @max(2, @as(i32, @intFromFloat(len / (h * 1.05))));
     const cell = len / @as(f32, @floatFromInt(cells));
     const inner = h - rail * 2.0;
@@ -178,8 +177,6 @@ fn ziaInto(b: *Builder, r: *mathx.Rng, c: rl.Vector3, face: rl.Vector3, radius: 
         }
     }
 
-    // THE BOSS IS A COLLAR WITH A STONE IN IT. Sunk deepest and widest, the masonry dome swallows the jewel
-    // it holds and the sun comes back with a black hole in the middle of it.
     b.setMat(.stone);
     b.addDome(v3(c.x + f.x * out * 0.12, c.y, c.z + f.z * out * 0.12), f, radius * 0.44, 12, SAND_DK);
     b.setMat(.gilt);
@@ -409,13 +406,11 @@ pub fn sunSpireMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5A_11_01);
 
-    // THREE STAGES, EACH A FULL TALUD-TABLERO. Two thin plates under a long shaft is a chimney; the mass
-    // has to climb in steps you could walk round before the tower starts.
     var y = taludInto(&b, &rng, 0, 0, 0, SPIRE_BASE, 2.60, 1.30, 0.14, 0.32);
     y = taludInto(&b, &rng, 0, 0, y, 4.20, 2.30, 1.15, 0.13, 0.46);
     y = taludInto(&b, &rng, 0, 0, y, 3.10, 2.00, 1.00, 0.12, 0.60);
 
-    // THE SHEAR IS ONE PLANE, NOT A NIBBLE — three of the eight sides stop 4 m short and the break runs across them.
+        // THE SHEAR IS ONE PLANE, NOT A NIBBLE — three of the eight sides stop 4 m short and the break runs across them.
     const shearFrom: i32 = 2;
     const shearTo: i32 = 4;
     const CH: f32 = 0.80;
@@ -568,8 +563,6 @@ pub fn sunGateMesh(shader: rl.Shader) rl.Model {
     horseshoeInto(&b, &rng, 0, 0, GATE_SPRING, GATE_R, 1.55, 15, 16);
 
     const wallTop: f32 = GATE_WALL_TOP;
-    // **THE SPANDRELS ARE SOLID.** An arch with daylight in its shoulders is a lintel standing on two stilts;
-    // the mass has to carry from the pier round the ring to the crown before the tympanum starts.
     const ringR = GATE_R + 1.00;
     var spY = GATE_SPRING;
     while (spY < GATE_SPRING + ringR) : (spY += 0.92) {
@@ -610,8 +603,7 @@ pub fn sunGateMesh(shader: rl.Shader) rl.Model {
         });
         c += 1;
     }
-    // THE SIGN GOES IN THE MIDDLE OF THE WALL THAT HOLDS IT, and is sized off that wall's own height: rays
-    // that carry past the cornice read as a spiked mess and not as a sun.
+        // The sign is sized off the wall's own height: rays that carry past the cornice read as a spiked mess.
     const ziaY = (chY + wallTop) * 0.5;
     // A ZIA IS FOUR TIMES ITS RING ACROSS: the rays run a further two radii out past it.
     const ziaR = (wallTop - chY) * 0.245;
@@ -933,8 +925,6 @@ pub fn emeraldVaultMesh(shader: rl.Shader) rl.Model {
             const rm = (mathx.cosf(e0) + mathx.cosf(e1)) * 0.5 * VAULT_R;
             const ym = drum + (mathx.sinf(e0) + mathx.sinf(e1)) * 0.5 * VAULT_RISE;
             const along = (mathx.sinf(e1) - mathx.sinf(e0)) * VAULT_RISE * 0.58;
-            // A RIB IS NARROW AND PROUD, A PANE IS WIDE AND FLUSH. At one width the gold and the glass are
-            // one chequer and the shell has no structure left.
             const wide = std.math.tau * rm / @as(f32, VAULT_RIBS) * 0.20;
             b.setMat(.gilt);
             b.addBox(
@@ -1148,7 +1138,6 @@ pub fn palaceColumnMesh(shader: rl.Shader) rl.Model {
                 v3(-mathx.sinf(a) * rr * 0.17, 0, mathx.cosf(a) * rr * 0.17),
                 v3(0, 0.39, 0),
                 v3(mathx.cosf(a) * rr * 0.055, 0, mathx.sinf(a) * rr * 0.055),
-                // A FLUTE IS A SHADOW, NOT A STAIN: sunk in the iron wash the whole shaft came back charred.
                 if (@mod(f, 2) == 0) SAND_DK else SAND,
             );
         }
@@ -1358,8 +1347,7 @@ pub fn watcherIdolMesh(shader: rl.Shader) rl.Model {
     const top = taludInto(&b, &rng, 0, 0, 0, IDOL_HALF, 1.40, 0.60, 0.12, 0.40);
     const y0 = top;
 
-    // **THE TORSO IS NARROWER THAN THE SHOULDERS ARE WIDE.** At 1.6 m of radius it swallowed both arms and the
-    // chin, and what came back was a snowman.
+        // THE TORSO IS NARROWER THAN THE SHOULDERS ARE WIDE: at 1.6 m of radius it swallowed both arms and the chin.
     b.setMat(.stone);
     b.addCube(v3(0, y0 + 1.80, 0), v3(3.10, 3.60, 2.10), SAND);
     b.addCube(v3(0, y0 + 3.80, 0), v3(3.50, 0.44, 2.44), SAND_LT);
@@ -1375,7 +1363,6 @@ pub fn watcherIdolMesh(shader: rl.Shader) rl.Model {
     b.addBlob(v3(0, chest + 0.30, 0.16), v3(1.34, 0.60, 0.82), 4, 11, SAND_LT);
     ziaInto(&b, &rng, v3(0, chest - 0.34, 0.94), v3(0, 0, 1), 0.96, 0.24);
 
-    // A NECK, AND IT CLEARS THE SHOULDERS, or the head sits on them like a lid.
     b.addCapsule(v3(0, chest + 0.45, 0.10), v3(0, chest + 1.60, 0.16), 0.46, 0.38, 9, SAND);
     art.giltRingInto(&b, &rng, 0, chest + 0.74, 0.12, 0.62, 0.32, 12, SUN);
 
@@ -1406,8 +1393,6 @@ pub fn watcherIdolMesh(shader: rl.Shader) rl.Model {
     b.addCapsule(v3(-2.95, 0.22, 1.55), v3(-4.35, 0.20, 1.05), 0.30, 0.24, 9, SAND_DK);
     b.addBlob(v3(-4.60, 0.18, 0.92), v3(0.34, 0.13, 0.36), 3, 8, IRONWASH);
 
-    // A WIDE CRANIUM OVER A NARROW CHIN, and ONE blob for the cranium in the SAME stone: a pale cap on top read
-    // as a beret, and the collar belongs at the jaw, not across the brow.
     const head = chest + 2.85;
     b.addBlob(v3(0, head - 1.30, 0.24), v3(0.54, 0.48, 0.50), 4, 9, SAND);
     b.addBlob(v3(0, head - 0.76, 0.20), v3(0.92, 0.66, 0.86), 5, 11, SAND);
@@ -1535,8 +1520,7 @@ pub fn starBasinMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x5A_11_0C);
 
-    // **THE PLAN IS THE OCTAGON AND THE STAR IS ONLY THE BOWL.** A khatim this big at walk height is eight
-    // corners a body stands inside, and the only collider that holds them is a square over a rosette.
+        // THE PLAN IS THE OCTAGON AND THE STAR IS ONLY THE BOWL: a khatim this big at walk height is eight corners a body stands inside, and the only collider that holds them is a square over a rosette.
     b.setMat(.stone);
     b.addCylinder(v3(0, 0.0, 0), v3(0, 0.30, 0), BASIN_R, BASIN_R * 0.97, OCTAGON, SAND_DK);
     b.addCylinder(v3(0, 0.30, 0), v3(0, 0.72, 0), BASIN_R * 0.88, BASIN_R * 0.85, OCTAGON, SAND);

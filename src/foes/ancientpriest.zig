@@ -65,7 +65,7 @@ const CENTER_F: f32 = 0.58;
 pub var SOULS: u32 = 480;
 
 const HP_MAX: f32 = 96.0;
-/// ALMOST NONE (the necromancer's rule): under the hero's light poke, so anything that lands drops the cast. A creature whose threat is a 1.55 s ritual must be answerable by reaching it.
+/// Under the hero's light poke, so anything that lands drops the 1.55 s ritual.
 const POISE_MAX: f32 = 6.0;
 const STANCE_MAX: f32 = 30.0;
 
@@ -132,7 +132,7 @@ const Spent = enum { raise, breath };
 
 const Choice = enum { raise, breath, keep, hold };
 
-/// **`breathR` IS PASSED IN AND NOT READ OFF THE CONSTANT**: the cone lands at `BREATH_REACH * scale`, so a body the map placed at 0.7 would have decided to breathe from a range its breath never reached.
+/// `breathR` IS PASSED IN, not read off the constant: the cone lands at `BREATH_REACH * scale`, so a body placed at 0.7 would breathe from a range its breath never reached.
 fn classify(dist: f32, breathR: f32, flock: u32, raiseReady: bool, breathReady: bool) Choice {
     if (dist > AGGRO_R) return .hold;
     if (dist <= breathR and breathReady) return .breath;
@@ -271,9 +271,9 @@ pub const Ancient = struct {
     breathT: f32 = BREATH_DOSE_EVERY,
     spent: Spent = .breath,
 
-    /// **HOW MANY OF ITS OWN ARE ALREADY UP**, within `RAISE_KEEP_R`, stamped every frame by `game.zig`. A fact about the field, so NO INPUT READING holds by construction.
+        /// How many of its own are already up within `RAISE_KEEP_R`, stamped every frame by `game.zig`. A fact about the field, so NO INPUT READING holds by construction.
     flock: u32 = 0,
-    /// The ground it committed to on the FIRST frame of the gather — a spot re-derived per frame as he moved would swing 1.55 s of announcement onto somewhere else.
+        /// Committed on the FIRST frame of the gather: re-derived per frame it would swing 1.55 s of announcement onto somewhere else.
     raiseAt: rl.Vector3 = mathx.zero3,
     raised: bool = false,
     homing: bool = false,
@@ -368,7 +368,7 @@ pub const Ancient = struct {
         return self.state == .breath_pour;
     }
 
-    /// The muzzle, in the skull's own frame, so it rides the pose. The whole cone is measured off this and off `facing`, and nothing about it is guessed from a height.
+        /// The muzzle in the skull's own frame, so it rides the pose. The cone is measured off this and `facing`, never guessed from a height.
     pub fn muzzleWorld(self: *const Ancient) rl.Vector3 {
         return foe.markOn(self.xf[SKULL], v3(0, MUZZLE_DROP, MUZZLE_OUT));
     }
@@ -1172,7 +1172,6 @@ test "A LANDED BLOW DROPS THE RITUAL — poise under the hero's lightest swing" 
     var p = Ancient.spawn(mathx.zero3, 0, 1.0, 0.3);
     p.debugRaise();
     try std.testing.expect(POISE_MAX < heromod.ATK_LIGHT_HIT.poise);
-    // At the height its own sphere sits at — measured off the creature, never a literal.
     const y = p.centerWorld().y;
     const swing = foe.Blade{
         .active = true,

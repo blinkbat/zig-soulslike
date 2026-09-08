@@ -99,10 +99,9 @@ pub var SOULS: u32 = 2400;
 const HP_MAX: f32 = 1450.0;
 const POISE_MAX: f32 = 46.0;
 const STANCE_MAX: f32 = 120.0;
-/// Owner: weak to FIRE, somewhat to ICE (not as much), strong against CHAOS.
 const RESISTS = combat.resists(.{ .fire = -50, .cold = -25, .chaos = 75 });
 
-/// OWNER: ALL OF HER DAMAGE IS PHYSICAL, but the whips, which cut — physical AND chaos, and the chaos is corruption, not venom (`Hit.venom` off). The whips and the spear open him: both BUILD BLEED.
+/// The whips and the spear both BUILD BLEED, and their chaos is corruption, not venom (`Hit.venom` off).
 const WHIP_BLEED: f32 = 26.0;
 const SPEAR_BLEED: f32 = 42.0;
 const SLASH_BLEED: f32 = 16.0;
@@ -110,7 +109,7 @@ pub var WHIP_HIT = combat.Hit{ .dmg = 21, .poise = 22, .stance = 7, .elem = comb
 pub var SNARE_HIT = combat.Hit{ .dmg = 9, .poise = 28, .stance = 9 };
 /// How long the vines hold his feet — under two of the whip's periods, so a snare is one lash taken and one dodged.
 pub const SNARE_HOLD: f32 = 1.6;
-/// …AND THEY BITE WHILE THEY HOLD: a physical pulse every `SNARE_PULSE_EVERY` through the hold, no poise (the knight's gas pattern, `Coven.holdDose`).
+/// A physical pulse every `SNARE_PULSE_EVERY` through the hold, no poise (the knight's gas pattern, `Coven.holdDose`).
 pub const SNARE_PULSE_EVERY: f32 = 0.4;
 pub var SNARE_PULSE_HIT = combat.Hit{ .dmg = 5 };
 
@@ -120,7 +119,7 @@ const DISSOLVE = foe.Dissolve{ .rate = 60.0, .spread = 0.95, .rise = 0.8, .flake
 const SHOVE_DECAY = 6.0;
 const A_PROT = 3.0;
 
-/// Water deeper than this is not ground she will land on or walk into — ankle deep and no more.
+/// Water deeper than this is not ground she lands on or walks into — ankle deep and no more.
 pub const DRY_MAX: f32 = 0.3;
 
 /// THE RING SHE WANTS YOU IN. Inside `LEAP_R` she leaps clear; between the two she casts and drifts sideways.
@@ -133,7 +132,7 @@ const KEEP = [_]behave.Step{
     .{ .band = .{ .min = KEEP_MIN, .max = KEEP_MAX, .secs = DRIFT_DUR } },
 };
 const LEAP_R: f32 = 4.6;
-/// Seconds from TAKE-OFF to the next leap she may throw — armed the frame she leaves the ground, so a leap cut short by a stagger is still a leap spent.
+/// Seconds from TAKE-OFF, armed the frame she leaves the ground: a leap cut short by a stagger is still a leap spent.
 pub const LEAP_CD: f32 = 14.0;
 /// A rush inside this ring is answered with a sidestep — RUSH being closing speed off his position over the last frame, never his press.
 const STEP_R: f32 = 3.4;
@@ -146,7 +145,7 @@ const VINE_WIND: f32 = 0.72;
 const VINE_CAST: f32 = 0.22;
 const VINE_CD: f32 = 4.4;
 pub const SNARE_R: f32 = 1.55;
-/// It is shown before it bites: the ring of buds stands this long, then withers.
+/// Shown before it bites: the ring of buds stands this long, then withers.
 pub const SNARE_SHOW: f32 = 2.2;
 const CAST_MIN: f32 = 3.0;
 const CAST_MAX: f32 = 16.0;
@@ -169,7 +168,7 @@ const WHIP_TURN: f32 = 2.4;
 pub const WITHER: f32 = 0.6;
 const WHIP_H: f32 = 2.6;
 
-/// THE SPEAR IS THE ANSWER TO CLOSING: a rush inside `SPEAR_R` (his position over the last frame, never his press). The wind is the TELL and it is long for a punish, and SHE is the tell — the coil, the arm hauled back, the hand pointing down the line — then the tip runs `SPEAR_LEN` in `SPEAR_STRIKE`.
+/// A rush inside this ring — his position over the last frame, never his press.
 const SPEAR_R: f32 = 6.5;
 const SPEAR_MIN: f32 = 1.6;
 const SPEAR_CLOSE: f32 = 1.0;
@@ -183,7 +182,6 @@ pub const SPEAR_HOLD: f32 = 0.35;
 const SPEAR_RISE: f32 = 0.9;
 pub var SPEAR_HIT = combat.Hit{ .dmg = 29, .poise = 30, .stance = 13, .dose = combat.Doses.one(.bleed, SPEAR_BLEED) };
 
-/// THE RAKE IS THE ANSWER TO A MAN IN HER FACE — the innermost ring, inside the sidestep's and the leap's, and it does not care whether he is closing. The free hand comes across and back through him; short cooldown, so hugging her is paid for.
 const SLASH_R: f32 = 2.3;
 pub const SLASH_WIND: f32 = 0.32;
 pub const SLASH_STRIKE: f32 = 0.16;
@@ -193,7 +191,6 @@ const SLASH_CD: f32 = 2.4;
 const SLASH_FRONT_DOT: f32 = 0.42;
 pub var SLASH_HIT = combat.Hit{ .dmg = 18, .poise = 24, .stance = 10, .dose = combat.Doses.one(.bleed, SLASH_BLEED) };
 
-/// SEED PODS, SCATTERED AS SHE LEAVES: thrown from the orb as she takes off, they fly a short arc, land between her and the man, SWELL for the fuse and POP into splinters.
 pub const POD_N: usize = 4;
 const POD_SCATTER_MIN: f32 = 1.6;
 const POD_SCATTER_MAX: f32 = 3.6;
@@ -224,12 +221,11 @@ pub const SUMMON_R: f32 = 3.2;
 pub const HEAL_RATE: f32 = 0.035;
 /// The hum take is 1.25 s; retriggered a beat inside that so it never gaps and never chatters.
 const HUM_EVERY: f32 = 1.05;
-/// THE HEALING BREAKS, in the order she takes them: each is one wave and one channel, and once a share is spent she never goes back to it.
+/// The shares she breaks at, in order: each is one wave and one channel, and a spent share is never revisited.
 pub const BREAK_HP = [_]f32{ 0.5, 0.25, 0.10 };
 pub const PHASE_HP: f32 = BREAK_HP[0];
 
 const Arc = struct { dist: f32, rise: f32, hang: f32, fall: f32, up: f32 };
-/// Up fast, HANG, then down on a curve with no slope at the ground — that is landing gently.
 pub const LEAP_ARC = Arc{ .dist = 9.0, .rise = 0.34, .hang = 0.62, .fall = 1.00, .up = 2.1 };
 pub const RETREAT_ARC = Arc{ .dist = 15.0, .rise = 0.40, .hang = 0.75, .fall = 1.10, .up = 3.0 };
 
@@ -263,7 +259,6 @@ comptime {
     std.debug.assert(SPEAR_LEN + SPEAR_HALF_W + foe.HERO_R > SPEAR_R); // …or the ring hands out a thrust that stops short of the man it was thrown at
     std.debug.assert(CAST_MIN < KEEP_MIN and CAST_MAX > KEEP_MAX);
     std.debug.assert(SNARE_HOLD < 2.0 * WHIP_PERIOD);
-    // The gather is short enough that a WALK no longer carries him out of the ring, and long enough that a RUN still does.
     std.debug.assert(heromod.WALK_SPEED_BANK * (VINE_WIND + VINE_CAST) < SNARE_R + foe.HERO_R);
     std.debug.assert(heromod.RUN_SPEED_BANK * (VINE_WIND + VINE_CAST) > SNARE_R + foe.HERO_R);
     std.debug.assert(HEAL_RATE * 15.0 >= PHASE_HP);
@@ -374,7 +369,6 @@ const THROW_FREE_SH = -62.0;
 const THROW_FREE_ABD = 58.0;
 const THROW_LEAN = 12.0;
 
-// THE COIL IS THE TELL: the orb hand hauled right back past the shoulder and high, the trunk reared and wound away from him, the head down — and the free arm POINTING STRAIGHT DOWN THE LINE the whole wind. Then the whole body unwinds into the thrust.
 const SPEAR_WIND_ORB_SH = 48.0;
 const SPEAR_WIND_ORB_EL = 96.0;
 const SPEAR_WIND_ORB_ABD = 34.0;
@@ -393,7 +387,6 @@ const SPEAR_THRUST_LEAN = 30.0;
 const SPEAR_THRUST_TWIST = 22.0;
 const SPEAR_THRUST_HEAD = -6.0;
 
-// THE RAKE: the orb hand tucked in out of the way, the free hand hauled across the chest and the trunk wound open behind it, then the whole arm ripped back out across his front.
 const SLASH_ORB_SH = -30.0;
 const SLASH_ORB_EL = 88.0;
 const SLASH_ORB_ABD = 4.0;
@@ -495,7 +488,7 @@ pub const Druidess = struct {
     stepCd: f32 = 0,
     spearCd: f32 = 0,
     slashCd: f32 = 0,
-    /// The line the spear runs down, committed at the strike: her facing then.
+        /// The line the spear runs down, committed at the strike: her facing then.
     spearYaw: f32 = 0,
     speared: bool = false,
     /// Her ONE stroke — a one-frame blow read by the coven the frame it appears (the archer's `heroHit`).
@@ -503,14 +496,14 @@ pub const Druidess = struct {
     heroLatch: bool = false,
     parry: foe.Parry = .{},
     parried: bool = false,
-    /// She left the ground this frame — the coven throws the pods.
+        /// She left the ground this frame — the coven throws the pods.
     scattered: bool = false,
     /// How many of `BREAK_HP` she has spent, counted the frame she commits to the call, so a stagger through the gather cannot hand her a second wave off the same share.
     breaks: u8 = 0,
     /// The channel she took is over — stopped or finished — and she does not go back to THAT one.
     healed: bool = false,
     wave: Wave = .frogs,
-    /// ONE-FRAME REPORTS. The creature says what and where; the game and the coven do it.
+        /// ONE-FRAME REPORTS. The creature says what and where; the game and the coven do it.
     summoned: ?Wave = null,
     sowed: bool = false,
     snared: ?rl.Vector3 = null,
@@ -525,7 +518,6 @@ pub const Druidess = struct {
     room: ?wf.Arena = null,
     /// THE WATER, asked through the game (`foe.Ground`): nothing of hers lands or walks into more than `DRY_MAX` of it.
     ground: foe.Ground = .{},
-    /// This leap goes OVER HIS HEAD — her first answer, and the only one when the water is behind her.
     overHead: bool = false,
     hop: f32 = 0,
     stepSide: f32 = 1,
@@ -645,7 +637,7 @@ pub const Druidess = struct {
         return self.state == .vine_wind or self.state == .vine_cast or self.state == .whip_wind or self.state == .whip_cast or self.state == .spear_wind or self.state == .slash_wind;
     }
 
-    /// Where the `i`th of `n` called bodies stands: a fan of `SUMMON_R` in front of her, between her and the man.
+        /// Where the `i`th of `n` called bodies stands: a fan of `SUMMON_R` between her and the man.
     pub fn summonSpot(self: *const Druidess, i: u8, n: u8) rl.Vector3 {
         const share = (@as(f32, @floatFromInt(i)) + 0.5) / @as(f32, @floatFromInt(@max(n, 1))) - 0.5;
         const yaw = self.facing + mathx.radians(140.0) * share;
@@ -838,7 +830,6 @@ pub const Druidess = struct {
                 const ceil = self.mendCeiling();
                 _ = self.vit.heal(mathx.minF(ceil - self.vit.hp, HEAL_RATE * self.vit.hpMax * dt));
                 self.gatherAtOrb(dt);
-                // The hum is a take shorter than the channel, retriggered on its own beat (the souls hum's rule).
                 self.humT += dt;
                 if (self.humT >= HUM_EVERY) {
                     self.humT -= HUM_EVERY;
@@ -917,7 +908,7 @@ pub const Druidess = struct {
 
     /// Inside her reach rings she leaves before she casts. The leap is a jump and the roots refuse it (`foe.canLeap`); the sidestep is a step and needs no leave.
     fn dodgeNow(self: *Druidess, d: f32, hero: rl.Vector3) bool {
-        // The innermost ring first: a man in her face is raked before she thinks about leaving, and the cooldown is spent at the COMMIT, so a stagger through the wind still spends it.
+                // The cooldown is spent at the COMMIT, so a stagger through the wind still spends it.
         if (d <= foe.triggerBand(SLASH_R, SCALE, self.scale) and self.slashCd <= 0) {
             self.slashCd = SLASH_CD;
             self.enter(.slash_wind);
@@ -959,7 +950,7 @@ pub const Druidess = struct {
     fn landing(self: *const Druidess, dir: rl.Vector3, dist: f32) rl.Vector3 {
         return v3(self.pos.x + dir.x * dist, self.pos.y, self.pos.z + dir.z * dist);
     }
-    /// The furthest she can go along `dir` and still land in the room, up to `max`, a metre at a time.
+        /// The furthest she can go along `dir` and still land in the room, up to `max`, a metre at a time.
     fn roomReach(self: *const Druidess, dir: rl.Vector3, max: f32) f32 {
         var best: f32 = 0;
         var d: f32 = 1.0;
@@ -968,7 +959,7 @@ pub const Druidess = struct {
         }
         return best;
     }
-    /// A walk that would leave the room is turned along the wall, and failing that towards the middle.
+        /// A walk that would leave the room is turned along the wall, and failing that towards the middle.
     fn steerInRoom(self: *const Druidess, want: rl.Vector3) rl.Vector3 {
         const probe = WALK_SPEED * DRIFT_DUR + self.bodyR();
         if (self.inRoom(self.landing(want, probe))) return want;
@@ -987,7 +978,6 @@ pub const Druidess = struct {
         const clear = mathx.normV(mathx.addV(away, mathx.scaleV(mathx.perpXZ(away), 0.25 * side)));
         const over = mathx.scaleV(away, -1.0);
         self.arc = arc;
-        // OVER HIS HEAD FIRST (owner): the leap that gets away from him AND from whatever is behind her. Back is for when the ground past him is not there.
         if (self.inRoom(self.landing(over, arc.dist))) {
             self.moveDir = over;
             self.overHead = true;
@@ -995,7 +985,6 @@ pub const Druidess = struct {
             self.moveDir = clear;
             self.overHead = false;
             if (!self.inRoom(self.landing(clear, arc.dist))) {
-                // Neither way is open at the full length: the bearing with the most room, leaning away from him, and no further than that room allows.
                 var bestDir = clear;
                 var bestScore: f32 = -1;
                 var k: u32 = 0;
@@ -1110,7 +1099,6 @@ pub const Druidess = struct {
         const heavyBlow = foe.wounded(self, s, blade, .{ .light = 1.1, .heavy = 2.0 });
         self.chips(s.contact, s.dir, if (heavyBlow) CHIP_HEAVY else CHIP_LIGHT, if (heavyBlow) 3.0 else 2.2);
         sfx.world(.druid_hurt, self.pos);
-        // ONE BLOW STOPS THE CHANNEL, and she does not go back to it: the stopping is the whole of "you must go and stop her".
         const wasChannel = self.state == .passive;
         if (wasChannel) self.healed = true;
         switch (s.reaction) {
@@ -1216,7 +1204,6 @@ pub const Druidess = struct {
         self.glow = 1.0 - 0.6 * e;
     }
 
-    /// The coil: fast into the pose so the whole wind is HELD there, and the orb lit the while.
     fn setSpearWind(self: *Druidess, dt: f32) void {
         const e = dt * 16.0;
         self.orbSh = easeTo(self.orbSh, SPEAR_WIND_ORB_SH, e);
@@ -1232,7 +1219,6 @@ pub const Druidess = struct {
         self.glow = easeTo(self.glow, 1.0, e);
     }
 
-    /// The unwind: everything the coil wound goes the other way at once, and the orb hand drives straight out.
     fn setSpearCast(self: *Druidess, u: f32) void {
         const e = foe.swingCurve(u);
         self.orbSh = lerpF(SPEAR_WIND_ORB_SH, SPEAR_THRUST_ORB_SH, e);
@@ -1246,7 +1232,6 @@ pub const Druidess = struct {
         self.glow = 1.0 - 0.5 * e;
     }
 
-    /// Fast into the coil so the whole short wind is held there — the free hand across the chest, the trunk wound open behind it.
     fn setSlashWind(self: *Druidess, dt: f32) void {
         const e = dt * 20.0;
         self.orbSh = easeTo(self.orbSh, SLASH_ORB_SH, e);
@@ -1348,7 +1333,7 @@ pub const Druidess = struct {
         self.hemLean += self.hemVel * dt;
     }
 
-    /// THE TANGLE IS THREE SPRINGS ON HER HEADING. Each tail chases her facing through its own stiffness and rings past it, so a turn swings the robes round after her and they settle in three different beats.
+        /// THREE SPRINGS ON HER HEADING: each tail chases her facing through its own stiffness and rings past it.
     fn tickTrails(self: *Druidess, dt: f32, speed: f32) void {
         const drag = TRAIL_DRAG * mathx.clampF(speed / WALK_SPEED, 0, 1) - TRAIL_FLARE * mathx.clampF(self.hop / LEAP_ARC.up, 0, 1);
         self.trailDrag = easeTo(self.trailDrag, drag, dt * 5.0);
@@ -1469,7 +1454,6 @@ pub const Druidess = struct {
             const pulse = 1.0 + 0.12 * mathx.sinf(self.elapsed * 9.0);
             rl.drawSphereEx(at, r * (1.6 + 1.4 * self.glow) * pulse, 8, 6, mathx.withAlpha(CHAOS_CORE, mathx.u8f(28.0 + 70.0 * self.glow)));
             if (self.channeling()) {
-                // THE CHANNEL IS A COLUMN YOU CAN SEE FROM THE OTHER SIDE OF THE FIELD: orb to ground, brighter as she mends.
                 const foot = v3(self.pos.x, self.pos.y + 0.05, self.pos.z);
                 const k = 0.5 + 0.5 * mathx.sinf(self.elapsed * 5.0);
                 rl.drawCylinderEx(foot, at, 0.30 * self.scale, 0.10 * self.scale, 8, mathx.withAlpha(CHAOS_EDGE, mathx.u8f(40.0 + 30.0 * k)));
@@ -1504,7 +1488,7 @@ pub const Vine = struct {
             .spear => SPEAR_STRIKE + SPEAR_HOLD,
         };
     }
-    /// How far the spear has run from her feet: the whole length inside `SPEAR_STRIKE`, drawn back into the ground as it withers.
+        /// How far the spear has run from her feet: the whole length inside `SPEAR_STRIKE`, drawn back as it withers.
     pub fn extent(self: *const Vine) f32 {
         return SPEAR_LEN * foe.swingCurve(mathx.clampF(self.t / SPEAR_STRIKE, 0, 1)) * self.stand();
     }
@@ -1523,7 +1507,6 @@ pub const Vine = struct {
         if (into < WHIP_TELL) return -mathx.smoothstep(0, WHIP_TELL * 0.85, into);
         const after = into - WHIP_TELL;
         if (after < 0.12) return lerpF(-1.0, 1.0, foe.swingCurve(after / 0.12));
-        // THE CRACK: past the mark and ringing back onto it, then the slow droop back upright.
         const ring = after - 0.12;
         const settle = 1.0 - mathx.smoothstep(0.12, WHIP_PERIOD - WHIP_TELL, after);
         return settle * (1.0 + 0.28 * mathx.sinf(ring * 26.0) * @exp(-ring * 6.0));
@@ -1548,7 +1531,6 @@ pub const Pod = struct {
     pub fn landed(self: *const Pod) bool {
         return self.t >= POD_FLIGHT;
     }
-    /// Where it is: a lob from the orb to its spot, then the spot.
     pub fn at(self: *const Pod) rl.Vector3 {
         const u = mathx.clampF(self.t / POD_FLIGHT, 0, 1);
         var p = mathx.lerpV(self.from, self.to, u);
@@ -1559,7 +1541,6 @@ pub const Pod = struct {
     pub fn swell(self: *const Pod) f32 {
         return mathx.clampF((self.t - POD_FLIGHT) / POD_FUSE, 0, 1);
     }
-    /// The shell, with a heartbeat that quickens as the fuse runs.
     pub fn radius(self: *const Pod) f32 {
         const s = self.swell();
         const beat = mathx.sinf(self.t * (7.0 + 16.0 * s) + self.seed * 6.28);
@@ -1617,7 +1598,7 @@ pub const Coven = struct {
         self.holdT = 0;
     }
 
-    /// The bite of the vines that have him: a physical pulse on its own clock for as long as the hold runs. Read once a frame by the game, after the snare itself.
+        /// A physical pulse on its own clock for as long as the hold runs. Read once a frame by the game, AFTER the snare itself.
     pub fn holdDose(self: *Coven, dt: f32) ?foe.Blow {
         if (self.holdLeft <= 0) return null;
         self.holdLeft -= dt;
@@ -1651,7 +1632,6 @@ pub const Coven = struct {
         return worst;
     }
 
-    /// A fan of pods thrown off the orb as she leaves, landing on the side she is leaving — where the man comes through after her.
     pub fn scatter(self: *Coven, d: *const Druidess) void {
         const from = d.orbWorld();
         var i: usize = 0;
@@ -1691,7 +1671,7 @@ pub const Coven = struct {
         return n;
     }
 
-    /// The seconds of snare the frame owes him; read once by the game, like the shoal's net.
+        /// The seconds of snare the frame owes him; read once by the game, like the shoal's net.
     pub fn takeSnare(self: *Coven) f32 {
         const s = self.pendingSnare;
         self.pendingSnare = 0;
@@ -1767,7 +1747,6 @@ pub const Coven = struct {
                 v.lashes = n;
                 v.lashed = false;
             }
-            // It turns onto the man while it rears and holds its line through the strike: the tell is where it points.
             if (into < WHIP_TELL) {
                 const to = mathx.dirXZ(v.at, hero);
                 if (mathx.lenXZ(to) > 1e-4) v.yaw = mathx.approachAngle(v.yaw, mathx.headingXZ(to), WHIP_TURN * dt);
@@ -1827,9 +1806,8 @@ pub const Coven = struct {
     }
 };
 
-/// The buds through her wind, where the vines will stand: the ring for a snare, the three spots for the whips.
 fn drawMark(d: *const Druidess) void {
-    // THE SPEAR'S TELL IS HER BODY (owner), nothing on the ground: the coil, the arm drawn back, the hand pointing down the line. Only the orb marks the wind, and `drawFx` has it.
+        // THE SPEAR'S TELL IS HER BODY, nothing on the ground; only the orb marks the wind, and `drawFx` has it.
     if (d.state == .spear_wind) return;
     const wind: f32 = if (d.state == .vine_wind or d.state == .vine_cast) VINE_WIND else WHIP_WIND;
     const u = if (d.state == .vine_wind or d.state == .whip_wind) mathx.clampF(d.t / wind, 0, 1) else 1.0;
@@ -1851,7 +1829,6 @@ fn drawMark(d: *const Druidess) void {
     }
 }
 
-/// A pod on the ground: a dark shell over a glow that comes up through it as the fuse runs, on a stalk nub, beating.
 fn drawPod(p: *const Pod) void {
     const at = p.at();
     const r = p.radius();
@@ -1866,7 +1843,6 @@ fn drawWhip(v: *const Vine) void {
     const g = v.grown() * v.stand();
     if (g <= 0.01) return;
     const lash = v.lash();
-    // Reared back the stalk pitches away from the man; whipped through it pitches at him, and the tip is what arrives. Between lashes it WRITHES — a slow bend and a sway, alive and not a post.
     const idle = 1.0 - mathx.minF(1.0, @abs(lash));
     const writhe = 8.0 * mathx.sinf(v.t * 2.3 + v.seed * 6.28) * idle;
     const sway = 7.0 * mathx.sinf(v.t * 1.7 + v.seed * 3.1) * idle;
@@ -1878,7 +1854,7 @@ fn drawWhip(v: *const Vine) void {
     var i: u32 = 0;
     while (i < segN) : (i += 1) {
         const share = (@as(f32, @floatFromInt(i)) + 1.0) / @as(f32, @floatFromInt(segN));
-        // The bend lives in the upper stalk (share squared), so the root stands and the tip does the travelling.
+                // The bend lives in the upper stalk (share squared), so the root stands and the tip travels.
         const pitch = mathx.radians(bend * share * share + 6.0 * mathx.sinf(v.seed * 20.0 + share * 7.0 + v.t * 0.9));
         const dir = v3(fwd.x * mathx.sinf(pitch), mathx.cosf(pitch), fwd.z * mathx.sinf(pitch));
         const q = mathx.addV(p, mathx.scaleV(dir, segLen));
@@ -1888,7 +1864,6 @@ fn drawWhip(v: *const Vine) void {
         rl.drawSphereEx(q, r1 * 1.25, 5, 5, VINE_DK);
         p = q;
     }
-    // The bud lights through the rear-back and is brightest as it arrives.
     const heat = mathx.maxF(0, lash);
     const arm = mathx.maxF(0, -lash);
     rl.drawSphereEx(p, 0.10 * g * (1.0 + 0.6 * heat), 6, 5, VINE_TIP);
@@ -1899,14 +1874,12 @@ fn spearHeight(s: f32) f32 {
     return SPEAR_RISE * mathx.smoothstep(0, 1.6, s);
 }
 
-/// Out of the ground at her feet, up to chest height inside the first metre and a half, and level to the point: a shaft, thick at the root and thin at the bud.
 fn drawSpear(v: *const Vine) void {
     const ext = v.extent();
     if (ext <= 0.05) return;
     const dir = mathx.headingDir(v.yaw);
     const segN: u32 = 6;
     const thick = 0.4 + 0.6 * v.stand();
-    // A wave runs down the shaft as it goes out, and the point RINGS once it has arrived: driven, then quivering, then still.
     const going = 1.0 - mathx.clampF(v.t / SPEAR_STRIKE, 0, 1);
     const since = mathx.maxF(0, v.t - SPEAR_STRIKE);
     const ring = 0.11 * mathx.sinf(since * 38.0) * @exp(-since * 7.0);
@@ -1928,7 +1901,6 @@ fn drawSpear(v: *const Vine) void {
 }
 
 fn drawSnare(v: *const Vine) void {
-    // Up with an overshoot, then every stalk WRITHES on its own beat; with hold of someone they clutch — harder, faster, further in.
     const up = sproutCurve(mathx.clampF(v.t / 0.22, 0, 1)) * v.stand();
     if (up <= 0.01) return;
     const grip: f32 = if (v.lashed) 1.0 else 0.0;
@@ -2007,7 +1979,7 @@ fn chestMesh() rl.Mesh {
     b.setMat(.cloth);
     b.addBlob(v3(0, -0.010 * H, 0), v3(0.084 * H, 0.086 * H, 0.066 * H), 4, 10, ROBE);
     b.addBlob(v3(0, 0.050 * H, -0.004 * H), v3(0.094 * H, 0.052 * H, 0.070 * H), 4, 10, ROBE_LT);
-    // THE YOKE, or the arms hang in mid-air (the necromancer's rule): the shoulder joints stand at `SHOULDER_HALF` and the barrel does not reach them.
+        // THE YOKE, or the arms hang in mid-air: the shoulder joints stand at `SHOULDER_HALF` and the barrel does not reach them.
     const shx = SHOULDER_HALF * H;
     const shy = (0.818 - 0.760) * H;
     b.addCapsule(v3(-shx, shy, 0), v3(shx, shy, 0), 0.036 * H, 0.036 * H, 8, ROBE);
@@ -2108,7 +2080,7 @@ fn handMesh(side: f32) rl.Mesh {
     return b.toMesh();
 }
 
-/// From the hip down past the feet and OUT: this is the mass the creature reads as. `-0.030·H` under the sole plane is the drag.
+/// From the hip down past the feet and OUT. `-0.030·H` under the sole plane is the drag.
 fn hemMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xD009);
@@ -2120,7 +2092,6 @@ fn hemMesh() rl.Mesh {
     b.addSkirt(v3(0, top, 0), 0.080 * H, top - hip, 0.092 * H, 0.010 * H, 11, HEM, &rng);
     b.addSkirt(v3(0, hip, 0), 0.092 * H, hip - knee, 0.134 * H, 0.010 * H, 12, HEM, &rng);
     b.addSkirt(v3(0, knee, 0), 0.134 * H, knee - bot, 0.215 * H, 0.010 * H, 14, HEM, &rng);
-    // Draped cords and torn strips, hung at the rim so the tangle has edges.
     var i: u32 = 0;
     while (i < 7) : (i += 1) {
         const a = rng.angle();
@@ -2229,7 +2200,6 @@ test "ONE LEAP PER COOLDOWN, COUNTED FROM TAKE-OFF — a man who keeps closing d
     var first: ?f32 = null;
     var second: ?f32 = null;
     while (t < LEAP_CD * 1.6) : (t += dt) {
-        // Always inside her leap ring, wherever she has got to, and in sight the whole while as `game.markSight` would have it.
         const hero = v3(d.pos.x, 0, d.pos.z + 3.0);
         d.leash.noteSeen();
         _ = d.update(dt, hero, 400.0, .{});
@@ -2267,7 +2237,6 @@ test "THE SIDESTEP ANSWERS A RUSH AND NOTHING ELSE — closing speed, never a pr
     d.vineCd = 99;
     d.whipCd = 99;
     const dt: f32 = 1.0 / 60.0;
-    // A man STANDING inside the ring is not a rush, however close: she backs off him and never steps.
     var hero = mathx.ground(0, 3.0);
     var t: f32 = 0;
     while (t < 1.0) : (t += dt) {
@@ -2378,7 +2347,6 @@ test "HER DAMAGE IS PHYSICAL, BUT THE WHIPS CUT WITH CHAOS THAT IS NOT VENOM —
     _ = man.hit(WHIP_HIT);
     try std.testing.expectApproxEqAbs(@as(f32, 0), man.ail(.poison).meter, 1e-6);
     try std.testing.expectApproxEqAbs(WHIP_BLEED, man.ail(.bleed).meter, 1e-4);
-    // Bleed is a BURST that goes off on the TICK after the meter fills, pays out flat and resets: the proc is the flag, not the state.
     var lashes: u32 = 1;
     _ = man.tickAils(1.0 / 60.0);
     var bled = man.ailProcced(.bleed);
@@ -2489,7 +2457,6 @@ test "THE CAST IS COMMITTED TO WHERE HE STOOD WHEN THE GATHER BEGAN — the ring
     try std.testing.expect(walked > 0);
 }
 
-/// Runs her until the channel opens, counting the calls; null if it never does.
 fn driveToChannel(d: *Druidess, hero: rl.Vector3, limit: f32, calls: *u32, farthest: *f32, air: *f32) ?Wave {
     const dt: f32 = 1.0 / 60.0;
     var t: f32 = 0;
@@ -2540,7 +2507,6 @@ test "THREE HEALING BREAKS — at 50, 25 and 10 percent, each one wave and one c
         try std.testing.expect(d.healed);
     }
 
-    // Every share spent: she never breaks off again, however low she is driven.
     d.vit.hp = HP_MAX * 0.04;
     var s: f32 = 0;
     while (s < 8.0) : (s += dt) {
@@ -2685,7 +2651,6 @@ test "SHE NEVER LEAVES THE ROOM — cornered against the wall she leaps OVER HIS
     const dt: f32 = 1.0 / 120.0;
     const room = squareRoom(10.0);
 
-    // Open ground both ways: she goes OVER HIM, readily — that is her first answer.
     var free = Druidess.spawn(mathx.ground(0, 0), 0, 1.0, 0.3);
     free.room = room;
     free.leash.noteSeen();
@@ -2693,7 +2658,6 @@ test "SHE NEVER LEAVES THE ROOM — cornered against the wall she leaps OVER HIS
     try std.testing.expectEqual(State.leap, free.state);
     try std.testing.expect(free.overHead and free.moveDir.z > 0);
 
-    // HE is against the wall: past him is out of the room, so she goes back.
     var backed = Druidess.spawn(mathx.ground(0, 4.0), 0, 1.0, 0.3);
     backed.room = room;
     backed.leash.noteSeen();
@@ -2701,7 +2665,6 @@ test "SHE NEVER LEAVES THE ROOM — cornered against the wall she leaps OVER HIS
     try std.testing.expectEqual(State.leap, backed.state);
     try std.testing.expect(!backed.overHead and backed.moveDir.z < 0);
 
-    // WATER past him (the bench's probe: everything north of z = 5 is deep), so she goes back onto dry ground.
     const Bench = struct {
         fn depth(_: *const anyopaque, _: f32, z: f32) f32 {
             return if (z > 5.0) 2.0 else 0.0;
@@ -2714,7 +2677,6 @@ test "SHE NEVER LEAVES THE ROOM — cornered against the wall she leaps OVER HIS
     try std.testing.expectEqual(State.leap, dry.state);
     try std.testing.expect(!dry.overHead and dry.moveDir.z < 0);
     try std.testing.expect(dry.ground.depth(dry.landing(dry.moveDir, dry.arc.dist).x, dry.landing(dry.moveDir, dry.arc.dist).z) <= DRY_MAX);
-    // …and with the water behind HER instead, over him is the dry way.
     var shore = Druidess.spawn(mathx.ground(0, 3.0), 0, 1.0, 0.3);
     shore.ground = .{ .ctx = @ptrCast(&shore), .depthAt = Bench.depth };
     shore.leash.noteSeen();
@@ -2722,7 +2684,6 @@ test "SHE NEVER LEAVES THE ROOM — cornered against the wall she leaps OVER HIS
     try std.testing.expectEqual(State.leap, shore.state);
     try std.testing.expect(shore.overHead and shore.moveDir.z < 0);
 
-    // The wall at her back: the only landing inside the room is past him.
     var pinned = Druidess.spawn(mathx.ground(0, -8.0), 0, 1.0, 0.3);
     pinned.room = room;
     pinned.leash.noteSeen();
@@ -2747,7 +2708,6 @@ test "SHE NEVER LEAVES THE ROOM — cornered against the wall she leaps OVER HIS
     try std.testing.expect(nearest < 1.0 and hopOver > 1.5);
     try std.testing.expect(pinned.pos.z > hero.z + 3.0);
 
-    // A retreat that would clear the room is cut to what the room has.
     var small = Druidess.spawn(mathx.ground(0, 0), 0, 1.0, 0.3);
     small.room = squareRoom(6.0);
     small.startArc(RETREAT_ARC, mathx.ground(0, 3.0), .retreat);
@@ -2755,7 +2715,6 @@ test "SHE NEVER LEAVES THE ROOM — cornered against the wall she leaps OVER HIS
     try std.testing.expect(small.arc.dist < RETREAT_ARC.dist);
     try std.testing.expect(small.room.?.contains(small.landing(small.moveDir, small.arc.dist).x, small.landing(small.moveDir, small.arc.dist).z));
 
-    // Chased along the wall for ten seconds with every dodge on cooldown, she drifts and never crosses it.
     var walker = Druidess.spawn(mathx.ground(0, 8.0), 0, 1.0, 0.3);
     walker.room = room;
     walker.leapCd = 99;

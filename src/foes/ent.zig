@@ -28,8 +28,7 @@ const setLocal = heromod.setHumanoid;
 pub const H: f32 = 4.6;
 const HIP_HALF = heromod.HIP_HALF * 1.14;
 const SHOULDER_HALF = heromod.SHOULDER_HALF * 1.34;
-/// A BOLE HAS NO NECK, so the broken top has to clear the shoulder mass on its own. Stock, `restHumanoid` puts
-/// the head 0.067 of stature over the shoulders and the trunk's own 0.132 swallowed it; the crown goes up 0.090.
+/// A BOLE HAS NO NECK: `restHumanoid` puts the head 0.067 of stature over the shoulders and the trunk's own 0.132 swallowed it, so the crown goes up 0.090.
 const REST = blk: {
     var r = heromod.restHumanoid(HIP_HALF, SHOULDER_HALF, H);
     r[heromod.NECK].y += 0.030 * H;
@@ -62,8 +61,7 @@ const solePatches = [_]heromod.SolePatch{
     .{ .bone = ANKR, .heel = 0.026 * H, .toe = 0.112 * H, .halfW = 0.062 * H, .drop = 0.022 * H },
 };
 
-// Sampled off `gfx`'s ladder the way the birchwight's was: 54 reads ~160 on screen, so the trunk sits a full
-// step under the birch's 92 and the riven heartwood at 118 is the one bright thing on the body.
+// Sampled off `gfx`'s ladder: 54 reads ~160 on screen, a full step under the birch's 92, and the riven heartwood at 118 is the one bright thing on the body.
 const BARK = rgba(54, 43, 31, 255);
 const BARK_DK = rgba(36, 29, 21, 255);
 const BARK_LT = rgba(72, 58, 42, 255);
@@ -85,9 +83,7 @@ const ACCEL: f32 = 1.6;
 const TURN_RATE: f32 = 1.3;
 
 const BODY_R: f32 = 0.95;
-/// SIZED AGAINST THE CYCLOPS, NOT PICKED: what makes a tall body hittable is how far his chest stands off the
-/// sphere's centre at `closestApproach` AS A MULTIPLE of its radius — 1.33 for the cyclops, and the test holds
-/// this one at or under that. Either way the blow lands on the sweep, where the tip crosses the trunk's axis.
+/// SIZED AGAINST THE CYCLOPS: what makes a tall body hittable is his chest's stand-off at `closestApproach` AS A MULTIPLE of the radius — 1.33 for the cyclops, and the test holds this one at or under it.
 const HURT_R: f32 = 1.55;
 const CENTER_F: f32 = 0.50;
 const TOP_F: f32 = 1.04;
@@ -98,22 +94,19 @@ const STANCE_MAX: f32 = 96.0;
 const RESISTS = combat.resists(.{ .fire = -60, .lightning = -15, .cold = 30, .chaos = 35 });
 pub var SOULS: u32 = 780;
 
-/// THE SWEEP HAS NO INNER HOLE. A bough coming round off a 4.6 m trunk passes through the whole near ring, so the
-/// bill is one sector out to the tip — a `minR` here would invert under `wf.FOE_SCALE_LO` and leave a dead pocket
-/// inside a body the hero cannot walk out of (`foe.closestApproach` is 1.31 m against the sector's own 4.05).
+/// THE SWEEP HAS NO INNER HOLE: a `minR` here would invert under `wf.FOE_SCALE_LO` and leave a dead pocket inside a body the hero cannot walk out of (`foe.closestApproach` 1.31 m against the sector's 4.05).
 const SWIPE_R: f32 = 3.50;
 const SWIPE_ARC: f32 = 150.0;
 /// Where the sector sits relative to facing, in the swinging hand's own sign: the bough finishes across the body.
 const SWIPE_ARC_MID: f32 = -46.0;
 const SWIPE_WIND: f32 = 0.72;
 const SWIPE_STRIKE: f32 = 0.24;
-/// The bough is still cocked at the strike's first frame; it arrives from here.
 const SWIPE_IMPACT_K: f32 = 0.60;
 const SWIPE_RECOVER: f32 = 0.85;
 const SWIPE_CD: f32 = 2.4;
 pub var SWIPE_HIT = combat.Hit{ .dmg = 34, .poise = 38, .stance = 18, .shove = 0.9 };
 
-/// The return comes off the far hand with the arm already out there, so its wind is half the opener's.
+/// The return comes off the far hand with the arm already out, so its wind is half the opener's.
 const RET_WIND: f32 = 0.34;
 const RET_STRIKE: f32 = 0.26;
 const RET_IMPACT_K: f32 = 0.48;
@@ -121,7 +114,7 @@ const RET_RECOVER: f32 = 0.62;
 const RET_CHANCE: f32 = 0.6;
 pub var RET_HIT = combat.Hit{ .dmg = 26, .poise = 30, .stance = 12, .shove = 0.7 };
 
-/// How much of `TURN_RATE * wind` the gate may count on. It faces the quarry for the whole wind, so the rest is slack for a man who is moving.
+/// The share of `TURN_RATE * wind` the gate may count on; the rest is slack for a man who is moving.
 const WIND_TURN_SHARE: f32 = 0.8;
 
 /// THE SHAKE IS RANGED AND ITS BAND IS NOT A LIMB, so the metres are the world's and do not scale with the body.
@@ -129,7 +122,7 @@ const SHAKE_MIN: f32 = 5.5;
 const SHAKE_MAX: f32 = 17.0;
 const SHAKE_WIND: f32 = 1.15;
 const SHAKE_STRIKE: f32 = 0.60;
-/// Of the strike, where the boughs let go.
+/// Share of the strike at which the boughs let go.
 const SHAKE_RELEASE_K: f32 = 0.35;
 const SHAKE_RECOVER: f32 = 1.20;
 const SHAKE_CD: f32 = 9.0;
@@ -147,7 +140,6 @@ comptime {
     std.debug.assert(SWIPE_WIND >= foe.TELL_MIN);
     std.debug.assert(RET_WIND >= foe.TELL_MIN);
     std.debug.assert(SHAKE_WIND >= foe.TELL_MIN);
-    // The spray only reads as a spray if the rings cannot all cover one another.
     std.debug.assert(ACORN_SCATTER > ACORN_SPLASH_R);
 }
 
@@ -167,7 +159,6 @@ const PARRY_CHIPS = 12;
 const SHAKE_CHIPS = 20;
 const PARTS = 96;
 comptime {
-    // The ring law: a killing heavy blow landing on the frame the boughs let go.
     std.debug.assert(PARTS >= SHAKE_CHIPS + PARRY_CHIPS +
         foe.hitParts(HIT_CHIP_HEAVY) + foe.hitParts(CHIP_DEATH) + foe.WOUND_PARTS);
 }
@@ -176,7 +167,7 @@ const State = enum { idle, walk, swipe, ret, shake, stunlight, stunheavy, dead }
 
 const Choice = enum { rest, hold, close, swipe, shake, wait };
 
-/// The bearing the sweep can actually be brought round to: the sector's own half-width, plus what the wind turns, plus what the man subtends at that stand. Off it the body LOOMS (`.wait` is idle, which faces at the full rate).
+/// The sector's own half-width, plus what the wind turns, plus what the man subtends at that stand. Off it the body LOOMS (`.wait` is idle, which faces at the full rate).
 fn swipeBearing(dist: f32, wind: f32) f32 {
     return SWIPE_ARC * 0.5 + mathx.degrees(TURN_RATE * WIND_TURN_SHARE * wind) +
         combat.subtendedArc(foe.HERO_REACH, dist);
@@ -275,7 +266,7 @@ pub const Ent = struct {
         e.fxRng = foe.fxStream(seed, 44851.0, 0xE17C);
         e.aiRng = foe.fxStream(seed, 19073.0, 41);
         e.swipeCd = seed * 0.8;
-        // Never a volley in the first breath of a fight: a fresh body closes before it throws.
+                // Never a volley in the first breath of a fight.
         e.shakeCd = 3.0 + seed * 2.0;
         e.pose();
         return e;
@@ -478,7 +469,7 @@ pub const Ent = struct {
         return self.t >= at and self.t - dt < at;
     }
 
-    /// The return is only a choice if the far hand can actually reach him — a whiff is not a worse option.
+        /// The return is only a choice if the far hand can reach him — a whiff is not a worse option.
     fn wantsReturn(self: *Ent, quarry: rl.Vector3) bool {
         if (self.aiRng.float() >= RET_CHANCE) return false;
         const d = mathx.distXZ(self.pos, quarry);
@@ -501,7 +492,6 @@ pub const Ent = struct {
         self.leash.noteCombat();
     }
 
-    /// THE BOUGHS LET GO ALL AT ONCE. The first nut is thrown at the man himself and the rest fan round him, so the counter is to be somewhere else by the time they come down.
     fn letGo(self: *Ent, quarry: rl.Vector3) void {
         self.shook = true;
         self.tossN = ACORNS;
@@ -623,7 +613,6 @@ pub const Ent = struct {
         const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);
 
         const creak = SWAY * mathx.gutter(self.elapsed * 0.34 + self.seed * 6.28, self.seed * 5.1) * (1.0 - m);
-        // The shake HAULS the trunk back and throws it forward; the sweeps only lean into the sector.
         const shaking = self.state == .shake;
         const rear = if (shaking) self.motion.load else 0;
         const throwF = if (shaking) self.motion.drive else 0;
@@ -668,7 +657,6 @@ pub const Ent = struct {
 
         const armStun = -30.0 * stun;
         const swing = -6.0 * heromod.armSwing(self.phase) * m * @abs(self.fwdB);
-        // The shake raises both boughs and rattles them; a sweep drives ONE and lets the other trail.
         const raise = if (shaking) -96.0 * self.motion.load - 34.0 * self.motion.drive else 0;
         inline for (.{ SHL, SHR }, .{ ELL, ELR }, .{ WRL, WRR }, .{ 1.0, -1.0 }) |sh, el, wr, side| {
             const s = if (side > 0) swing else -swing;
@@ -802,8 +790,6 @@ fn boleMesh(rTop: f32, rBot: f32, len: f32, seed: u64) rl.Mesh {
     return b.toMesh();
 }
 
-/// THE SPLINTERED TRUNK: riven open on its long axis from waist to collar, the split's own black lip either side
-/// and pale heartwood standing in it. The one bright thing on the body, so the front reads at a glance.
 fn trunkMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xE102);
@@ -811,20 +797,16 @@ fn trunkMesh() rl.Mesh {
     inline for (.{ -1.0, 1.0 }) |side| {
         b.addCapsule(v3(side * 0.058 * H, 0.050 * H, 0), v3(side * SHOULDER_HALF * H, 0.044 * H, 0), 0.060 * H, 0.050 * H, 12, BARK);
     }
-    // The bole TAPERS IN at the collar so the neck comes out of a shoulder line instead of a ball.
     b.addCapsule(v3(0, -0.016 * H, 0), v3(0, 0.058 * H, 0), 0.122 * H, 0.104 * H, 13, BARK);
     b.addCapsule(v3(0, 0.058 * H, 0), v3(0, 0.082 * H, -0.006 * H), 0.104 * H, 0.074 * H, 12, BARK_LIVE);
     ridges(&b, &rng, 0.090, 0.120, 16);
 
     b.setMat(.wood);
-    // A SPLIT IS BUILT ADDITIVELY: nothing sunk inside the bole is ever seen, so the pale strip sits 3% proud of
-    // the 0.122 bole and the two bark lips 7% — the value break either side of it is what makes it read as a rive
-    // rather than a stain. It runs the WHOLE trunk, waist to collar.
+        // A SPLIT IS BUILT ADDITIVELY — nothing sunk inside the bole is ever seen: the pale strip sits 3% proud of the 0.122 bole and the two bark lips 7%.
     b.addCapsule(v3(0, -0.040 * H, 0.082 * H), v3(0, 0.072 * H, 0.066 * H), 0.046 * H, 0.036 * H, 9, HEARTWOOD);
     inline for (.{ -1.0, 1.0 }) |side| {
         b.addCapsule(v3(side * 0.062 * H, -0.044 * H, 0.092 * H), v3(side * 0.050 * H, 0.070 * H, 0.076 * H), 0.020 * H, 0.015 * H, 7, KNOTHOLE);
     }
-    // …and it is a TEAR, not a saw cut: shards bridge it at random heights, standing clear of the pale strip.
     var i: u32 = 0;
     while (i < 6) : (i += 1) {
         const y = rng.range(-0.034, 0.062) * H;
@@ -844,8 +826,6 @@ fn trunkMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// HUMAN-ISH ENOUGH TO READ: a broken bole for a head, snapped off blunt with the pale end grain showing, the
-/// BOUGHS IT SHAKES rising off it with the nuts still hanging in them, and two eyes burning in a pair of knotholes.
 fn crownMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xEC0E);
@@ -855,7 +835,6 @@ fn crownMesh() rl.Mesh {
     ridges(&b, &rng, 0.100, 0.082, 11);
 
     b.setMat(.wood);
-    // The snap: torn open, not domed — the pale end grain is what you see from above.
     b.addBlob(v3(0, 0.054 * H, 0), v3(0.062 * H, 0.012 * H, 0.058 * H), 6, 9, HEARTWOOD);
     var s: u32 = 0;
     while (s < 8) : (s += 1) {
@@ -871,8 +850,7 @@ fn crownMesh() rl.Mesh {
         );
     }
 
-    // THE BOUGHS. Nothing dead is straight and nothing ends in a point: `deadLimbTinted` is the one both leafless
-    // trees call. They RISE off the crown and out past it, so the shake has a silhouette to move.
+        // `deadLimbTinted` is the one both leafless trees call.
     b.setMat(.bark);
     var tips: [6]rl.Vector3 = undefined;
     var boughs: u32 = 0;
@@ -885,7 +863,6 @@ fn crownMesh() rl.Mesh {
         tips[boughs] = v3(root.x + mathx.cosf(a) * reach * 0.72, root.y + rise * 0.86, root.z + mathx.sinf(a) * reach * 0.72);
     }
 
-    // The nuts still hanging: what it has left to throw, cupped in clusters along the boughs.
     b.setMat(.plant);
     for (tips) |tip| {
         var n: u32 = 0;
@@ -900,7 +877,6 @@ fn crownMesh() rl.Mesh {
         }
     }
 
-    // THE FACE IS TWO KNOTHOLES AND A TEAR, sunk into the front of the bole and no more than that.
     b.setMat(.plain);
     inline for (.{ -1.0, 1.0 }) |side| {
         b.addBlob(v3(side * 0.036 * H, 0.006 * H, 0.062 * H), v3(0.024 * H, 0.022 * H, 0.014 * H), 6, 7, KNOTHOLE);
@@ -913,11 +889,9 @@ fn crownMesh() rl.Mesh {
 fn boughMesh(side: f32, len: f32, rTop: f32, rBot: f32, seed: u64) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
-    // WABI-SABI BETWEEN THE INSTANCES, NOT ALONG ONE: alternated segment by segment the two tones band a limb
-    // like a barber's pole, so the pick is per LIMB and a set of them reads as three kinds of wood.
+        // WABI-SABI BETWEEN THE INSTANCES, NOT ALONG ONE: alternated segment by segment the two tones band a limb like a barber's pole, so the pick is per LIMB.
     const tone = if (seed & 1 == 0) BARK else BARK_LIVE;
     b.setMat(.bark);
-    // A limb leaves the bole on its axis and kinks off the line — never a straight taper.
     const knee = v3(side * 0.012 * H, -len * H * 0.56, 0.008 * H);
     const tip = v3(side * 0.030 * H, -len * H, -0.006 * H);
     b.addCapsule(v3(0, 0, 0), knee, rTop * H, (rTop + rBot) * 0.5 * H, 10, tone);
@@ -928,7 +902,7 @@ fn boughMesh(side: f32, len: f32, rTop: f32, rBot: f32, seed: u64) rl.Mesh {
     return b.toMesh();
 }
 
-/// The hand is the far end of the bough: a splintered snap with three broken fingers of heartwood, and it is what the sweep is measured to.
+/// The hand is the far end of the bough, and it is what the sweep is measured to.
 fn clawMesh(side: f32) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(if (side > 0) 0xE1C1 else 0xE1C2);
@@ -985,7 +959,6 @@ test "the pick is positional: sweep in reach, shake at range, and the crown is t
     try std.testing.expectEqual(Choice.close, classify(19.0, 0, 0, 1.0, true, true, false));
     try std.testing.expectEqual(Choice.rest, classify(AGGRO_R + 1.0, 0, 0, 1.0, true, true, false));
     try std.testing.expectEqual(Choice.hold, classify(AGGRO_R + 1.0, 0, HOME_R + 1.0, 1.0, true, true, false));
-    // The sweep is asked FIRST, so a body scaled up until its tip overruns `SHAKE_MIN` still swings rather than throwing into its own face.
     const overrun = foe.hurtReach(SWIPE_R, wf.FOE_SCALE_HI);
     try std.testing.expect(overrun > SHAKE_MIN);
     try std.testing.expectEqual(Choice.swipe, classify(SHAKE_MIN + 0.1, 0, 0, wf.FOE_SCALE_HI, true, true, false));
@@ -1080,7 +1053,6 @@ test "THE CROWN LETS GO ALL AT ONCE - one nut on the man, the rest fanned round 
         offs[i] = mathx.distXZ(tos.at, hero);
         near = @min(near, offs[i]);
         try std.testing.expect(offs[i] <= ACORN_SCATTER + 1e-3);
-        // A nut leaves the crown, not the feet.
         try std.testing.expect(tos.from.y > TOP_F * H * 0.6);
     }
     try std.testing.expectApproxEqAbs(@as(f32, 0), near, 1e-3);
@@ -1108,7 +1080,6 @@ test "AND A NUT IS A REAL ARC: it comes down where it was thrown, with time to b
         std.debug.print("  acorn thrown {d:.1} m: {d:.2} s in the air, landed {d:.2} m off the mark\n", .{ range, flight, miss });
     }
     try std.testing.expect(worst <= ACORN_SPLASH_R);
-    // The whole point of the arc: it is up long enough to walk out of the ring it is aimed at.
     try std.testing.expect(quickest >= 0.45);
     try std.testing.expect(slowest <= 3.0);
 }
@@ -1148,7 +1119,6 @@ test "IT IS NO HARDER TO REACH THAN THE CYCLOPS — a tall body's hurt sphere is
     const his = Reach.of(o.bodyR(), o.hurtRadius(), o.centerWorld().y);
     std.debug.print("\n  corrupt ent: sphere {d:.2} m about a centre {d:.2} m up, nearest stand {d:.2} m — his chest is x{d:.2} of the radius off it (cyclops x{d:.2})\n", .{ e.hurtRadius(), e.centerWorld().y, foe.closestApproach(e.bodyR()), mine, his });
     try std.testing.expect(mine <= his);
-    // …and the sphere hangs low enough that a swing at his own chest height is inside it on the sweep.
     try std.testing.expect(e.centerWorld().y - e.hurtRadius() < foe.HERO_CHEST);
 }
 
@@ -1161,11 +1131,9 @@ test "THE RETURN COMES OFF THE FAR HAND — the answer to rolling round behind t
         var e = Ent.spawn(mathx.ground(0, 0), 0, 1.0, @as(f32, @floatFromInt(i)) / 24.0);
         e.swipeCd = 0;
         e.shakeCd = 1000;
-        // Standing off to one side, which is what makes the opener pick a hand and the return the other one.
         const hero = v3(2.2, 0, 1.8);
         e.facing = mathx.headingXZ(mathx.dirXZ(e.pos, hero));
         e.debugSwipe();
-        // It will open more than once inside the window, so the hand to answer is whichever sweep the return came off.
         var opener = e.hand;
         var sawRet = false;
         var retHits: usize = 0;

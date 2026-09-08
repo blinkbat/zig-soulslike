@@ -2689,11 +2689,8 @@ fn knightStudyShots(g: *Game) void {
     }
 }
 /// THE TONGUE IS FIVE METRES OF NEW GEOMETRY AND THE HOUSE PORTRAIT IS BOOMED OFF A HEIGHT AND AIMED AT THE BODY'S
-/// OWN AXIS — neither of which holds this. The frame is solved off the SWEPT BOX of the whole stroke with the width
-/// converted at the lens's own aspect, and it is AIMED at that box's middle: solved for the distance but still
-/// pointed at the creature, the shaft ran off the right of the plate two metres before it stopped, because the box
-/// is five metres long and only one end of it is the body. Both moves, all four sides, driven through the REAL
-/// `update` at a hero stood inside the band being thrown.
+/// OWN AXIS — neither of which holds this. The frame is solved off the SWEPT BOX of the whole stroke, width converted
+/// at the lens's own aspect, and AIMED at that box's middle: aimed at the creature the shaft ran off the plate.
 fn lurkerStudyShots(g: *Game) void {
     const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("lurker plate target");
     defer rl.unloadRenderTexture(rt);
@@ -2710,8 +2707,7 @@ fn lurkerStudyShots(g: *Game) void {
             var body = fenmod.Lurker.spawn(mathx.zero3, yaw, 1, 0.3);
             body.wade = .{ .here = 1.0, .quarry = 1.0 };
             body.restT = 0;
-            // Stood inside the band being thrown, and out of the other one: the picker takes the skull first, so a
-            // quarry inside its reach would never spend the tongue.
+                        // Stood inside the band being thrown and out of the other one: the picker takes the skull first, so a quarry inside its reach would never spend the tongue.
             const at = fenmod.bandOf(which, 1.0) * (if (which == .tongue) @as(f32, 0.82) else @as(f32, 0.5));
             const quarry = mathx.scaleV(mathx.headingDir(yaw), at);
             const move = if (which == .tongue) fenmod.tongueClock() else fenmod.lashClock();
@@ -2738,7 +2734,6 @@ fn lurkerStudyShots(g: *Game) void {
                     .dist = frame / (2 * @tan(mathx.radians(camera.FOVY) * 0.5) * 0.82) + 0.4,
                 });
             }
-            // What was photographed has to be the move that was asked for.
             std.debug.assert(body.move == which);
         }
     }
@@ -2939,9 +2934,8 @@ const NECRO_MODES = 11;
 
 const NecroCase = struct { interrupt: f32, quarry: rl.Vector3 };
 
-/// One necromancer, posed for a plate, with the quarry it is posed AGAINST — spelled out at each call site instead,
-/// the two lists of "which modes stand near" drifted apart. `interrupt` is the clock a blade lands at; a plate of a
-/// cast cancelled ON its release frame is the only way to see that the gesture stays continuous.
+/// One necromancer posed for a plate, with the quarry it is posed AGAINST. `interrupt` is the clock a blade lands at;
+/// a plate of a cast cancelled ON its release frame is the only way to see that the gesture stays continuous.
 fn necroCase(mode: usize, forward: rl.Vector3, yaw: f32, size: f32, body: *necromod.Necro) NecroCase {
     body.* = necromod.Necro.spawn(mathx.zero3, yaw, size, 0.3);
     body.raiseCd = 100;
@@ -2983,7 +2977,6 @@ fn necroStamps(mode: usize) [10]f32 {
         2 => .{ 0, 0.16, 0.4, 0.65, 0.74, 0.85, 1.04, 1.25, 1.5, 1.9 },
         3, 9 => .{ 0, 0.04, 0.10, 0.17, 0.23, 0.30, 0.34, 0.40, 0.5, 0.8 },
         8 => .{ 1.80, 1.95, 2.10, 2.30, 2.32, 2.38, 2.50, 2.70, 3.0, 3.6 },
-        // THE SETTLE IN FULL: the release, the carry-past, the crossing back through rest and the stop.
         10 => .{ 2.32, 2.45, 2.60, 2.80, 3.00, 3.20, 3.40, 3.60, 3.9, 4.4 },
         else => .{ 0, 0.05, 0.13, 0.3, 0.5, 0.8, 1.2, 1.7, 2.2, 3.2 },
     };
@@ -3015,7 +3008,6 @@ fn necroStudyShots(g: *Game) void {
                 unitStudyFrame(g, rt, &body, &g.rite.model, std.fmt.bufPrint(&tag, "necro_study_{d}_{d}_{d}", .{ side, mode, frame }) catch unreachable, 4.5, if (mode == 3 or mode == 9) 1.85 else 1.65 + body.hop);
             }
         }
-        // THE GRIP AND THE HEM ARE NOT JUDGED FROM A CONTACT SHEET — a close view of each, from all four sides.
         for ([_]usize{ 0, 2 }) |mode| {
             const set = necroCase(mode, forward, yaw, 1, &body);
             var clock: f32 = 0;
@@ -3025,7 +3017,6 @@ fn necroStudyShots(g: *Game) void {
             unitStudyViewFrame(g, rt, &body, &g.rite.model, std.fmt.bufPrint(&tag, "necro_study_hem_{d}_{d}", .{ side, mode }) catch unreachable, .{ .offset = v3(0, 0.45, 0), .dist = 2.2 });
         }
     }
-    // SIZE VARIANTS: the hop and the reaction are the two that scale badly.
     const yaw = mathx.radians(LIT_YAW);
     const forward = mathx.headingDir(yaw);
     for ([_]f32{ 0.5, 1.8 }) |size| {
@@ -3042,7 +3033,7 @@ fn necroStudyShots(g: *Game) void {
     necroRingStudy(g, rt);
 }
 
-/// THE RING IS THE OTHER HALF OF THE MOVE AND IT IS 9 M AWAY. The body-framed frost strip ends before the fuse does and never shows the mark at all; this one holds both for all 2.70 s and the burst after it.
+/// THE RING IS THE OTHER HALF OF THE MOVE AND IT IS 9 M AWAY: the body-framed strip ends before the fuse does. This one holds both for all 2.70 s and the burst after it.
 fn necroRingStudy(g: *Game, rt: rl.RenderTexture2D) void {
     const yaw = mathx.radians(LIT_YAW);
     const forward = mathx.headingDir(yaw);
@@ -3796,14 +3787,12 @@ fn duoShots(g: *Game) void {
     const sc = mathx.ground(-24.0, 34.0);
     const far = along(sc, LIT_BACK, 90.0);
     const faceCam = mathx.headingXZ(LIT_BACK);
-    // The bunch stands on the shroom stage's own patch of clear ground; the magus is put behind it, out of the frame.
     const mark = sc;
     g.conclave.n = 1;
     const m = &g.conclave.magi[0];
     m.* = duomod.Magus.spawn(along(sc, LIT_BACK, -6.5), faceCam, 1.0, 0.3);
     standHero(g, sc.x + 2.4, sc.z - 2.4, mathx.radians(-140));
 
-    // THE BUNCH, at the three moments that matter: coming up, stood, and lit right before it goes.
     const moments = [_]struct { at: f32, name: [:0]const u8 }{
         .{ .at = duomod.CAP_GROW * 0.30, .name = "shots/119f_duo_caps_rising.png" },
         .{ .at = duomod.CAP_GROW, .name = "shots/119g_duo_caps_stood.png" },
@@ -3817,15 +3806,13 @@ fn duoShots(g: *Game) void {
         while (k < frames) : (k += 1) _ = g.conclave.update(SHOT_DT, far, game.PLAY_HALF, .{});
         shootAt(g, mo.name, v3(mark.x, mark.y + 0.55, mark.z), LIT_YAW, 0.20, 6.0);
     }
-    // …and one close enough to read a single cap as a mushroom rather than a blob.
     g.conclave.clearGroundForShot();
     g.conclave.sow(mark);
     var k: i32 = 0;
     while (k < @as(i32, @intFromFloat(duomod.CAP_GROW / SHOT_DT))) : (k += 1) _ = g.conclave.update(SHOT_DT, far, game.PLAY_HALF, .{});
     shootAt(g, "shots/119i_duo_cap_close.png", v3(mark.x, mark.y + 0.60, mark.z), LIT_YAW, 0.14, 3.0);
 
-    // THE DUST: the breath, and the cloud it leaves standing.
-    // IN PROFILE, so the sun is on him and the cloud is beside him rather than behind him: he stands off the mark and breathes across it.
+        // IN PROFILE, so the sun is on him and the cloud is beside him rather than behind him: he stands off the mark and breathes across it.
     const side = mathx.perpXZ(LIT_BACK);
     g.conclave.clearGroundForShot();
     m.* = duomod.Magus.spawn(along(sc, side, duomod.MG_PUFF_OUT), faceCam, 1.0, 0.3);
@@ -4402,7 +4389,6 @@ test "THE STRIP FRAMES THE ARC IT IS A STRIP OF — solved against the swept kit
         try std.testing.expect(@abs(st.lift + camera.TARGET_RAISE - (loY + hiY) * 0.5) <= 0.25);
         try std.testing.expect(wideF + camera.SHOULDER <= halfH * aspect);
         try std.testing.expect(fill >= STRIP_FILL * 0.85 and fill <= STRIP_FILL * 1.13);
-        // The draw cull is a sphere on his FEET (`foe.DRAW_BOUND`), so the top of the arc is what has to fit in it or the sword clips off at the frame edge.
         try std.testing.expect(hiY <= foemod.DRAW_BOUND and wideF <= foemod.DRAW_BOUND);
     }
 }

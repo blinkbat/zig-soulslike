@@ -269,7 +269,6 @@ fn proseClipped(s: []const u8, x: i32, y: i32, w: i32, maxLines: usize) void {
 test "NOTHING ON THE COUNTER IS DRAWN OVER ANYTHING ELSE — every band solved off the type scale" {
     const said = [2]i32{ FOOT_H - 0, FOOT_H - hud.lineH(hud.HINT) };
     const hintsTop = @divTrunc(hud.lineH(hud.HINT), 2) + 4 + @divTrunc(hud.lineH(hud.HINT), 2);
-    // Both are measured UP from the panel's bottom edge, so the said line's floor must sit above the hints' ceiling.
     try std.testing.expect(said[1] > hintsTop);
 
     const bands = [_]struct { top: i32, h: i32 }{
@@ -282,7 +281,6 @@ test "NOTHING ON THE COUNTER IS DRAWN OVER ANYTHING ELSE — every band solved o
     try std.testing.expect(last.top + last.h + CARD_PAD <= CARD_H);
     try std.testing.expect(12 + (CARD_H - 24) <= CARD_H);
 
-    // The widest thing a row has to fit between its picture and its price, in characters.
     var widest: usize = 0;
     for (std.enums.values(item.Kind)) |k| widest = @max(widest, item.displayName(k).len);
     const lx = PAD + PORT_W + PORT_GAP;

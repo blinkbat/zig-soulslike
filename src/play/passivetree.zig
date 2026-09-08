@@ -1085,7 +1085,6 @@ test "THE LINK IS THE RULE — every feeder is its own arm's and its own branch'
         if (NODES[i].ring == 0) {
             try std.testing.expectEqual(@as(usize, 0), fs.len);
         } else {
-            // **NOBODY IS AN ORPHAN AND NOBODY IS A DEAD END** — the pair a hand-written `min(slot, prev - 1)` rail cannot promise once a ring is three wide.
             try std.testing.expect(fs.len >= 1 and fs.len <= MAX_FEED);
         }
     }
@@ -1413,7 +1412,6 @@ test "…and from the MIDDLE each arm is under the thumb that points at it" {
 }
 
 test "POINT AT A NODE AND YOU GO TO THAT NODE — the stick's bearing IS the step" {
-    // 0, 120 and 240 degrees, so ring-0 nodes sit at ∓15, 105, 135, 225 and 255, and every outward step on the two lower arms runs near 96 or 216 — snapped to four screen axes inside a 32-degree dead cone.
     for (0..N) |i| {
         if (NODES[i].ring != 0) continue;
         const p = unitPos(i);

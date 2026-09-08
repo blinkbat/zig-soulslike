@@ -411,7 +411,7 @@ pub const Use = union(enum) {
     none,
     arrows: struct { fire: bool, n: u8 },
     regen: struct { frac: f32, secs: f32 },
-    /// it lands. `r` of 0 is the candle and the crock — the blow is the shaft's own and nothing spreads.
+        /// `r` of 0 is the candle and the crock — the blow is the shaft's own and nothing spreads.
     lob: struct { dmg: f32, fire: f32 = 0, lightning: f32 = 0, poise: f32, dose: ?AilDose = null, r: f32 = 0 },
     ward: struct { elem: ElemName, amount: f32, secs: f32 },
     wind: struct { share: f32 },
@@ -448,7 +448,6 @@ pub const Wear = enum {
     }
 };
 
-/// PRICED AS MULTIPLIERS ON THE ONE IT REPLACES, never a fresh set of absolutes: `hero.ATK_*_HIT`, `combat.STAM_*` and `combat.GUARD_*` stay the one place a swing, a block and their bills are written. Bare-handed every dial is 1.
 /// WHICH SKILL DRIVES A WEAPON — ER's scaling letters, ONE per armament. `quality` is the MEAN of the two curves, so either build carries the starting sword.
 pub const Scaling = enum { strength, dexterity, quality };
 
@@ -790,7 +789,7 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
             if (a.venom > 0) n += (std.fmt.bufPrint(buf[n..], ", +{d:.0} poison a hit", .{a.venom}) catch return "Held: a coated edge.").len;
             return sentence(buf, n) orelse "Held: its own weight and speed.";
         },
-        // THE ROW PRINTS WHAT IT ACTUALLY CARRIES, NOT ALL FOUR COLUMNS. A CLAUSE PER DIAL rather than a branch per combination — four dials is sixteen sentences to write out.
+                // THE ROW PRINTS WHAT IT ACTUALLY CARRIES, NOT ALL FOUR COLUMNS: a clause per dial, because four dials is sixteen sentences to write out.
         .plate => |p| {
             const head = if (p.a > 0)
                 std.fmt.bufPrint(buf, "Worn: {d:.0} armour", .{p.a}) catch return "Worn: armour."

@@ -88,14 +88,12 @@ const BITE_WIND: f32 = 0.42;
 const BITE_STRIKE: f32 = 0.18;
 const BITE_RECOVER: f32 = 0.60;
 const BITE_CD: f32 = 1.8;
-/// OWNER: MORE OOMPH. The bite throws the whole beast at you — `BITE_LUNGE` of ground through the strike, the forefeet down on the snap — and a bite that lands SHOVES (`Hit.shove`).
 const BITE_LUNGE: f32 = 0.9;
 pub const BITE_SHOVE: f32 = 1.3;
 /// Where in the strike the jaws arrive: the bill and the parry window read the same number.
 const BITE_IMPACT_K: f32 = 0.5;
 pub var BITE_HIT = combat.Hit{ .dmg = 24, .poise = 40, .stance = 14, .shove = BITE_SHOVE };
 
-/// FROM A DISTANCE: it paws, drops its head and comes at you flat out down a line it can barely bend. Hits whatever the horns meet.
 pub const CHARGE_MIN: f32 = 6.0;
 pub const CHARGE_MAX: f32 = 16.0;
 const CHARGE_WIND: f32 = 0.75;
@@ -109,7 +107,6 @@ const CHARGE_HALF_W: f32 = 1.1;
 const CHARGE_NOSE: f32 = 1.9;
 pub var CHARGE_HIT = combat.Hit{ .dmg = 40, .poise = 60, .stance = 30, .launch = 2.0 };
 
-/// THE JUMP-LUNGE (owner: dangerous, long recovery): it comes down where you stood, and then it is on its knees for a long moment. That moment is the fight.
 pub const LUNGE_MIN: f32 = 3.5;
 pub const LUNGE_MAX: f32 = 8.0;
 const LUNGE_WIND: f32 = 0.60;
@@ -121,7 +118,6 @@ pub const LUNGE_RECOVER: f32 = 2.2;
 const LUNGE_CD: f32 = 9.0;
 pub var LUNGE_HIT = combat.Hit{ .dmg = 52, .poise = 70, .stance = 40, .launch = 2.4 };
 
-/// BEHIND HIM IS THE TAIL: a rear sweep that also brings him round to face you, so the tail is never free ground twice.
 pub const TAIL_R: f32 = 3.6;
 const TAIL_BEARING: f32 = 125.0;
 const TAIL_WIND: f32 = 0.35;
@@ -130,11 +126,9 @@ const TAIL_RECOVER: f32 = 0.50;
 const TAIL_CD: f32 = 3.0;
 /// HALF-angle about his rear (`combat.withinArc` takes a half-width): a 200-degree sweep behind him.
 const TAIL_ARC: f32 = 100.0;
-/// OWNER: MORE OOMPH. A tail this size takes him off his feet.
 pub var TAIL_HIT = combat.Hit{ .dmg = 24, .poise = 48, .stance = 16, .launch = 1.4 };
-/// THE WHIP: he loads AGAINST it for `TAIL_LOAD` of the wind (`TAIL_TWIST` the other way), comes round `TAIL_OVER` past the mark inside the swing, and settles back through the recover with the hind feet down and the mass rocked onto them.
+/// THE WHIP: he loads AGAINST it for `TAIL_LOAD` of the wind (`TAIL_TWIST` the other way), comes round `TAIL_OVER` past the mark inside the swing, and settles back through the recover.
 const TAIL_LOAD: f32 = 0.6;
-/// The tuft is still coiled at the swing's first frame; it passes behind him from here.
 const TAIL_IMPACT_K: f32 = 0.25;
 const TAIL_TWIST: f32 = 0.24;
 const TAIL_OVER: f32 = 0.42;
@@ -228,7 +222,6 @@ pub const Model = struct {
     }
 };
 
-/// THE BODY IS AN ELEPHANT'S ON A WOLF'S LEGS: the head hangs LOW off a short thick neck, the tail is long, and the ears are sails.
 fn restPose() [N]rl.Vector3 {
     var r = wolf.restPose(W);
     const sh = r[CHEST];
@@ -322,7 +315,6 @@ pub const Mastodon = struct {
     pub fn centerWorld(self: *const Mastodon) rl.Vector3 {
         return foe.bodyPoint(self.pos, CENTER_Y * W, self.scale, self.lift);
     }
-    /// The mark rides the head, low and forward, where the horns are.
     pub fn lockPoint(self: *const Mastodon) rl.Vector3 {
         return foe.markOn(self.xf[HEAD], v3(0, 0.06 * W, 0.04 * W));
     }
@@ -460,7 +452,6 @@ pub const Mastodon = struct {
                 if (self.t < BITE_WIND) self.faceToward(hero, dt);
                 const s = self.t - BITE_WIND;
                 if (s >= 0 and s < BITE_STRIKE) {
-                    // THE WHOLE BEAST COMES FORWARD THROUGH THE STRIKE, and the jaws are judged off where it arrives.
                     mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), BITE_LUNGE * self.scale * dt / BITE_STRIKE, bounds);
                     if (s >= BITE_STRIKE * BITE_IMPACT_K) self.tryFront(hero, BITE_HIT, BITE_R, BITE_FRONT_DOT);
                 }
@@ -478,7 +469,6 @@ pub const Mastodon = struct {
             .charge_wind => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 self.faceToward(hero, dt);
-                // The paw: a stamp at the end of the wind the dust answers.
                 if (self.t >= CHARGE_WIND * 0.55 and self.t - dt < CHARGE_WIND * 0.55) {
                     self.stamped = true;
                     self.dust(self.footWorld(wolf.PAWR), DUST_STEP * 3, 2.4);
@@ -490,7 +480,6 @@ pub const Mastodon = struct {
                 }
             },
             .charge => {
-                // A LINE HE CAN BARELY BEND: the turn is a fraction of his walk's, so a step aside is a step aside.
                 foe.faceToward(self.pos, &self.facing, hero, CHARGE_TURN, dt);
                 self.speed = approach(self.speed, CHARGE_SPEED, ACCEL * 4.0 * dt);
                 moved = self.travel(dt, bounds);
@@ -550,7 +539,6 @@ pub const Mastodon = struct {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 const s = self.t - TAIL_WIND;
                 if (s >= TAIL_SWING * TAIL_IMPACT_K and s < TAIL_SWING) self.tryTail(hero);
-                // THE SWIPE TURNS HIM, AND IT IS VIOLENT: he twists AGAINST it through the load, whips round past the mark inside the swing, and the hindquarters settle back over the recover.
                 const tp = self.tailPhase();
                 const load = TAIL_WIND * TAIL_LOAD;
                 if (self.t < load) {
@@ -752,7 +740,6 @@ pub const Mastodon = struct {
         return foe.markOn(self.xf[paw], mathx.zero3);
     }
 
-    /// Every footfall of a body this heavy raises dust, and the amble raises more of it.
     fn footfalls(self: *Mastodon, dt: f32) void {
         if (self.speedS < 0.3) return;
         const g = gaitAt(self.speedS);
@@ -800,7 +787,7 @@ pub const Mastodon = struct {
         if (s < BITE_STRIKE) return lerpF(-1.0, 1.0, foe.swingCurve(s / BITE_STRIKE));
         return 1.0 - mathx.smoothstep(BITE_STRIKE, BITE_STRIKE + BITE_RECOVER * 0.7, s);
     }
-    /// 0..1 through the charge's wind: the head comes down, the forequarters load.
+        /// 0..1 through the charge's wind: the head comes down, the forequarters load.
     fn loadAmt(self: *const Mastodon) f32 {
         return switch (self.state) {
             .charge_wind => mathx.smoothstep(0, CHARGE_WIND * 0.9, self.t),
@@ -809,7 +796,6 @@ pub const Mastodon = struct {
             else => 0,
         };
     }
-    /// The lunge: crouch through the wind, stretched in the air, and DOWN ON HIS KNEES through the recover — the whole long moment he cannot answer.
     fn lungeAmt(self: *const Mastodon) struct { crouch: f32, air: f32, down: f32 } {
         return switch (self.state) {
             .lunge_wind => .{ .crouch = mathx.smoothstep(0, LUNGE_WIND * 0.85, self.t), .air = 0, .down = 0 },
@@ -818,7 +804,7 @@ pub const Mastodon = struct {
             else => .{ .crouch = 0, .air = 0, .down = 0 },
         };
     }
-    /// The whip and the settle behind it, 0..1 each — what the turn, the roll and the hop all read.
+        /// The whip and the settle behind it, 0..1 each — what the turn, the roll and the hop all read.
     fn tailPhase(self: *const Mastodon) struct { whip: f32, settle: f32 } {
         if (self.state != .tail) return .{ .whip = 0, .settle = 0 };
         const load = TAIL_WIND * TAIL_LOAD;
@@ -828,7 +814,7 @@ pub const Mastodon = struct {
             .settle = mathx.clampF((self.t - load - span) / (TAIL_RECOVER * 0.7), 0, 1),
         };
     }
-    /// The head shaking off the bite through the recover, 1 at the snap and gone before the next choice.
+        /// The head shaking off the bite through the recover, 1 at the snap and gone before the next choice.
     fn biteToss(self: *const Mastodon) f32 {
         if (self.state != .bite or self.t < BITE_WIND + BITE_STRIKE) return 0;
         return 1.0 - mathx.smoothstep(0, BITE_RECOVER * 0.8, self.t - BITE_WIND - BITE_STRIKE);
@@ -863,7 +849,6 @@ pub const Mastodon = struct {
         const toss = self.biteToss();
         const cyc = self.phase * std.math.tau;
 
-        // ELEPHANT: the back stays LEVEL — the bounce is a hair — and the mass ROLLS onto the standing side; the head nods low with the forelegs. The tail whip rolls him hard into the swing and lifts the rear; the bite loads down and plunges.
         const roll = 2.6 * mathx.sinf(cyc) * m * (1.0 + 0.6 * fast) + 11.0 * self.tailSide * whip;
         const bounce = 0.008 * W * mathx.sinf(cyc * 2.0) * m + TAIL_HOP * W * whip;
         const crouch = 0.14 * lg.crouch + 0.24 * lg.down + 0.06 * load + 0.08 * react + 0.42 * dk + 0.07 * mathx.maxF(0, -bite);
@@ -880,24 +865,20 @@ pub const Mastodon = struct {
         heromod.setJoint(&wx, &self.rest, SPINE, ROOT, rx(-flex * 0.4 - 4.0 * react + 6.0 * load + 8.0 * lg.down));
         heromod.setJoint(&wx, &self.rest, CHEST, SPINE, mul(rx(-flex * 0.4 - 4.0 * react + 8.0 * load - 8.0 * dk), rz(-roll * 0.4)));
 
-        // The neck is short and thick; the head hangs low and swings with the stride, drops right down for the charge and REARS for the butt.
         const sway = 5.0 * mathx.sinf(cyc) * m;
         const rear = mathx.maxF(0, -butt);
         const drive = mathx.maxF(0, butt);
         const neckPitch = 14.0 * m * 0.3 - 8.0 * react - 26.0 * rear + 24.0 * drive + 22.0 * load - 24.0 * mathx.maxF(0, -bite) + 26.0 * mathx.maxF(0, bite) + 30.0 * lg.down - 10.0 * lg.air;
         heromod.setJoint(&wx, &self.rest, NECK, CHEST, mul(rx(neckPitch), ry(sway * 0.6)));
         heromod.setJoint(&wx, &self.rest, HEAD, NECK, mul(rx(6.0 + 14.0 * react + 10.0 * drive - 8.0 * rear + 8.0 * load - 20.0 * dk), ry(sway * 0.5 + 55.0 * self.heroSide * mathx.maxF(0, tail) + 16.0 * toss * mathx.sinf(self.t * 28.0))));
-        // The jaws: wide through the wind, CLENCHED at the drive.
         const jaw = 4.0 + 58.0 * mathx.maxF(0, -bite) - 2.0 * mathx.maxF(0, bite) + 14.0 * react + 26.0 * dk + 12.0 * load + 20.0 * lg.air;
         heromod.setJoint(&wx, &self.rest, JAW, HEAD, rx(jaw));
 
-        // THE TAIL: long, and it hangs; it swings lazily with the walk and it LASHES for the swipe, coiled to one side and whipped round to the other.
         const lazy = mathx.sinf(self.elapsed * 1.6 + self.seed * 5.0) * (5.0 + 10.0 * m) * (1.0 - dk);
         const lash = self.tailSide * 110.0 * tail;
         heromod.setJoint(&wx, &self.rest, TAIL0, ROOT, mul(ry(lazy + lash * 0.55), rx(-10.0 + 20.0 * dk + 14.0 * @abs(tail))));
         heromod.setJoint(&wx, &self.rest, TAIL1, TAIL0, mul(ry(lazy * 0.8 + lash * 0.35), rx(8.0 + 6.0 * @abs(tail))));
         heromod.setJoint(&wx, &self.rest, TAIL2, TAIL1, mul(ry(lazy * 0.6 + lash * 0.25), rx(10.0)));
-        // Ears like sails, flapping slow, laid back for the charge.
         const flap = mathx.sinf(self.elapsed * 1.1 + self.seed * 3.0) * 10.0 * (1.0 - load);
         heromod.setJoint(&wx, &self.rest, EARL, HEAD, mul(rz(-24.0 - flap - 18.0 * react), ry(-30.0 * load)));
         heromod.setJoint(&wx, &self.rest, EARR, HEAD, mul(rz(24.0 + flap + 18.0 * react), ry(30.0 * load)));
@@ -997,7 +978,7 @@ fn buildBones() [N]rl.Mesh {
     return mesh;
 }
 
-/// A horn: a curved capsule chain off a root, thick and blunt (nothing ends in a point), uneven between horns and never along one.
+/// A horn: a curved capsule chain off a root, thick and blunt, uneven BETWEEN horns and never along one.
 fn hornInto(b: *Builder, rng: *mathx.Rng, root: rl.Vector3, dir: rl.Vector3, len: f32, r0: f32) void {
     const curl = rng.range(0.10, 0.28);
     const d = mathx.normV(dir);
@@ -1026,7 +1007,6 @@ fn loinMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// THE SHOULDERS, and the horns that stand off them: a ridge of them down the withers and a rank off each shoulder.
 fn withersMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x3A01);
@@ -1065,7 +1045,6 @@ fn neckMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// THE HEAD IS A CROWN OF HORNS: a great pair off the brow, a boss of short ones over the skull, and the two off the jawline that a headbutt leads with.
 fn headMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x3A03);
@@ -1121,7 +1100,6 @@ fn tailMesh(i: u32, len: f32) rl.Mesh {
     const tip = v3(0, -len * 0.45 * W, -len * W);
     b.addCapsule(v3(0, 0, 0), tip, r0 * W, r0 * 0.78 * W, 7, HIDE_DK);
     if (i == 2) {
-        // The tuft: a club of hair, which is what a tail swipe hits with.
         b.addBlob(tip, v3(0.075 * W, 0.070 * W, 0.085 * W), 4, 8, HIDE_LT);
     }
     return b.toMesh();
@@ -1135,7 +1113,6 @@ fn earMesh(side: f32) rl.Mesh {
     return b.toMesh();
 }
 
-/// A leg is a COLUMN: nearly as thick at the foot as at the joint — that is the whole of "elephant" in a leg.
 fn columnMesh(side: f32, len: f32, r0: f32, r1: f32) rl.Mesh {
     var b = Builder.init();
     b.setMat(.hide);
@@ -1162,7 +1139,7 @@ test "IT IS AN ELEPHANT ON ITS FEET: lateral sequence at every speed, never an a
     const amble = gaitAt(CHARGE_SPEED);
     try std.testing.expect(walk.duty > 0.5 and amble.duty > 0.5);
     try std.testing.expect(walk.lag > 0.6 and amble.lag > 0.6);
-    // Lateral sequence: the forefoot on a side follows its own hind foot by more than half the stride (a trot's couplets sit at exactly half).
+        // Lateral sequence: the forefoot on a side follows its own hind foot by MORE than half the stride; a trot's couplets sit at exactly half.
     try std.testing.expect(walk.lag > 0.5 and amble.lag > 0.5);
     std.debug.print("\n  mastodon gait: walk duty {d:.2} lag {d:.2}, amble duty {d:.2} lag {d:.2}; strides {d:.2} m walking, {d:.2} m charging\n", .{ walk.duty, walk.lag, amble.duty, amble.lag, strideFor(WALK_SPEED), strideFor(CHARGE_SPEED) });
     try std.testing.expect(strideFor(WALK_SPEED) > 1.6 and strideFor(CHARGE_SPEED) > strideFor(WALK_SPEED));
@@ -1243,7 +1220,6 @@ test "THE CHARGE COMES FROM A DISTANCE, DOWN A LINE, AND MEETS THE MAN WHO STAND
     var passed = false;
     t = 0;
     while (t < CHARGE_WIND + CHARGE_DUR + CHARGE_RECOVER) : (t += dt) {
-        // He steps four metres off the line the moment the beast commits.
         const h = if (t < CHARGE_WIND) mathx.ground(0, 11.0) else mathx.ground(4.0, 11.0);
         if (side.update(dt, h, 400.0, .{})) |_| dodged = false;
         if (side.passed) passed = true;

@@ -292,7 +292,6 @@ const BLOOD_SPD_LIGHT = 5.4;
 const BLOOD_SPD_HEAVY = 7.6;
 const BLOOD_SPD_DEATH = 6.4;
 comptime {
-    // THE RING LAW, EXECUTABLE: the drive's 42 dust with a killing heavy blow's two sprays and the shared wound.
     std.debug.assert(FX_MAX >= 42 + foe.hitParts(BLOOD_HEAVY) + foe.hitParts(BLOOD_DEATH) + foe.WOUND_PARTS);
 }
 const BLOOD = rgba(84, 20, 16, 235);
@@ -308,7 +307,7 @@ const SWIPE_NEAR_K = 0.5;
 
 const WIND_TURN_SHARE: f32 = 0.4;
 
-/// The drop itself turns not at all, so all the aiming the slam ever gets is the rear-back's, and its floor is the wind with no hang on it.
+/// The drop turns not at all, so all the aiming the slam gets is the rear-back's, and its floor is the wind with no hang on it.
 fn slamBearing(dist: f32, _: f32) f32 {
     return mathx.degrees(TURN_RATE * WIND_TURN_SHARE * WINDUP_DUR) +
         combat.subtendedArc(foe.HERO_R, dist);
@@ -388,7 +387,6 @@ pub const Ogre = struct {
     clubTilt: f32 = CARRY_TILT,
     clubAbd: f32 = CLUB_ABD,
     clubSweep: f32 = 0,
-    // The waist twist alone rotates the arc but cannot carry an arm held out right across his centre line. Without the shoulder swing the "side swipe" only scythes his right flank (measured: −104..−23).
     jawOpen: f32 = JAW_REST,
     girdle: f32 = 0,
     legBrace: f32 = 0,
@@ -764,7 +762,7 @@ pub const Ogre = struct {
         self.homing = false;
     }
 
-    // The hero's bearing off his facing, in degrees (0 = dead ahead, ±180 = behind) — what decides whether he can drop the club on you or has to SWEEP round to reach you.
+        // The hero's bearing off his facing, in degrees (0 = dead ahead, ±180 = behind).
     fn bearingTo(self: *const Ogre, hero: rl.Vector3) f32 {
         return foe.bearingDeg(self.pos, self.facing, hero);
     }
@@ -781,7 +779,7 @@ pub const Ogre = struct {
             },
             .wait => self.enterIdle(),
             .idle => {
-                // ONE RADIUS DECIDES "AM I AT MY POST", and it is the LEASH's own (`foe.LEASH_HOME_R`): setting off at 3 m and arriving at 2 m leaves him trudging a metre past the boundary that sent him.
+                                // ONE RADIUS DECIDES "AM I AT MY POST", and it is the LEASH's own (`foe.LEASH_HOME_R`): setting off at 3 m and arriving at 2 m leaves him trudging a metre past the boundary that sent him.
                 if (foe.headHome(self)) self.enter(.approach) else self.enterIdle();
             },
         }
@@ -1028,7 +1026,7 @@ pub const Ogre = struct {
         self.clubElbow = lerpF(WIND_EL, SLAM_EL, kArm);
         self.offShoulder = lerpF(-74.0, 8.0, kArm);
         self.offElbow = lerpF(-44.0, -22.0, kArm);
-        // …and the trunk drives DEEP: with the legs planted and the club shortened, the waist fold is the only thing that can carry the head to the earth (a straight arm leaves it 0.46 m short).
+                        // …and the trunk drives DEEP: with the legs planted and the club shortened, only the waist fold can carry the head to the earth (a straight arm leaves it 0.46 m short).
         self.bodyLean = lerpF(-24.0, 62.0, k);
         self.headPitch = lerpF(-20.0, 24.0, kArm);
         self.twist = lerpF(-26.0, 12.0, kArm);
@@ -1899,7 +1897,6 @@ test "the swipe's hurt SECTOR matches where the club actually goes (band + arc, 
         highest = mathx.maxF(highest, club.y);
     }
     try std.testing.expect(frames > 6);
-    // …and it scythes THROUGH a hero-sized body (head 1.7 down to hip ~1.0), not over his hat.
     try std.testing.expect(highest > 1.6 and lowest < 1.3);
 }
 
@@ -1961,7 +1958,6 @@ test "THE DRIVE ALWAYS REACHES: surge travel + the crush strip covers its own ba
     try std.testing.expect(travel + o.slamReach() >= DRIVE_MAX);
     try std.testing.expect(DRIVE_MIN > SLAM_R);
 
-    // …and MEASURED, not asserted: spawn one at mid-band, let it run, and the blow must arrive.
     var g = Ogre.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
     const hero = v3(0, 0, DRIVE_MAX);
     var landed = false;
@@ -2158,7 +2154,6 @@ test "NO ATTACK COMES OUT OF NOWHERE: every one of the giant's moves rears first
 
 test "THE WINDOW IS AN INSTANT BEFORE THE HIT — the same instant for both moves" {
     try std.testing.expect(PARRY_LEAD > 0);
-    // …and it is an INSTANT, not a slice of the tell. A 1.2 s rear must not be catchable for a fifth of itself.
     try std.testing.expect(PARRY_LEAD < WINDUP_DUR * 0.15);
     try std.testing.expect(PARRY_LEAD < SWIPE_WIND_DUR * 0.4);
 

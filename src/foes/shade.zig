@@ -164,7 +164,7 @@ const MOVES_BANK = [_]Attack{
     .{ .windDur = 0.46, .strikeDur = 0.30, .recoverDur = 0.55, .cd = 2.6, .minR = 0, .maxR = 1.35, .hit = GRASP_HIT, .hurl = false },
     .{ .windDur = 0.68, .strikeDur = 0.18, .recoverDur = 0.62, .cd = 4.6, .minR = 4.2, .maxR = 12.0, .hit = WISP_HIT, .hurl = true },
 };
-/// the bench can reach is `MOVES[i].hit`, so a move retuned in the source flows through (`play/tune.zig`).
+/// Live, because all the bench can reach is `MOVES[i].hit` — a move retuned in the source flows through (`play/tune.zig`).
 pub var MOVES = MOVES_BANK;
 
 comptime {
@@ -1275,7 +1275,6 @@ test "a blink puts it down where it said it would, and it is nowhere in between"
         _ = s.update(1.0 / 60.0, hero, 400, .{});
         try std.testing.expect(s.airborne());
     }
-    // MEASURED THE FRAME IT LANDS: the moment it is down it starts orbiting again, and a couple of centimetres of that is not the jump missing its mark.
     while (s.airborne() and t < 2.0) : (t += 1.0 / 60.0) _ = s.update(1.0 / 60.0, hero, 400, .{});
     try std.testing.expectApproxEqAbs(want.x, s.pos.x, 1e-3);
     try std.testing.expectApproxEqAbs(want.z, s.pos.z, 1e-3);
@@ -1495,7 +1494,6 @@ test "a shade flying forward leaves its gown BEHIND it, and the trailing edge is
     }
     s.pose();
 
-    // Facing 0, so the shade's own forward IS world +Z and the tips can be read straight off the matrices.
     const TIP = v3(0, -0.33, 0);
     var lead: f32 = 0;
     var trail: f32 = 0;
@@ -1506,7 +1504,6 @@ test "a shade flying forward leaves its gown BEHIND it, and the trailing edge is
         const tip = rl.math.vector3Transform(TIP, bone);
         if (tip.z < root.z - 0.01) pushed += 1;
         const a = std.math.tau * @as(f32, @floatFromInt(i)) / HEM_N;
-        // The ring's own bearings: index 2 of 8 is +Z (the leading edge), index 6 is -Z (the trailing edge).
         if (mathx.sinf(a) > 0.9) lead = tip.y - root.y;
         if (mathx.sinf(a) < -0.9) trail = tip.y - root.y;
     }

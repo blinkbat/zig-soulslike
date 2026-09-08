@@ -260,7 +260,8 @@ pub const Bloom = struct {
         foe.tickFixedLeash(&self.leash, dt, self.home, hero, AGGRO_R);
         foe.tickParticles(&self.parts, dt, self.pos.y);
 
-        const d = mathx.distXZ(self.pos, hero);
+        // Every DECISION reads the bent range; `breath` keeps the raw metres, because the gas is a place and not a choice.
+        const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         var wantVent: f32 = 0;
 
         switch (self.state) {

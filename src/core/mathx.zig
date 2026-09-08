@@ -290,7 +290,7 @@ pub fn approachV(cur: rl.Vector3, target: rl.Vector3, maxStep: f32) rl.Vector3 {
 pub fn wrapPi(a: f32) f32 {
     if (!std.math.isFinite(a)) return 0;
     var x = a;
-    // A REDUCTION FIRST FOR ANYTHING THE LOOP CANNOT WALK. Past ~2^23·tau an f32 subtraction of tau is a no-op and the loop never terminates; well below that it is millions of iterations. The threshold sits far above every live caller, so the loop still handles every real input.
+        // Past ~2^23·tau an f32 subtraction of tau is a no-op and the loop never terminates; the threshold sits far above every live caller.
     const REDUCE_OVER: f32 = std.math.tau * 1024.0;
     if (@abs(x) > REDUCE_OVER) x = @rem(x, std.math.tau);
     while (x > std.math.pi) x -= std.math.tau;
@@ -415,7 +415,6 @@ test "wrapPi lands in (-pi, pi] and guards non-finite input" {
 }
 
 test "approachAngle takes the shortest arc across the seam" {
-    // 350 deg -> 10 deg is +20 deg through the seam, never -340 the long way round.
     const stepped = approachAngle(radians(350), radians(10), radians(5));
     try std.testing.expectApproxEqAbs(wrapPi(radians(355)), wrapPi(stepped), 1e-5);
 }

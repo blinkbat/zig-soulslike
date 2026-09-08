@@ -270,7 +270,7 @@ fn boneMesh(i: usize) rl.Mesh {
     b.setMat(.hide);
     const s = W;
     switch (i) {
-        // THE TRUNK, ROUND and ONE MASS: blobs and capsules, never a box. Each section OVERLAPS its neighbour well past the joint (the packed-stone rule) and the radii GRADE. The chest is DEEP — brisket 0.55 W to withers 1.00 — and the barrel is WIDE on the X radii, because depth alone reads as a slab.
+                // THE TRUNK, ROUND and ONE MASS: each section OVERLAPS its neighbour past the joint (the packed-stone rule) and the radii GRADE. Brisket 0.55 W to withers 1.00, and the barrel is WIDE on the X radii — depth alone reads as a slab.
         CHEST => {
             const dep = (SHOULDER_Y - BRISKET_Y) + 0.26;
             b.addBlob(v3(0, -0.015 * s, -0.10 * s), v3(0.205 * s, dep * 0.5 * s, 0.36 * s), 6, 11, peltAt(0.5));
@@ -434,7 +434,6 @@ const PARTS = 48;
 const RIFT_N = 12;
 const RIFT_COOL = rgba(72, 96, 128, 40);
 comptime {
-    // The ring law: `reappear` lays a rift at both ends of the blink on one frame, and it is the only thing here that emits in a burst.
     std.debug.assert(PARTS >= 2 * RIFT_N);
 }
 
@@ -914,7 +913,6 @@ test "a spirit dies and stops being a collider before it stops being drawn" {
 }
 
 test "THE EDGES A BLOW SETS DO NOT SURVIVE THE UPDATE — so they have to be read above it" {
-    // `takeHit` runs with the FIELD's blows and `update` clears every one-frame edge at the top of its body, so a caller reading these two AFTER `Pack.update` reads false on every frame.
     var hurt = Wolf.spawn(mathx.zero3, 0);
     hurt.vit.poise = 0.5;
     _ = hurt.takeHit(.{ .dmg = 1 });

@@ -1417,7 +1417,6 @@ comptime {
         for (AILS_BANK) |row| named = named or std.meta.eql(row.elem, @as(?Elem, e));
         if (!named) @compileError("combat: nothing is built by " ++ @tagName(e) ++ " damage");
     }
-    // The one spell built to chill must fill the chill meter: the pour is 15.3 cold.
     if (RIME_DUR * RIME_DPS < ailBank(.chill).max) @compileError("combat: the rime breath no longer fills a chill meter");
 }
 
@@ -1538,7 +1537,6 @@ pub fn poisonPulse(amt: f32) Hit {
 test "ELEMENTAL DAMAGE BUILDS ITS OWN METER, AFTER RESISTANCES — and a DRIP builds nothing" {
     for (std.enums.values(Elem)) |e| {
         var body = Vitals.initFoe(400, 999, 999);
-        // Chaos is the one element that builds only when the blow says so.
         var blow = Hit{ .venom = true };
         blow.elem.v[@intFromEnum(e)] = 10;
         _ = body.hit(blow);
@@ -1554,14 +1552,12 @@ test "ELEMENTAL DAMAGE BUILDS ITS OWN METER, AFTER RESISTANCES — and a DRIP bu
     _ = frosted.hit(.{ .elem = elems(.{ .cold = RIME_DUR * RIME_DPS }) });
     try std.testing.expectApproxEqAbs(ailRow(.chill).max, frosted.ail(.chill).meter, 1e-4);
 
-    // **RESISTANCE CUTS THE METER AS WELL AS THE TICK** (owner: so resists can help). 75 chaos is a quarter dose.
     var warded = Vitals.initFoe(400, 999, 999).withRes(resists(.{ .chaos = 75 }));
     _ = warded.hit(.{ .elem = elems(.{ .chaos = 40 }), .venom = true });
     try std.testing.expectApproxEqAbs(@as(f32, 10), warded.ail(.poison).meter, 1e-4);
     var bare = Vitals.initFoe(400, 999, 999).withRes(resists(.{ .chaos = -50 }));
     _ = bare.hit(.{ .elem = elems(.{ .chaos = 40 }), .venom = true });
     try std.testing.expectApproxEqAbs(@as(f32, 60), bare.ail(.poison).meter, 1e-4);
-    // AND CHAOS ON ITS OWN IS DAMAGE AND NOTHING ELSE — the same blow with no venom on it leaves the meter alone.
     var clean = Vitals.initFoe(400, 999, 999).withRes(resists(.{ .chaos = -50 }));
     _ = clean.hit(.{ .elem = elems(.{ .chaos = 40 }) });
     try std.testing.expectApproxEqAbs(@as(f32, 0), clean.ail(.poison).meter, 1e-6);

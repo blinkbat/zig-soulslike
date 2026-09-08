@@ -588,7 +588,6 @@ pub const Id = enum {
     duo_bloom,
     deer_spit,
     smith_ring,
-    // THE DRUIDESS: a corrupted human under the robes — a woman's voice with a growl under it, never a scream.
     druid_cast,
     druid_release,
     druid_whip,
@@ -604,10 +603,6 @@ pub const Id = enum {
     druid_hurt,
     druid_die,
     veil_break,
-    // AN `Id` IS APPEND-ONLY, and the family it belongs to is named by the NAME. `crossingsPerSec` seeds every take
-    // off `0x9E3779B9 *% (idx + 1)`, so a row inserted in the middle re-rolls the noise of every voice under it:
-    // slipping these two in beside `lurker_lash` moved the knight's slam onto the ogre's to within 1% and the test
-    // that keeps the boss his own throat went red on a file it had nothing to do with.
     lurker_gape,
     lurker_tongue,
 };
@@ -789,10 +784,8 @@ pub fn tickFx(dt: f32) void {
     if (fxSettle <= 0) return;
     fxSettle -= dt;
     if (fxSettle > 0) return;
-    // A REBAKE MAY NOT JOIN THE BOOT WORKER. `awaitBake` blocks until the WHOLE bank is rendered, so one
-    // filtered `voice.*` row in settings.cfg puts the entire 2.7 s bake back into a single frame, 0.22 s in —
-    // exactly what moving it off-thread bought. The dirty flags stand and the row is rebaked on the first
-    // tick after the worker is done.
+    // A REBAKE MAY NOT JOIN THE BOOT WORKER: `awaitBake` blocks until the WHOLE bank is rendered, so one filtered
+    // `voice.*` row puts the 2.7 s bake back into a single frame. The dirty flags stand; the row rebakes after it.
     if (worker != null) {
         fxSettle = FX_SETTLE;
         return;
@@ -2098,7 +2091,6 @@ fn mkSoulsTake(r: *Rack) void {
     r.master(2.0, 6400);
 }
 
-/// Glass and air, no stone: the wall was never there. Two thin rings a fifth apart climb out of a breath, and nothing is struck.
 fn mkVeilBreak(r: *Rack) void {
     r.tick(0.00, 0.20, 3200);
     r.ring(0.00, 1.10, 1480, 0.15, 1.5, 3);
@@ -2598,8 +2590,6 @@ fn mkLurkerLash(r: *Rack) void {
     r.master(2.0, 3100);
 }
 
-// THE GAPE IS A TELL AND IT IS THE ONE THING IT DOES THAT CARRIES: a wet throat coming open and drawing in, no crack
-// anywhere in it. What cracks is the tongue behind it, and putting the crack here would spend the surprise early.
 fn mkLurkerGape(r: *Rack) void {
     r.air(0.0, 0.48, 0.40, 560, 2000, 0.52, 1.8);
     r.growl(0.05, 0.30, 185, 124, 0.44, 0.46, 0.10);
@@ -2607,8 +2597,7 @@ fn mkLurkerGape(r: *Rack) void {
     r.master(1.6, 2600);
 }
 
-// FIVE METRES OF WET MUSCLE LEAVING A MOUTH. Over before it is read: a crack over one body thump, and it reaches
-// further than the lash so it is baked a shade under it — the heavier blow keeps the top of the family.
+// Baked a shade under the lash: the heavier blow keeps the top of the family.
 fn mkLurkerTongue(r: *Rack) void {
     r.air(0.0, 0.17, 0.62, 3300, 520, 0.72, 4.2);
     r.body(0.0, 0.06, 188, 60, 0.80, 5.4);
@@ -2641,8 +2630,6 @@ fn battle(old: f32) f32 {
     return @sqrt(BATTLE_FLOOR * old);
 }
 
-// THE DRUIDESS'S VOICE. A woman, low, with the corruption as a second growl an octave under her and a rasp in the
-// breath — never a scream and never a hiss: every take is authored soft, warmed, and driven gently.
 
 fn mkDruidCast(r: *Rack) void {
     r.air(0.0, 0.52, 0.24, 560, 1900, 0.42, 1.3);
@@ -4182,7 +4169,6 @@ fn trebleShare(get: *const fn (usize) f32, n: usize, cut: f32) f32 {
     return @floatCast(10.0 * std.math.log10(hiSum / allSum));
 }
 
-// The seam is the step ACROSS the wrap measured against the steps inside the buffer: a butt-joined loop clicks because that one step is orders of magnitude bigger than its neighbours.
 test "THE TITLE TRACK LOOPS WITHOUT A CLICK — the wrap is an ordinary step, with the rack on and with it off" {
 // raylib LOGS TO STDOUT, AND UNDER `zig build test` STDOUT IS THE BUILD RUNNER'S IPC CHANNEL: the wave loader's `INFO: WAVE: Data loaded` corrupts that protocol and the step dies at 255 with every test reported as passed.
     rl.setTraceLogLevel(.none);
@@ -4201,7 +4187,6 @@ test "THE TITLE TRACK LOOPS WITHOUT A CLICK — the wrap is an ordinary step, wi
     try std.testing.expect(srcN > 0 and srcN <= MAX_N);
     std.debug.print("\n  intro take treble over 4 kHz: {d:.1} dB of the whole", .{srcTreble});
 
-        // The take's own phrase, off its onset grid; the whole thing is nine of them.
     const PHRASE: f32 = 1.5575;
     const units = @as(f32, @floatFromInt(srcN)) / SRF / PHRASE;
     std.debug.print("\n  intro take: {d} samples, {d:.3} s = {d:.3} phrases of {d:.4} s", .{ srcN, @as(f32, @floatFromInt(srcN)) / SRF, units, PHRASE });
@@ -4209,14 +4194,11 @@ test "THE TITLE TRACK LOOPS WITHOUT A CLICK — the wrap is an ordinary step, wi
 
     for ([_]bool{ false, true }) |racked| {
         fxVals[@intFromEnum(Submix.ambience)] = [_]f32{0} ** AFX_COUNT;
-        // With the rack OFF `applyFx` returns before `ends`, which is why the de-click cannot live in there.
         if (racked) applyFxPreset(.ambience, &FX_TAPE);
         const out = dressedIntro();
-        // Not the raw embed: a fallback would make every number below a measurement of the wrong buffer.
         try std.testing.expect(out.ptr == introWav[0..].ptr);
 
         const n = introSamples(out);
-        // NOTHING IS CUT: the loop is the take, or it drifts off the grid a phrase at a time.
         try std.testing.expectEqual(srcN, n);
 
         var worst: f32 = 0;
@@ -4236,7 +4218,6 @@ test "THE TITLE TRACK LOOPS WITHOUT A CLICK — the wrap is an ordinary step, wi
 
         const dressed = trebleShare(introAt, n, 4000);
         std.debug.print("  | treble over 4 kHz {d:.1} dB of the whole", .{dressed});
-        // THE CHAIN MAY NOT BE BRIGHTER THAN THE TAKE: the dither floor and the hiss are both generated up there.
         try std.testing.expect(dressed <= srcTreble + 1.0);
     }
     std.debug.print("\n", .{});

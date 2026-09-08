@@ -15,11 +15,12 @@ pub const Solid = struct {
     /// **AND WHERE IT STARTS** — 0 for every wall in the world, positive only for a LINTEL.
     y0: f32 = 0,
     surf: Surface = .stone,
-    /// THE FOG GATE'S RULE, and the only thing in the world that has one: a wall to every BODY but the hero's own side, in both directions, and a wall to every LOOK without exception. It is the gate's slot in `env.wardProps` PLUS ONE, so 0 is an ordinary solid; only `env.resolveHeroSide` lets an OPEN one through.
+    /// The gate's slot in `env.wardProps` PLUS ONE, so 0 is an ordinary solid. A wall to every BODY but the hero's
+    /// own side, in both directions, and to every LOOK without exception; only `env.resolveHeroSide` opens one.
     ward: u8 = 0,
     /// An illusory wall's slot in `env.illusionProps` PLUS ONE; `env.eachSolid` drops it the frame the wall is struck.
     illusion: u8 = 0,
-    /// SQUARE ENDS: the solid is the capsule's own bounding rectangle in the segment's frame (`r` across, the segment plus `r` each way along). A wall or a block, whose corners a round end cut off.
+    /// SQUARE ENDS: the solid is the capsule's bounding rectangle in the segment's frame — `r` across, the segment plus `r` each way along.
     flat: bool = false,
 };
 
@@ -133,7 +134,7 @@ pub fn blockerAt(p: rl.Vector3, margin: f32, solids: []const Solid) ?Surface {
     return null;
 }
 
-// A LOOK IS A SEGMENT, AND IT IS TESTED EXACTLY: sampling it would mean either a step fine enough to cost real time over 20 m or a step a fence post fits through.
+// A LOOK IS A SEGMENT, TESTED EXACTLY: sampling means a step that costs real time over 20 m, or one a fence post fits through.
 
 fn segDistXZ(a0: rl.Vector3, a1: rl.Vector3, b0: rl.Vector3, b1: rl.Vector3) f32 {
     if (segsCrossXZ(a0, a1, b0, b1)) return 0;
@@ -177,14 +178,11 @@ pub fn blocksSight(a: rl.Vector3, b: rl.Vector3, s: Solid) bool {
 
 test "A FLAT SOLID HAS CORNERS — a body reaches the corner of a wall a round end cut off, and a look through it is stopped" {
     const wall = box(-3, 0, 3, 0, 0.4);
-    // The corner is at (3.4, 0.4): a body of radius 0.3 just off it is pushed to 0.3 from the CORNER, where the round end had already stopped it 0.3 from the axis.
     const at = pushOut(v3(3.45, 0, 0.45), 0.3, wall);
     try std.testing.expectApproxEqAbs(@as(f32, 0.3), @sqrt((at.x - 3.4) * (at.x - 3.4) + (at.z - 0.4) * (at.z - 0.4)), 1e-4);
-    // The round end has no corner there, so it moves the same body less.
     const round = capsule(-3, 0, 3, 0, 0.4);
     const rounded = pushOut(v3(3.45, 0, 0.45), 0.3, round);
     try std.testing.expect(at.x > rounded.x + 0.05);
-    // Inside, the way out is the nearer face.
     const out = pushOut(v3(2.9, 0, 0.1), 0.3, wall);
     try std.testing.expectApproxEqAbs(@as(f32, 0.7), out.z, 1e-4);
     try std.testing.expect(blocksSight(v3(0, 1, -3), v3(0, 1, 3), wall));
@@ -199,7 +197,6 @@ test "a look is stopped by what stands in it and by nothing else" {
     try std.testing.expect(blocksSight(eye, v3(0, 1.3, 6), wall));
     try std.testing.expect(!blocksSight(eye, v3(0, 1.3, -1), wall));
     try std.testing.expect(!blocksSight(v3(9, 1.3, -6), v3(9, 1.3, 6), wall));
-    // A THIN POST CANNOT BE TUNNELLED: the test is exact, so a 0.2 m pillar at 20 m still stops the look.
     const post = circle(0, 0, 0.2);
     try std.testing.expect(blocksSight(v3(0, 1.3, -20), v3(0, 1.3, 20), post));
     try std.testing.expect(!blocksSight(v3(0.5, 1.3, -20), v3(0.5, 1.3, 20), post));

@@ -255,10 +255,8 @@ fn caveFill(m: *wf.Map, i: usize) void {
     m.caveRoof[i] = wf.HEIGHT_ZERO;
 }
 
-/// DEV ONLY: repair a hand-painted cave layer. A carve made with the floor plane left up at the hilltop lays a chamber
-/// in the AIR, and every cell whose ceiling stands over the land is cut open — a crater, not a cave. This drops those,
-/// keeps the largest chamber a body can walk end to end, cuts one entrance out to the nearest open ground, and proves
-/// the walk in before it writes anything.
+/// DEV ONLY: repair a hand-painted cave layer. A carve made with the floor plane left up at the hilltop lays a chamber in
+/// the AIR. This drops those, keeps the largest chamber a body can walk end to end, cuts one entrance out to the nearest open ground, and proves the walk in before it writes anything.
 fn runFixCaves(alloc: std.mem.Allocator, path: []const u8, write: bool) !void {
     const m = try alloc.create(wf.Map);
     defer alloc.destroy(m);
@@ -284,8 +282,7 @@ fn runFixCaves(alloc: std.mem.Allocator, path: []const u8, write: bool) !void {
     }
     std.debug.print("  dropped {d} points the land could not roof\n", .{dropped});
 
-    // ONE CHAMBER: the largest run of points a body could walk between, and nothing else. A ledge left over a passage
-    // it cannot step up onto is as good as filled.
+        // ONE CHAMBER: the largest run of points a body could walk between. A ledge left over a passage it cannot step up onto is as good as filled.
     const mark = try alloc.alloc(u32, caves.CELLS);
     defer alloc.free(mark);
     @memset(mark, 0);
@@ -337,8 +334,7 @@ fn runFixCaves(alloc: std.mem.Allocator, path: []const u8, write: bool) !void {
     std.debug.print("  {d} walkable pieces; kept the largest ({d} points), filled {d}\n", .{ parts, best, orphans });
     if (best == 0) return error.NothingLeft;
 
-    // THE DEEP POINT: the most rock over it of anything left. The entrance is aimed at that, and the mouth is the
-    // nearest open ground to it.
+        // THE DEEP POINT: the most rock over it of anything left. The entrance is aimed at that, and the mouth is the nearest open ground to it.
     var deep: [2]f32 = .{ 0, 0 };
     var deepCover: f32 = -1e9;
     var deepFloor: f32 = 0;
@@ -451,9 +447,8 @@ fn runFixCaves(alloc: std.mem.Allocator, path: []const u8, write: bool) !void {
     std.debug.print("  saved\n", .{});
 }
 
-/// DEV ONLY: put a map in a bigger world and leave the land where it stands. Every grid is resampled from the old
-/// extent onto the new one, so a hill keeps its world coordinates and the margin that appears around it is the old
-/// rim carried outward. Ops, spawns and rectangles are already world-space and are not touched.
+/// DEV ONLY: put a map in a bigger world and leave the land where it stands. Every grid is resampled from the old extent
+/// onto the new one, so a hill keeps its world coordinates. Ops, spawns and rectangles are already world-space and are not touched.
 fn runGrow(alloc: std.mem.Allocator, path: []const u8, want: f32, write: bool) !void {
     const m = try alloc.create(wf.Map);
     defer alloc.destroy(m);
@@ -489,8 +484,7 @@ fn runGrow(alloc: std.mem.Allocator, path: []const u8, want: f32, write: bool) !
         .{ .dst = &m.caveRoof, .src = &src.caveRoof, .n = wf.CAVE_N, .kind = .point, .smooth = false },
     };
     for (grids) |g| wf.regrid(g.dst, g.n, half, g.src, g.n, was, g.kind, g.smooth);
-    // The rim is CARRIED OUTWARD, so the margin repeats whatever the old edge held. Water and cave out there would be
-    // a moat and a tunnel nobody authored; the terrain's own edge height is the one thing that must continue.
+        // The rim is CARRIED OUTWARD, so the margin repeats whatever the old edge held. Water and cave out there would be a moat and a tunnel nobody authored.
     var wetted: usize = 0;
     const wcell = 2 * half / @as(f32, @floatFromInt(wf.WATER_N));
     for (0..wf.WATER_N) |iz| {
@@ -514,7 +508,6 @@ fn runGrow(alloc: std.mem.Allocator, path: []const u8, want: f32, write: bool) !
     }
     m.half = half;
 
-    // The land has to read the same where it always was. Sample the old extent on a grid and print the worst move.
     var worst: f32 = 0;
     var worstAt: [2]f32 = .{ 0, 0 };
     var taps: usize = 0;

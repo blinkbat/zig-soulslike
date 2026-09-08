@@ -164,7 +164,6 @@ const THRUST_FRONT_DOT: f32 = 0.95;
 const THRUST_HALF_W: f32 = (THRUST_R + foe.HERO_REACH) * @sqrt(1.0 - THRUST_FRONT_DOT * THRUST_FRONT_DOT);
 const THRUST_WIND: f32 = 0.52;
 const THRUST_STRIKE: f32 = 0.16;
-/// The point is still couched at the strike's first frame; it arrives from here.
 const THRUST_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const THRUST_RECOVER: f32 = 0.86;
 const THRUST_CD: f32 = 2.6;
@@ -213,7 +212,6 @@ const RITE_MOTES: u32 = 26;
 const PARRY_SPRAY = 9;
 const PARTS = 64;
 comptime {
-    // A caught thrust sprays on the same frame the hero's own blow can wound it, over the shaman's ritual motes.
     std.debug.assert(@as(f32, PARTS) >= @as(f32, @floatFromInt(RITE_MOTES + PARRY_SPRAY + foe.hitParts(HIT_SPRAY_HEAVY) + foe.WOUND_PARTS)));
 }
 
@@ -1284,7 +1282,7 @@ test "THE NET TAKES HIS FEET AND BUYS EXACTLY ONE THRUST" {
     try std.testing.expect(NET_HOLD > THRUST_WIND + THRUST_STRIKE);
     try std.testing.expect(NET_HOLD < THRUST_WIND + THRUST_STRIKE + THRUST_RECOVER);
 
-    // The hero's own half of this — held feet, live sword — is pinned in `hero.zig`, where his test rig is.
+        // The hero's own half of this — held feet, live sword — is pinned in `hero.zig`, where his test rig is.
 }
 
 test "A NET IN THE AIR OUTLIVES THE THROWER, AND IT CAN BE STEPPED OUT OF" {

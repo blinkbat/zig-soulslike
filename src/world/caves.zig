@@ -553,7 +553,6 @@ test "a cave carve puts one body on the hill and one in the chamber at the SAME 
     defer std.testing.allocator.destroy(m);
     m.* = .{};
     m.blank("bench");
-    // A hill 8 m over the datum, a chamber from -2 to 1 m under it.
     var span: [4]usize = undefined;
     _ = m.sculpt(0, 0, 40, .raise, 8, &span);
     _ = carve(gridsOf(m), .{ .px = 0, .pz = 0, .r = 6, .floor = -2, .roof = 1 }, &span);
@@ -646,11 +645,9 @@ test "the bench: a hill you can walk over, a chamber under it, and a mouth out o
     try std.testing.expect(room.hollow());
     try std.testing.expect(hill - room.roof > 2.0);
 
-    // The same xz: one body on the hilltop, one in the chamber.
     try std.testing.expectEqual(Surface.land, supportAt(f, hill, bench.CHAMBER[0], bench.CHAMBER[1], hill).surface);
     try std.testing.expectEqual(Surface.cave, supportAt(f, hill, bench.CHAMBER[0], bench.CHAMBER[1], room.floor).surface);
 
-    // The mouth is open to the sky, and the chamber is not.
     const mouth = sampleAt(f, bench.MOUTH[0], bench.MOUTH[1]);
     const mouthLand = m.heightAt(bench.MOUTH[0], bench.MOUTH[1]);
     std.debug.print("bench: mouth roof {d:.2} m against ground {d:.2} m\n", .{ mouth.roof, mouthLand });

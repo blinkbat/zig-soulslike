@@ -1604,7 +1604,6 @@ test "EVERY KIND IS FILED UNDER ONE KINGDOM, and `any` is not a dustbin" {
 }
 
 test "every kind row sits at its own index and carries a mesh builder" {
-    // The comptime block asserts the index match; this pins the table's SHAPE, so a half-added kind fails as a test rather than at first draw.
     try std.testing.expectEqual(@as(usize, NK), INFO.len);
     for (INFO) |row| try std.testing.expect(row.bound > 0 and row.view > 0);
 }
@@ -1660,7 +1659,6 @@ test "AN ILLUSION IS ITS REFERENCE UNDER ONE WASH — the cliff and the wall are
         std.debug.print("  {s}: on screen {d:.0}/{d:.0}/{d:.0} against the illusion's {d:.0}/{d:.0}/{d:.0} — off by {d:.0}/{d:.0}/{d:.0}\n", .{
             row.name, a[0], a[1], a[2], b[0], b[1], b[2], b[0] - a[0], b[1] - a[1], b[2] - a[2],
         });
-        // Off the reference, and off it the way the wash says: cooler, never warmer.
         var moved = false;
         for (0..3) |c| moved = moved or @abs(b[c] - a[c]) > 0.5;
         try std.testing.expect(moved);
@@ -1749,7 +1747,7 @@ pub const LIQUID_TONES = [gfx.LIQUID_N * 3]rl.Vector3{
     mathx.colVec(art.LAVA_SHALLOW),   mathx.colVec(art.LAVA_MID),   mathx.colVec(art.LAVA_DEEP),
 };
 
-/// what "too bright" is measured against. Pinned to the GLSL so the two cannot part company.
+/// The ground "too bright" is measured against. Pinned to the GLSL so the two cannot part company.
 const BLOOM_GROUND = [3]f32{ 0.115 * 255.0, 0.055 * 255.0, 0.070 * 255.0 };
 comptime {
     if (std.mem.indexOf(u8, @import("../gfx/shaders.zig").sceneFS, "vec3(0.115, 0.055, 0.070)") == null)
@@ -1757,7 +1755,6 @@ comptime {
 }
 
 test "ONLY LAVA IS A LIGHT — no other pool may come back off the top of the screen" {
-    // SOLVE IT, DO NOT GUESS IT (AGENTS.md): the fungal stew authored at 168/92/62 albedo is 255/205/172 through the chain — past the clip on red, and brighter on green and blue than lava's own crust.
     for (LIQUID_TONES[0 .. 3 * 3]) |tone| {
         for ([3]f32{ tone.x, tone.y, tone.z }) |ch| {
             try std.testing.expect(gfx.screenOf(ch * 255.0) < 250.0);

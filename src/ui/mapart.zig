@@ -808,25 +808,20 @@ test "A WALL IS THE EDGE OF THE CHART — the near face is drawn, the ground beh
             return s.cell[i];
         }
     };
-    // In front of it, and the face itself.
     try std.testing.expect(Q.on(&seen, 0, 0));
     try std.testing.expect(Q.on(&seen, 0, 8));
     try std.testing.expect(Q.on(&seen, 0, wall.at - per * 0.5));
-    // …and nothing beyond, out to the reveal ring, either straight ahead or off the shoulder.
     try std.testing.expect(!Q.on(&seen, 0, wall.at + per * 2.0));
     try std.testing.expect(!Q.on(&seen, 0, 40));
     try std.testing.expect(!Q.on(&seen, 20, 40));
-    // Behind him is his own side of the wall, so it charts.
     try std.testing.expect(Q.on(&seen, 0, -40));
 
-    // The whole disc against what the wall leaves: a look now costs cells, so the count IS the mechanic.
     var open = Seen{};
     open.walked(v3(0, EYE_DROP + 1.25, 0), half, {});
     std.debug.print("\n  chart LoS: a wall {d:.0} m out leaves {d} of {d} cells, {d} looks taken\n", .{ wall.at, seen.count(), open.count(), wall.asked });
     try std.testing.expect(seen.count() < open.count());
     try std.testing.expect(seen.count() > open.count() / 4);
 
-    // A KERB IS NOT A WALL: the look passes over anything shorter than both ends of it.
     var kerb = OneWall{ .at = 12.0, .high = 0.30 };
     var over = Seen{};
     over.walked(v3(0, EYE_DROP + 1.25, 0), half, &kerb);
@@ -852,13 +847,11 @@ test "AND THE LOOK IS PAID FOR ONCE A CELL, so the cold disc is the whole bill" 
     const cold = @as(f64, @floatFromInt(t.read())) / 1000.0;
     const first = seen.count();
 
-    // A step to the next cell over: the crescent, which is what walking actually costs.
     const per = 2.0 * m.half / @as(f32, @floatFromInt(SEEN_N));
     t.reset();
     seen.walked(v3(per, e.groundAt(per, 0) + 1.25, 0), m.half, e);
     const step = @as(f64, @floatFromInt(t.read())) / 1000.0;
     std.debug.print("\n  chart cost over {d} solids: {d:.0} us for the cold disc ({d} cells), {d:.0} us for a step ({d} more)\n", .{ e.solidCount(), cold, first, step, seen.count() - first });
     try std.testing.expect(cold < 8000.0);
-    // In CELLS, not microseconds: since the look walks the segment rather than its box (`env.eachSolidAlong`) both timings sit near the clock's own noise, and the crescent is what this is about.
     try std.testing.expect(seen.count() - first < first);
 }

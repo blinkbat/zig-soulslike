@@ -75,7 +75,6 @@ const BITE_R: f32 = 1.55;
 const BITE_FRONT_DOT: f32 = 0.55;
 const BITE_WIND: f32 = 0.38;
 const BITE_STRIKE: f32 = 0.16;
-/// The jaws are still open at the strike's first frame; they close from here.
 const BITE_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const BITE_RECOVER: f32 = 0.60;
 const BITE_CD: f32 = 1.9;
@@ -109,7 +108,6 @@ const HIT_PUFF_HEAVY = 10;
 const PARRY_PUFF = 9;
 const PARTS = 56;
 comptime {
-    // A caught bite puffs on the same frame the hero's own blow can wound it, over a feeding body's spore rate.
     std.debug.assert(@as(f32, PARTS) >= SPORE_RATE_FEED * 0.7 +
         @as(f32, @floatFromInt(PARRY_PUFF + foe.hitParts(HIT_PUFF_HEAVY) + foe.WOUND_PARTS)));
 }

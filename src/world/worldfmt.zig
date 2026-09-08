@@ -1465,7 +1465,7 @@ pub fn cliffCuts(t: Tiers, minDrop: f32) bool {
 /// The cell's own corners, in the order the terrain quad winds them, and the lattice step each one is.
 pub const CLIFF_RING = [4][2]f32{ .{ 0, 0 }, .{ 0, 1 }, .{ 1, 1 }, .{ 1, 0 } };
 /// The same four corners as lattice steps, DERIVED — hand-kept mirrors of `CLIFF_RING` drift out of its winding order.
-const RING_STEP = blk: {
+pub const RING_STEP = blk: {
     var s: [4][2]usize = undefined;
     for (CLIFF_RING, 0..) |c, i| s[i] = .{ @intFromFloat(c[0]), @intFromFloat(c[1]) };
     break :blk s;
@@ -1740,7 +1740,6 @@ pub const Map = struct {
         self.zones[0] = z;
         self.nzones = 1;
 
-        // NO GROUND COVER: cover is ordinary `at:` decor, not a global op.
     }
 
     /// The scatter block behind an op, or a default-valued one when it has none — so a read never has to branch on the op kind.
@@ -3224,7 +3223,6 @@ test "LOCATIONS OVERLAP AND THE LAST PAINTED WINS, and a weatherless one does no
     const m = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(m);
     m.* = .{};
-    // The editor PREPENDS, so index 0 is the newest — `locationAt` takes the first match.
     m.locations[0] = .{ .x = -10, .z = -10, .x1 = 10, .z1 = 10, .wet = 0.9 };
     m.locations[0].setName("inner");
     m.locations[1] = .{ .x = -50, .z = -50, .x1 = 50, .z1 = 50, .wet = 0.2 };
@@ -3263,14 +3261,11 @@ test "a location round-trips through the format with and without its weather" {
     try std.testing.expect(m.locations[1].hasWeather());
     try std.testing.expectApproxEqAbs(@as(f32, 0.75), m.locations[1].wet.?, 1e-4);
     try std.testing.expectApproxEqAbs(@as(f32, 9.0), m.locations[1].blend, 1e-4);
-    // An ember field alone is weather: it has to silence the world's own storm over the coals.
     try std.testing.expect(m.locations[2].hasWeather());
     try std.testing.expect(m.locations[2].wet == null);
     try std.testing.expectApproxEqAbs(@as(f32, 0.85), m.locations[2].ember.?, 1e-4);
-    // Soup alone is weather: the distance closing in is the whole of what the place does.
     try std.testing.expect(m.locations[3].hasWeather());
     try std.testing.expectApproxEqAbs(@as(f32, 0.6), m.locations[3].soup.?, 1e-4);
-    // Out of range is refused rather than clamped: a wet of 4 is a typo, not an intention.
     var bad: usize = 0;
     try std.testing.expectError(ParseError.BadNumber, parse(
         "version: 1\nhalf: 100\nlocation: x 0 0 1 1 wet=4\n",
@@ -3967,8 +3962,6 @@ test "THE SHIPPED MAPS SIT INSIDE THE READ BUFFER, and `save` refuses to write o
     try std.testing.expectEqual(m.nops, back.nops);
     try std.testing.expectEqual(at.x, back.ops[0].x);
 
-    // THE BUFFER IS DERIVED TO HOLD THE WORST MAP, so the fullest one there can be still writes and reads back:
-    // every op slot spent on the fattest row, and grids that defeat the run encoding outright.
     var o = defaults(.at);
     o.kind = .pillar;
     o.nloot = MAX_LOOT;
@@ -4060,7 +4053,6 @@ test "A SCATTER BLOCK FOLLOWS ITS OP through a delete, a reorder and an explode"
     try std.testing.expectEqual(@as(i32, 77), m.scatAt(bi).n);
     try std.testing.expectApproxEqAbs(@as(f32, 3.5), m.scatAt(li).r0, 1e-6);
 
-    // Drop the `at` BETWEEN them: both handles are indices and both shift.
     m.remove(2);
     try std.testing.expectEqual(@as(usize, 2), m.nscats);
     try std.testing.expectEqual(@as(i32, 77), m.scatAt(1).n);
@@ -4071,7 +4063,6 @@ test "A SCATTER BLOCK FOLLOWS ITS OP through a delete, a reorder and an explode"
     try std.testing.expectApproxEqAbs(@as(f32, 3.5), m.scatAt(1).r0, 1e-6);
     try std.testing.expectEqual(@as(i32, 77), m.scatAt(2).n);
 
-    // What `env.explodeOp` does: widen the belt's slot and write plain `at` rows over every one of them.
     try m.splice(2, 4);
     for (2..6) |i| m.ops[i] = at;
     m.compactScats();
@@ -4079,7 +4070,6 @@ test "A SCATTER BLOCK FOLLOWS ITS OP through a delete, a reorder and an explode"
     try std.testing.expectApproxEqAbs(@as(f32, 3.5), m.scatAt(1).r0, 1e-6);
     for (2..6) |i| try std.testing.expectEqual(@as(u16, 0), m.ops[i].scat);
 
-    // An `at` never mints one, however it is added.
     _ = try m.add(at);
     try std.testing.expectEqual(@as(usize, 1), m.nscats);
 }
@@ -4297,7 +4287,6 @@ test "THE LIQUID GRID ROUND-TRIPS, and a map of plain water writes no `liquid:` 
     {
         var fbs = std.io.fixedBufferStream(&buf);
         try write(m, fbs.writer());
-        // WATER IS ORDINAL 0, so a map that predates the liquids costs the file nothing and comes back the same.
         try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "liquid:") == null);
         var line: usize = 0;
         try parse(fbs.getWritten(), back, &line);
@@ -4395,7 +4384,6 @@ test "removeInDisc takes the whole disc in one pass, keeps the rest in order, an
     try std.testing.expectEqual(before - 8, m.nops);
     try std.testing.expectEqual(scats0, m.nscats);
     for (m.ops[0..m.nops]) |o| try std.testing.expect(o.x * o.x + o.z * o.z > 15 * 15);
-    // Every surviving handle still points at a live record, and the run is dense.
     var seen: usize = 0;
     for (m.ops[0..m.nops]) |o| {
         if (o.scat == 0) continue;
@@ -4471,8 +4459,6 @@ test "the height sampler is bilinear, edge-clamped, and its gradient points UPHI
     const m = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(m);
     m.blank("Ramp");
-    // A RISER A COLUMN, MEASURED FROM THE MIDDLE: a quarter-metre step across every column of the lattice is 100 m of
-    // ramp, which the encoding cannot hold end to end. Centred, the middle band it is sampled in is inside the range.
     const mid: usize = HEIGHT_N / 2;
     for (0..HEIGHT_N) |iz| {
         for (0..HEIGHT_N) |ix| {
@@ -4533,7 +4519,6 @@ test "ONE FOE LIMIT, AND A MAP MAY SPEND ALL OF IT ON ONE KIND" {
     var ln: usize = 0;
     const head = "version: 1\n";
 
-    // The WHOLE budget as a single kind — the case a per-kind cap used to silently truncate at 24.
     var rows: [40 * MAX_FOES]u8 = undefined;
     var at: usize = 0;
     for (0..MAX_FOES) |i| at += (try std.fmt.bufPrint(rows[at..], "foe: shroom {d} 0 0 1 0.5\n", .{i % 90})).len;
@@ -4543,7 +4528,6 @@ test "ONE FOE LIMIT, AND A MAP MAY SPEND ALL OF IT ON ONE KIND" {
 
     try std.testing.expect(MAX_PER_KIND >= MAX_FOES);
 
-    // One past the global budget is still a refusal, because that one is the map's own table.
     var over = Map{};
     try std.testing.expectError(ParseError.TooManyFoes, parse(
         try std.fmt.bufPrint(&doc, "{s}{s}foe: shroom 1 0 0 1 0.5\n", .{ head, rows[0..at] }),
@@ -4970,7 +4954,6 @@ test "WHAT THE ROOMS PANEL COSTS A FRAME — the op walk that finds a room's gat
 }
 
 test "A TRIGGER ON A NAME THE MAP NEVER DECLARED WRITES A NAME, NOT UNDEFINED MEMORY" {
-    // The name tables are `undefined` past their count, so the writer read whatever was in the slab.
     const m = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(m);
     m.* = .{};
@@ -5414,7 +5397,6 @@ test "A SPAWN'S HOUR IS DERIVED UNTIL THE EDITOR SAYS OTHERWISE, and an old map 
     const head = "version: 1\n";
     var m: Map = undefined;
     var ln: usize = 0;
-    // No `when=` at all: the shade is night because the CREATURE is, not because a row on disk says so.
     try parse(head ++ "foe: shade 0 0 0 1 0\nfoe: toad 4 0 0 1 0\n", &m, &ln);
     try std.testing.expectEqual(FoeWhen.derived, m.foes[0].when);
     try std.testing.expectEqual(FoeWhen.night, m.foes[0].window());

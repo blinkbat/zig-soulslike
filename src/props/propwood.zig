@@ -85,9 +85,6 @@ pub fn rootsInto(b: *Builder, rng: *mathx.Rng, sp: RootSpec) void {
         const deep = sp.deep * rng.range(0.76, 1.22);
         const heave: f32 = if (r == 1) sp.heave else 0.0;
 
-        // IT ARCHES, then it DIGS: out of the flare almost level, over a knuckle with daylight under it, down to a
-        // toe still fat at the surface, and on under the tree. Every joint kinks off the bearing so a set of them
-        // never reads as spokes.
         const foot = v3(dir.x * sp.r0 * 0.9, sp.up, dir.z * sp.r0 * 0.9);
         const arch = v3(
             dir.x * reach * 0.55 + side.x * rng.signed() * reach * 0.16,
@@ -114,7 +111,6 @@ pub fn rootsInto(b: *Builder, rng: *mathx.Rng, sp: RootSpec) void {
         // A bare joint between two tapers reads as cut pipe: every bend carries its own knuckle.
         b.addBlob(arch, v3(rB * 1.30, rB * 1.14, rB * 1.30), 3, 7, sp.col);
         b.addBlob(toe, v3(rC * 1.34, rC * 1.14, rC * 1.34), 3, 7, sp.col);
-        // …and it splits under the ground rather than running on as one shaft.
         if (rng.float() < 0.6) {
             const fork = v3(
                 toe.x + side.x * reach * 0.34,
@@ -144,7 +140,7 @@ pub fn treeMesh(shader: rl.Shader) rl.Model {
     b.addCapsule(j1, j2, 0.165, 0.095, 7, BARK_OLD);
     b.addCapsule(j2, j3, 0.095, 0.035, 6, BARK_DK);
     b.addBlob(j3, v3(0.045, 0.030, 0.045), 3, 5, TIMBER);
-    // Peeling bark: strips SUNK so only an edge breaks the surface, and the loose one curls off at its TOP only. Stood clear along its whole length a strip is a dark floating tube.
+        // Peeling bark: strips SUNK so only an edge breaks the surface, and the loose one curls off at its TOP only — stood clear along its whole length a strip is a dark floating tube.
     var s: i32 = 0;
     while (s < 7) : (s += 1) {
         const a = rng.angle();

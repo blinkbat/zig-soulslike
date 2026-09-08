@@ -88,7 +88,7 @@ pub const Award = struct {
         self.ntoasts += 1;
     }
 
-    /// A PURSE TOASTS, IT DOES NOT CARD: there is no first-time card for money.
+        /// A PURSE TOASTS, IT DOES NOT CARD: there is no first-time card for money.
     pub fn gainCoin(self: *Award, n: u32) void {
         if (n == 0) return;
         for (self.toasts[0..self.ntoasts]) |*t| {

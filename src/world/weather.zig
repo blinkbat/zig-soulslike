@@ -1455,7 +1455,6 @@ test "EVERY BIRD IS IN THE PICTURE WITH THE CAMERA WHERE IT RESTS — which is w
     try std.testing.expect(flights > 20);
     try std.testing.expect(worst < top);
     try std.testing.expect(lowest > 0);
-    // …AND CLEAR OF THE CLIFFS THEY USED TO FLY THROUGH (`props.cliffParts` stands 15.5 m).
     try std.testing.expect(HIGH_LO > 15.5);
     try std.testing.expect(nearest > skeinNear() * 0.9);
 }

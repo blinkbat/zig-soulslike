@@ -294,7 +294,6 @@ test "A PURSE ALONE IS A DROP — coin lands on the ground and is carried by the
     try std.testing.expect(ps.list[0].dropped());
     try std.testing.expectEqual(@as(u32, 30), ps.list[0].gold);
 
-    // **ONE GLOW PER BODY**: coin and loot ride the same one, so a corpse leaves one thing to walk over.
     ps.spawn(v3(20, 0, 0), &.{.bloodgrass}, 45);
     try std.testing.expectEqual(@as(usize, 2), ps.n);
     try std.testing.expectEqual(@as(u8, 1), ps.list[1].nloot);

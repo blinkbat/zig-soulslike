@@ -388,11 +388,7 @@ pub const Mastodon = struct {
         self.buttCd = BUTT_CD;
         self.biteCd = BITE_CD;
         self.dust(self.noseWorld(), 8, 2.4);
-        switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(),
-            .heavy => self.enterStun(.stunheavy),
-            .light, .none => self.enterStun(.stunlight),
-        }
+        self.enterStun(if (foe.parryBroke(self)) .stunheavy else .stunlight);
     }
 
     pub fn update(self: *Mastodon, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {

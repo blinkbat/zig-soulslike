@@ -369,11 +369,7 @@ pub const Skitterer = struct {
         if (!foe.caught(self, reach, self.toImpact(), touching)) return;
         self.sliceCool = SLICE_COOL;
         self.chips(self.tipSeg()[1], mathx.dirXZ(self.pos, self.parry.at), 9, 3.0);
-        switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(),
-            .heavy => self.enterStun(true),
-            .light, .none => self.enterStun(false),
-        }
+        self.enterStun(foe.parryBroke(self));
     }
 
     pub fn update(self: *Skitterer, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {

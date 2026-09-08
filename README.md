@@ -46,7 +46,7 @@ fishman shoal (3 roles), blinkbat, the fungal duo (second boss, two bars), the o
 when you walk up to it), the corrupted druidess (third boss), the bone mimic, the mastodon and the corrupt ent, plus the spirit wolf that fights on your side. Shared leash, sight, parry, nav-steering
 and dissipation contracts in `foe.zig`.
 
-**World.** 1000 m square ringed by cliffs, ten regions, 211 prop kinds in three layers each. Sculptable
+**World.** 1000 m square ringed by cliffs, ten regions, 212 prop kinds in three layers each. Sculptable
 heightfield (40° slope limit, 0.55 m step). Caves are a second surface under it — carve a floor and a headroom,
 cut an entrance through a hillside, and the hill overhead stays walkable; rock is opaque, so nothing on it sees
 or shoots what is in the chamber below. Painted soil with coverage and eight edge shapes; painted liquid
@@ -65,10 +65,20 @@ dialog with live-rendered speaker portraits, three NPC kinds (wanderer, merchant
 merchant and the smith open off a trigger — one screen, buy and sell on the shelf, stone-and-coin weapon tiers
 at the anvil. All of it authored in the `.world` file, not in Zig — grammar in `AGENTS.md`.
 
-**Editor** (Menu > Editor). Layered StarEdit-style: ground sculpt, cave carve and entrance brushes, soil and
+**Editor** (Menu > Editor). Layered StarEdit-style: ground sculpt, cave carve and entrance brushes, a Surface /
+Underground level switch (the hill comes off every chamber; brushes, placement and picking all work the level
+you are on, the Ground brushes shape the chamber floor and raise or lower its ceiling), soil and
 liquid brushes, prop and unit placement (foes and NPCs alike), zones, clearings, loot, triggers, dialog trees,
 undo/redo, cut/copy/paste, grid snap, object viewer, sound jukebox, FX bench, bake-time sound filter rack. F6
 drops into a walled arena against the one creature under the cursor and hands your map back when you leave.
+
+Carving one shows its own answer before the stroke: the chamber's floor and roof rings drawn under the standing
+hill, teal where the rock can roof it and red where it would break the sky; an entrance drag draws the grade it
+will lay, marks where the hill opens and turns red where it would meet the chamber too high to step down from.
+After every stroke the panel says whether the cave is walkable to the outside or SEALED, and any placement whose
+chamber has been filled in draws in the removal colour. A carve solves its own floor where the panel's cannot
+roof it, a creature too big for the passage is refused with both measurements, I stands the eye on the chamber
+floor looking down the passage, and a post at the camera target shows where F5 will drop you.
 
 **Save.** Three slots, written only by sitting at a bonfire, each with the thumbnail taken there. Text files in
 the map's own `key: value` grammar.

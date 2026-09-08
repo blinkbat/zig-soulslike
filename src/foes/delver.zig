@@ -996,11 +996,7 @@ pub const Delver = struct {
         self.clawCd = CLAW_CD;
         self.heroLatch = false;
         sfx.world(.delver_hurt, self.pos);
-        switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(),
-            .heavy => self.enterStun(.stunheavy),
-            .light, .none => self.enterStun(.stunlight),
-        }
+        self.enterStun(if (foe.parryBroke(self)) .stunheavy else .stunlight);
     }
 
     fn hullTouches(self: *const Delver, a: rl.Vector3, b: rl.Vector3, radius: f32) bool {

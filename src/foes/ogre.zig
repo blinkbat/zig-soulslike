@@ -905,11 +905,7 @@ pub const Ogre = struct {
             });
         }
         sfx.world(.ogre_hurt, self.pos);
-        switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(),
-            .heavy => self.enterStun(.stunheavy),
-            .light, .none => self.enterStun(.stunlight),
-        }
+        self.enterStun(if (foe.parryBroke(self)) .stunheavy else .stunlight);
     }
 
     pub fn debugSlam(self: *Ogre) void {

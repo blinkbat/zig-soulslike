@@ -719,11 +719,7 @@ pub const Deer = struct {
         self.buttCool = BUTT_COOL;
         self.pinned = 0;
         self.heroLatch = true;
-        switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(),
-            .heavy => self.enterStun(true),
-            .light, .none => self.enterStun(false),
-        }
+        self.enterStun(foe.parryBroke(self));
     }
 
     fn enterStun(self: *Deer, heavy: bool) void {

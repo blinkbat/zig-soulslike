@@ -243,6 +243,62 @@ pub fn poolBand(k: wf.FoeKind) ?[2]f32 {
     };
 }
 
+/// THE ROOM A POSTED BODY TAKES, measured off its OWN RIG at the pose it is posted in — not at full stretch, and not
+/// the object viewer's frame. `game`'s `statureOf`/`bodyRadiusOf` are the definition and a test there is the pin: one
+/// body of every kind spawned through the real group reset, over six seeds. What the editor refuses a chamber on
+/// (`caves.roomAt`), which is why a creature that spawns prone reads short — it is short at the moment it is placed.
+pub const Bulk = struct { tall: f32, girth: f32 };
+
+pub fn bulkOf(k: wf.FoeKind) Bulk {
+    return switch (k) {
+        .toad => .{ .tall = 1.12, .girth = 0.77 },
+        .archer => .{ .tall = 2.42, .girth = 0.40 },
+        .ogre => .{ .tall = 4.22, .girth = 1.27 },
+        .berserker => .{ .tall = 2.14, .girth = 0.45 },
+        .priest => .{ .tall = 2.14, .girth = 0.43 },
+        .slinger => .{ .tall = 2.14, .girth = 0.43 },
+        .brood_mother => .{ .tall = 1.46, .girth = 0.96 },
+        .broodling => .{ .tall = 0.68, .girth = 0.45 },
+        .brood_sac => .{ .tall = 0.59, .girth = 0.44 },
+        .shieldman => .{ .tall = 2.60, .girth = 0.45 },
+        .greatsword => .{ .tall = 2.60, .girth = 0.48 },
+        .shade => .{ .tall = 2.12, .girth = 0.33 },
+        .leechfly => .{ .tall = 2.19, .girth = 0.30 },
+        .rooted => .{ .tall = 6.62, .girth = 0.62 },
+        .shroom => .{ .tall = 0.81, .girth = 0.40 },
+        .bone_knight => .{ .tall = 5.14, .girth = 1.77 },
+        .delver => .{ .tall = 0.70, .girth = 0.62 },
+        .necromancer => .{ .tall = 2.78, .girth = 0.54 },
+        .fungal_deer => .{ .tall = 2.37, .girth = 0.46 },
+        .mushroom_mage => .{ .tall = 2.24, .girth = 0.49 },
+        .fen_lurker => .{ .tall = 2.86, .girth = 0.52 },
+        .spore_golem => .{ .tall = 3.09, .girth = 0.86 },
+        .bone_skitterer => .{ .tall = 0.62, .girth = 0.42 },
+        .ancient_priest => .{ .tall = 3.39, .girth = 0.52 },
+        .tolling_hollow => .{ .tall = 3.25, .girth = 1.12 },
+        .mourner => .{ .tall = 2.71, .girth = 0.42 },
+        .slumber_bloom => .{ .tall = 1.38, .girth = 0.52 },
+        .cinder_wake => .{ .tall = 2.08, .girth = 0.43 },
+        .rotgorger => .{ .tall = 1.07, .girth = 0.52 },
+        .birchwight => .{ .tall = 2.19, .girth = 0.38 },
+        .salt_husk => .{ .tall = 2.00, .girth = 0.40 },
+        .fish_spearman => .{ .tall = 2.43, .girth = 0.55 },
+        .fish_netter => .{ .tall = 2.34, .girth = 0.50 },
+        .fish_shaman => .{ .tall = 2.09, .girth = 0.60 },
+        .blinkbat => .{ .tall = 4.31, .girth = 0.52 },
+        .fungal_swordsman => .{ .tall = 2.82, .girth = 0.83 },
+        .fungal_magus => .{ .tall = 2.87, .girth = 0.77 },
+        .owlbear => .{ .tall = 3.28, .girth = 0.63 },
+        .druidess => .{ .tall = 2.45, .girth = 0.57 },
+        .bone_mimic => .{ .tall = 1.06, .girth = 0.55 },
+        .mastodon => .{ .tall = 2.35, .girth = 1.15 },
+        .corrupt_ent => .{ .tall = 4.78, .girth = 0.95 },
+    };
+}
+
+/// Two decimal places against a seed spread under 0.005 m.
+pub const BULK_TOL: f32 = 0.02;
+
 pub fn wadeLimit(k: wf.FoeKind, stature: f32) f32 {
     return switch (traitsOf(k).gait) {
         .walking => WADE_FRAC * mathx.maxF(stature, 0.2),
@@ -825,10 +881,17 @@ pub fn recoilPose(t: f32, heavy: bool) f32 {
     return anim.keyAt(&keys, t);
 }
 
+/// WHAT A CAUGHT BLOW COSTS, in ONE place: whether the catch BROKE THE STANCE. `combat.PARRY_HIT` is stance and
+/// nothing else — `raw()` and `poise` are both pinned at 0 in `combat` — so a catch can never resolve as a death,
+/// and the only question left is which stun the creature enters in its own vocabulary.
+pub fn parryBroke(self: anytype) bool {
+    return self.vit.hit(combat.PARRY_HIT) == .heavy;
+}
+
 pub fn catchMelee(self: anytype, reach: f32, frontDot: f32, until: ?f32) bool {
     const aimed = inFront(self.pos, self.facing, self.parry.at, reach, frontDot);
     if (!caught(self, reach, if (self.heroLatch or !aimed) null else until, null)) return false;
-    self.stagger(self.vit.hit(combat.PARRY_HIT) == .heavy);
+    self.stagger(parryBroke(self));
     return true;
 }
 
@@ -2802,10 +2865,38 @@ pub fn strikeAt(vit: *combat.Vitals, hitLatch: *bool, part: Part, blade: Blade) 
     const dir = if (mathx.lenXZ(sweep) > 0.03) mathx.normV(sweep) else mathx.dirXZ(contact, center);
     if (blade.cullAt > 0 and !vit.dead and vit.hpFrac() <= blade.cullAt) {
         var out = blade.hit;
-        out.dmg += vit.hp;
+        // ON `gore`, THE ONE CHANNEL `damageFrom` TAKES RAW: through `dmg` the top-up is armour-scaled, and the
+        // spore golem's 80 held a dagger's cull off a kill by ~1 HP.
+        out.gore += vit.hp;
         return .{ .contact = contact, .dir = dir, .reaction = vit.hitPoise(out, part.poiseK) };
     }
     return .{ .contact = contact, .dir = dir, .reaction = vit.hitPoise(blade.hit, part.poiseK) };
+}
+
+test "THE CULL KILLS THROUGH ARMOUR — a coat may not hold a body above the line the perk names" {
+    const at = v3(0, 1, 0);
+    const armours = [_]f32{ 0, 80, 400 };
+    // A dagger light at tier 0, skill 1: the weakest blow in the game that carries the perk.
+    const weakest: f32 = 13.0 * 0.74;
+    std.debug.print("\n  cull 10% of 210 = 21 HP, a {d:.2} blow:", .{weakest});
+    for (armours) |a| {
+        var vit = combat.Vitals.initFoe(210, 999, 999).withArmour(a);
+        vit.hp = 0.10 * vit.hpMax;
+        var latch = false;
+        const s = strike(&vit, &latch, at, 0.5, .{
+            .active = true,
+            .r = 0.2,
+            .a = at,
+            .b = at,
+            .a0 = at,
+            .b0 = at,
+            .hit = .{ .dmg = weakest },
+            .cullAt = 0.10,
+        }).?;
+        std.debug.print(" armour {d:.0} -> {s};", .{ a, @tagName(s.reaction) });
+        try std.testing.expectEqual(combat.HitResult.death, s.reaction);
+    }
+    std.debug.print("\n", .{});
 }
 
 test "A SHAFT IS SPENT ON THE FIRST BODY AND A LANCE GOES THROUGH THE LINE" {

@@ -510,11 +510,7 @@ pub const Leechfly = struct {
         const reach = self.parryable() orelse self.parry.reach() orelse return false;
         if (!foe.caught(self, reach, self.toImpact(), null)) return false;
         self.dealt = false;
-        switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(),
-            .heavy => self.enterStun(.stunheavy),
-            .light, .none => self.enterStun(.stunlight),
-        }
+        self.enterStun(if (foe.parryBroke(self)) .stunheavy else .stunlight);
         return true;
     }
 

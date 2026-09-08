@@ -489,11 +489,7 @@ pub const Hollow = struct {
         if (!foe.caught(self, reach, self.toImpact(), null)) return;
         self.biteCool = BITE_COOL;
         self.chips(self.jawWorld(), mathx.dirXZ(self.pos, self.parry.at), 10, 3.0);
-        switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(),
-            .heavy => self.enterStun(.stunheavy),
-            .light, .none => self.enterStun(.stunlight),
-        }
+        self.enterStun(if (foe.parryBroke(self)) .stunheavy else .stunlight);
     }
 
     pub fn update(self: *Hollow, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {

@@ -2331,7 +2331,7 @@ pub const Knight = struct {
         if (self.state != .rollover) return;
         const f = self.fdir();
         const want = ROLL_SHIFT * self.scale * self.rollAmt();
-        mathx.stepXZ(&self.pos, v3(f.z, 0, -f.x), want - self.strokeDone, bounds);
+        mathx.stepXZ(&self.pos, mathx.perpXZ(f), want - self.strokeDone, bounds);
         self.strokeDone = want;
     }
 

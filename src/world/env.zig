@@ -201,6 +201,8 @@ pub const Prop = struct {
     rise: f32 = 0,
     /// 0 standing, 1 gone: the alpha an illusory wall has lost, kept apart from `shrink` so the face fades in place instead of sinking.
     dissolve: f32 = 0,
+    /// Planted on a chamber floor. The editor's cutaway hides a SURFACE prop standing over an open cell, since the hill under it is not drawn.
+    under: bool = false,
 };
 
 pub const WorldDeck = struct {
@@ -523,6 +525,11 @@ pub const Env = struct {
     /// The same tile with the hill taken off every chamber, not just the mouths — the editor's cutaway, built only where there is a cave to look into.
     cutaways: [NTILES]rl.Model = undefined,
     cutawayBuilt: [NTILES]bool = [_]bool{false} ** NTILES,
+    /// The tile's cliff plates MINUS the ones standing over a chamber. Without it a cutaway leaves a face hanging in the air over the hole it just opened.
+    cutFaces: [NTILES]rl.Model = undefined,
+    cutFaceBuilt: [NTILES]bool = [_]bool{false} ** NTILES,
+    /// Whether the cutaway drops any plate in this tile AT ALL — separate from whether a model was made, because a tile whose every plate stands over a chamber leaves nothing to build and must still draw nothing.
+    cutFaceCut: [NTILES]bool = [_]bool{false} ** NTILES,
     skirt: rl.Model = undefined,
     skirtBuilt: bool = false,
     stat_draws: u32 = 0,
@@ -570,6 +577,8 @@ pub const Env = struct {
         self.casterBuilt = [_]bool{false} ** NTILES;
         self.shellBuilt = [_]bool{false} ** NTILES;
         self.cutawayBuilt = [_]bool{false} ** NTILES;
+        self.cutFaceBuilt = [_]bool{false} ** NTILES;
+        self.cutFaceCut = [_]bool{false} ** NTILES;
         self.tileRad = [_]f32{0} ** NTILES;
         self.tileH = [_]f32{0} ** NTILES;
         self.tileMid = [_]rl.Vector3{mathx.zero3} ** NTILES;
@@ -779,6 +788,11 @@ pub const Env = struct {
             unloadTerrain(self.cutaways[i]);
             self.cutawayBuilt[i] = false;
         }
+        self.cutFaceCut[i] = false;
+        if (self.cutFaceBuilt[i]) {
+            unloadTerrain(self.cutFaces[i]);
+            self.cutFaceBuilt[i] = false;
+        }
         if (!self.tileBuilt[i]) return;
         unloadTerrain(self.tiles[i]);
         self.tileBuilt[i] = false;
@@ -941,6 +955,9 @@ pub const Env = struct {
         var cutAny = false;
         var fb = gfx.Builder.init();
         fb.setMat(.stone);
+        var cutfb = gfx.Builder.init();
+        cutfb.setMat(.stone);
+        var cutFaceDropped = false;
         var sb = gfx.Builder.init();
         var stamps = StampSolids{};
         const face = Face{ .b = &fb, .sb = &sb, .env = self, .solids = &stamps };
@@ -979,6 +996,9 @@ pub const Env = struct {
                     );
                 }
                 const case = self.cliffField[iz * wf.HEIGHT_N + ix];
+                // A plate over an excavated cell is what the cutaway leaves hanging, so the cut face model takes every OTHER cell's stone and none of that one's.
+                const overCave = self.caveAny and self.mouthCell(ix, iz, true);
+                const faceFrom = fb.pos.items.len / 3;
                 if (case == wf.CLIFF_STAIR) {
                     const tread = self.cellSurface(ix, iz);
                     yLo = @min(yLo, tread);
@@ -989,6 +1009,9 @@ pub const Env = struct {
                         self.cellSurface(ix + 1, iz),
                         self.cellSurface(ix, iz + 1),
                     }, .{ ha, hd, hc, hb });
+                    if (self.caveAny) {
+                        if (overCave) cutFaceDropped = true else cutfb.copyFrom(&fb, faceFrom);
+                    }
                     continue;
                 }
                 if (case == wf.CLIFF_FACE and wf.cliffCuts(t, minDrop)) {
@@ -1012,6 +1035,9 @@ pub const Env = struct {
                         self.faceCutsAt(ix + 1, iz),
                         self.faceCutsAt(ix, iz -| 1),
                     });
+                    if (self.caveAny) {
+                        if (overCave) cutFaceDropped = true else cutfb.copyFrom(&fb, faceFrom);
+                    }
                     continue;
                 }
                 if (self.mouthCell(ix, iz, false)) {
@@ -1049,6 +1075,12 @@ pub const Env = struct {
             self.faces[i] = fb.toModel(sh);
             self.faceBuilt[i] = true;
         } else fb.deinit();
+        // Nothing dropped means the cut face model would be the face model, and `drawCliffFaces` falls back to it.
+        self.cutFaceCut[i] = cutFaceDropped;
+        if (cutFaceDropped and cutfb.pos.items.len > 0) {
+            self.cutFaces[i] = cutfb.toModel(sh);
+            self.cutFaceBuilt[i] = true;
+        } else cutfb.deinit();
         if (sb.pos.items.len > 0) {
             self.casters[i] = sb.toModel(sh);
             self.casterBuilt[i] = true;
@@ -1867,6 +1899,42 @@ pub const Env = struct {
         return if (s.hollow()) s.floor else null;
     }
 
+    /// Whether the cell here is excavated — the hill over it is what the editor's cutaway leaves out.
+    pub fn caveOpenAt(self: *const Env, x: f32, z: f32) bool {
+        return self.caveAny and caves.openAt(self.caveFields(), x, z) >= caves.EDGE_F;
+    }
+
+    /// The surface a body on the given LEVEL stands on: the chamber floor where there is one, the land otherwise.
+    pub fn surfaceY(self: *const Env, x: f32, z: f32, under: bool) f32 {
+        if (under and self.caveAny) {
+            if (self.caveStandAt(x, z)) |y| return y;
+        }
+        return self.groundAt(x, z);
+    }
+
+    pub fn pickUnder(self: *const Env, origin: rl.Vector3, dir: rl.Vector3) ?caves.Pick {
+        return caves.pickUnder(self.caveFields(), self, .{ origin.x, origin.y, origin.z }, .{ dir.x, dir.y, dir.z }, caves.PICK_REACH);
+    }
+
+    /// A surface prop over an open cell hangs in the air once the cutaway takes the hill from under it.
+    fn floats(self: *const Env, pr: *const Prop) bool {
+        return cutaway and !pr.under and self.caveOpenAt(pr.pos.x, pr.pos.z);
+    }
+
+    /// THE SAME GATE FOR A BODY, and it asks nothing of the body but where its FEET are: the ceiling already decides
+    /// which world a body is in (`supportAt`), so a creature standing on the LAND over an excavated cell is exactly the
+    /// one the cutaway has left hanging. Foes, folk and chests all answer this; a body in the chamber is the point of the view.
+    pub fn floatsAt(self: *const Env, x: f32, z: f32, footY: f32) bool {
+        if (!cutaway or !self.caveOpenAt(x, z)) return false;
+        return !self.underground(x, z, footY);
+    }
+
+    /// A MOUTH: the ceiling has come up through the hill here, and the terrain over it is cut away for good — not only in the editor.
+    pub fn caveMouthAt(self: *const Env, x: f32, z: f32) bool {
+        if (!self.caveAny) return false;
+        return caves.mouthAt(self.caveFields(), self.groundAt(x, z), x, z);
+    }
+
     pub fn caveFloorAt(self: *const Env, x: f32, z: f32) f32 {
         return caves.sampleAt(self.caveFields(), x, z).floor;
     }
@@ -2280,6 +2348,12 @@ pub const Env = struct {
     /// The editor's underground view: where a tile has a cutaway, the hill over its chambers is not drawn.
     pub var cutaway: bool = false;
 
+    /// Set it with the world it is a cutaway OF, so `bodyDrawn` — a free function with no `self` — can ask which surface a body stands on.
+    pub fn setCutaway(on: bool, of: *const Env) void {
+        cutaway = on;
+        cutOf = if (on) of else null;
+    }
+
     pub fn drawGround(self: *Env, view: ?*const View) void {
         if (!self.tiled()) {
             const k = groundOut(self.mapHalf) / GROUND_HALF;
@@ -2301,13 +2375,14 @@ pub const Env = struct {
     /// Drawn OUTSIDE `drawGround`'s `groundMode`, so they take the stone albedo.
     pub fn drawCliffFaces(self: *Env, view: ?*const View) void {
         if (!self.tiled()) return;
-        for (self.faces[0..], self.faceBuilt[0..], self.tileMid[0..], self.tileRad[0..]) |f, built, mid, rad| {
-            if (!built) continue;
+        for (0..NTILES) |i| {
+            const cut = cutaway and self.cutFaceCut[i];
+            if (if (cut) !self.cutFaceBuilt[i] else !self.faceBuilt[i]) continue;
             if (view) |vw| {
-                if (!vw.visible(mid, rad, GROUND_HALF)) continue;
+                if (!vw.visible(self.tileMid[i], self.tileRad[i], GROUND_HALF)) continue;
             }
             self.stat_draws += 1;
-            rl.drawModel(f, mathx.zero3, 1.0, rl.Color.white);
+            rl.drawModel(if (cut) self.cutFaces[i] else self.faces[i], mathx.zero3, 1.0, rl.Color.white);
         }
     }
 
@@ -2357,6 +2432,7 @@ pub const Env = struct {
         for (self.dressItems[0..self.ndress]) |pi| {
             const pr = &self.props[pi];
             const mdl = self.stows[@intFromEnum(pr.kind)] orelse continue;
+            if (self.floats(pr)) continue;
             const nfo = props.info(pr.kind);
             const bound = reachOf(pr, nfo);
             switch (cull) {
@@ -2432,7 +2508,7 @@ pub const Env = struct {
     pub fn drawVeils(self: *Env, view: *const View) void {
         for (self.dressItems[0..self.ndress]) |pi| {
             const pr = &self.props[pi];
-            if (pr.gone) continue;
+            if (pr.gone or self.floats(pr)) continue;
             const mdl = self.veils[@intFromEnum(pr.kind)] orelse continue;
             const nfo = props.info(pr.kind);
             if (!view.visible(pr.pos, reachOf(pr, nfo), nfo.view)) continue;
@@ -2468,7 +2544,7 @@ pub const Env = struct {
             var k = idx.start[c];
             while (k < idx.start[c + 1]) : (k += 1) {
                 const pr = &self.props[idx.items[k]];
-                if (pr.gone) continue;
+                if (pr.gone or self.floats(pr)) continue;
                 const nfo = props.info(pr.kind);
                 if (casters_only and !nfo.casts) continue;
                 const bound = reachOf(pr, nfo);
@@ -2774,12 +2850,20 @@ pub fn castsInto(focus: rl.Vector3, pos: rl.Vector3, bound: f32, top: f32) bool 
 }
 
 /// `drawIndexed`'s per-prop test for a MOVING body, which has no cell to be culled by first.
+/// THE ONE GATE EVERY BODY ANSWERS — foes, folk and chests. Besides the pass's own cull it answers the editor's cutaway:
+/// with the hill off a chamber a body standing on the LAND over it hangs in the air, exactly as a surface prop did, and
+/// its shadow with it. `at` is the body's FEET, which is what decides which world it is in.
 pub fn bodyDrawn(cull: Cull, at: rl.Vector3, bound: f32, reach: f32) bool {
+    if (cutOf) |e| {
+        if (e.floatsAt(at.x, at.z, at.y)) return false;
+    }
     return switch (cull) {
         .view => |*vw| vw.visible(at, bound, reach),
         .sun => |focus| castsInto(focus, at, bound, bound),
     };
 }
+
+var cutOf: ?*const Env = null;
 
 const cross = mathx.crossV;
 
@@ -3734,7 +3818,7 @@ const Placer = struct {
                 leanDir = rng.range(0, 360);
             }
         }
-        self.e.props[self.e.nprops] = .{ .kind = kind, .pos = v3(x, y, z), .yaw = yaw, .scale = scale, .lean = lean, .leanDir = leanDir, .op = self.cur, .rise = snapRise(kind, scale, self.rise) };
+        self.e.props[self.e.nprops] = .{ .kind = kind, .pos = v3(x, y, z), .yaw = yaw, .scale = scale, .lean = lean, .leanDir = leanDir, .op = self.cur, .rise = snapRise(kind, scale, self.rise), .under = self.under };
         self.e.nprops += 1;
         if (props.info(kind).light) |ls| self.addLight(@intCast(self.e.nprops - 1), x, y, z, scale, ls, rng);
         if (kind == .water) {

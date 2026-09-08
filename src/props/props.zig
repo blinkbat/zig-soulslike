@@ -1039,13 +1039,13 @@ fn clipBand(tri: [3]rl.Vector3, lo: f32, hi: f32, out: []rl.Vector3) usize {
     return n;
 }
 
-/// The materials a body walks into; cloth, plant, water, flame, smoke and hide are not stone. `m` is `Builder.matf`, the material id as the mesh carries it.
+/// The materials a body walks into. `m` is `Builder.matf`, the material id as the mesh carries it. EXHAUSTIVE on purpose: `gfx.Mat` is append-only, and an `else` would let the next material in walk-through by default.
 pub fn solidMat(m: f32) bool {
     const id: u32 = @intFromFloat(m + 0.5);
     if (id > @intFromEnum(gfx.Mat.gilt)) return false;
     return switch (@as(gfx.Mat, @enumFromInt(id))) {
         .plain, .stone, .wood, .steel, .marble, .bark, .gilt => true,
-        else => false,
+        .cloth, .leather, .skin, .hide, .plant, .water, .flame, .smoke, .ember, .fog => false,
     };
 }
 

@@ -19,6 +19,8 @@ pub const ENTRANCE_GRADE: f32 = 0.5;
 pub const ENTRANCE_SINK: f32 = 0.25;
 /// The least headroom a chamber may be given, in metres.
 pub const HEAD_MIN: f32 = 2.0;
+/// Rock thinner than this over a ceiling is not a roof. `--fix-caves` drops what has less; the editor's Fit lays a floor that leaves exactly this much.
+pub const ROOF_MIN: f32 = 1.0;
 
 /// The floor a body stands on, and WHICH world it stands in. Height alone cannot tell the hillside from the chamber under it.
 pub const Surface = enum(u8) { land, cave };
@@ -447,6 +449,263 @@ pub fn homeY(m: *const wf.Map, px: f32, pz: f32, under: bool) f32 {
     return if (s.hollow()) s.floor else land;
 }
 
+/// The floor that roofs `head` of room under ground at `land` with `ROOF_MIN` of rock over it, on the height lattice's own step so the carve lands where the panel says.
+pub fn fitFloor(land: f32, head: f32) f32 {
+    const want = @floor((land - ROOF_MIN - head) / wf.HEIGHT_STEP) * wf.HEIGHT_STEP;
+    return mathx.clampF(want, wf.HEIGHT_MIN, wf.HEIGHT_MAX);
+}
+
+/// A ceiling this far under the land still counts as up through it; `env.MOUTH_EPS` is the mesher's own copy of the slack.
+pub const MOUTH_SLACK: f32 = 0.02;
+
+/// FOUR-CONNECTED, which is what a body walking a passage is: `--fix-caves`'s components and the editor's walk-in both step this way.
+pub const STEP4 = [4][2]i32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } };
+
+/// A MOUTH: an excavated point whose ceiling has come up through the hill. No flag decides it and none can — the roof against the land is the whole test, and it is what the terrain is cut to.
+pub fn mouthAt(f: Fields, land: f32, px: f32, pz: f32) bool {
+    const s = sampleAt(f, px, pz);
+    return s.hollow() and s.roof + MOUTH_SLACK >= land;
+}
+
+/// What a whole cave layer is: how much of it is excavated, how many points open to the sky, and how much of it a body could actually walk to from one of those.
+pub const Reach = struct {
+    open: usize = 0,
+    mouths: usize = 0,
+    walkable: usize = 0,
+
+    pub fn sealed(self: Reach) bool {
+        return self.open > 0 and self.mouths == 0;
+    }
+
+    /// Excavated points a body cannot reach from any mouth — a chamber that is there but cannot be got into.
+    pub fn stranded(self: Reach) usize {
+        return self.open - self.walkable;
+    }
+};
+
+/// THE WALK IN, ANSWERED OFF THE GRID: flood the excavated points from EVERY mouth at once, four-connected and only
+/// between floors within one step. It is the walk `--fix-caves` proves before it writes, asked of a map that is still
+/// being carved — a chamber the flood never reaches is sealed however open it looks from above. `land` answers `groundAt`.
+/// `mark` and `queue` are the caller's scratch, `CELLS` long; the editor keeps them at file scope, since a `Map` is megabytes and these are not.
+pub fn reachOut(f: Fields, land: anytype, mark: []u8, queue: []u32) Reach {
+    var r = Reach{};
+    if (!f.any) return r;
+    @memset(mark, 0);
+    var head: usize = 0;
+    var tail: usize = 0;
+    for (0..N) |iz| {
+        for (0..N) |ix| {
+            const i = iz * N + ix;
+            if (f.cov[i] < EDGE) continue;
+            r.open += 1;
+            const p = pointAt(f.half, ix, iz);
+            if (!mouthAt(f, land.groundAt(p[0], p[1]), p[0], p[1])) continue;
+            r.mouths += 1;
+            mark[i] = 1;
+            queue[tail] = @intCast(i);
+            tail += 1;
+        }
+    }
+    while (head < tail) {
+        const i: usize = queue[head];
+        head += 1;
+        r.walkable += 1;
+        const ix = i % N;
+        const iz = i / N;
+        const floor = wf.heightOf(f.floor[i]);
+        for (STEP4) |d| {
+            const nx = @as(i32, @intCast(ix)) + d[0];
+            const nz = @as(i32, @intCast(iz)) + d[1];
+            if (nx < 0 or nz < 0 or nx >= N or nz >= N) continue;
+            const j = @as(usize, @intCast(nz)) * N + @as(usize, @intCast(nx));
+            if (f.cov[j] < EDGE or mark[j] != 0) continue;
+            if (@abs(wf.heightOf(f.floor[j]) - floor) > wf.STEP_UP) continue;
+            mark[j] = 1;
+            queue[tail] = @intCast(j);
+            tail += 1;
+        }
+    }
+    return r;
+}
+
+pub const PICK_STEP: f32 = 0.35;
+pub const PICK_REACH: f32 = 400.0;
+
+pub const Pick = struct { x: f32, y: f32, z: f32, surface: Surface };
+
+/// WHERE A RAY LANDS WITH THE HILL TAKEN OFF EVERY CHAMBER — the editor's Underground level. The land where it still
+/// stands; where the cell under it is excavated the hill is not there to be hit, so the ray falls through onto the
+/// chamber floor. Rock met from INSIDE a chamber is a wall, answered at the floor's edge. `land` answers `groundAt`.
+pub fn pickUnder(f: Fields, land: anytype, origin: [3]f32, dir: [3]f32, reach: f32) ?Pick {
+    var prev = origin;
+    var inside: ?f32 = null;
+    var s: f32 = PICK_STEP;
+    while (s < reach) : (s += PICK_STEP) {
+        const p = [3]f32{ origin[0] + dir[0] * s, origin[1] + dir[1] * s, origin[2] + dir[2] * s };
+        const g = land.groundAt(p[0], p[2]);
+        if (p[1] > g) {
+            inside = null;
+            prev = p;
+            continue;
+        }
+        if (!(f.any and openAt(f, p[0], p[2]) >= EDGE_F)) {
+            if (inside) |floor| return .{ .x = prev[0], .y = floor, .z = prev[2], .surface = .cave };
+            const q = refine(land, f, prev, p, .land);
+            return .{ .x = q[0], .y = land.groundAt(q[0], q[2]), .z = q[2], .surface = .land };
+        }
+        const c = sampleAt(f, p[0], p[2]);
+        if (!c.hollow()) {
+            const q = refine(land, f, prev, p, .land);
+            return .{ .x = q[0], .y = land.groundAt(q[0], q[2]), .z = q[2], .surface = .land };
+        }
+        if (p[1] <= c.floor) {
+            const q = refine(land, f, prev, p, .cave);
+            return .{ .x = q[0], .y = sampleAt(f, q[0], q[2]).floor, .z = q[2], .surface = .cave };
+        }
+        if (p[1] <= c.roof) inside = c.floor;
+        prev = p;
+    }
+    return null;
+}
+
+/// Bisect the crossing between two samples: of the land, or of a chamber floor.
+fn refine(land: anytype, f: Fields, a: [3]f32, b: [3]f32, want: Surface) [3]f32 {
+    var lo = a;
+    var hi = b;
+    for (0..12) |_| {
+        const mid = [3]f32{ (lo[0] + hi[0]) * 0.5, (lo[1] + hi[1]) * 0.5, (lo[2] + hi[2]) * 0.5 };
+        const under = switch (want) {
+            .land => mid[1] <= land.groundAt(mid[0], mid[2]),
+            .cave => mid[1] <= sampleAt(f, mid[0], mid[2]).floor,
+        };
+        if (under) hi = mid else lo = mid;
+    }
+    return hi;
+}
+
+/// THE GROUND LAYER'S FOUR SCULPTS ON THE CHAMBER FLOOR. Rock keeps its floor byte (it means nothing there, and a
+/// smooth may not read it); a point is never lifted to within `HEAD_MIN` of its own roof; the feather is `Map.sculptTo`'s.
+pub fn sculpt(g: Grids, px: f32, pz: f32, radius: f32, mode: wf.Sculpt, amount: f32, out: *[4]usize) bool {
+    const sp = strokeSpan(g, .{ .px = px, .pz = pz, .r = radius, .floor = 0, .roof = 0 }, out) orelse return false;
+    const r = brushR(g.half, radius);
+    const target = flattenTarget(g, px, pz, r, sp);
+    var before: [N]f32 = undefined;
+    var above: [N]f32 = undefined;
+    var changed = false;
+    var iz = sp[1];
+    while (iz <= sp[3]) : (iz += 1) {
+        if (mode == .smooth) {
+            if (iz == sp[1]) {
+                if (iz > 0) {
+                    for (0..N) |ix| above[ix] = wf.heightOf(g.floor[(iz - 1) * N + ix]);
+                }
+            } else above = before;
+            for (0..N) |ix| before[ix] = wf.heightOf(g.floor[iz * N + ix]);
+        }
+        var ix = sp[0];
+        while (ix <= sp[2]) : (ix += 1) {
+            const i = iz * N + ix;
+            if (g.cov[i] < EDGE) continue;
+            const p = pointAt(g.half, ix, iz);
+            const dx = p[0] - px;
+            const dz = p[1] - pz;
+            const d = @sqrt(dx * dx + dz * dz);
+            if (d > r) continue;
+            const fall = mathx.smoothstep(r, r * 0.15, d);
+            const cur = wf.heightOf(g.floor[i]);
+            const want = switch (mode) {
+                .raise => cur + amount * fall,
+                .lower => cur - amount * fall,
+                .flatten => mathx.lerpF(cur, target, mathx.clampF(amount, 0, 1) * fall),
+                .smooth => blk: {
+                    var sum: f32 = 0;
+                    var n: f32 = 0;
+                    if (ix > 0 and g.cov[i - 1] >= EDGE) {
+                        sum += before[ix - 1];
+                        n += 1;
+                    }
+                    if (ix + 1 < N and g.cov[i + 1] >= EDGE) {
+                        sum += before[ix + 1];
+                        n += 1;
+                    }
+                    if (iz > 0 and g.cov[i - N] >= EDGE) {
+                        sum += above[ix];
+                        n += 1;
+                    }
+                    if (iz + 1 < N and g.cov[i + N] >= EDGE) {
+                        sum += wf.heightOf(g.floor[i + N]);
+                        n += 1;
+                    }
+                    if (n == 0) break :blk cur;
+                    break :blk mathx.lerpF(cur, sum / n, mathx.clampF(amount, 0, 1) * fall);
+                },
+            };
+            const cap = mathx.maxF(cur, wf.heightOf(g.roof[i]) - HEAD_MIN);
+            const nb = wf.heightByte(mathx.clampF(mathx.minF(want, cap), wf.HEIGHT_MIN, wf.HEIGHT_MAX));
+            if (nb == g.floor[i]) continue;
+            g.floor[i] = nb;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+/// ROOF UP AND ROOF DOWN — the ceiling's own pair, because headroom was set at carve time and only a re-carve could
+/// change it. The ceiling never comes down inside `HEAD_MIN` of its own floor and never goes up inside `ROOF_MIN` of the
+/// hill, so one stroke cannot crush a passage shut and the other cannot punch a crater through the top. A roof the hill
+/// has ALREADY thinned past that is left where it is rather than dragged down by the cap.
+pub fn sculptRoof(g: Grids, m: *const wf.Map, px: f32, pz: f32, radius: f32, up: bool, amount: f32, out: *[4]usize) bool {
+    const sp = strokeSpan(g, .{ .px = px, .pz = pz, .r = radius, .floor = 0, .roof = 0 }, out) orelse return false;
+    const r = brushR(g.half, radius);
+    var changed = false;
+    var iz = sp[1];
+    while (iz <= sp[3]) : (iz += 1) {
+        var ix = sp[0];
+        while (ix <= sp[2]) : (ix += 1) {
+            const i = iz * N + ix;
+            if (g.cov[i] < EDGE) continue;
+            const p = pointAt(g.half, ix, iz);
+            const dx = p[0] - px;
+            const dz = p[1] - pz;
+            const d = @sqrt(dx * dx + dz * dz);
+            if (d > r) continue;
+            const fall = mathx.smoothstep(r, r * 0.15, d);
+            const cur = wf.heightOf(g.roof[i]);
+            const hi = mathx.maxF(m.heightAt(p[0], p[1]) - ROOF_MIN, cur);
+            const lo = mathx.minF(wf.heightOf(g.floor[i]) + HEAD_MIN, hi);
+            const want = if (up) cur + amount * fall else cur - amount * fall;
+            const nb = wf.heightByte(mathx.clampF(mathx.clampF(want, lo, hi), wf.HEIGHT_MIN, wf.HEIGHT_MAX));
+            if (nb == g.roof[i]) continue;
+            g.roof[i] = nb;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+/// Flat levels toward the floor under the brush's centre; over rock, toward the mean floor of the open points it covers.
+fn flattenTarget(g: Grids, px: f32, pz: f32, r: f32, sp: [4]usize) f32 {
+    const l = Lerp.of(g.half, px, pz);
+    if (l.cov(g.cov) >= EDGE_F) return l.hgt(g.floor, 0);
+    var sum: f32 = 0;
+    var n: f32 = 0;
+    var iz = sp[1];
+    while (iz <= sp[3]) : (iz += 1) {
+        var ix = sp[0];
+        while (ix <= sp[2]) : (ix += 1) {
+            const i = iz * N + ix;
+            if (g.cov[i] < EDGE) continue;
+            const p = pointAt(g.half, ix, iz);
+            const dx = p[0] - px;
+            const dz = p[1] - pz;
+            if (dx * dx + dz * dz > r * r) continue;
+            sum += wf.heightOf(g.floor[i]);
+            n += 1;
+        }
+    }
+    return if (n > 0) sum / n else 0;
+}
+
 
 /// THE BENCH: a hill with a chamber under it, a bent passage out to a mouth on the flat, and a low stretch on the way. Authored here so the editor, the tests and the shot harness all stand on the same map.
 pub const bench = struct {
@@ -482,7 +741,9 @@ pub const bench = struct {
     }
 
     /// The editor's Entrance tool, walked in code: the floor grades down from the ground the stroke began on, and the hill opens by itself wherever it stands lower than the ceiling.
-    fn entrance(m: *wf.Map, from: [2]f32, to: [2]f32, r: f32, head: f32, grade: f32, sink: f32) void {
+    /// The bench is the THIRD thing that cuts a mouth, so it takes the same grade and sink the editor's brush and `--fix-caves` do.
+    fn entrance(m: *wf.Map, from: [2]f32, to: [2]f32, r: f32, head: f32) void {
+        const grade = ENTRANCE_GRADE;
         var span: [4]usize = wf.EMPTY_SPAN;
         const dx = to[0] - from[0];
         const dz = to[1] - from[1];
@@ -490,7 +751,7 @@ pub const bench = struct {
         if (len < 1e-4) return;
         const ux = dx / len;
         const uz = dz / len;
-        const start = m.heightAt(from[0], from[1]) - sink;
+        const start = m.heightAt(from[0], from[1]) - ENTRANCE_SINK;
         const step = cellStep(m.half) * 0.5;
         var s: f32 = 0;
         while (s <= len) : (s += step) {
@@ -520,7 +781,7 @@ pub const bench = struct {
         stroke(m, CHAMBER, BEND, PASSAGE_R, FLOOR, HEAD);
         // The low stretch: the same passage with the ceiling brought down.
         stroke(m, BEND, .{ 20, 8 }, PASSAGE_R, FLOOR, LOW_HEAD);
-        entrance(m, MOUTH, .{ 20, 8 }, PASSAGE_R, HEAD, 0.5, 0.25);
+        entrance(m, MOUTH, .{ 20, 8 }, PASSAGE_R, HEAD);
 
         // A LIGHT IN THE CHAMBER AND ONE AT THE MOUTH: the chamber's is the only thing down there that lights anything.
         _ = m.add(.{ .op = .at, .kind = .campfire_lit, .x = CHAMBER[0] + 3, .z = CHAMBER[1] + 2, .under = true }) catch {};
@@ -697,6 +958,96 @@ test "the bench walks: every metre from the mouth to the chamber has a floor, an
     try std.testing.expect(worst <= wf.STEP_UP);
 }
 
+test "THE WALK IN IS ANSWERED OFF THE GRID: the bench reaches its own mouth, and a chamber with no mouth is SEALED" {
+    const m = std.testing.allocator.create(wf.Map) catch unreachable;
+    defer std.testing.allocator.destroy(m);
+    m.* = .{};
+    bench.author(m);
+    const mark = std.testing.allocator.alloc(u8, CELLS) catch unreachable;
+    defer std.testing.allocator.free(mark);
+    const queue = std.testing.allocator.alloc(u32, CELLS) catch unreachable;
+    defer std.testing.allocator.free(queue);
+
+    const land = MapLand{ .m = m };
+    const open = reachOut(fieldsOf(m), land, mark, queue);
+    std.debug.print(
+        "\nbench reach: {d} points excavated, {d} at a mouth, {d} walkable to the outside, {d} stranded\n",
+        .{ open.open, open.mouths, open.walkable, open.stranded() },
+    );
+    try std.testing.expect(open.open > 0);
+    try std.testing.expect(!open.sealed());
+    try std.testing.expect(open.mouths > 0);
+    // The bench is ONE chamber and ONE passage out of it, so every excavated point is on the walk.
+    try std.testing.expectEqual(open.open, open.walkable);
+
+    // A chamber alone under a hill with nothing cut out to it: excavated, and nothing walks into it.
+    const s = std.testing.allocator.create(wf.Map) catch unreachable;
+    defer std.testing.allocator.destroy(s);
+    s.* = .{};
+    s.blank("sealed");
+    var span: [4]usize = undefined;
+    for (0..12) |_| _ = s.sculpt(0, 0, 40, .raise, 1.0, &span);
+    _ = carve(gridsOf(s), .{ .px = 0, .pz = 0, .r = 8, .floor = -4, .roof = -1 }, &span);
+    const shut = reachOut(fieldsOf(s), MapLand{ .m = s }, mark, queue);
+    std.debug.print("sealed: {d} points excavated, {d} at a mouth, {d} walkable\n", .{ shut.open, shut.mouths, shut.walkable });
+    try std.testing.expect(shut.open > 0);
+    try std.testing.expect(shut.sealed());
+    try std.testing.expectEqual(@as(usize, 0), shut.walkable);
+    try std.testing.expectEqual(shut.open, shut.stranded());
+}
+
+test "THE WALK-IN FLOOD IS A REBUILD'S WORK AND NOT A FRAME'S - timed over the bench" {
+    const m = std.testing.allocator.create(wf.Map) catch unreachable;
+    defer std.testing.allocator.destroy(m);
+    m.* = .{};
+    bench.author(m);
+    const mark = std.testing.allocator.alloc(u8, CELLS) catch unreachable;
+    defer std.testing.allocator.free(mark);
+    const queue = std.testing.allocator.alloc(u32, CELLS) catch unreachable;
+    defer std.testing.allocator.free(queue);
+    const land = MapLand{ .m = m };
+    const f = fieldsOf(m);
+
+    const RUNS: usize = 20;
+    var t0 = try std.time.Timer.start();
+    var seen: usize = 0;
+    for (0..RUNS) |_| seen += reachOut(f, land, mark, queue).walkable;
+    const each = t0.read() / RUNS;
+    std.debug.print("\nwalk-in flood: {d} us over {d} lattice points ({d} walkable)\n", .{ each / 1000, CELLS, seen / RUNS });
+    // A rebuild already replays the whole op list and re-tiles the terrain; this may not be the expensive half of it.
+    try std.testing.expect(each < 15 * std.time.ns_per_ms);
+}
+
+test "THE ROOF PAIR CANNOT SHUT A PASSAGE OR PUNCH THROUGH THE HILL - it stops at HEAD_MIN and at ROOF_MIN" {
+    const m = std.testing.allocator.create(wf.Map) catch unreachable;
+    defer std.testing.allocator.destroy(m);
+    m.* = .{};
+    bench.author(m);
+    const at = bench.CHAMBER;
+    const was = sampleAt(fieldsOf(m), at[0], at[1]);
+    const hill = m.heightAt(at[0], at[1]);
+    var span: [4]usize = undefined;
+
+    // Twenty full-strength strokes UP: the ceiling climbs and then stops with ROOF_MIN of rock still over it.
+    for (0..20) |_| _ = sculptRoof(gridsOf(m), m, at[0], at[1], 6, true, 1.0, &span);
+    const up = sampleAt(fieldsOf(m), at[0], at[1]);
+    std.debug.print(
+        "\nroof up: {d:.2} -> {d:.2} m under a hill at {d:.2} m, {d:.2} m of rock left (floor {d:.2} m)\n",
+        .{ was.roof, up.roof, hill, hill - up.roof, up.floor },
+    );
+    try std.testing.expect(up.roof > was.roof);
+    try std.testing.expect(hill - up.roof >= ROOF_MIN - wf.HEIGHT_STEP);
+    try std.testing.expect(up.roof < hill);
+
+    // Twenty DOWN: it falls and then stops with HEAD_MIN of room still under it.
+    for (0..20) |_| _ = sculptRoof(gridsOf(m), m, at[0], at[1], 6, false, 1.0, &span);
+    const down = sampleAt(fieldsOf(m), at[0], at[1]);
+    std.debug.print("roof down: {d:.2} -> {d:.2} m over a floor at {d:.2} m, {d:.2} m of room left\n", .{ up.roof, down.roof, down.floor, down.headroom() });
+    try std.testing.expect(down.roof < up.roof);
+    try std.testing.expect(down.hollow());
+    try std.testing.expect(down.headroom() >= HEAD_MIN - wf.HEIGHT_STEP);
+}
+
 test "a body too tall for the low stretch is refused it, and one that fits is not" {
     const m = std.testing.allocator.create(wf.Map) catch unreachable;
     defer std.testing.allocator.destroy(m);
@@ -743,4 +1094,134 @@ test "a carve on FLAT ground still opens: the chamber is there and the hill over
     try std.testing.expectEqual(Surface.cave, supportAt(f, land, 0, 0, -4).surface);
     try std.testing.expectEqual(Surface.land, supportAt(f, land, 0, 0, land).surface);
     try std.testing.expect(land - s.roof > 0.9);
+}
+
+/// A map standing in for `env` under the pick: `groundAt` is the land, as the editor's `Env` answers it.
+const MapLand = struct {
+    m: *const wf.Map,
+    fn groundAt(self: MapLand, x: f32, z: f32) f32 {
+        return self.m.heightAt(x, z);
+    }
+};
+
+fn hillWithChamber(m: *wf.Map) void {
+    m.* = .{};
+    m.blank("pick");
+    var span: [4]usize = undefined;
+    _ = m.sculpt(0, 0, 40, .raise, 8, &span);
+    _ = carve(gridsOf(m), .{ .px = 0, .pz = 0, .r = 6, .floor = -2, .roof = 1 }, &span);
+}
+
+test "THE UNDERGROUND PICK FALLS THROUGH THE CUT-AWAY HILL ONTO THE FLOOR, and lands on the hill where it still stands" {
+    const m = std.testing.allocator.create(wf.Map) catch unreachable;
+    defer std.testing.allocator.destroy(m);
+    hillWithChamber(m);
+    const f = fieldsOf(m);
+    const land = MapLand{ .m = m };
+    const down = [3]f32{ 0, -1, 0 };
+
+    const inRoom = pickUnder(f, land, .{ 0, 30, 0 }, down, PICK_REACH) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(Surface.cave, inRoom.surface);
+    try std.testing.expectApproxEqAbs(@as(f32, -2), inRoom.y, wf.HEIGHT_STEP);
+
+    const onHill = pickUnder(f, land, .{ 0, 30, -20 }, down, PICK_REACH) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(Surface.land, onHill.surface);
+    try std.testing.expectApproxEqAbs(m.heightAt(0, -20), onHill.y, 0.05);
+    try std.testing.expect(onHill.y > 1);
+
+    // A glancing ray meets the un-carved flank of the hill before it can reach the chamber behind it.
+    const from = [3]f32{ 30, 3, 0 };
+    const to = [3]f32{ 0, -2, 0 };
+    const dl = @sqrt(30.0 * 30.0 + 5.0 * 5.0);
+    const flank = pickUnder(f, land, from, .{ (to[0] - from[0]) / dl, (to[1] - from[1]) / dl, 0 }, PICK_REACH) orelse return error.TestUnexpectedResult;
+    std.debug.print("\nunderground pick: room floor {d:.2} m, hill {d:.2} m, glancing ray stopped on the flank at x {d:.1} (chamber edge 6)\n", .{ inRoom.y, onHill.y, flank.x });
+    try std.testing.expectEqual(Surface.land, flank.surface);
+    try std.testing.expect(flank.x > 6);
+
+    // The same rays with no cave on the map are plain land hits.
+    const bare = std.testing.allocator.create(wf.Map) catch unreachable;
+    defer std.testing.allocator.destroy(bare);
+    bare.* = .{};
+    bare.blank("bare");
+    var span: [4]usize = undefined;
+    _ = bare.sculpt(0, 0, 40, .raise, 8, &span);
+    const top = pickUnder(fieldsOf(bare), MapLand{ .m = bare }, .{ 0, 30, 0 }, down, PICK_REACH) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(Surface.land, top.surface);
+    try std.testing.expectApproxEqAbs(bare.heightAt(0, 0), top.y, 0.05);
+}
+
+test "the floor sculpt moves open points only, never lifts one into its own roof, and lowers freely" {
+    const m = std.testing.allocator.create(wf.Map) catch unreachable;
+    defer std.testing.allocator.destroy(m);
+    hillWithChamber(m);
+    var span: [4]usize = undefined;
+    const rockBefore = m.caveFloor[0];
+
+    try std.testing.expect(sculpt(gridsOf(m), 0, 0, 3, .raise, 0.5, &span));
+    var s = sampleAt(fieldsOf(m), 0, 0);
+    try std.testing.expectApproxEqAbs(@as(f32, -1.5), s.floor, wf.HEIGHT_STEP);
+
+    _ = sculpt(gridsOf(m), 0, 0, 3, .raise, 10, &span);
+    s = sampleAt(fieldsOf(m), 0, 0);
+    try std.testing.expectApproxEqAbs(s.roof - HEAD_MIN, s.floor, wf.HEIGHT_STEP);
+    try std.testing.expect(s.hollow());
+
+    _ = sculpt(gridsOf(m), 0, 0, 3, .lower, 4, &span);
+    s = sampleAt(fieldsOf(m), 0, 0);
+    try std.testing.expectApproxEqAbs(s.roof - HEAD_MIN - 4, s.floor, wf.HEIGHT_STEP);
+    std.debug.print("floor sculpt: capped at {d:.2} m under a {d:.2} m roof, then lowered to {d:.2} m ({d:.2} m of room)\n", .{ s.roof - HEAD_MIN, s.roof, s.floor, s.headroom() });
+
+    try std.testing.expectEqual(rockBefore, m.caveFloor[0]);
+    try std.testing.expect(!sculpt(gridsOf(m), 100, 100, 3, .raise, 1, &span));
+}
+
+/// The largest riser between neighbouring open lattice points along the row through z = 0, between two x.
+fn seamStep(m: *const wf.Map, x0: f32, x1: f32) f32 {
+    const f = fieldsOf(m);
+    const step = cellStep(m.half);
+    const iz: usize = @intFromFloat(@round((0 + m.half) / step));
+    const a: usize = @intFromFloat(@floor((x0 + m.half) / step));
+    const b: usize = @intFromFloat(@ceil((x1 + m.half) / step));
+    var worst: f32 = 0;
+    var ix = a;
+    while (ix < b) : (ix += 1) {
+        if (covAt(f, ix, iz) < EDGE_F or covAt(f, ix + 1, iz) < EDGE_F) continue;
+        worst = @max(worst, @abs(floorAtPoint(f, ix + 1, iz) - floorAtPoint(f, ix, iz)));
+    }
+    return worst;
+}
+
+test "smooth pulls a terrace seam together and flat levels toward the floor under the brush" {
+    const m = std.testing.allocator.create(wf.Map) catch unreachable;
+    defer std.testing.allocator.destroy(m);
+    m.* = .{};
+    m.blank("terraces");
+    var span: [4]usize = undefined;
+    _ = m.sculpt(0, 0, 40, .raise, 8, &span);
+    _ = carve(gridsOf(m), .{ .px = -3, .pz = 0, .r = 6, .floor = -2, .roof = 1 }, &span);
+    _ = carve(gridsOf(m), .{ .px = 3, .pz = 0, .r = 6, .floor = -4, .roof = 1 }, &span);
+    const f = fieldsOf(m);
+    try std.testing.expectApproxEqAbs(@as(f32, -2), sampleAt(f, -5, 0).floor, wf.HEIGHT_STEP);
+    try std.testing.expectApproxEqAbs(@as(f32, -4), sampleAt(f, 0, 0).floor, wf.HEIGHT_STEP);
+
+    const before = seamStep(m, -6, 2);
+    for (0..8) |_| _ = sculpt(gridsOf(m), -2.5, 0, 4, .smooth, 0.9, &span);
+    const after = seamStep(m, -6, 2);
+    std.debug.print("smooth: the seam's tallest riser {d:.2} m -> {d:.2} m (a step is {d:.2} m; walkable under {d:.2})\n", .{ before, after, wf.HEIGHT_STEP, wf.STEP_UP });
+    try std.testing.expect(after < before);
+    try std.testing.expectApproxEqAbs(@as(f32, -2), sampleAt(f, -5, 0).floor, wf.HEIGHT_STEP);
+
+    _ = sculpt(gridsOf(m), -3.5, 0, 5, .flatten, 1, &span);
+    const levelled = sampleAt(f, 0, 0).floor;
+    std.debug.print("flat toward {d:.2} m: the -4 m point at the disc's reach is now {d:.2} m\n", .{ sampleAt(f, -3.5, 0).floor, levelled });
+    try std.testing.expect(levelled > -4 + wf.HEIGHT_STEP * 0.5);
+}
+
+test "fit lays the floor ROOF_MIN of rock under the hill, on the height step" {
+    try std.testing.expectApproxEqAbs(@as(f32, 4.0), fitFloor(8.0, 3.0), 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 4.25), fitFloor(8.1, 2.8), 1e-5);
+    try std.testing.expectEqual(wf.HEIGHT_MIN, fitFloor(-100, 3));
+    const land: f32 = 8.1;
+    const head: f32 = 2.8;
+    try std.testing.expect(land - (fitFloor(land, head) + head) >= ROOF_MIN);
 }

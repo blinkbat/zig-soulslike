@@ -614,11 +614,7 @@ pub const Shade = struct {
         if (!foe.caught(self, reach, self.toImpact(), null)) return false;
         self.cds[GRASP] = MOVES[GRASP].cd;
         self.dealt = true;
-        switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(),
-            .heavy => self.enterStun(.stunheavy),
-            .light, .none => self.enterStun(.stunlight),
-        }
+        self.enterStun(if (foe.parryBroke(self)) .stunheavy else .stunlight);
         return true;
     }
 

@@ -334,13 +334,20 @@ const Recover = enum {
     }
 };
 
+/// THE NEAR EDGE IS THE SAME LIMB, SO IT TAKES THE SAME TRIANGLE (`rooted.nearR`). Held raw against a scaled far
+/// edge the lunge's band is 3.40..3.93 at `wf.FOE_SCALE_LO` — 0.53 m of the 1.95 it is owed, and the small
+/// swordsman stands inside the gap doing nothing.
+fn swNearR(scale: f32) f32 {
+    return foe.triggerBand(SW_LUNGE_MIN, SCALE, scale);
+}
+
 fn swClassify(dist: f32, scale: f32, off: f32, slashReady: bool, heavyReady: bool, lungeReady: bool, backReady: bool, crowded: bool) SwChoice {
     if (dist > AGGRO_R) return .hold;
     if (crowded and backReady) return .back;
     const a = @abs(off);
     if (dist <= foe.triggerBand(SW_HEAVY_R, SCALE, scale) and heavyReady and a <= swHeavyArc()) return .heavy;
     if (dist <= foe.triggerBand(SW_SLASH_R, SCALE, scale) and slashReady and a <= swSlashArc()) return .slash;
-    if (lungeReady and dist >= SW_LUNGE_MIN and dist <= foe.triggerBand(SW_LUNGE_MAX, SCALE, scale) and a <= swLungeArc()) return .lunge;
+    if (lungeReady and dist >= swNearR(scale) and dist <= foe.triggerBand(SW_LUNGE_MAX, SCALE, scale) and a <= swLungeArc()) return .lunge;
     return .close;
 }
 
@@ -1025,11 +1032,7 @@ pub const Swordsman = struct {
         self.doubling = false;
         self.venom(self.bladeSeg()[1], SW_VENOM_PARRY);
         sfx.world(.duo_sword_hurt, self.pos);
-        switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(),
-            .heavy => self.enterStun(true),
-            .light, .none => self.enterStun(false),
-        }
+        self.enterStun(foe.parryBroke(self));
     }
 
     fn tryReach(self: *Swordsman, hero: rl.Vector3) void {
@@ -2494,14 +2497,27 @@ test "EVERY BAND OF THE SWORDSMAN PICKS A MOVE, and a bearing he cannot reach is
     try std.testing.expectEqual(SwChoice.heavy, swClassify(SW_HEAVY_R - 0.1, SCALE, 0, true, true, true, false, false));
     try std.testing.expectEqual(SwChoice.slash, swClassify(SW_HEAVY_R - 0.1, SCALE, 0, true, false, true, false, false));
     try std.testing.expectEqual(SwChoice.slash, swClassify(SW_SLASH_R - 0.1, SCALE, 0, true, false, true, false, false));
-    try std.testing.expectEqual(SwChoice.lunge, swClassify(SW_LUNGE_MIN + 0.1, SCALE, 0, false, false, true, false, false));
+    try std.testing.expectEqual(SwChoice.lunge, swClassify(swNearR(SCALE) + 0.1, SCALE, 0, false, false, true, false, false));
     try std.testing.expectEqual(SwChoice.close, swClassify(SW_HEAVY_R + 0.3, SCALE, 0, false, true, false, false, false));
     try std.testing.expectEqual(SwChoice.close, swClassify(6.0, SCALE, 0, false, false, false, false, false));
     inline for (.{ @as(f32, 1.0), @as(f32, -1.0) }) |sgn| {
         const wide = sgn * (swSlashArc() + 0.05);
         try std.testing.expectEqual(SwChoice.close, swClassify(SW_SLASH_R - 0.1, SCALE, wide, true, false, false, false, false));
         const wideL = sgn * (swLungeArc() + 0.05);
-        try std.testing.expectEqual(SwChoice.close, swClassify(SW_LUNGE_MIN + 0.1, SCALE, wideL, false, false, true, false, false));
+        try std.testing.expectEqual(SwChoice.close, swClassify(swNearR(SCALE) + 0.1, SCALE, wideL, false, false, true, false, false));
+    }
+    for ([_]f32{ wf.FOE_SCALE_LO * SCALE, SCALE, wf.FOE_SCALE_HI * SCALE }) |scale| {
+        const near = swNearR(scale);
+        const far = foe.triggerBand(SW_LUNGE_MAX, SCALE, scale);
+        try std.testing.expect(near < far);
+        try std.testing.expect(near > foe.triggerBand(SW_SLASH_R, SCALE, scale));
+        var s: f32 = 0;
+        while (s <= far) : (s += 0.05) {
+            try std.testing.expect(swClassify(s, scale, 0, true, true, true, false, false) != .hold);
+        }
+        std.debug.print("\n  sword x{d:.2}: slash to {d:.2}, lunge {d:.2}-{d:.2} ({d:.2} m of band)\n", .{
+            scale, foe.triggerBand(SW_SLASH_R, SCALE, scale), near, far, far - near,
+        });
     }
     std.debug.print("  sword: swings to {d:.1} m inside {d:.0} deg, lunges {d:.1}..{d:.1} inside {d:.0} deg, overhead to {d:.1} m on a {d:.2} s tell\n", .{
         SW_SLASH_R, mathx.degrees(swSlashArc()), SW_LUNGE_MIN, SW_LUNGE_MAX, mathx.degrees(swLungeArc()), SW_HEAVY_R, SW_HEAVY_WIND,

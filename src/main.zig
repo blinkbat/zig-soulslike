@@ -195,8 +195,7 @@ fn runExplode(alloc: std.mem.Allocator, path: []const u8) !void {
     if (e.propCount() != props0 or e.solidCount() != solids0 or e.lightCount() != lights0) return error.MapMoved;
 }
 
-/// Rock thinner than this over a ceiling is not a roof, and what is under it is a crater with a lid.
-const CAVE_ROOF_MIN: f32 = 1.0;
+const CAVE_ROOF_MIN = caves.ROOF_MIN;
 /// How wide the passage this cuts is. The editor's is the brush radius, so this one has no counterpart there.
 const CAVE_PASSAGE_R: f32 = 2.6;
 const CAVE_GRADE = caves.ENTRANCE_GRADE;
@@ -307,8 +306,7 @@ fn runFixCaves(alloc: std.mem.Allocator, path: []const u8, write: bool) !void {
             const ix = i % caves.N;
             const iz = i / caves.N;
             const floor = wf.heightOf(m.caveFloor[i]);
-            const dirs = [4][2]i32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } };
-            for (dirs) |d| {
+            for (caves.STEP4) |d| {
                 const nx = @as(i32, @intCast(ix)) + d[0];
                 const nz = @as(i32, @intCast(iz)) + d[1];
                 if (nx < 0 or nz < 0 or nx >= caves.N or nz >= caves.N) continue;

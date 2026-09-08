@@ -5084,7 +5084,7 @@ fn editorShots(g: *Game) void {
     g.editor.yaw = std.math.pi;
     g.editor.dist = 40;
     g.editor.applyCamForShot();
-    g.editor.selectForShot(&g.map, mathx.ground(-20, -30), mathx.ground(20, 6));
+    g.editor.selectForShot(&g.map, &g.env, mathx.ground(-20, -30), mathx.ground(20, 6));
     editorSnap(g, "shots/99_editor_marquee.png");
 
     g.editor.openForShot();

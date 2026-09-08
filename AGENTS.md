@@ -1165,7 +1165,9 @@ Conditions: `always`, `never`, `flag N=0|1`, `counter N <cmp> n`, `timer N=done|
   a creature the palette was not showing. The eraser is in every tab, and the tab moves to the armed brush on
   entry, never the brush to the tab.
 - **THE CRIB NAMES EVERY GESTURE, OR THE VERB DOES NOT EXIST** (`editor.CRIBS`, widest-that-fits) — it named eight
-  while the editor bound twenty-five. **The EDITOR is the one place the UI names KEYS.**
+  while the editor bound twenty-five. **The EDITOR is the one place the UI names KEYS.** The Caves layer has its
+  own list (`CAVE_CRIBS`), because its verbs are an ORDER and not a keyboard. A brush LABEL may put a space where
+  its enum tag has an underscore ("Roof up" is `roof_up`) and `pinNames` allows exactly that and nothing else.
 - **EVERY REGION IS SELECTED, MOVED, RESIZED AND NAMED THE SAME WAY** (`Grab`, `pickRegion`, `dragRegion`) — one
   union rather than a flag per kind, handles drawn as posts, banked on the first frame a drag moves something so a
   plain selection click leaves no undo step.
@@ -1496,13 +1498,51 @@ representable; that needs a different representation, not another brush.
   `--fix-caves <map>` drops every point under `CAVE_ROOF_MIN` of rock, keeps the largest chamber a body can walk
   end to end (four-connected, neighbours within `STEP_UP`), cuts ONE entrance to the nearest open ground on the
   Entrance tool's own grade, and walks it before it writes — dry run unless `--write`.
-- **Authoring one** (Caves layer): set FLOOR and HEADROOM, then Carve under a hill — the cursor rides the floor
-  plane, not the hill, or it would climb the very rock you are carving under. Drag Entrance from open ground
-  toward it. Fill puts rock back. Cutaway takes the hill off every chamber and that viewing choice FOLLOWS YOU
-  into Props and Units, so a chamber can be furnished without the roof coming back on; a body placed in that view
-  is marked `under`. F5 starts on the chamber floor under the editor camera. The panel says how much rock is over
-  the ceiling and refuses to pretend a hill 2 m thick can roof a 3 m room. Bench: `worlds/test_caves.world`,
-  authored by `caves.bench`.
+- **THE CUTAWAY IS SET WITH THE WORLD IT IS OF** (`Env.setCutaway`, never the bare flag) — `env.bodyDrawn` is the
+  ONE gate every body answers, so a foe, a folk or a chest standing on the land over an excavated cell is left out
+  with its shadow the way `Env.floats` left out a prop. A tile's cliff plates get a second model with the ones over
+  a chamber dropped (`cutFaces`/`cutFaceCut`); a tile whose every plate is over one draws none.
+- **THE EDITOR WORKS ON ONE LEVEL AT A TIME** (`Editor.under`, the bar's Surface/Underground button, `U`) —
+  Underground takes the hill off every chamber (`Env.cutaway`), the cursor lands on the chamber floor through the
+  hole (`caves.pickUnder`: the land where it still stands, the floor where it does not, rock met from inside a
+  chamber is a wall), what is placed there is marked `under`, gizmos project onto the body's OWN level, picking
+  and hover answer only what the level shows (`onLevel`), and a surface prop standing over an open cell is not
+  drawn (`Prop.under`, `Env.floats`). The Caves layer turns the level on and nothing turns it off but him.
+- **THE CAVES LAYER'S CURSOR RIDES THE LAND, CUT AWAY OR NOT** — the brush follows the hill a chamber goes under
+  and does not fall into the hole it has just opened. Solved on a floor PLANE it aimed metres past the mouse
+  (the plane sat 3–11 m under the hill), and riding the drawn surface it jumped the moment a stroke cut the hill.
+- **UNDERGROUND, THE GROUND LAYER SHAPES THE CHAMBER FLOOR** (`caves.sculpt`) — Raise/Lower/Smooth/Flat only
+  (`brushShown` hides the rest: soil, liquid and cliff are the land's fields), a point is never lifted to within
+  `HEAD_MIN` of its own roof, smooth reads open neighbours only, and Carve over a shaped floor SETS it again.
+- **UNDERGROUND, THE GROUND LAYER ALSO WORKS THE CEILING** (`caves.sculptRoof`, Roof up / Roof down) — headroom
+  was set at carve time and only a re-carve could change it. The roof never comes down inside `HEAD_MIN` of its
+  own floor and never goes up inside `ROOF_MIN` of the hill, so neither stroke can shut a passage or open a
+  crater; a roof the hill has already thinned past that is left where it is rather than dragged down by the cap.
+- **A CARVE IS NOT A CAVE UNTIL SOMETHING CAN GET INTO IT** (`caves.reachOut`, `Editor.surveyCaves`) — the
+  `--fix-caves` walk, flooded from EVERY mouth at once and asked at REBUILD, not per frame (930 us over 638,401
+  points). The panel says walkable / SEALED, and `Reach.stranded` counts chambers that are open and unreachable.
+- **THE PREVIEW WEARS THE PANEL'S VERDICT** (`carveTint`, depth test OFF) — teal roofed, amber too thin, red open
+  to the sky, on the floor and roof rings AND on the words, because the point is the box under a hill that is
+  still standing in front of it. An Entrance drag draws its own grade, rings where the hill opens, and goes red
+  across any stretch meeting a chamber more than `STEP_UP` over its floor: the failure is fixed by starting FURTHER OUT.
+- **A CARVE SOLVES ITS OWN FLOOR** (`Editor.autoFitFloor`, on by default) — asked ONCE at the click, because the
+  floor is pinned for the whole stroke, and only where the hill there cannot roof the stepper's number.
+- **THE LEVEL AT THE DESTINATION DECIDES `under`, NEVER THE SOURCE'S FLAG** — paste, duplicate and move all
+  re-derive it through `underAt`. Carried over, a surface prop duplicated across a chamber lands on the hill and
+  `Env.floats` does not draw it. The right-click menu flips one in place, and refuses Underground where nothing is hollow.
+- **A PLACEMENT WHOSE CHAMBER WAS FILLED IN IS DRAWN IN THE REMOVAL COLOUR** — `caves.homeY` stands it back on the
+  land without a word, so the only way it ever showed was by playing the map and finding it on a hillside.
+- **`foe.bulkOf` IS THE ROOM A POSTED BODY TAKES**, measured off its own rig at the pose it is POSTED in — pinned
+  in `game.zig` by spawning one of every kind through the real group reset over six seeds. Re-scale a rig and that
+  test reds; nothing else would. The editor refuses an underground post through `caves.roomAt` and says both numbers.
+- **THE EYE RIDES THE LEVEL'S FLOOR** (`applyCam` reads `levelHeight`) so you can orbit inside a carve; `I` /
+  Look inside puts it on the chamber floor at head height looking DOWN THE PASSAGE — across the coverage
+  gradient, because the air thins toward the walls and never along the way out.
+- **Authoring one**: Caves layer, set HEADROOM, press Fit (`caves.fitFloor`: the floor that leaves `ROOF_MIN` of
+  rock under the ground at the cursor) or Sample a chamber, Carve, drag Entrance in from open ground, Fill puts
+  rock back. The panel says what a carve HERE keeps overhead before it is made. Then Props/Units on the same
+  level to furnish, Ground to shape the floor and its roof, F5 to stand on it (a post at the camera target says
+  where). Bench: `worlds/test_caves.world`, authored by `caves.bench`.
 
 ### Arenas, fog gates and the spar
 

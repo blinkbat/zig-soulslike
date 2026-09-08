@@ -127,7 +127,7 @@ pub const Routine = struct {
                 self.up[self.nup - 1] = .{ .script = f.script, .call = f.call, .left = f.left - 1 };
                 self.script = f.script[f.call].run.script;
                 self.i = 0;
-                return;
+                return self.enterRuns();
             }
             self.nup -= 1;
             self.script = f.script;

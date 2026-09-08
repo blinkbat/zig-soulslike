@@ -438,11 +438,7 @@ pub const Rooted = struct {
         if (!foe.caught(self, reach, self.toImpact(), touching)) return false;
         self.cds[self.atk] = self.move().cd;
         self.dealt = true;
-        switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(),
-            .heavy => self.enterStun(.stunheavy),
-            .light, .none => self.enterStun(.stunlight),
-        }
+        self.enterStun(if (foe.parryBroke(self)) .stunheavy else .stunlight);
         return true;
     }
 

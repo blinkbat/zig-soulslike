@@ -964,11 +964,7 @@ pub const Warrior = struct {
         self.cds[self.atk] = self.move().cd;
         self.sparks(self.wpnHere()[1], mathx.dirXZ(self.pos, self.parry.at), 16);
         sfx.world(.bone_hurt, self.pos);
-        switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(),
-            .heavy => self.enterStun(.stunheavy),
-            .light, .none => self.enterStun(.stunlight),
-        }
+        self.enterStun(if (foe.parryBroke(self)) .stunheavy else .stunlight);
     }
 
     fn tryReach(self: *Warrior, hero: rl.Vector3) void {

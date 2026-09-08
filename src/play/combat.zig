@@ -387,8 +387,14 @@ pub const Vitals = struct {
     pub fn refuseFlinch(self: *Vitals, poiseWas: f32) void {
         self.poise = poiseWas;
         self.stance = mathx.minF(self.stanceMax, self.stance + self.breakShare * self.stanceMax);
+        // `strike` charged the wear on whichever channel broke and `beginStun` recorded which that was, so hand THAT one back.
+        const charged = self.stunAs;
         self.beginStun(.none);
-        if (self.lightWear >= 1) self.lightWear -= 1;
+        switch (charged) {
+            .heavy => self.heavyWear = mathx.maxF(0, self.heavyWear - 1),
+            .light => self.lightWear = mathx.maxF(0, self.lightWear - 1),
+            .none => {},
+        }
     }
 
     pub fn hpFrac(self: *const Vitals) f32 {
@@ -2736,4 +2742,15 @@ test "A REFUSED FLINCH HANDS BACK WHATEVER THE SHARE WAS, not a global 0.40" {
     try std.testing.expectApproxEqAbs(v.stanceMax * (1.0 - 0.10), v.stance, 1e-4);
     v.refuseFlinch(was);
     try std.testing.expectApproxEqAbs(v.stanceMax, v.stance, 1e-4);
+}
+
+test "A REFUSED FLINCH HANDS BACK THE CHANNEL THAT BROKE — a floored heavy is not a light" {
+    var v = Vitals.initFoe(4000, 4, 40);
+    v.lightWear = 1;
+    const was = v.poise;
+    try std.testing.expectEqual(HitResult.heavy, v.hit(.{ .dmg = 6, .stance = 999 }));
+    try std.testing.expectApproxEqAbs(@as(f32, 1), v.heavyWear, 1e-6);
+    v.refuseFlinch(was);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), v.heavyWear, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), v.lightWear, 1e-6);
 }

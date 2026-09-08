@@ -609,11 +609,7 @@ pub const Kobold = struct {
         const touching = !self.dealt and self.hurtOpen() and self.weaponTouches(self.parry.at);
         if (!foe.caught(self, self.hurtReach(), self.toImpact(), touching)) return;
         if (self.state == .bite) self.biteCd = BITE_CD;
-        switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(),
-            .heavy => self.enterStun(.stunheavy),
-            .light, .none => self.enterStun(.stunlight),
-        }
+        self.enterStun(if (foe.parryBroke(self)) .stunheavy else .stunlight);
     }
 
     /// THE BERSERKER RUNS. At `WALK_SPEED * 1.22` he closed at 2.07 m/s against a shieldman charging at 2.92 and a greatsword at 2.52. `warrior.approachSpeed`'s shape: run at distance, walk the last stride in.

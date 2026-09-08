@@ -18413,10 +18413,8 @@ foe: greatsword -122.35 -115.85 0.0 1.00 0.78
 foe: shade -122.50 -119.65 0.0 1.00 0.15
 foe: shade -120.54 -118.29 0.0 1.00 0.52
 foe: archer -124.02 -118.28 0.0 1.00 0.89
-foe: fungal_deer -173.67 -83.02 0.0 1.00 0.26
 foe: fungal_deer -183.02 -116.63 0.0 1.00 0.63
 foe: mushroom_mage -204.43 -103.12 0.0 1.00 0.37
-foe: mushroom_mage -208.35 -102.37 0.0 1.00 0.74
 foe: mushroom_mage -172.45 -81.49 0.0 1.00 0.11
 foe: mushroom_mage -182.42 -118.02 0.0 1.00 0.48
 foe: shroom -187.08 -101.98 0.0 1.00 0.85
@@ -18429,7 +18427,6 @@ foe: shroom -211.27 -75.33 0.0 1.00 0.07
 foe: shroom -170.25 -88.71 0.0 1.00 0.44
 foe: shroom -165.47 -112.10 0.0 1.00 0.81
 foe: shroom -206.22 -102.64 0.0 1.00 0.44
-foe: shroom -202.48 -103.30 0.0 1.00 0.81
 foe: shroom -203.54 -102.32 0.0 1.00 0.18
 foe: spore_golem -220.53 -92.76 0.0 1.00 0.55
 foe: spore_golem -218.19 -58.37 0.0 1.00 0.92
@@ -18554,6 +18551,48 @@ foe: leechfly -36.70 55.27 0.0 1.00 0.21 ai=roam
 foe: leechfly -21.22 70.38 0.0 1.00 0.58 ai=roam
 foe: corrupt_ent -120.66 -36.49 0.0 1.00 0.95 ai=roam
 foe: fen_lurker -35.27 114.53 0.0 1.00 0.32
+foe: spore_golem -172.01 -46.22 105.0 1.00 0.69 ai=roam
+foe: spore_golem -172.56 -38.83 150.0 1.00 0.06 ai=roam
+foe: bone_mimic -155.99 -36.01 240.0 1.00 0.43
+foe: shroom -155.32 -38.86 0.0 1.00 0.80
+foe: shroom -156.32 -40.56 0.0 1.00 0.17
+foe: shroom -157.97 -38.07 0.0 1.00 0.54
+foe: mushroom_mage -239.77 -112.91 0.0 1.00 0.80
+foe: mushroom_mage -238.69 -114.51 0.0 1.00 0.17
+foe: shroom -237.95 -113.36 0.0 1.00 0.54
+foe: shroom -242.33 -111.93 0.0 1.00 0.91
+foe: shroom -237.14 -115.41 0.0 1.00 0.28
+foe: shroom -229.31 -97.13 0.0 1.00 0.65
+foe: shroom -230.63 -130.35 0.0 1.00 0.02
+foe: shroom -212.82 -152.27 0.0 1.00 0.39
+foe: shroom -213.83 -153.55 0.0 1.00 0.76
+foe: shroom -212.14 -154.27 0.0 1.00 0.13
+foe: fungal_magus -212.11 -165.12 0.0 1.00 0.50
+foe: fungal_magus -221.27 -57.90 0.0 1.00 0.87
+foe: fungal_magus -206.53 -45.82 0.0 1.00 0.24
+foe: shroom -226.40 -42.43 0.0 1.00 0.61
+foe: shroom -213.61 -24.37 0.0 1.00 0.98
+foe: shroom -199.84 -60.54 0.0 1.00 0.35
+foe: shroom -183.00 -58.94 0.0 1.00 0.72
+foe: ancient_priest -214.30 174.77 165.0 1.00 0.09
+foe: ancient_priest -218.34 174.71 195.0 1.00 0.46
+foe: mastodon -270.54 211.44 0.0 1.00 0.83 ai=roam
+foe: mastodon -274.45 209.14 0.0 1.00 0.20 ai=roam
+foe: mastodon -178.48 265.02 0.0 1.00 0.57 ai=roam
+foe: ogre -185.99 189.38 0.0 1.00 0.94
+foe: cinder_wake -183.82 188.02 0.0 1.00 0.31
+foe: cinder_wake -185.77 186.83 0.0 1.00 0.68
+foe: cinder_wake -188.81 188.17 0.0 1.00 0.05
+foe: cinder_wake -230.61 123.83 0.0 1.00 0.42
+foe: cinder_wake -232.41 123.98 0.0 1.00 0.79
+foe: cinder_wake -240.42 174.49 0.0 1.00 0.16
+foe: cinder_wake -241.84 175.37 0.0 1.00 0.53
+foe: cinder_wake -233.59 217.98 0.0 1.00 0.90
+foe: cinder_wake -232.03 220.05 0.0 1.00 0.27
+foe: cinder_wake -203.23 232.90 0.0 1.00 0.64
+foe: cinder_wake -205.26 233.60 0.0 1.00 0.01
+foe: cinder_wake -165.62 226.86 0.0 1.00 0.38
+foe: cinder_wake -162.19 227.63 0.0 1.00 0.75
 
 flags: met_wanderer heard_of_gate
 

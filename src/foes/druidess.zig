@@ -889,11 +889,7 @@ pub const Druidess = struct {
         self.heroLatch = true;
         self.chips(self.clawWorld(), mathx.dirXZ(self.pos, self.parry.at), 9, 2.8);
         sfx.world(.druid_hurt, self.pos);
-        switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(),
-            .heavy => self.enterStun(.stunheavy),
-            .light, .none => self.enterStun(.stunlight),
-        }
+        self.enterStun(if (foe.parryBroke(self)) .stunheavy else .stunlight);
     }
 
     /// A FRONTAL ANIMATION BILLS A FRONTAL CONE, once, from the frame the hand actually arrives.

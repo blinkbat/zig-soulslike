@@ -4906,6 +4906,8 @@ fn drawWeatherOverlay(g: *Game) void {
 pub fn drawScene(g: *Game) void {
     g.env.resetStats();
     applyStow(g);
+    // The cutaway is the editor's view of its level and nobody else's: left set, an F5 from Underground played with the hill off.
+    envmod.Env.setCutaway(g.editor.on and g.editor.under, &g.env);
     const cam = sceneCam(g);
     foemod.setLens(cam.position, mathx.normV(mathx.subV(cam.target, cam.position)));
     // Eye AND target on the lens is the "no occlusion" idiom (`markOccluders` returns on a zero-length look, easing every fade back to opaque).
@@ -5401,7 +5403,7 @@ pub fn run(mode: Mode) void {
                     rl.hideCursor();
                     armScript(g);
                     g.hero.pos = mathx.ground(g.editor.cam.target.x, g.editor.cam.target.z);
-                    if (g.editor.caveView) {
+                    if (g.editor.under) {
                         if (g.env.caveStandAt(g.hero.pos.x, g.hero.pos.z)) |y| g.hero.pos.y = y;
                     }
                     plantActor(g, &g.hero.pos);
@@ -7322,4 +7324,61 @@ test "THE TITLE TRACK SWELLS IN AND IS GONE BEFORE THE WORLD IS — both ends of
     try std.testing.expect(quick < INTRO_FADE_OUT);
     try std.testing.expectEqual(@as(f32, 0), k);
     std.debug.print("  title track: {d:.1} s in, {d:.1} s out, {d:.2} s out from one second in\n", .{ t, out, quick });
+}
+
+test "EVERY KIND'S POSTED BULK IS ITS OWN RIG'S (`foe.bulkOf`) - one body of each, spawned through the real group reset" {
+    const alloc = std.testing.allocator;
+    const m = try alloc.create(worldfmt.Map);
+    defer alloc.destroy(m);
+    m.* = .{};
+    m.nfoes = 1;
+    var tallest: f32 = 0;
+    var tallName: [:0]const u8 = "";
+    var widest: f32 = 0;
+    var wideName: [:0]const u8 = "";
+    var worst: f32 = 0;
+    for (0..worldfmt.NFOE) |ki| {
+        const k: FoeKind = @enumFromInt(ki);
+        var tall: f32 = 0;
+        var girth: f32 = 0;
+        for ([_]f32{ 0.0, 0.17, 0.3, 0.55, 0.83, 0.99 }) |sd| {
+            m.foes[0] = .{ .kind = k, .x = 0, .z = 0, .yaw = 0, .scale = 1, .seed = sd };
+            inline for (FOE_GROUPS) |gr| {
+                const G = @FieldType(Game, gr.field);
+                const grp = try alloc.create(G);
+                defer alloc.destroy(grp);
+                grp.reset(m);
+                for (grp.liveConst()) |*b| {
+                    tall = @max(tall, statureOf(b));
+                    girth = @max(girth, bodyRadiusOf(b));
+                }
+                if (comptime @hasDecl(G, "liveExtraConst")) {
+                    for (grp.liveExtraConst()) |*b| {
+                        tall = @max(tall, statureOf(b));
+                        girth = @max(girth, bodyRadiusOf(b));
+                    }
+                }
+            }
+        }
+        const bulk = foemod.bulkOf(k);
+        if (@abs(bulk.tall - tall) > foemod.BULK_TOL or @abs(bulk.girth - girth) > foemod.BULK_TOL) {
+            std.debug.print("\n  {s}: table {d:.2}x{d:.2}, rig measures {d:.2}x{d:.2}\n", .{ worldfmt.foeName(k), bulk.tall, bulk.girth, tall, girth });
+        }
+        worst = @max(worst, @max(@abs(bulk.tall - tall), @abs(bulk.girth - girth)));
+        try std.testing.expectApproxEqAbs(tall, bulk.tall, foemod.BULK_TOL);
+        try std.testing.expectApproxEqAbs(girth, bulk.girth, foemod.BULK_TOL);
+        if (tall > tallest) {
+            tallest = tall;
+            tallName = worldfmt.foeName(k);
+        }
+        if (girth > widest) {
+            widest = girth;
+            wideName = worldfmt.foeName(k);
+        }
+    }
+    std.debug.print("\n  posted bulk: tallest {s} at {d:.2} m, widest {s} at {d:.2} m; worst table error {d:.3} m over {d} kinds\n", .{
+        tallName, tallest, wideName, widest, worst, worldfmt.NFOE,
+    });
+    // A passage may not be given less headroom than `HEAD_MIN`, so anything at or under it never needs asking about.
+    try std.testing.expect(tallest > caves.HEAD_MIN);
 }

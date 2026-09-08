@@ -371,11 +371,7 @@ pub const Frog = struct {
         self.lungeCd = LUNGE_CD;
         self.dustBurst(self.pos, 14, 2.2, 0.20);
         sfx.world(.toad_hurt, self.pos);
-        switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(),
-            .heavy => self.enterStun(.stunheavy),
-            .light, .none => self.enterStun(.stunlight),
-        }
+        self.enterStun(if (foe.parryBroke(self)) .stunheavy else .stunlight);
     }
     fn enterDeath(self: *Frog) void {
         self.state = .dead;

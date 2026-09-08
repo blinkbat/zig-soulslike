@@ -1566,11 +1566,7 @@ pub const Spider = struct {
         if (!foe.caught(self, reach, self.toImpact(), null)) return;
         self.biteCd = BITE_CD;
         sfx.world(.spider_hurt, self.pos);
-        switch (self.vit.hit(combat.PARRY_HIT)) {
-            .death => self.enterDeath(),
-            .heavy => self.enter(.stunheavy),
-            .light, .none => self.enter(.stunlight),
-        }
+        self.enter(if (foe.parryBroke(self)) .stunheavy else .stunlight);
     }
 
         /// The fangs are at the FRONT: a man who got round behind her through the windup is not bitten.

@@ -99,6 +99,8 @@ const SWIPE_R: f32 = 3.50;
 const SWIPE_ARC: f32 = 150.0;
 /// Where the sector sits relative to facing, in the swinging hand's own sign: the bough finishes across the body.
 const SWIPE_ARC_MID: f32 = -46.0;
+/// The parry cone. Wide, because the sector it has to cover runs from `SWIPE_ARC_MID - SWIPE_ARC/2` to `+SWIPE_ARC/2`.
+const SWIPE_FRONT_DOT: f32 = -0.2;
 const SWIPE_WIND: f32 = 0.72;
 const SWIPE_STRIKE: f32 = 0.24;
 const SWIPE_IMPACT_K: f32 = 0.60;
@@ -453,7 +455,7 @@ pub const Ent = struct {
         if (self.impactAt()) |at| {
             const c = self.clock().?;
             const until: ?f32 = if (self.sweeping()) at - self.t else null;
-            if (foe.catchMelee(self, self.swipeReach(), -0.2, until)) {
+            if (foe.catchMelee(self, self.swipeReach(), SWIPE_FRONT_DOT, until)) {
                 self.chips(foe.markOn(self.xf[if (self.hand > 0) WRR else WRL], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), PARRY_CHIPS);
             } else if (self.state == .shake) {
                 if (self.crossed(at, dt)) self.letGo(quarry);
@@ -502,11 +504,11 @@ pub const Ent = struct {
             const a = std.math.tau * fi / @as(f32, ACORNS) + self.aiRng.signed() * 0.35;
             const out = if (i == 0) 0.0 else self.aiRng.range(0.40, 1.0) * ACORN_SCATTER;
             const bough = self.aiRng.angle();
-            const lift = self.aiRng.range(0.02, 0.10) * H * self.scale;
+            const lift = self.aiRng.range(0.02, 0.10) * H;
             self.tosses[i] = .{
                 .from = foe.markOn(crown, v3(
                     mathx.cosf(bough) * 0.09 * H,
-                    0.05 * H + lift / mathx.maxF(self.scale, 1e-3),
+                    0.05 * H + lift,
                     mathx.sinf(bough) * 0.09 * H,
                 )),
                 .at = v3(quarry.x + mathx.cosf(a) * out, quarry.y + 0.30, quarry.z + mathx.sinf(a) * out),

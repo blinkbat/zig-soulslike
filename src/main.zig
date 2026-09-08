@@ -222,8 +222,8 @@ fn caveStat(m: *const wf.Map) CaveStat {
             const i = iz * caves.N + ix;
             if (m.caveCov[i] < wf.CAVE_EDGE) continue;
             const p = caves.pointAt(m.half, ix, iz);
-            const floor = wf.heightOf(m.caveFloor[i]);
-            const roof = wf.heightOf(m.caveRoof[i]);
+            const floor = wf.caveH(m.caveFloor[i]);
+            const roof = wf.caveH(m.caveRoof[i]);
             const cover = m.heightAt(p[0], p[1]) - roof;
             s.n += 1;
             if (cover <= 0) s.open += 1;
@@ -250,8 +250,8 @@ fn caveSay(tag: []const u8, s: CaveStat) void {
 
 fn caveFill(m: *wf.Map, i: usize) void {
     m.caveCov[i] = 0;
-    m.caveFloor[i] = wf.HEIGHT_ZERO;
-    m.caveRoof[i] = wf.HEIGHT_ZERO;
+    m.caveFloor[i] = wf.CAVE_H_ZERO;
+    m.caveRoof[i] = wf.CAVE_H_ZERO;
 }
 
 /// DEV ONLY: repair a hand-painted cave layer. A carve made with the floor plane left up at the hilltop lays a chamber in
@@ -274,7 +274,7 @@ fn runFixCaves(alloc: std.mem.Allocator, path: []const u8, write: bool) !void {
             const i = iz * caves.N + ix;
             if (m.caveCov[i] < wf.CAVE_EDGE) continue;
             const p = caves.pointAt(m.half, ix, iz);
-            if (m.heightAt(p[0], p[1]) - wf.heightOf(m.caveRoof[i]) >= CAVE_ROOF_MIN) continue;
+            if (m.heightAt(p[0], p[1]) - wf.caveH(m.caveRoof[i]) >= CAVE_ROOF_MIN) continue;
             caveFill(m, i);
             dropped += 1;
         }
@@ -305,14 +305,14 @@ fn runFixCaves(alloc: std.mem.Allocator, path: []const u8, write: bool) !void {
             n += 1;
             const ix = i % caves.N;
             const iz = i / caves.N;
-            const floor = wf.heightOf(m.caveFloor[i]);
+            const floor = wf.caveH(m.caveFloor[i]);
             for (caves.STEP4) |d| {
                 const nx = @as(i32, @intCast(ix)) + d[0];
                 const nz = @as(i32, @intCast(iz)) + d[1];
                 if (nx < 0 or nz < 0 or nx >= caves.N or nz >= caves.N) continue;
                 const j = @as(usize, @intCast(nz)) * caves.N + @as(usize, @intCast(nx));
                 if (m.caveCov[j] < wf.CAVE_EDGE or mark[j] != 0) continue;
-                if (@abs(wf.heightOf(m.caveFloor[j]) - floor) > wf.STEP_UP) continue;
+                if (@abs(wf.caveH(m.caveFloor[j]) - floor) > wf.STEP_UP) continue;
                 mark[j] = tag;
                 stack[top] = @intCast(j);
                 top += 1;
@@ -342,12 +342,12 @@ fn runFixCaves(alloc: std.mem.Allocator, path: []const u8, write: bool) !void {
             const i = iz * caves.N + ix;
             if (mark[i] != bestTag or m.caveCov[i] < wf.CAVE_EDGE) continue;
             const p = caves.pointAt(m.half, ix, iz);
-            const roof = wf.heightOf(m.caveRoof[i]);
+            const roof = wf.caveH(m.caveRoof[i]);
             const cover = m.heightAt(p[0], p[1]) - roof;
             if (cover <= deepCover) continue;
             deepCover = cover;
             deep = p;
-            deepFloor = wf.heightOf(m.caveFloor[i]);
+            deepFloor = wf.caveH(m.caveFloor[i]);
             deepHead = roof - deepFloor;
         }
     }
@@ -475,13 +475,13 @@ fn runGrow(alloc: std.mem.Allocator, path: []const u8, want: f32, write: bool) !
         .{ .dst = &m.water, .src = &src.water, .n = wf.WATER_N, .kind = .cell, .smooth = true },
         .{ .dst = &m.waterEdge, .src = &src.waterEdge, .n = wf.WATER_N, .kind = .cell, .smooth = false },
         .{ .dst = &m.waterKind, .src = &src.waterKind, .n = wf.WATER_N, .kind = .cell, .smooth = false },
-        .{ .dst = &m.height, .src = &src.height, .n = wf.HEIGHT_N, .kind = .point, .smooth = true },
         .{ .dst = &m.cliff, .src = &src.cliff, .n = wf.HEIGHT_N, .kind = .point, .smooth = false },
         .{ .dst = &m.caveCov, .src = &src.caveCov, .n = wf.CAVE_N, .kind = .point, .smooth = true },
         .{ .dst = &m.caveFloor, .src = &src.caveFloor, .n = wf.CAVE_N, .kind = .point, .smooth = false },
         .{ .dst = &m.caveRoof, .src = &src.caveRoof, .n = wf.CAVE_N, .kind = .point, .smooth = false },
     };
-    for (grids) |g| wf.regrid(g.dst, g.n, half, g.src, g.n, was, g.kind, g.smooth);
+    for (grids) |g| wf.regrid(u8, g.dst, g.n, half, g.src, g.n, was, g.kind, g.smooth);
+    wf.regrid(wf.Hgt, &m.height, wf.HEIGHT_N, half, &src.height, wf.HEIGHT_N, was, .point, true);
         // The rim is CARRIED OUTWARD, so the margin repeats whatever the old edge held. Water and cave out there would be a moat and a tunnel nobody authored.
     var wetted: usize = 0;
     const wcell = 2 * half / @as(f32, @floatFromInt(wf.WATER_N));
@@ -604,6 +604,7 @@ test {
     _ = @import("gfx/gfx.zig");
     _ = @import("world/daynight.zig");
     _ = @import("world/env.zig");
+    _ = @import("world/cliffseat.zig");
     _ = @import("props/props.zig");
     _ = @import("world/worldfmt.zig");
     _ = @import("world/caves.zig");

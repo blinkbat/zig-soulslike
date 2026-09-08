@@ -302,6 +302,26 @@ pub fn wrapDeg(a: f32) f32 {
     return degrees(wrapPi(radians(a)));
 }
 
+/// ONE TURN, [0, 360) — in degrees the whole way, because the radian round-trip `wrapDeg` takes puts float noise on
+/// a yaw the editor writes to a text file. `@mod` is the floored modulus over a positive divisor, so it already answers
+/// inside the turn for a negative angle.
+pub fn wrapDeg360(a: f32) f32 {
+    if (!std.math.isFinite(a)) return 0;
+    return @mod(a, 360.0);
+}
+
+test "ONE TURN, AND THE DEGREES COME BACK EXACT" {
+    for ([_][2]f32{
+        .{ 0, 0 },      .{ 15, 15 },  .{ 180, 180 },
+        .{ -15, 345 },  .{ 360, 0 },  .{ 450, 90 },
+        .{ 720, 0 },    .{ -370, 350 },
+    }) |row| {
+        try std.testing.expectEqual(row[1], wrapDeg360(row[0]));
+    }
+    try std.testing.expectEqual(@as(f32, 0), wrapDeg360(std.math.inf(f32)));
+    try std.testing.expectEqual(@as(f32, 0), wrapDeg360(std.math.nan(f32)));
+}
+
 pub fn approachAngle(cur: f32, target: f32, maxStep: f32) f32 {
     const d = wrapPi(target - cur);
     if (@abs(d) <= maxStep) return target;

@@ -130,7 +130,7 @@ const CAVE_GLSL = std.fmt.comptimePrint(
     .{
         caves.SHELTER_LID,
         caves.SHELTER_CONTOUR,
-        @as(f32, @floatFromInt(wf.HEIGHT_ZERO)),
+        @as(f32, @floatFromInt(wf.CAVE_H_ZERO)),
         wf.HEIGHT_STEP,
     },
 );

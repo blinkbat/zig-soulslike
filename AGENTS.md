@@ -1156,6 +1156,22 @@ Conditions: `always`, `never`, `flag N=0|1`, `counter N <cmp> n`, `timer N=done|
 
 **The editor.**
 
+- **EVERY NUMBER IS A TRACK AND A CLICKER, AND THEY ARE ONE WIDGET** (`ui.stepperF`/`stepperI`/`slider` all reach
+  `ui.gauge`) — one `ui.ROW_H` row: the label rides a bar that sweeps the whole range, the `-`/`+` beside it walk
+  one `step`, and a swept value lands on the same lattice a clicked one does. A click alone never moves it
+  (`ui.DRAG_PX`), because the label sits on the bar. **AN ANGLE TAKES `ui.angleF`** — one turn, wrapping — never a
+  stepper over `-360..720`, which is a track nobody can aim. `ui.track` is the bar on its own, for a panel that
+  draws its own readout (`tuneui.dial`).
+- **EVERY PANEL EDIT BANKS ONCE A GESTURE, NEVER ONCE A CLICK** — `Editor.bankGesture` for a number,
+  `bankWorld`/`bankOpGesture` where the edit spans more than one record, and `bankTyping` for a name, which
+  answers on every frame the buffer differs from the record. A bare `bank` inside a widget's `if` fills a
+  24-slot ring with one rename. The gesture ends on `!ctx.down`, ONE place per panel.
+- **BOTH SIDE PANELS SCROLL** (`beginScroll`/`endScroll`) — the Ground layer alone lays out 1038 px of brush
+  strip in a 704 px panel and the last nine tools could not be clicked. A list inside one owns the wheel over it
+  (`ui.Ctx.wheelTaken`), and a scrolled panel scissors its POINTER as well as its drawing (`ui.Ctx.clip`), or the
+  rows above the top keep taking the clicks.
+- **THE UNITS LAYER MARKS BOTH KINDS IN ONE LIST** (`NPC_MARK`, a folk is its index past `wf.MAX_FOES`) — the
+  same address `hoverInLayer` uses. Marking creatures alone, the marquee still said "{d} selected".
 - **THE UNITS PALETTE IS TWO TABS AND THE FOES ARE FILED BY KINGDOM** (`editor.UnitTab`, `foe.homeOf`) — 41 icon
   rows in one column is 1220 px of list in a 738 px panel, so the bottom seventeen creatures could not be clicked
   at all. Foes / Folk, and under Foes a chip per `props.Biome` that holds one — the same axis the props are filed
@@ -1236,7 +1252,15 @@ Conditions: `always`, `never`, `flag N=0|1`, `counter N <cmp> n`, `timer N=done|
   `warp` metres from the coast you walk into. **Anything that reads the field for gameplay goes through
   `paintedDepth` or it is looking at the wrong line.**
 - **WATER IS PAINTED, ITS COAST DERIVED** — one bit per cell → a signed distance field (128 is the waterline). One
-  field, three effects; the sheet is ONE world-spanning quad.
+  field, three effects.
+- **EVERY BODY CARRIES ITS OWN LEVEL** (`Map.waterBase`, a `Hgt` per cell; `wlvl:` row, absent = the datum) — the
+  sheet stands `env.WATER_SKIM` (0.045 m) over it, and **EVERY READER ASKS `env.waterLevelAt`/`levelOf`**: the
+  depth bake, `wadeDepth`, the pool floor (`dwellerFloorAt`), the face's wet band. A cell painted onto a body takes
+  the body's base; the first cell of a new pond takes the ground under the brush. Ground > Level floods the
+  connected body under the click (`Map.levelBody`). **THE SHEET IS ONE FLAT STRIP PER RUN OF CELLS AT ONE LEVEL**
+  (`Env.sheetStrips`, rebuilt on every water upload) — two bodies at different levels meet at a step, never a
+  slope. The lurker's band (`foe.poolBand`) is read off the same depth, so raising a body over 1.37 m of water
+  drowns its lurker and the shipped-map test says so.
 - **FOUR LIQUIDS, ONE SHEET, ONE FIELD** (`wf.Liquid`) — water, oil, fungal, lava, one per cell off the same
   brush. **THE FOOTING IS WATER'S AND UNCHANGED FOR ALL FOUR**: same coast, same `paintedDepth`, same `WADE_MAX`,
   same `Gait` gate, same `avoid.water`. **Three things differ and only three** — the LOOK, the STATUS it soaks in,
@@ -1272,6 +1296,12 @@ A HEIGHTFIELD sculpted in Ground > Raise/Lower/Smooth/Flat, stored as one QUANTI
 (`HEIGHT_N`, `HEIGHT_STEP`, biased so `HEIGHT_ZERO` is the old flat ground) — quantised because the file is TEXT
 and the writer is a run-length encoder. The mesh is TILED, with normals from the FIELD so two tiles agree at their
 seam.
+
+- **A HEIGHT IS `wf.Hgt` (u16), −1024..+15359.75 m** — `version: 2`. A `version: 1` file's `hgt:` bytes are widened
+  onto `HEIGHT_ZERO` as they are read, so the shipped map loads unchanged; a 2 on a build that knows only 1 is a
+  LOAD ERROR, never a clamp. **THE CAVE FLOOR AND ROOF STAY ONE BYTE** (`CAVE_H_ZERO`, `caveH`/`caveByte`,
+  −16..+47.75 m): the roof is a GPU texture the shader decodes, so a chamber cannot be carved under land above
+  47.75 m. `heightByte` keeps its name and returns a `Hgt`.
 
 - **A FLAT MAP IS THE OLD WORLD, EXACTLY** — `heightAny` false means one world-spanning quad, `groundAt` returns
   `GROUND_Y`, and no `hgt:` record is written.
@@ -1390,6 +1420,20 @@ LOAD ERROR on a build that does not know it.
 - `worlds/test_cliff.world` is the bench: a 6 m mesa with a straight face, a ladder and a `stairflight`, a 4 m
   diagonal shelf, a painted stair terrace past `MAX_SLOPE`, and a flooded 3 m pit whose east wall is the wet face.
   `--shot-land` also walks him into the face and prints how far short of the cut the stamped stone stops him.
+- **A PLACED `cliff*` IS ONLY THE CLIFFSIDE — THE TERRAIN OWNS THE DROP AND THE TOP** (`world/cliffseat.zig`). Local
+  −z is its FRONT. Its seat plane is the deepest front over the face (`proprock.cliffSeatZ`), its lip the LOWEST
+  point of the skyline (`Masses.sky`; taller summits crest over), and the bar for "seated" is `HEIGHT_STEP` — the
+  finest gap the file can write. The editor's prop box goes GREEN/RED off `seatOf`, the status line prints the
+  metres, and Ground > Conform bends the land to the piece: two heights, one exact line, `CLIFF_FACE` on the cells
+  it crosses, then the piece walks ≤ half a cell onto the cut the lattice could actually draw. **A seated piece's
+  colliders are clipped at the cut** (`env.seatedPart`): nothing behind it, `h` capped at the lip, so the plateau
+  stays open, and **`faceStamp` puts no automatic stone where a placed piece already covers the cut**
+  (`cliffseat.covers`). **Ground > Plateau / Indent DRAG A RECTANGLE** whose inside goes to one level a
+  `cliffseat.rise(row, scale)` above or below the ground it started on — the piece's own `top`, FLOORED to
+  `HEIGHT_STEP`, so `over` is zero by construction — with `CLIFF_FACE` round the rim; the panel's six chips are the
+  only heights on offer and `Editor.cliffScale` is also the scale a stamped cliff piece takes. The rim lands half a
+  cell inside the drag, on the lattice's own line. `worlds/test_cliffseat.world` is the bench, written once by its
+  test if missing.
 - **THE SHIPPED MAP'S NORTH-WEST BASIN LIP IS ONE OF THESE** — terraced to two tiers, a **13.25 m** face past
   `FALL_DEATH`. Walking off it kills.
 
@@ -2024,6 +2068,10 @@ without asking. **THREE SLOTS**, `save1.dat`…`save3.dat`, each with a `save<n>
 
 - **THE FILE IS TEXT IN THE MAP'S OWN GRAMMAR** (`key: value`, `version:` first). Unknown key, bad version or
   another map's name are LOAD ERRORS — **a save is refused whole rather than applied in half.**
+- **A SLOT IS WRITTEN BESIDE ITSELF AND RENAMED OVER IT** (`worldfmt.save`'s rule, and this is the other file the
+  game writes): `createFile` truncates first, so a render that failed part-way took the save it was replacing.
+- **A FILE THAT WILL NOT PARSE IS NOT AN EMPTY SLOT** (`Shelf.unreadable`/`holds`) — read as empty it is offered
+  for a new game and overwritten, and nothing ever said it was there. The row says so, and DELETE still takes it.
 - **THE FIRE HE SAT AT IS WHERE HE COMES BACK, AND SO IS THE ONE HE LOADED AT** — `justEntered` stamps
   `hero.setSpawn` at the SEAT for the live session, and `save.scatter` takes the checkpoint off `at:`, the
   position IN THE FILE, because every write is inside the rest flow so a save's position IS a bonfire seat and a

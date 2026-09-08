@@ -66,10 +66,20 @@ fn dial(ctx: *ui.Ctx, x: i32, y: i32, w: i32, t: usize, r: usize, c: usize) bool
 
     const whole = ui.rect(x, y, w, ROW_H);
     ui.tipFor(ctx, whole, col.tip);
-    hud.mono(col.name, x, y + 4, hud.MONO, if (hit) ui.HOT else ui.LABEL);
 
     const bx = x + w - NUDGE_W * 2 - VAL_W;
     var moved = false;
+    // THE COLUMN'S OWN `lo`..`hi` AS A BAR: the readout beside it scrubs a step at a time, and a table of numbers
+    // whose only coarse gesture is 6 px a step is a table nobody sweeps.
+    const span = if (col.step > 0) col.hi - col.lo else 0;
+    const frac = if (span > 0) mathx.clampF((v - col.lo) / span, 0, 1) else 0;
+    if (ui.track(ctx, ui.rect(x, y, @max(bx - 6 - x, 0), ROW_H - 2), col.name, if (hit) ui.HOT else ui.LABEL, frac)) |at| {
+        const want = col.lo + @round(at * span / col.step) * col.step;
+        if (span > 0 and want != v) {
+            tune.setValue(t, r, c, want);
+            moved = true;
+        }
+    }
     if (ui.button(ctx, ui.rect(bx, y, NUDGE_W, ROW_H - 2), "-", hud.MONO, false, col.tip)) {
         tune.setValue(t, r, c, v - col.step);
         moved = true;

@@ -73,8 +73,8 @@ const Lerp = struct {
     }
 
     fn hgt(self: Lerp, field: []const u8, base: f32) f32 {
-        const a = mathx.lerpF(wf.heightOf(field[self.i00]), wf.heightOf(field[self.i10]), self.tx);
-        const b = mathx.lerpF(wf.heightOf(field[self.i01]), wf.heightOf(field[self.i11]), self.tx);
+        const a = mathx.lerpF(wf.caveH(field[self.i00]), wf.caveH(field[self.i10]), self.tx);
+        const b = mathx.lerpF(wf.caveH(field[self.i01]), wf.caveH(field[self.i11]), self.tx);
         return base + mathx.lerpF(a, b, self.tz);
     }
 };
@@ -230,10 +230,10 @@ pub fn carve(g: Grids, b: Brush, out: *[4]usize) bool {
             // A cell the stroke OPENS takes the stroke's heights outright; one already open blends, so a passage joining a chamber does not yank its floor.
             const fresh = was < EDGE;
             const want = b.floorAt(p[0], p[1]);
-            const wantF = wf.heightByte(mathx.clampF(want, wf.HEIGHT_MIN, wf.HEIGHT_MAX));
-            const wantR = wf.heightByte(mathx.clampF(want + head, wf.HEIGHT_MIN, wf.HEIGHT_MAX));
-            const nf = if (fresh) wantF else wf.heightByte(mathx.lerpF(wf.heightOf(g.floor[i]), want, fall));
-            const nr = if (fresh) wantR else wf.heightByte(mathx.lerpF(wf.heightOf(g.roof[i]), want + head, fall));
+            const wantF = wf.caveByte(mathx.clampF(want, wf.CAVE_H_MIN, wf.CAVE_H_MAX));
+            const wantR = wf.caveByte(mathx.clampF(want + head, wf.CAVE_H_MIN, wf.CAVE_H_MAX));
+            const nf = if (fresh) wantF else wf.caveByte(mathx.lerpF(wf.caveH(g.floor[i]), want, fall));
+            const nr = if (fresh) wantR else wf.caveByte(mathx.lerpF(wf.caveH(g.roof[i]), want + head, fall));
             if (cov != was or nf != g.floor[i] or nr != g.roof[i]) changed = true;
             g.cov[i] = cov;
             g.floor[i] = nf;
@@ -404,11 +404,11 @@ pub fn covAt(f: Fields, ix: usize, iz: usize) f32 {
 }
 
 pub fn floorAtPoint(f: Fields, ix: usize, iz: usize) f32 {
-    return f.base + wf.heightOf(f.floor[iz * N + ix]);
+    return f.base + wf.caveH(f.floor[iz * N + ix]);
 }
 
 pub fn roofAtPoint(f: Fields, ix: usize, iz: usize) f32 {
-    return f.base + wf.heightOf(f.roof[iz * N + ix]);
+    return f.base + wf.caveH(f.roof[iz * N + ix]);
 }
 
 pub fn bilerp(v: [4]f32, u: f32, w: f32) f32 {
@@ -452,7 +452,7 @@ pub fn homeY(m: *const wf.Map, px: f32, pz: f32, under: bool) f32 {
 /// The floor that roofs `head` of room under ground at `land` with `ROOF_MIN` of rock over it, on the height lattice's own step so the carve lands where the panel says.
 pub fn fitFloor(land: f32, head: f32) f32 {
     const want = @floor((land - ROOF_MIN - head) / wf.HEIGHT_STEP) * wf.HEIGHT_STEP;
-    return mathx.clampF(want, wf.HEIGHT_MIN, wf.HEIGHT_MAX);
+    return mathx.clampF(want, wf.CAVE_H_MIN, wf.CAVE_H_MAX);
 }
 
 /// A ceiling this far under the land still counts as up through it; `env.MOUTH_EPS` is the mesher's own copy of the slack.
@@ -512,14 +512,14 @@ pub fn reachOut(f: Fields, land: anytype, mark: []u8, queue: []u32) Reach {
         r.walkable += 1;
         const ix = i % N;
         const iz = i / N;
-        const floor = wf.heightOf(f.floor[i]);
+        const floor = wf.caveH(f.floor[i]);
         for (STEP4) |d| {
             const nx = @as(i32, @intCast(ix)) + d[0];
             const nz = @as(i32, @intCast(iz)) + d[1];
             if (nx < 0 or nz < 0 or nx >= N or nz >= N) continue;
             const j = @as(usize, @intCast(nz)) * N + @as(usize, @intCast(nx));
             if (f.cov[j] < EDGE or mark[j] != 0) continue;
-            if (@abs(wf.heightOf(f.floor[j]) - floor) > wf.STEP_UP) continue;
+            if (@abs(wf.caveH(f.floor[j]) - floor) > wf.STEP_UP) continue;
             mark[j] = 1;
             queue[tail] = @intCast(j);
             tail += 1;
@@ -597,10 +597,10 @@ pub fn sculpt(g: Grids, px: f32, pz: f32, radius: f32, mode: wf.Sculpt, amount: 
         if (mode == .smooth) {
             if (iz == sp[1]) {
                 if (iz > 0) {
-                    for (0..N) |ix| above[ix] = wf.heightOf(g.floor[(iz - 1) * N + ix]);
+                    for (0..N) |ix| above[ix] = wf.caveH(g.floor[(iz - 1) * N + ix]);
                 }
             } else above = before;
-            for (0..N) |ix| before[ix] = wf.heightOf(g.floor[iz * N + ix]);
+            for (0..N) |ix| before[ix] = wf.caveH(g.floor[iz * N + ix]);
         }
         var ix = sp[0];
         while (ix <= sp[2]) : (ix += 1) {
@@ -612,7 +612,7 @@ pub fn sculpt(g: Grids, px: f32, pz: f32, radius: f32, mode: wf.Sculpt, amount: 
             const d = @sqrt(dx * dx + dz * dz);
             if (d > r) continue;
             const fall = mathx.smoothstep(r, r * 0.15, d);
-            const cur = wf.heightOf(g.floor[i]);
+            const cur = wf.caveH(g.floor[i]);
             const want = switch (mode) {
                 .raise => cur + amount * fall,
                 .lower => cur - amount * fall,
@@ -633,15 +633,15 @@ pub fn sculpt(g: Grids, px: f32, pz: f32, radius: f32, mode: wf.Sculpt, amount: 
                         n += 1;
                     }
                     if (iz + 1 < N and g.cov[i + N] >= EDGE) {
-                        sum += wf.heightOf(g.floor[i + N]);
+                        sum += wf.caveH(g.floor[i + N]);
                         n += 1;
                     }
                     if (n == 0) break :blk cur;
                     break :blk mathx.lerpF(cur, sum / n, mathx.clampF(amount, 0, 1) * fall);
                 },
             };
-            const cap = mathx.maxF(cur, wf.heightOf(g.roof[i]) - HEAD_MIN);
-            const nb = wf.heightByte(mathx.clampF(mathx.minF(want, cap), wf.HEIGHT_MIN, wf.HEIGHT_MAX));
+            const cap = mathx.maxF(cur, wf.caveH(g.roof[i]) - HEAD_MIN);
+            const nb = wf.caveByte(mathx.clampF(mathx.minF(want, cap), wf.CAVE_H_MIN, wf.CAVE_H_MAX));
             if (nb == g.floor[i]) continue;
             g.floor[i] = nb;
             changed = true;
@@ -670,11 +670,11 @@ pub fn sculptRoof(g: Grids, m: *const wf.Map, px: f32, pz: f32, radius: f32, up:
             const d = @sqrt(dx * dx + dz * dz);
             if (d > r) continue;
             const fall = mathx.smoothstep(r, r * 0.15, d);
-            const cur = wf.heightOf(g.roof[i]);
+            const cur = wf.caveH(g.roof[i]);
             const hi = mathx.maxF(m.heightAt(p[0], p[1]) - ROOF_MIN, cur);
-            const lo = mathx.minF(wf.heightOf(g.floor[i]) + HEAD_MIN, hi);
+            const lo = mathx.minF(wf.caveH(g.floor[i]) + HEAD_MIN, hi);
             const want = if (up) cur + amount * fall else cur - amount * fall;
-            const nb = wf.heightByte(mathx.clampF(mathx.clampF(want, lo, hi), wf.HEIGHT_MIN, wf.HEIGHT_MAX));
+            const nb = wf.caveByte(mathx.clampF(mathx.clampF(want, lo, hi), wf.CAVE_H_MIN, wf.CAVE_H_MAX));
             if (nb == g.roof[i]) continue;
             g.roof[i] = nb;
             changed = true;
@@ -699,7 +699,7 @@ fn flattenTarget(g: Grids, px: f32, pz: f32, r: f32, sp: [4]usize) f32 {
             const dx = p[0] - px;
             const dz = p[1] - pz;
             if (dx * dx + dz * dz > r * r) continue;
-            sum += wf.heightOf(g.floor[i]);
+            sum += wf.caveH(g.floor[i]);
             n += 1;
         }
     }
@@ -1220,7 +1220,7 @@ test "smooth pulls a terrace seam together and flat levels toward the floor unde
 test "fit lays the floor ROOF_MIN of rock under the hill, on the height step" {
     try std.testing.expectApproxEqAbs(@as(f32, 4.0), fitFloor(8.0, 3.0), 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 4.25), fitFloor(8.1, 2.8), 1e-5);
-    try std.testing.expectEqual(wf.HEIGHT_MIN, fitFloor(-100, 3));
+    try std.testing.expectEqual(wf.CAVE_H_MIN, fitFloor(-100, 3));
     const land: f32 = 8.1;
     const head: f32 = 2.8;
     try std.testing.expect(land - (fitFloor(land, head) + head) >= ROOF_MIN);

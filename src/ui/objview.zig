@@ -1173,7 +1173,7 @@ fn bigChar(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, at: us
     _ = ui.checkbox(ctx, x, y, "hero beside it", &st.charRuler, "Stand the hero next to it at his own 1.8 m. Every creature is fitted to the same frame, so this is the only thing that says how big one is");
     y += 24;
     _ = ui.slider(ctx, x, y, INFO_W - 12, "decoy range (m)", &st.charDist, BENCH_NEAR, BENCH_FAR, "Where the decoy stands. Inside its reach it strikes, outside it closes, past its own aggro it walks its post");
-    y += ui.ROW_H + 14;
+    y += ui.ROW_H;
     const clock = std.fmt.bufPrintZ(&buf, "{s: <7}{d: >7.1}", .{ "played", st.charT }) catch "";
     hud.mono(clock, x, y, hud.MONO, ui.alpha(ui.VALUE, if (st.charPlay) 255 else 140));
     y += line + 8;

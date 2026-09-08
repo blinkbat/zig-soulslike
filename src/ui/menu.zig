@@ -225,7 +225,7 @@ pub const Menu = struct {
             },
             .slots => i >= savemod.SLOTS or switch (self.slotIntent) {
                 .load => shelf.head[i] != null,
-                .new => shelf.head[i] == null,
+                .new => !shelf.holds(i),
             },
             else => true,
         };
@@ -269,7 +269,7 @@ pub const Menu = struct {
                 }
                 if (confirmPressed()) {
                     self.askDelete = false;
-                    if (self.cursor < savemod.SLOTS and shelf.head[self.cursor] != null) {
+                    if (self.cursor < savemod.SLOTS and shelf.holds(self.cursor)) {
                         sfx.play(.menu_pick);
                         return .{ .deleteSlot = self.cursor };
                     }
@@ -277,7 +277,7 @@ pub const Menu = struct {
                 }
                 return .none;
             }
-            if (deletePressed() and self.cursor < savemod.SLOTS and shelf.head[self.cursor] != null) {
+            if (deletePressed() and self.cursor < savemod.SLOTS and shelf.holds(self.cursor)) {
                 self.askDelete = true;
                 sfx.play(.menu_pick);
                 return .none;
@@ -631,7 +631,7 @@ pub const Menu = struct {
 
         for (0..savemod.SLOTS) |i| {
             const y = cy + headerH + (SLOT_H + SLOT_GAP) * @as(i32, @intCast(i));
-            self.drawSlotRow(i, shelf.head[i], !self.rowLive(i, shelf), cx + CARD_INSET, y, cardW - CARD_INSET * 2);
+            self.drawSlotRow(i, shelf.head[i], shelf.unreadable[i], !self.rowLive(i, shelf), cx + CARD_INSET, y, cardW - CARD_INSET * 2);
         }
         const by = cy + headerH + (SLOT_H + SLOT_GAP) * @as(i32, savemod.SLOTS) + 8;
         const onBack = self.cursor == SLOT_BACK;
@@ -639,7 +639,7 @@ pub const Menu = struct {
         hud.text("Back", cx + CARD_INSET + ROW_LABEL, by, hud.BODY, if (onBack) TEXT_HOT else TEXT_DIM);
     }
 
-    fn drawSlotRow(self: *const Menu, i: usize, head: ?savemod.Head, dead: bool, x: i32, y: i32, w: i32) void {
+    fn drawSlotRow(self: *const Menu, i: usize, head: ?savemod.Head, bad: bool, dead: bool, x: i32, y: i32, w: i32) void {
         const on = self.cursor == i;
         if (on and !dead) {
             uiart.rowHilite(x, y, w, SLOT_H);
@@ -672,7 +672,7 @@ pub const Menu = struct {
         const name = std.fmt.bufPrintZ(&nameBuf, "Slot {d}", .{i + 1}) catch "Slot";
         hud.text(name, tx, py + 2, hud.BODY, col);
 
-        if (self.askDelete and on and head != null) {
+        if (self.askDelete and on and (head != null or bad)) {
             hud.text("Delete this slot?", tx, py + hud.lineH(hud.BODY) + 6, hud.SMALL, uiart.BAD);
             return;
         }
@@ -685,6 +685,8 @@ pub const Menu = struct {
                 playtimeText(h.playtime, &timeBuf),
             }) catch "?";
             hud.text(line, tx, py + hud.lineH(hud.BODY) + 6, hud.SMALL, if (on) uiart.TEXT_VALUE else TEXT_DIM);
+        } else if (bad) {
+            hud.text("Unreadable - delete it to use this slot", tx, py + hud.lineH(hud.BODY) + 6, hud.SMALL, uiart.BAD);
         } else {
             hud.text("Empty", tx, py + hud.lineH(hud.BODY) + 6, hud.SMALL, TEXT_OFF);
         }

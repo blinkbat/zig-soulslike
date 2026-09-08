@@ -11,6 +11,7 @@ const art = @import("../props/propart.zig");
 const proprock = @import("../props/proprock.zig");
 const wf = @import("worldfmt.zig");
 const caves = @import("caves.zig");
+const cliffseat = @import("cliffseat.zig");
 const chestmod = @import("../play/chest.zig");
 const pickupmod = @import("../play/pickup.zig");
 const restmod = @import("../play/rest.zig");
@@ -142,9 +143,16 @@ fn digTone(metres: f32) f32 {
     return mathx.clampF(metres / WADE_MAX, 0, 1);
 }
 
+/// The sheet a body at the datum stands at: 0.045 m over the flat ground, so it shows on an unsculpted map.
 const WATER_Y: f32 = 0.055;
+pub const WATER_SKIM: f32 = WATER_Y - GROUND_Y;
 
-/// The deepest lattice height the hero still wades (`WADE_MAX`), as the map stores it. Ground > Pool digs to it.
+/// A BODY'S SHEET: its `wf.Map.waterBase` plus the skim. Every reader of the water's height goes through here or `waterLevelAt`.
+pub fn levelOf(base: wf.Hgt) f32 {
+    return GROUND_Y + wf.heightOf(base) + WATER_SKIM;
+}
+
+/// The deepest lattice height the hero still wades (`WADE_MAX`) under a body at the DATUM; `dwellerFloorAt` is the same under the body at a point. Ground > Pool digs to it.
 pub fn dwellerFloor() f32 {
     return @ceil((WATER_Y - GROUND_Y - WADE_MAX) / wf.HEIGHT_STEP) * wf.HEIGHT_STEP;
 }
@@ -156,6 +164,52 @@ pub fn dwellerDepth() f32 {
 var scratchIn: [wf.WATER_CELLS]f32 = undefined;
 var scratchOut: [wf.WATER_CELLS]f32 = undefined;
 var scratchPack: [wf.WATER_CELLS]u8 = undefined;
+/// The wet cell each cell's outward distance was measured from, so a dry cell knows whose level it borders.
+var scratchSrc: [wf.WATER_CELLS]u32 = undefined;
+var stripBuf: [Env.MAX_STRIPS]Env.Strip = undefined;
+
+/// Two-pass chamfer distance over the water lattice; `src` follows the nearest seed along.
+fn chamfer(d: *[wf.WATER_CELLS]f32, src: ?*[wf.WATER_CELLS]u32) void {
+    const N = wf.WATER_N;
+    const D1: f32 = 1.0;
+    const D2: f32 = 1.41421356;
+    const R = struct {
+        fn relax(dd: *[wf.WATER_CELLS]f32, ss: ?*[wf.WATER_CELLS]u32, i: usize, j: usize, k: f32) void {
+            if (dd[j] + k < dd[i]) {
+                dd[i] = dd[j] + k;
+                if (ss) |s| s[i] = s[j];
+            }
+        }
+    };
+    var z: usize = 0;
+    while (z < N) : (z += 1) {
+        var x: usize = 0;
+        while (x < N) : (x += 1) {
+            const i = z * N + x;
+            if (z > 0) {
+                R.relax(d, src, i, i - N, D1);
+                if (x > 0) R.relax(d, src, i, i - N - 1, D2);
+                if (x + 1 < N) R.relax(d, src, i, i - N + 1, D2);
+            }
+            if (x > 0) R.relax(d, src, i, i - 1, D1);
+        }
+    }
+    var zb: usize = N;
+    while (zb > 0) {
+        zb -= 1;
+        var xb: usize = N;
+        while (xb > 0) {
+            xb -= 1;
+            const i = zb * N + xb;
+            if (zb + 1 < N) {
+                R.relax(d, src, i, i + N, D1);
+                if (xb > 0) R.relax(d, src, i, i + N - 1, D2);
+                if (xb + 1 < N) R.relax(d, src, i, i + N + 1, D2);
+            }
+            if (xb + 1 < N) R.relax(d, src, i, i + 1, D1);
+        }
+    }
+}
 
 pub fn packLiquid(edge: u8, kind: u8) u8 {
     const e: u8 = @min(edge, wf.Edge.N - 1) & glsl.EDGE_MASK;
@@ -488,12 +542,14 @@ pub const Env = struct {
     soilHalf: f32 = 0,
     waterEdgeSrc: [wf.WATER_CELLS]u8 = [_]u8{0} ** wf.WATER_CELLS,
     waterKindSrc: [wf.WATER_CELLS]u8 = [_]u8{0} ** wf.WATER_CELLS,
-    waterHgtSrc: [wf.HEIGHT_CELLS]u8 = [_]u8{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS,
+    waterHgtSrc: [wf.HEIGHT_CELLS]wf.Hgt = [_]wf.Hgt{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS,
+    waterBaseSrc: [wf.WATER_CELLS]wf.Hgt = [_]wf.Hgt{wf.HEIGHT_ZERO} ** wf.WATER_CELLS,
+    /// Every cell's level base, dry cells taking the nearest wet cell's, so a foot on the bank and the shore fade read the pool's own sheet.
+    waterBaseField: [wf.WATER_CELLS]wf.Hgt = [_]wf.Hgt{wf.HEIGHT_ZERO} ** wf.WATER_CELLS,
     waterReady: bool = false,
-    waterMid: rl.Vector3 = mathx.zero3,
-    waterSpan: rl.Vector3 = mathx.zero3,
+    waterSheetBuilt: bool = false,
     mapHalf: f32 = wf.DEFAULT_HALF,
-    heightField: [wf.HEIGHT_CELLS]u8 = [_]u8{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS,
+    heightField: [wf.HEIGHT_CELLS]wf.Hgt = [_]wf.Hgt{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS,
     cliffField: [wf.HEIGHT_CELLS]u8 = [_]u8{wf.CLIFF_NONE} ** wf.HEIGHT_CELLS,
     heightHalf: f32 = wf.DEFAULT_HALF,
     heightAny: bool = false,
@@ -513,8 +569,8 @@ pub const Env = struct {
     cliffSolidTile: [MAX_CLIFF_SOLIDS]u16 = undefined,
     ncliffSolids: usize = 0,
     caveCovSrc: [wf.CAVE_CELLS]u8 = [_]u8{0} ** wf.CAVE_CELLS,
-    caveFloorSrc: [wf.CAVE_CELLS]u8 = [_]u8{wf.HEIGHT_ZERO} ** wf.CAVE_CELLS,
-    caveRoofSrc: [wf.CAVE_CELLS]u8 = [_]u8{wf.HEIGHT_ZERO} ** wf.CAVE_CELLS,
+    caveFloorSrc: [wf.CAVE_CELLS]u8 = [_]u8{wf.CAVE_H_ZERO} ** wf.CAVE_CELLS,
+    caveRoofSrc: [wf.CAVE_CELLS]u8 = [_]u8{wf.CAVE_H_ZERO} ** wf.CAVE_CELLS,
     caveHalf: f32 = wf.DEFAULT_HALF,
     caveAny: bool = false,
     /// The roof the SHADER reads: the ceiling height where there is one, and 0 where the roof is through the hill. Cut here, because the fragment has no terrain height to test against.
@@ -545,6 +601,7 @@ pub const Env = struct {
         for (&self.stows, props.INFO) |*m, row| m.* = if (row.stow) |mesh| mesh(shader) else null;
         self.ground = terrain(shader, GROUND_HALF);
         self.waterSheet = waterQuad(shader, GROUND_HALF);
+        self.waterSheetBuilt = true;
         self.nprops = 0;
         self.nsolids = 0;
         self.ncliffSolids = 0;
@@ -583,7 +640,7 @@ pub const Env = struct {
         self.tileH = [_]f32{0} ** NTILES;
         self.tileMid = [_]rl.Vector3{mathx.zero3} ** NTILES;
         self.skirtBuilt = false;
-        self.heightField = [_]u8{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS;
+        self.heightField = [_]wf.Hgt{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS;
         self.cliffField = [_]u8{wf.CLIFF_NONE} ** wf.HEIGHT_CELLS;
         self.heightHalf = wf.DEFAULT_HALF;
         self.heightAny = false;
@@ -677,7 +734,7 @@ pub const Env = struct {
             return;
         }
         const p = caves.pointAt(self.caveHalf, ix, iz);
-        const thick = self.groundAt(p[0], p[1]) - (GROUND_Y + wf.heightOf(self.caveRoofSrc[i]));
+        const thick = self.groundAt(p[0], p[1]) - (GROUND_Y + wf.caveH(self.caveRoofSrc[i]));
         // COVERAGE TIMES HOW MUCH ROCK IS OVER IT, so the field the shader interpolates falls to nothing at a mouth instead of stepping off a sentinel.
         const roofed = mathx.clampF(thick / caves.SHELTER_FADE, 0, 1);
         self.caveShelterSrc[i] = @intFromFloat(@round(@as(f32, @floatFromInt(cov)) * roofed));
@@ -720,7 +777,7 @@ pub const Env = struct {
 
     fn heightStale(self: *const Env, m: *const wf.Map) bool {
         return !(self.heightHalf == m.half and
-            std.mem.eql(u8, &self.heightField, &m.height) and
+            std.mem.eql(wf.Hgt, &self.heightField, &m.height) and
             std.mem.eql(u8, &self.cliffField, &m.cliff) and
             self.heightAny == m.anyHeight());
     }
@@ -979,8 +1036,12 @@ pub const Env = struct {
                 const t = wf.cliffTiers(ha, hb, hc, hd);
                 yLo = @min(yLo, t.lo);
                 yHi = @max(yHi, t.hi);
+                // A plate over an excavated cell is what the cutaway leaves hanging, so the cut face model takes every
+                // OTHER cell's stone and none of that one's. Asked ONCE: the cutaway terrain and the cut faces read
+                // the same answer, and it is four sub-cell probes of the cave fields.
+                const overCave = self.caveAny and self.mouthCell(ix, iz, true);
                 if (self.caveAny) {
-                    if (self.mouthCell(ix, iz, true)) {
+                    if (overCave) {
                         self.mouthTerrain(&cutb, ix, iz, true);
                         cutAny = true;
                     } else cutb.quadSmooth(
@@ -996,8 +1057,6 @@ pub const Env = struct {
                     );
                 }
                 const case = self.cliffField[iz * wf.HEIGHT_N + ix];
-                // A plate over an excavated cell is what the cutaway leaves hanging, so the cut face model takes every OTHER cell's stone and none of that one's.
-                const overCave = self.caveAny and self.mouthCell(ix, iz, true);
                 const faceFrom = fb.pos.items.len / 3;
                 if (case == wf.CLIFF_STAIR) {
                     const tread = self.cellSurface(ix, iz);
@@ -1225,32 +1284,24 @@ pub const Env = struct {
             std.mem.eql(u8, &self.waterSrc, &m.water) and
             std.mem.eql(u8, &self.waterEdgeSrc, &m.waterEdge) and
             std.mem.eql(u8, &self.waterKindSrc, &m.waterKind) and
-            std.mem.eql(u8, &self.waterHgtSrc, &m.height);
+            std.mem.eql(wf.Hgt, &self.waterBaseSrc, &m.waterBase) and
+            std.mem.eql(wf.Hgt, &self.waterHgtSrc, &m.height);
         if (same) return;
         waterBuilds += 1;
         self.waterSrc = m.water;
         self.waterEdgeSrc = m.waterEdge;
         self.waterKindSrc = m.waterKind;
+        self.waterBaseSrc = m.waterBase;
         self.waterHgtSrc = m.height;
         self.waterReady = true;
         self.waterAny = m.anyWater();
         self.waterHalf = m.half;
         if (!self.waterAny) {
             @memset(&self.waterField, 0);
+            @memset(&self.waterBaseField, wf.HEIGHT_ZERO);
             self.dilateWaterEdge(m);
             if (self.scene) |sc| sc.setWater(&self.waterField, &self.waterEdgeField, m.half, false);
             return;
-        }
-        var lo: [2]usize = .{ N - 1, N - 1 };
-        var hi: [2]usize = .{ 0, 0 };
-        for (m.water, 0..) |wet, i| {
-            if (wet == 0) continue;
-            const cx = i % N;
-            const cz = i / N;
-            lo[0] = @min(lo[0], cx);
-            hi[0] = @max(hi[0], cx);
-            lo[1] = @min(lo[1], cz);
-            hi[1] = @max(hi[1], cz);
         }
         const cell = m.cellSize(N);
         const edge = struct {
@@ -1258,56 +1309,17 @@ pub const Env = struct {
                 return -half + @as(f32, @floatFromInt(c)) * cw;
             }
         }.at;
-        const MARGIN = 2.0 * cell;
-        const x0 = edge(lo[0], m.half, cell) - MARGIN;
-        const x1 = edge(hi[0] + 1, m.half, cell) + MARGIN;
-        const z0 = edge(lo[1], m.half, cell) - MARGIN;
-        const z1 = edge(hi[1] + 1, m.half, cell) + MARGIN;
-        self.waterMid = v3((x0 + x1) * 0.5, 0, (z0 + z1) * 0.5);
-        self.waterSpan = v3((x1 - x0) * 0.5 / GROUND_HALF, 1, (z1 - z0) * 0.5 / GROUND_HALF);
         const FAR: f32 = 1e9;
         var dIn = &scratchIn;
         var dOut = &scratchOut;
         for (m.water, 0..) |wet, i| {
             dIn[i] = if (wet != 0) FAR else 0;
             dOut[i] = if (wet != 0) 0 else FAR;
+            scratchSrc[i] = @intCast(i);
         }
-        const D1: f32 = 1.0;
-        const D2: f32 = 1.41421356;
-        for ([_]*[wf.WATER_CELLS]f32{ dIn, dOut }) |d| {
-            var z: usize = 0;
-            while (z < N) : (z += 1) {
-                var x: usize = 0;
-                while (x < N) : (x += 1) {
-                    const i = z * N + x;
-                    var best = d[i];
-                    if (z > 0) {
-                        best = @min(best, d[i - N] + D1);
-                        if (x > 0) best = @min(best, d[i - N - 1] + D2);
-                        if (x + 1 < N) best = @min(best, d[i - N + 1] + D2);
-                    }
-                    if (x > 0) best = @min(best, d[i - 1] + D1);
-                    d[i] = best;
-                }
-            }
-            var zb: usize = N;
-            while (zb > 0) {
-                zb -= 1;
-                var xb: usize = N;
-                while (xb > 0) {
-                    xb -= 1;
-                    const i = zb * N + xb;
-                    var best = d[i];
-                    if (zb + 1 < N) {
-                        best = @min(best, d[i + N] + D1);
-                        if (xb > 0) best = @min(best, d[i + N - 1] + D2);
-                        if (xb + 1 < N) best = @min(best, d[i + N + 1] + D2);
-                    }
-                    if (xb + 1 < N) best = @min(best, d[i + 1] + D1);
-                    d[i] = best;
-                }
-            }
-        }
+        chamfer(dIn, null);
+        chamfer(dOut, &scratchSrc);
+        for (0..N * N) |i| self.waterBaseField[i] = m.waterBase[scratchSrc[i]];
         const shoreF: f32 = @floatFromInt(gfx.WATER_SHORE);
         for (0..N) |cz| {
             const ez = edge(cz, m.half, cell);
@@ -1322,7 +1334,7 @@ pub const Env = struct {
                     -@max(0.0, (dOut[i] - 0.5) * cell);
                 const enc: f32 = if (sd >= 0) blk: {
                     const byShore = mathx.clampF(sd / gfx.WATER_DEEP_AT, 0, 1);
-                    const dug = WATER_Y - (GROUND_Y + m.heightAt(ex, ez));
+                    const dug = levelOf(self.waterBaseField[i]) - (GROUND_Y + m.heightAt(ex, ez));
                     if (dug <= 0) break :blk shoreF * (1.0 - mathx.clampF(-dug / (gfx.WATER_WET_OUT * coastBand(shape)), 0, 1));
                     break :blk shoreF + @max(byShore, digTone(dug)) * (255.0 - shoreF);
                 } else blk: {
@@ -1332,16 +1344,91 @@ pub const Env = struct {
             }
         }
         self.dilateWaterEdge(m);
-        if (self.scene) |sc| sc.setWater(&self.waterField, &self.waterEdgeField, m.half, true);
+        if (self.scene) |sc| {
+            sc.setWater(&self.waterField, &self.waterEdgeField, m.half, true);
+            self.buildSheet(sc.shader);
+        }
+    }
+
+    /// THE SHEET IS ONE FLAT STRIP PER RUN OF CELLS AT ONE LEVEL, over every cell the shore fade can reach, so two bodies at different levels meet at a step and nowhere is the water a slope.
+    pub const Strip = struct { x0: f32, x1: f32, z0: f32, z1: f32, y: f32 };
+    const MAX_STRIPS = 1 << 16;
+
+    pub fn sheetStrips(self: *const Env) []const Strip {
+        const N = wf.WATER_N;
+        const cell = 2 * self.waterHalf / @as(f32, @floatFromInt(N));
+        var n: usize = 0;
+        for (0..N) |cz| {
+            var cx: usize = 0;
+            while (cx < N) {
+                if (!self.sheetReaches(cx, cz)) {
+                    cx += 1;
+                    continue;
+                }
+                const base = self.waterBaseField[cz * N + cx];
+                var end = cx + 1;
+                while (end < N and self.sheetReaches(end, cz) and self.waterBaseField[cz * N + end] == base) end += 1;
+                if (n >= MAX_STRIPS) @panic("env: MAX_STRIPS exceeded — raise the cap");
+                stripBuf[n] = .{
+                    .x0 = -self.waterHalf + @as(f32, @floatFromInt(cx)) * cell,
+                    .x1 = -self.waterHalf + @as(f32, @floatFromInt(end)) * cell,
+                    .z0 = -self.waterHalf + @as(f32, @floatFromInt(cz)) * cell,
+                    .z1 = -self.waterHalf + @as(f32, @floatFromInt(cz + 1)) * cell,
+                    .y = levelOf(base),
+                };
+                n += 1;
+                cx = end;
+            }
+        }
+        return stripBuf[0..n];
+    }
+
+    /// A cell the fade touches: its own field is wet-influenced, or a neighbour's is and the bilinear read crosses into it.
+    fn sheetReaches(self: *const Env, cx: usize, cz: usize) bool {
+        const N = wf.WATER_N;
+        const x0 = cx -| 1;
+        const z0 = cz -| 1;
+        var z = z0;
+        while (z <= @min(cz + 1, N - 1)) : (z += 1) {
+            var x = x0;
+            while (x <= @min(cx + 1, N - 1)) : (x += 1) {
+                if (self.waterField[z * N + x] > 0) return true;
+            }
+        }
+        return false;
+    }
+
+    fn buildSheet(self: *Env, shader: rl.Shader) void {
+        const strips = self.sheetStrips();
+        if (strips.len == 0) return;
+        var b = gfx.Builder.init();
+        defer b.deinit();
+        b.setMat(.water);
+        for (strips) |s| b.quad(v3(s.x0, s.y, s.z0), v3(s.x0, s.y, s.z1), v3(s.x1, s.y, s.z1), v3(s.x1, s.y, s.z0), v3(0, 1, 0), rl.Color.white);
+        if (self.waterSheetBuilt) unloadTerrain(self.waterSheet);
+        self.waterSheet = b.toModel(shader);
+        self.waterSheetBuilt = true;
     }
 
     pub fn drawWater(self: *Env) void {
-        if (!self.waterAny) return;
+        if (!self.waterAny or !self.waterSheetBuilt) return;
         if (self.scene) |sc| {
             sc.setWaterSheet(true, props.LIQUID_TONES);
-            rl.drawModelEx(self.waterSheet, self.waterMid, v3(0, 1, 0), 0, self.waterSpan, rl.Color.white);
+            rl.drawModel(self.waterSheet, mathx.zero3, 1.0, rl.Color.white);
             sc.setWaterSheet(false, undefined);
         }
+    }
+
+    /// The water's height over a point: the body's own level where one is painted or near, the datum's sheet everywhere else.
+    pub fn waterLevelAt(self: *const Env, x: f32, z: f32) f32 {
+        const i = wf.gridIndex(self.waterHalf, wf.WATER_N, x, z) orelse return WATER_Y;
+        return levelOf(self.waterBaseField[i]);
+    }
+
+    /// `dwellerFloor` under the body at this point.
+    pub fn dwellerFloorAt(self: *const Env, x: f32, z: f32) f32 {
+        const i = wf.gridIndex(self.waterHalf, wf.WATER_N, x, z) orelse return dwellerFloor();
+        return wf.heightOf(self.waterBaseField[i]) + dwellerFloor();
     }
 
     pub fn materialize(self: *Env, m: *const wf.Map) void {
@@ -2203,11 +2290,11 @@ pub const Env = struct {
     /// Flattens every water dweller's pool floor to `dwellerFloor`, masked to the PAINTED water cells so the shore is never carved; eight passes converge the inner disc. Returns the lattice points moved (`--fix-lurkers`).
     pub fn digPools(m: *wf.Map, radius: f32) usize {
         const step = 2 * m.half / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
-        const target = dwellerFloor();
         var moved: usize = 0;
         for (m.foes[0..m.nfoes]) |f| {
             if (foemod.poolBand(f.kind) == null) continue;
             _ = m.paintWater(f.x, f.z, step, true, null, null);
+            const target = wf.heightOf(m.waterBaseAt(f.x, f.z)) + dwellerFloor();
             const xs = wf.pointSpan(f.x, radius, m.half, step, wf.HEIGHT_N) orelse continue;
             const zs = wf.pointSpan(f.z, radius, m.half, step, wf.HEIGHT_N) orelse continue;
             for (0..8) |_| {
@@ -2236,7 +2323,7 @@ pub const Env = struct {
 
     pub fn wadeDepth(self: *const Env, x: f32, z: f32) f32 {
         if (self.paintedDepth(x, z) <= 0) return 0;
-        return mathx.maxF(0, WATER_Y - self.groundAt(x, z));
+        return mathx.maxF(0, self.waterLevelAt(x, z) - self.groundAt(x, z));
     }
 
     /// THE AIR IN A CHAMBER IS DRY even where a pool is painted over the hill above it: the sheet is the LAND's, and a body under a roof is not in it.
@@ -2991,6 +3078,10 @@ pub const Face = struct {
         const e = self.env orelse return false;
         return e.paintedDepth(x, z) > 0;
     }
+    fn level(self: Face, x: f32, z: f32) f32 {
+        const e = self.env orelse return WATER_Y;
+        return e.waterLevelAt(x, z);
+    }
     /// Everything `b` has taken since `from` casts too.
     fn cast(self: Face, from: usize) void {
         if (self.sb) |sb| sb.copyFrom(self.b, from);
@@ -3131,6 +3222,7 @@ fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi
         if (f.env) |e| {
             // The bulge is the middle half of the stone; a flank over the rungs is thin enough to keep.
             if (climbsNear(e, cx, cz, halfW * 0.5 + FACE_PROP_CLEAR)) continue;
+            if (pieceCovers(e, px, pz)) continue;
         }
         const sink = -bb.lo.z * sc - proud;
         const turn = yaw + wf.hashSigned(kk, 0x7A11) * 0.18;
@@ -3175,6 +3267,14 @@ fn stampSolids(sl: *StampSolids, ms: *const proprock.Masses, ox: f32, oz: f32, t
         sl.buf[sl.n] = sol;
         sl.n += 1;
     }
+}
+
+/// A hand-placed cliff piece already stands over this point of the cut, so the automatic face puts no second stone there.
+fn pieceCovers(e: *const Env, x: f32, z: f32) bool {
+    for (e.props[0..e.nprops]) |*pr| {
+        if (cliffseat.covers(pr, x, z)) return true;
+    }
+    return false;
 }
 
 /// A ladder's foot or a flight's head within `r`: the rung line and the top tread meet the wall there, so no rock goes over them.
@@ -3271,9 +3371,10 @@ fn cliffWall(f: Face, ch: Chord, loEnd: [2]f32, hiEnd: [2]f32, highRef: [2]f32, 
         fr[nrow] = @as(f32, @floatFromInt(j)) / @as(f32, @floatFromInt(bands));
         nrow += 1;
     }
-    const wet = lo < WATER_Y and f.wet(mx + nx * 0.3, mz + nz * 0.3);
+    const sheet = f.level(mx + nx * 0.3, mz + nz * 0.3);
+    const wet = lo < sheet and f.wet(mx + nx * 0.3, mz + nz * 0.3);
     if (wet) {
-        for ([_]f32{ WATER_Y + FACE_WET_H, WATER_Y + FACE_TIDE_H }) |yw| {
+        for ([_]f32{ sheet + FACE_WET_H, sheet + FACE_TIDE_H }) |yw| {
             if (yw <= lo + 0.05 or yw >= hi - 0.05 or nrow >= FACE_ROWS_MAX) continue;
             const fw = (yw - lo) / drop;
             var k = nrow;
@@ -3320,10 +3421,10 @@ fn cliffWall(f: Face, ch: Chord, loEnd: [2]f32, hiEnd: [2]f32, highRef: [2]f32, 
             if (f.dress) col = dimTone(col, FACE_SHEET_DIM);
             var mat: gfx.Mat = .stone;
             if (wet) {
-                if (ymid < WATER_Y + FACE_WET_H) {
+                if (ymid < sheet + FACE_WET_H) {
                     col = wetTone(col);
                     mat = .marble;
-                } else if (ymid < WATER_Y + FACE_TIDE_H) {
+                } else if (ymid < sheet + FACE_TIDE_H) {
                     col = mathx.lerpColor(col, art.CLIFF_LT, 0.4);
                 }
             }
@@ -4032,13 +4133,16 @@ fn buildSolids(e: *Env) void {
             illusion = @intCast(e.nillusions);
         }
         pr.illusion = illusion;
-        for (parts) |part| {
+        const cut = cliffseat.cutOf(.{ .env = e }, pr);
+        for (parts) |whole| {
             if (e.nsolids >= MAX_SOLIDS) @panic("env: MAX_SOLIDS exceeded — raise the cap");
+            const part = if (cut) |ct| (seatedPart(whole, ct.z / s) orelse continue) else whole;
             const a = fr.at(part.ax, 0, part.az);
             const b = fr.at(part.bx, 0, part.bz);
             var sol = collision.capsule(a.x, a.z, b.x, b.z, part.r * s);
             sol.flat = part.flat;
             sol.h = pr.pos.y + part.h * s;
+            if (cut) |ct| sol.h = @min(sol.h, ct.lip);
             if (part.y0 > 0) sol.y0 = pr.pos.y + part.y0 * s;
             sol.surf = nfo.surf;
             sol.ward = ward;
@@ -4083,6 +4187,25 @@ fn buildSolids(e: *Env) void {
             cursor[c] += 1;
         }
     }
+}
+
+/// A seated cliff's lobe against the cut through it (`zc`, local, +z into the hill): buried past `FACE_SOLID_MIN` it owes nothing; an end behind the cut is walked up to it; a lobe whose centre is behind but whose flank shows becomes the slab that shows, as `stampSolids` does for the painted faces.
+fn seatedPart(p: props.Part, zc: f32) ?props.Part {
+    const near = @min(p.az, p.bz) - p.r;
+    const front = zc - near;
+    if (front < FACE_SOLID_MIN) return null;
+    var out = p;
+    if (p.az > zc and p.bz > zc) {
+        out.az = zc - front * 0.5;
+        out.bz = out.az;
+        out.r = front * 0.5;
+        out.ax = @min(p.ax, p.bx) - p.r + out.r;
+        out.bx = @max(p.ax, p.bx) + p.r - out.r;
+        return out;
+    }
+    if (out.az > zc) out.az = zc;
+    if (out.bz > zc) out.bz = zc;
+    return out;
 }
 
 const SolidCells = struct {
@@ -6228,6 +6351,110 @@ test "DIGGING A POOL puts the dweller's floor at the dweller depth and leaves th
     try std.testing.expectApproxEqAbs(dryBefore, m.heightAt(30, 0), 1e-6);
     try std.testing.expectApproxEqAbs(@as(f32, 0), m.heightAt(8.5, 0), 1e-6);
     std.debug.print("\n  dug pool: {d} lattice points, {d:.3} m of water at the post\n", .{ moved, e.wadeDepth(0, 0) });
+}
+
+test "EVERY BODY OF WATER CARRIES ITS OWN LEVEL — a pond on a plateau wades at the plateau's sheet, the datum pond is untouched, and the sheet is one flat strip per level" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++ "half: 107.4\n");
+    defer std.testing.allocator.destroy(m);
+    const PLATEAU: f32 = 12.0;
+    const DIG: f32 = 1.0;
+    for (0..wf.HEIGHT_N) |iz| {
+        for (0..wf.HEIGHT_N) |ix| {
+            const p = m.heightPoint(ix, iz);
+            var h: f32 = 0;
+            if (p[0] > 20) h = PLATEAU;
+            const dLow = @sqrt((p[0] + 30) * (p[0] + 30) + p[1] * p[1]);
+            const dHigh = @sqrt((p[0] - 50) * (p[0] - 50) + p[1] * p[1]);
+            if (dLow < 8) h -= DIG;
+            if (dHigh < 8) h -= DIG;
+            m.height[iz * wf.HEIGHT_N + ix] = wf.heightByte(h);
+        }
+    }
+    try std.testing.expect(m.paintWater(-30, 0, 10, true, .natural, .water));
+    try std.testing.expect(m.paintWater(50, 0, 10, true, .natural, .water));
+    try std.testing.expectEqual(wf.HEIGHT_ZERO, m.waterBaseAt(-30, 0));
+    try std.testing.expectApproxEqAbs(PLATEAU, wf.heightOf(m.waterBaseAt(50, 0)), 1e-6);
+    try std.testing.expect(!m.levelBody(0, 0, wf.heightByte(3)));
+
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.adoptHeight(m);
+    e.uploadWater(m);
+    const lowDepth = e.wadeDepth(-30, 0);
+    const highDepth = e.wadeDepth(50, 0);
+    try std.testing.expectApproxEqAbs(WATER_Y - e.groundAt(-30, 0), lowDepth, 1e-5);
+    try std.testing.expectApproxEqAbs(WATER_Y + PLATEAU - e.groundAt(50, 0), highDepth, 1e-5);
+    try std.testing.expectApproxEqAbs(lowDepth, highDepth, 1e-4);
+    try std.testing.expectApproxEqAbs(WATER_Y + PLATEAU, e.waterLevelAt(50, 0), 1e-5);
+    try std.testing.expectApproxEqAbs(WATER_Y + PLATEAU, e.waterLevelAt(50 + 9.5, 0), 1e-5);
+    try std.testing.expect(e.inWater(50, 0, 1.0));
+    try std.testing.expect(!e.inWater(35, 0, 1.0));
+    try std.testing.expectApproxEqAbs(PLATEAU + dwellerFloor(), e.dwellerFloorAt(50, 0), 1e-5);
+    try std.testing.expectApproxEqAbs(dwellerFloor(), e.dwellerFloorAt(-30, 0), 1e-5);
+
+    var strips = e.sheetStrips();
+    var lowStrips: usize = 0;
+    var highStrips: usize = 0;
+    for (strips) |s| {
+        if (@abs(s.y - WATER_Y) < 1e-5) lowStrips += 1 else if (@abs(s.y - (WATER_Y + PLATEAU)) < 1e-5) highStrips += 1 else return error.SheetOffEveryLevel;
+        try std.testing.expect(s.x1 > s.x0 and s.z1 > s.z0);
+    }
+    try std.testing.expect(lowStrips > 0 and highStrips > 0);
+    std.debug.print("\n  two bodies: datum pond {d:.3} m deep at sheet {d:.3}, plateau pond {d:.3} m deep at sheet {d:.3}; {d} strips at the datum, {d} at the plateau\n", .{
+        lowDepth, e.waterLevelAt(-30, 0), highDepth, e.waterLevelAt(50, 0), lowStrips, highStrips,
+    });
+
+    const RAISE: f32 = 2.0;
+    try std.testing.expect(m.levelBody(50, 0, wf.heightByte(PLATEAU + RAISE)));
+    try std.testing.expectEqual(wf.HEIGHT_ZERO, m.waterBaseAt(-30, 0));
+    e.uploadWater(m);
+    try std.testing.expectApproxEqAbs(highDepth + RAISE, e.wadeDepth(50, 0), 1e-4);
+    try std.testing.expectApproxEqAbs(lowDepth, e.wadeDepth(-30, 0), 1e-5);
+    strips = e.sheetStrips();
+    for (strips) |s| try std.testing.expect(@abs(s.y - WATER_Y) < 1e-5 or @abs(s.y - (WATER_Y + PLATEAU + RAISE)) < 1e-5);
+
+    const tall = foemod.bulkOf(.fen_lurker).tall;
+    std.debug.print("  the plateau body raised {d:.2} m: {d:.3} m deep, a lurker's crown would clear the sheet by {d:.3} m (band {d:.2}..{d:.2})\n", .{
+        RAISE, e.wadeDepth(50, 0), tall - e.wadeDepth(50, 0), foemod.poolBand(.fen_lurker).?[0], foemod.poolBand(.fen_lurker).?[1],
+    });
+    try std.testing.expect(e.wadeDepth(50, 0) > foemod.poolBand(.fen_lurker).?[1]);
+
+    var buf: [4 * 1024 * 1024]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try wf.write(m, fbs.writer());
+    try std.testing.expect(std.mem.indexOf(u8, fbs.getWritten(), "\nwlvl:") != null);
+    const back = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(back);
+    var ln: usize = 0;
+    try wf.parse(fbs.getWritten(), back, &ln);
+    try std.testing.expectEqualSlices(wf.Hgt, &m.waterBase, &back.waterBase);
+}
+
+test "A MAP WITH NO `wlvl:` ROW IS THE ONE SHEET IT ALWAYS HAD — every pool on the liquids bench wades exactly as before" {
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    var line: usize = 0;
+    try wf.loadForTest(wf.DIR ++ "/test_liquids" ++ wf.EXT, m, &line);
+    try std.testing.expect(!m.anyWaterBase());
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.adoptHeight(m);
+    e.uploadWater(m);
+    var worst: f32 = 0;
+    var x: f32 = -60;
+    while (x <= 60) : (x += 1.5) {
+        var z: f32 = -60;
+        while (z <= 60) : (z += 1.5) {
+            const old: f32 = if (e.paintedDepth(x, z) <= 0) 0 else mathx.maxF(0, WATER_Y - e.groundAt(x, z));
+            worst = @max(worst, @abs(old - e.wadeDepth(x, z)));
+            try std.testing.expectApproxEqAbs(WATER_Y, e.waterLevelAt(x, z), 1e-6);
+        }
+    }
+    for (e.sheetStrips()) |s| try std.testing.expectApproxEqAbs(WATER_Y, s.y, 1e-6);
+    std.debug.print("\n  liquids bench without a level row: wade depth off the old formula by {d:.6} m at worst, {d} sheet strips all at {d:.3}\n", .{ worst, e.sheetStrips().len, WATER_Y });
+    try std.testing.expect(worst < 1e-5);
 }
 
 test "A FEN LURKER IS SUBMERGED WHEREVER IT IS POSTED, on every map but the bench's dry control" {

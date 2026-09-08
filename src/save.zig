@@ -182,6 +182,9 @@ pub const Head = struct {
 
 pub const Shelf = struct {
     head: [SLOTS]?Head = [_]?Head{null} ** SLOTS,
+    /// A FILE THAT IS THERE AND WILL NOT PARSE IS NOT AN EMPTY SLOT. Read as empty it is offered for a new game and
+    /// overwritten, and the only sign anything was ever there is gone. Held apart so the row can say so instead.
+    unreadable: [SLOTS]bool = [_]bool{false} ** SLOTS,
 
     pub fn any(self: *const Shelf) bool {
         for (self.head) |h| {
@@ -196,16 +199,29 @@ pub const Shelf = struct {
 
     pub fn firstFree(self: *const Shelf) ?usize {
         for (self.head, 0..) |h, i| {
-            if (h == null) return i;
+            if (h == null and !self.unreadable[i]) return i;
         }
         return null;
+    }
+
+    /// Whether the slot holds a file at all — a good save or a bad one. What DELETE answers to.
+    pub fn holds(self: *const Shelf, i: usize) bool {
+        return self.head[i] != null or self.unreadable[i];
     }
 };
 
 pub fn survey(map: []const u8) Shelf {
     var sh = Shelf{};
-    for (0..SLOTS) |i| sh.head[i] = peek(map, i);
+    for (0..SLOTS) |i| {
+        sh.head[i] = peek(map, i);
+        sh.unreadable[i] = sh.head[i] == null and onDisk(i);
+    }
     return sh;
+}
+
+fn onDisk(i: usize) bool {
+    std.fs.cwd().access(path(i), .{}) catch return false;
+    return true;
 }
 
 pub fn peek(map: []const u8, i: usize) ?Head {
@@ -226,12 +242,12 @@ pub fn read(i: usize, s: Slot) bool {
 }
 
 pub fn erase(i: usize) bool {
-    var ok = true;
     std.fs.cwd().deleteFile(path(i)) catch |e| {
-        if (e != error.FileNotFound) ok = false;
+        // The save survived, so its picture stays with it rather than the row going blank over a live file.
+        if (e != error.FileNotFound) return false;
     };
     std.fs.cwd().deleteFile(shotPath(i)) catch {};
-    return ok;
+    return true;
 }
 
 const THUMB_W: i32 = 320;
@@ -247,13 +263,23 @@ pub fn writeShot(i: usize) bool {
     return rl.exportImage(img, shotPath(i));
 }
 
+/// WRITE BESIDE IT AND RENAME OVER IT (`worldfmt.save`'s rule, and this is the other file the game writes):
+/// `createFile` truncates first, so a render that failed part-way took the save it was replacing with it.
 pub fn writeTo(file: []const u8, s: Slot) bool {
     if (s.map.len > MAP_CAP) return false;
+    var tmpBuf: [MAP_CAP + 16]u8 = undefined;
+    const tmp = std.fmt.bufPrint(&tmpBuf, "{s}.tmp", .{file}) catch return false;
     const d = gather(s);
-    const f = std.fs.cwd().createFile(file, .{}) catch return false;
-    defer f.close();
-    render(f.writer(), &d) catch {
-        std.fs.cwd().deleteFile(file) catch {};
+    {
+        const f = std.fs.cwd().createFile(tmp, .{}) catch return false;
+        defer f.close();
+        render(f.writer(), &d) catch {
+            std.fs.cwd().deleteFile(tmp) catch {};
+            return false;
+        };
+    }
+    std.fs.cwd().rename(tmp, file) catch {
+        std.fs.cwd().deleteFile(tmp) catch {};
         return false;
     };
     return true;
@@ -1086,6 +1112,44 @@ test "the file itself round-trips, and one written for another map is refused" {
     try testing.expectEqual(@as(u32, 0), c.hero.souls.total);
 
     try testing.expect(!readFrom("save.no_such_file.dat", b.slot()));
+}
+
+test "AN UNREADABLE SLOT IS NOT A FREE ONE — offered for a new game it is overwritten, and nothing ever said it was there" {
+    var sh = Shelf{};
+    try testing.expectEqual(@as(?usize, 0), sh.firstFree());
+    sh.unreadable[0] = true;
+    try testing.expect(sh.holds(0));
+    try testing.expect(!sh.any());
+    try testing.expectEqual(@as(?usize, 1), sh.firstFree());
+    sh.head[1] = .{ .level = 2, .souls = 1, .playtime = 1 };
+    try testing.expect(sh.holds(1));
+    sh.unreadable[2] = true;
+    try testing.expect(sh.full());
+
+    const tmp = "save.test.bad.dat";
+    defer std.fs.cwd().deleteFile(tmp) catch {};
+    try std.fs.cwd().writeFile(.{ .sub_path = tmp, .data = "version: 1\nhelmet: iron\n" });
+    var d = Data{};
+    try testing.expect(!parseFile(tmp, &d));
+    try std.fs.cwd().access(tmp, .{});
+}
+
+test "A SLOT IS WRITTEN BESIDE ITSELF AND RENAMED OVER — a refused save never takes the one it was replacing" {
+    const tmp = "save.atomic.dat";
+    defer std.fs.cwd().deleteFile(tmp) catch {};
+    defer std.fs.cwd().deleteFile(tmp ++ ".tmp") catch {};
+
+    var a = Live.blank(0);
+    a.hero.souls.total = 12;
+    try testing.expect(writeTo(tmp, a.slot()));
+    try testing.expectError(error.FileNotFound, std.fs.cwd().access(tmp ++ ".tmp", .{}));
+
+    var s = a.slot();
+    s.map = "w/" ++ "x" ** MAP_CAP;
+    try testing.expect(!writeTo(tmp, s));
+    var b = Live.blank(0);
+    try testing.expect(readFrom(tmp, b.slot()));
+    try testing.expectEqual(@as(u32, 12), b.hero.souls.total);
 }
 
 test "the shelf answers what the boot screen asks it" {

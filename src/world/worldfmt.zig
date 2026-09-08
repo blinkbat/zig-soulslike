@@ -8,7 +8,9 @@ const item = @import("../play/item.zig");
 const Kind = props.Kind;
 
 
-pub const VERSION: u32 = 1;
+/// 2 widened `hgt:` to `Hgt` about `HEIGHT_ZERO`. A 1 still loads (its bytes are widened on the way in); a 2 on a build that only knows 1 is a LOAD ERROR, never a clamp.
+pub const VERSION: u32 = 2;
+const OLDEST_VERSION: u32 = 1;
 
 pub const DEFAULT_HALF: f32 = 500.0;
 
@@ -1397,10 +1399,25 @@ pub const WATER_CELLS: usize = WATER_N * WATER_N;
 pub const HEIGHT_N: usize = @intCast(gfx.HEIGHT_N);
 pub const HEIGHT_CELLS: usize = HEIGHT_N * HEIGHT_N;
 pub const HEIGHT_STEP: f32 = 0.25;
-pub const HEIGHT_ZERO: u8 = 64;
-/// How far the encoding reaches: 16 m down (deep enough for any basin) and ~48 m up.
+/// One terrain height. 16 bits at 0.25 m; the zero sits 1024 m up the range because a 1000 m map cannot descend more than tan 40° × 1000 m = 839 m walkably, and everything else is headroom.
+pub const Hgt = u16;
+pub const HEIGHT_ZERO: Hgt = 4096;
 pub const HEIGHT_MIN: f32 = -@as(f32, @floatFromInt(HEIGHT_ZERO)) * HEIGHT_STEP;
-pub const HEIGHT_MAX: f32 = @as(f32, @floatFromInt(255 - HEIGHT_ZERO)) * HEIGHT_STEP;
+pub const HEIGHT_MAX: f32 = @as(f32, @floatFromInt(std.math.maxInt(Hgt) - HEIGHT_ZERO)) * HEIGHT_STEP;
+/// A `version: 1` file's `hgt:` row is one byte a point about 64; it is widened onto `HEIGHT_ZERO` as it is read.
+pub const LEGACY_HEIGHT_ZERO: u8 = 64;
+/// The cave floor and roof stay ONE BYTE about 64 (−16..+47.75 m): the roof is a GPU texture the shader decodes with these two numbers.
+pub const CAVE_H_ZERO: u8 = 64;
+pub const CAVE_H_MIN: f32 = -@as(f32, @floatFromInt(CAVE_H_ZERO)) * HEIGHT_STEP;
+pub const CAVE_H_MAX: f32 = @as(f32, @floatFromInt(255 - CAVE_H_ZERO)) * HEIGHT_STEP;
+
+pub fn caveH(b: u8) f32 {
+    return (@as(f32, @floatFromInt(b)) - @as(f32, @floatFromInt(CAVE_H_ZERO))) * HEIGHT_STEP;
+}
+pub fn caveByte(m: f32) u8 {
+    const q = @round(m / HEIGHT_STEP) + @as(f32, @floatFromInt(CAVE_H_ZERO));
+    return @intFromFloat(mathx.clampF(q, 0, 255));
+}
 
 /// THE CAVE LATTICE HALVES THE TERRAIN'S CELL — 1.25 m on the shipped 1000 m map, where the terrain's 2.51 m cell cannot hold a passage at all. `2n-1` points, so cave point (2i,2j) IS terrain point (i,j) and a mouth can share its vertices with the hill.
 pub const CAVE_N: usize = 2 * HEIGHT_N - 1;
@@ -1427,12 +1444,12 @@ pub fn stairTread(h00: f32, h10: f32, h01: f32, h11: f32) f32 {
     return @round(mean / STAIR_RISE) * STAIR_RISE;
 }
 
-pub fn heightOf(b: u8) f32 {
+pub fn heightOf(b: Hgt) f32 {
     return (@as(f32, @floatFromInt(b)) - @as(f32, @floatFromInt(HEIGHT_ZERO))) * HEIGHT_STEP;
 }
-pub fn heightByte(m: f32) u8 {
+pub fn heightByte(m: f32) Hgt {
     const q = @round(m / HEIGHT_STEP) + @as(f32, @floatFromInt(HEIGHT_ZERO));
-    return @intFromFloat(mathx.clampF(q, 0, 255));
+    return @intFromFloat(mathx.clampF(q, 0, @floatFromInt(std.math.maxInt(Hgt))));
 }
 
 /// How steep the ground may be and still be walked, as the TANGENT of the slope angle. tan 40 deg.
@@ -1551,7 +1568,7 @@ pub const CliffLevels = struct {
     lo: [4]f32,
 };
 
-fn levelAt(field: []const u8, ix: usize, iz: usize, up: bool, minDrop: f32) f32 {
+fn levelAt(field: []const Hgt, ix: usize, iz: usize, up: bool, minDrop: f32) f32 {
     const here = heightOf(field[iz * HEIGHT_N + ix]);
     var sum: f32 = 0;
     var n: usize = 0;
@@ -1576,7 +1593,7 @@ fn levelAt(field: []const u8, ix: usize, iz: usize, up: bool, minDrop: f32) f32 
     return if (n > 0) sum / @as(f32, @floatFromInt(n)) else far;
 }
 
-pub fn cliffLevels(field: []const u8, x0: usize, z0: usize, minDrop: f32, cut: CliffCut) CliffLevels {
+pub fn cliffLevels(field: []const Hgt, x0: usize, z0: usize, minDrop: f32, cut: CliffCut) CliffLevels {
     var out: CliffLevels = undefined;
     for (RING_STEP, 0..) |step, i| {
         const ix = @min(x0 + step[0], HEIGHT_N - 1);
@@ -1588,7 +1605,7 @@ pub fn cliffLevels(field: []const u8, x0: usize, z0: usize, minDrop: f32, cut: C
     return out;
 }
 
-pub fn sampleHeight(field: []const u8, cliff: []const u8, half: f32, px: f32, pz: f32) f32 {
+pub fn sampleHeight(field: []const Hgt, cliff: []const u8, half: f32, px: f32, pz: f32) f32 {
     std.debug.assert(field.len == HEIGHT_CELLS);
     const last: f32 = @floatFromInt(HEIGHT_N - 1);
     const step = 2 * half / last;
@@ -1617,7 +1634,7 @@ pub fn sampleHeight(field: []const u8, cliff: []const u8, half: f32, px: f32, pz
     return ringLerp(if (cliffHigh(cut, tx, tz)) lv.hi else lv.lo, tx, tz);
 }
 
-pub fn sampleGrad(field: []const u8, cliff: []const u8, half: f32, px: f32, pz: f32) [2]f32 {
+pub fn sampleGrad(field: []const Hgt, cliff: []const u8, half: f32, px: f32, pz: f32) [2]f32 {
     const step = 2 * half / @as(f32, @floatFromInt(HEIGHT_N - 1));
     const hx1 = sampleHeight(field, cliff, half, px + step, pz);
     const hx0 = sampleHeight(field, cliff, half, px - step, pz);
@@ -1693,11 +1710,13 @@ pub const Map = struct {
     water: [WATER_CELLS]u8 = [_]u8{0} ** WATER_CELLS,
     waterEdge: [WATER_CELLS]u8 = [_]u8{@intFromEnum(Edge.natural)} ** WATER_CELLS,
     waterKind: [WATER_CELLS]u8 = [_]u8{@intFromEnum(Liquid.water)} ** WATER_CELLS,
-    height: [HEIGHT_CELLS]u8 = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS,
+    /// THE LEVEL A BODY OF WATER STANDS AT, one `Hgt` per cell, the same across a body because the Level brush floods it. The sheet sits `env.WATER_SKIM` over it. No `wlvl:` row is the datum, which is the one sheet every map had before.
+    waterBase: [WATER_CELLS]Hgt = [_]Hgt{HEIGHT_ZERO} ** WATER_CELLS,
+    height: [HEIGHT_CELLS]Hgt = [_]Hgt{HEIGHT_ZERO} ** HEIGHT_CELLS,
     cliff: [HEIGHT_CELLS]u8 = [_]u8{CLIFF_NONE} ** HEIGHT_CELLS,
     caveCov: [CAVE_CELLS]u8 = [_]u8{0} ** CAVE_CELLS,
-    caveFloor: [CAVE_CELLS]u8 = [_]u8{HEIGHT_ZERO} ** CAVE_CELLS,
-    caveRoof: [CAVE_CELLS]u8 = [_]u8{HEIGHT_ZERO} ** CAVE_CELLS,
+    caveFloor: [CAVE_CELLS]u8 = [_]u8{CAVE_H_ZERO} ** CAVE_CELLS,
+    caveRoof: [CAVE_CELLS]u8 = [_]u8{CAVE_H_ZERO} ** CAVE_CELLS,
 
     pub fn label(self: *const Map) []const u8 {
         return std.mem.sliceTo(&self.name, 0);
@@ -1723,12 +1742,13 @@ pub const Map = struct {
         self.water = [_]u8{0} ** WATER_CELLS;
         self.waterEdge = [_]u8{@intFromEnum(Edge.natural)} ** WATER_CELLS;
         self.waterKind = [_]u8{@intFromEnum(Liquid.water)} ** WATER_CELLS;
+        self.waterBase = [_]Hgt{HEIGHT_ZERO} ** WATER_CELLS;
         // To the DATUM, not to zero: `@memset(.., 0)` here would drop the ground to HEIGHT_MIN.
-        self.height = [_]u8{HEIGHT_ZERO} ** HEIGHT_CELLS;
+        self.height = [_]Hgt{HEIGHT_ZERO} ** HEIGHT_CELLS;
         self.cliff = [_]u8{CLIFF_NONE} ** HEIGHT_CELLS;
         self.caveCov = [_]u8{0} ** CAVE_CELLS;
-        self.caveFloor = [_]u8{HEIGHT_ZERO} ** CAVE_CELLS;
-        self.caveRoof = [_]u8{HEIGHT_ZERO} ** CAVE_CELLS;
+        self.caveFloor = [_]u8{CAVE_H_ZERO} ** CAVE_CELLS;
+        self.caveRoof = [_]u8{CAVE_H_ZERO} ** CAVE_CELLS;
     }
 
     pub fn blank(self: *Map, name: []const u8) void {
@@ -2021,12 +2041,46 @@ pub const Map = struct {
         return changed;
     }
 
+    /// The highest lattice point under a brush disc: painted in a dug basin the disc reaches the rim, and the rim is the level.
+    fn rimHeight(self: *const Map, px: f32, pz: f32, radius: f32) Hgt {
+        const step = self.heightStep();
+        var best: Hgt = heightByte(mathx.clampF(self.heightAt(px, pz), HEIGHT_MIN, HEIGHT_MAX));
+        const xs = pointSpan(px, radius, self.half, step, HEIGHT_N) orelse return best;
+        const zs = pointSpan(pz, radius, self.half, step, HEIGHT_N) orelse return best;
+        var iz = zs[0];
+        while (iz <= zs[1]) : (iz += 1) {
+            var ix = xs[0];
+            while (ix <= xs[1]) : (ix += 1) {
+                const p = self.heightPoint(ix, iz);
+                if ((p[0] - px) * (p[0] - px) + (p[1] - pz) * (p[1] - pz) > radius * radius) continue;
+                best = @max(best, self.height[iz * HEIGHT_N + ix]);
+            }
+        }
+        return best;
+    }
+
+    fn neighbourBase(self: *const Map, cx: usize, cz: usize) ?Hgt {
+        const i = cz * WATER_N + cx;
+        const nb = [4]?usize{
+            if (cx > 0) i - 1 else null,
+            if (cx + 1 < WATER_N) i + 1 else null,
+            if (cz > 0) i - WATER_N else null,
+            if (cz + 1 < WATER_N) i + WATER_N else null,
+        };
+        for (nb) |maybe| {
+            const j = maybe orelse continue;
+            if (self.water[j] != 0) return self.waterBase[j];
+        }
+        return null;
+    }
+
     pub fn paintWater(self: *Map, px: f32, pz: f32, radius: f32, wet: bool, edge: ?Edge, kind: ?Liquid) bool {
         const cell = self.cellSize(WATER_N);
         const r2 = radius * radius;
         const v: u8 = if (wet) 1 else 0;
         const ev: ?u8 = if (edge) |e| @intFromEnum(e) else null;
         const kv: ?u8 = if (kind) |k| @intFromEnum(k) else null;
+        const fresh: Hgt = if (wet) self.rimHeight(px, pz, radius) else HEIGHT_ZERO;
         var changed = false;
         var cz: usize = 0;
         while (cz < WATER_N) : (cz += 1) {
@@ -2041,6 +2095,8 @@ pub const Map = struct {
                 if (dx * dx + dz * dz > r2) continue;
                 const i = cz * WATER_N + cx;
                 if (self.water[i] != v) {
+                    // A cell joining a body takes the body's level; the first cell of a new pond takes the brush's rim, which is where a basin's water would stand.
+                    if (wet) self.waterBase[i] = self.neighbourBase(cx, cz) orelse fresh;
                     self.water[i] = v;
                     changed = true;
                 }
@@ -2066,6 +2122,55 @@ pub const Map = struct {
             if (v != 0) return true;
         }
         return false;
+    }
+
+    pub fn anyWaterBase(self: *const Map) bool {
+        for (self.waterBase) |v| {
+            if (v != HEIGHT_ZERO) return true;
+        }
+        return false;
+    }
+
+    /// The level base of the water cell under a point, wet or not.
+    pub fn waterBaseAt(self: *const Map, px: f32, pz: f32) Hgt {
+        const i = gridIndex(self.half, WATER_N, px, pz) orelse return HEIGHT_ZERO;
+        return self.waterBase[i];
+    }
+
+    /// ONE LEVEL FOR THE WHOLE BODY under the point: every wet cell reachable through wet neighbours takes `base`. False where the point is dry.
+    pub fn levelBody(self: *Map, px: f32, pz: f32, base: Hgt) bool {
+        const start = gridIndex(self.half, WATER_N, px, pz) orelse return false;
+        if (self.water[start] == 0) return false;
+        @memset(&fillSeen, false);
+        var n: usize = 0;
+        fillStack[n] = @intCast(start);
+        n += 1;
+        fillSeen[start] = true;
+        var changed = false;
+        while (n > 0) {
+            n -= 1;
+            const i: usize = fillStack[n];
+            if (self.waterBase[i] != base) {
+                self.waterBase[i] = base;
+                changed = true;
+            }
+            const x = i % WATER_N;
+            const z = i / WATER_N;
+            const nb = [4]?usize{
+                if (x > 0) i - 1 else null,
+                if (x + 1 < WATER_N) i + 1 else null,
+                if (z > 0) i - WATER_N else null,
+                if (z + 1 < WATER_N) i + WATER_N else null,
+            };
+            for (nb) |maybe| {
+                const j = maybe orelse continue;
+                if (fillSeen[j] or self.water[j] == 0) continue;
+                fillSeen[j] = true;
+                fillStack[n] = @intCast(j);
+                n += 1;
+            }
+        }
+        return changed;
     }
 
     pub fn heightAt(self: *const Map, px: f32, pz: f32) f32 {
@@ -2328,6 +2433,7 @@ pub fn write(m: *const Map, w: anytype) !void {
                 break;
             }
         }
+        if (m.anyWaterBase()) try writeGrid(w, "wlvl", &m.waterBase);
     }
     if (m.anyHeight()) {
         try w.writeAll("\n");
@@ -2510,7 +2616,7 @@ fn writeOp(o: *const Op, s: *const Scatter, w: anytype) !void {
     try w.writeAll("\n");
 }
 
-fn writeGrid(w: anytype, label: []const u8, cells: []const u8) !void {
+fn writeGrid(w: anytype, label: []const u8, cells: anytype) !void {
     var i: usize = 0;
     var perLine: usize = 0;
     while (i < cells.len) {
@@ -2605,12 +2711,14 @@ const Cursor = struct {
 pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     m.* = .{};
     var seenVersion = false;
+    var ver: u32 = 0;
     var soilAt: usize = 0;
     var covAt: usize = 0;
     var edgeAt: usize = 0;
     var waterAt: usize = 0;
     var wEdgeAt: usize = 0;
     var wKindAt: usize = 0;
+    var wBaseAt: usize = 0;
     var hgtAt: usize = 0;
     var cliffAt: usize = 0;
     var caveAt: usize = 0;
@@ -2630,7 +2738,8 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
         var it = std.mem.tokenizeAny(u8, line[colon + 1 ..], " \t");
         if (try parseScript(m, rec, rest, &it, &cur)) continue;
         if (std.mem.eql(u8, rec, "version")) {
-            if (try nextInt(&it) != VERSION) return ParseError.BadVersion;
+            ver = @intCast(try nextInt(&it));
+            if (ver < OLDEST_VERSION or ver > VERSION) return ParseError.BadVersion;
             seenVersion = true;
         } else if (std.mem.eql(u8, rec, "name")) {
             m.setName(trim(line[colon + 1 ..]));
@@ -2663,27 +2772,34 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             m.arenas[m.narenas] = try parseArena(&it);
             m.narenas += 1;
         } else if (std.mem.eql(u8, rec, "soil")) {
-            soilAt = try readGrid(&it, &m.soil, soilAt, Soil.N);
+            soilAt = try readGrid(u8, &it, &m.soil, soilAt, Soil.N);
         } else if (std.mem.eql(u8, rec, "soilcov")) {
-            covAt = try readGrid(&it, &m.soilCov, covAt, 256);
+            covAt = try readGrid(u8, &it, &m.soilCov, covAt, 256);
         } else if (std.mem.eql(u8, rec, "soiledge")) {
-            edgeAt = try readGrid(&it, &m.soilEdge, edgeAt, Edge.N);
+            edgeAt = try readGrid(u8, &it, &m.soilEdge, edgeAt, Edge.N);
         } else if (std.mem.eql(u8, rec, "water")) {
-            waterAt = try readGrid(&it, &m.water, waterAt, 2);
+            waterAt = try readGrid(u8, &it, &m.water, waterAt, 2);
         } else if (std.mem.eql(u8, rec, "wateredge")) {
-            wEdgeAt = try readGrid(&it, &m.waterEdge, wEdgeAt, Edge.N);
+            wEdgeAt = try readGrid(u8, &it, &m.waterEdge, wEdgeAt, Edge.N);
         } else if (std.mem.eql(u8, rec, "liquid")) {
-            wKindAt = try readGrid(&it, &m.waterKind, wKindAt, Liquid.N);
+            wKindAt = try readGrid(u8, &it, &m.waterKind, wKindAt, Liquid.N);
+        } else if (std.mem.eql(u8, rec, "wlvl")) {
+            wBaseAt = try readGrid(Hgt, &it, &m.waterBase, wBaseAt, std.math.maxInt(Hgt) + 1);
         } else if (std.mem.eql(u8, rec, "hgt")) {
-            hgtAt = try readGrid(&it, &m.height, hgtAt, 256);
+            if (!seenVersion) return ParseError.BadVersion;
+            const from = hgtAt;
+            hgtAt = try readGrid(Hgt, &it, &m.height, hgtAt, if (ver == 1) 256 else std.math.maxInt(Hgt) + 1);
+            if (ver == 1) {
+                for (m.height[from..hgtAt]) |*h| h.* = h.* + HEIGHT_ZERO - LEGACY_HEIGHT_ZERO;
+            }
         } else if (std.mem.eql(u8, rec, "cave")) {
-            caveAt = try readGrid(&it, &m.caveCov, caveAt, 256);
+            caveAt = try readGrid(u8, &it, &m.caveCov, caveAt, 256);
         } else if (std.mem.eql(u8, rec, "cavefloor")) {
-            caveFAt = try readGrid(&it, &m.caveFloor, caveFAt, 256);
+            caveFAt = try readGrid(u8, &it, &m.caveFloor, caveFAt, 256);
         } else if (std.mem.eql(u8, rec, "caveroof")) {
-            caveRAt = try readGrid(&it, &m.caveRoof, caveRAt, 256);
+            caveRAt = try readGrid(u8, &it, &m.caveRoof, caveRAt, 256);
         } else if (std.mem.eql(u8, rec, "cliff")) {
-            cliffAt = try readGrid(&it, &m.cliff, cliffAt, CLIFF_N);
+            cliffAt = try readGrid(u8, &it, &m.cliff, cliffAt, CLIFF_N);
         } else if (std.mem.eql(u8, rec, "foe")) {
             if (m.nfoes >= MAX_FOES) return ParseError.TooManyFoes;
             var f = Foe{
@@ -2733,17 +2849,18 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     }
     if (!seenVersion) return ParseError.BadVersion;
     var grown = false;
-    grown = try gridRead(soilAt, &m.soil, SOIL_N, LEGACY_SOIL_N, 0) or grown;
-    grown = try gridRead(covAt, &m.soilCov, SOIL_N, LEGACY_SOIL_N, COV_FULL) or grown;
-    grown = try gridRead(edgeAt, &m.soilEdge, SOIL_N, LEGACY_SOIL_N, @intFromEnum(Edge.natural)) or grown;
-    grown = try gridRead(waterAt, &m.water, WATER_N, LEGACY_WATER_N, 0) or grown;
-    grown = try gridRead(wEdgeAt, &m.waterEdge, WATER_N, LEGACY_WATER_N, @intFromEnum(Edge.natural)) or grown;
-    grown = try gridRead(wKindAt, &m.waterKind, WATER_N, LEGACY_WATER_N, @intFromEnum(Liquid.water)) or grown;
-    grown = try gridRead(hgtAt, &m.height, HEIGHT_N, LEGACY_HEIGHT_N, HEIGHT_ZERO) or grown;
-    grown = try gridRead(cliffAt, &m.cliff, HEIGHT_N, LEGACY_HEIGHT_N, CLIFF_NONE) or grown;
-    grown = try gridRead(caveAt, &m.caveCov, CAVE_N, LEGACY_CAVE_N, 0) or grown;
-    grown = try gridRead(caveFAt, &m.caveFloor, CAVE_N, LEGACY_CAVE_N, HEIGHT_ZERO) or grown;
-    grown = try gridRead(caveRAt, &m.caveRoof, CAVE_N, LEGACY_CAVE_N, HEIGHT_ZERO) or grown;
+    grown = try gridRead(u8, soilAt, &m.soil, SOIL_N, LEGACY_SOIL_N, 0) or grown;
+    grown = try gridRead(u8, covAt, &m.soilCov, SOIL_N, LEGACY_SOIL_N, COV_FULL) or grown;
+    grown = try gridRead(u8, edgeAt, &m.soilEdge, SOIL_N, LEGACY_SOIL_N, @intFromEnum(Edge.natural)) or grown;
+    grown = try gridRead(u8, waterAt, &m.water, WATER_N, LEGACY_WATER_N, 0) or grown;
+    grown = try gridRead(u8, wEdgeAt, &m.waterEdge, WATER_N, LEGACY_WATER_N, @intFromEnum(Edge.natural)) or grown;
+    grown = try gridRead(u8, wKindAt, &m.waterKind, WATER_N, LEGACY_WATER_N, @intFromEnum(Liquid.water)) or grown;
+    grown = try gridRead(Hgt, wBaseAt, &m.waterBase, WATER_N, LEGACY_WATER_N, HEIGHT_ZERO) or grown;
+    grown = try gridRead(Hgt, hgtAt, &m.height, HEIGHT_N, LEGACY_HEIGHT_N, HEIGHT_ZERO) or grown;
+    grown = try gridRead(u8, cliffAt, &m.cliff, HEIGHT_N, LEGACY_HEIGHT_N, CLIFF_NONE) or grown;
+    grown = try gridRead(u8, caveAt, &m.caveCov, CAVE_N, LEGACY_CAVE_N, 0) or grown;
+    grown = try gridRead(u8, caveFAt, &m.caveFloor, CAVE_N, LEGACY_CAVE_N, CAVE_H_ZERO) or grown;
+    grown = try gridRead(u8, caveRAt, &m.caveRoof, CAVE_N, LEGACY_CAVE_N, CAVE_H_ZERO) or grown;
     if (grown) {
         m.half = grownHalf(m.half);
         if (m.half > MAX_DECLARED_HALF) return ParseError.BadNumber;
@@ -2751,7 +2868,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
     // A floor at or over its ceiling is not a chamber; the sampler would hand back a surface with no air over it.
     if (caveAt != 0) {
         for (m.caveCov, m.caveFloor, m.caveRoof) |c, f, r| {
-            if (c >= CAVE_EDGE and heightOf(r) <= heightOf(f)) return ParseError.BadNumber;
+            if (c >= CAVE_EDGE and caveH(r) <= caveH(f)) return ParseError.BadNumber;
         }
     }
     if (edgeAt == 0) fillLegacyEdges(m);
@@ -2782,7 +2899,7 @@ fn latticeIndex(half: f32, n: usize, w: f32, kind: Lattice) f32 {
     return mathx.clampF(raw, 0, fn_ - 1);
 }
 
-fn bilerpGrid(src: []const u8, n: usize, fx: f32, fz: f32) f32 {
+fn bilerpGrid(comptime T: type, src: []const T, n: usize, fx: f32, fz: f32) f32 {
     const x0: usize = @intFromFloat(@floor(fx));
     const z0: usize = @intFromFloat(@floor(fz));
     const x1 = @min(x0 + 1, n - 1);
@@ -2803,10 +2920,11 @@ fn bilerpGrid(src: []const u8, n: usize, fx: f32, fz: f32) f32 {
 /// outward and not a cliff. `smooth` is for fields; an ID or a flag is nearest, because an interpolated soil id is a
 /// material nobody painted.
 pub fn regrid(
-    dst: []u8,
+    comptime T: type,
+    dst: []T,
     dn: usize,
     dstHalf: f32,
-    src: []const u8,
+    src: []const T,
     sn: usize,
     srcHalf: f32,
     kind: Lattice,
@@ -2819,15 +2937,22 @@ pub fn regrid(
             const wx = latticeWorld(dstHalf, dn, jx, kind);
             const fx = latticeIndex(srcHalf, sn, wx, kind);
             dst[jz * dn + jx] = if (smooth)
-                @intFromFloat(mathx.clampF(@round(bilerpGrid(src, sn, fx, fz)), 0, 255))
+                @intFromFloat(mathx.clampF(@round(bilerpGrid(T, src, sn, fx, fz)), 0, @floatFromInt(std.math.maxInt(T))))
             else
                 src[@as(usize, @intFromFloat(@round(fz))) * sn + @as(usize, @intFromFloat(@round(fx)))];
         }
     }
 }
 
+var fillStack: [WATER_CELLS]u32 = undefined;
+var fillSeen: [WATER_CELLS]bool = undefined;
+
 /// One legacy grid's worth of source, so an embed can read the record it is overwriting.
-var regridScratch: [LEGACY_CAVE_N * LEGACY_CAVE_N]u8 = undefined;
+var regridScratch: [LEGACY_CAVE_N * LEGACY_CAVE_N]u8 align(@alignOf(Hgt)) = undefined;
+
+comptime {
+    std.debug.assert(regridScratch.len >= LEGACY_HEIGHT_N * LEGACY_HEIGHT_N * @sizeOf(Hgt));
+}
 
 /// WHAT A MAP FROM THE OLD BUILD IS WORTH IN THE NEW WORLD. Every lattice gained the same number of points, so grow
 /// the map's own half by that ratio and the CELL SIZE IS UNCHANGED: each old sample lands exactly on a new lattice
@@ -2852,25 +2977,26 @@ comptime {
 
 /// A grid record is either today's length or the old build's. Anything else is a truncated file. Returns whether it
 /// was the old build's, because that is what says the map's half has to grow with it.
-fn gridRead(at: usize, cells: []u8, dn: usize, sn: usize, blank: u8) !bool {
+fn gridRead(comptime T: type, at: usize, cells: []T, dn: usize, sn: usize, blank: T) !bool {
     if (at == 0 or at == dn * dn) return false;
     if (at != sn * sn) return ParseError.MissingField;
-    @memcpy(regridScratch[0 .. sn * sn], cells[0 .. sn * sn]);
+    const scratch = std.mem.bytesAsSlice(T, regridScratch[0 .. sn * sn * @sizeOf(T)]);
+    @memcpy(scratch, cells[0 .. sn * sn]);
     @memset(cells, blank);
     const off = (dn - sn) / 2;
     for (0..sn) |iz| {
-        @memcpy(cells[(iz + off) * dn + off ..][0..sn], regridScratch[iz * sn ..][0..sn]);
+        @memcpy(cells[(iz + off) * dn + off ..][0..sn], scratch[iz * sn ..][0..sn]);
     }
     return true;
 }
 
-fn readGrid(it: *std.mem.TokenIterator(u8, .any), cells: []u8, at: usize, lim: u16) !usize {
+fn readGrid(comptime T: type, it: *std.mem.TokenIterator(u8, .any), cells: []T, at: usize, lim: u32) !usize {
     var cur = at;
     while (it.next()) |tok| {
         const xi = std.mem.indexOfScalar(u8, tok, 'x') orelse return ParseError.BadNumber;
-        const v = std.fmt.parseInt(u8, tok[0..xi], 10) catch return ParseError.BadNumber;
+        const v = std.fmt.parseInt(T, tok[0..xi], 10) catch return ParseError.BadNumber;
         const run = std.fmt.parseInt(usize, tok[xi + 1 ..], 10) catch return ParseError.BadNumber;
-        if (v >= lim) return ParseError.BadKind;
+        if (@as(u32, v) >= lim) return ParseError.BadKind;
         if (run > cells.len - cur) return ParseError.ExtraField;
         @memset(cells[cur .. cur + run], v);
         cur += run;
@@ -3913,7 +4039,7 @@ test "A MAP THAT FILLS EVERY CAP IS STILL A MAP THAT LOADS" {
     o.kind = .pillar;
     while (m.nops < MAX_OPS) _ = try m.add(o);
     for (&m.soil, 0..) |*c, i| c.* = @intCast(i % 4);
-    for (&m.height, 0..) |*c, i| c.* = @intCast(HEIGHT_ZERO -% @as(u8, @intCast(i % 3)));
+    for (&m.height, 0..) |*c, i| c.* = HEIGHT_ZERO - @as(Hgt, @intCast(i % 3));
     for (&m.water, 0..) |*c, i| c.* = @intCast(i % 2);
     for (&m.waterEdge, 0..) |*c, i| c.* = @intCast(i % Edge.N);
     for (&m.waterKind, 0..) |*c, i| c.* = @intCast(i % Liquid.N);
@@ -3967,11 +4093,11 @@ test "THE SHIPPED MAPS SIT INSIDE THE READ BUFFER, and `save` refuses to write o
     o.nloot = MAX_LOOT;
     for (&o.loot) |*k| k.* = .smithing_stone;
     while (m.nops < MAX_OPS) _ = try m.add(o);
-    for (&m.height, 0..) |*h, i| h.* = @intCast(i % 2);
+    for (&m.height, 0..) |*h, i| h.* = @intCast(std.math.maxInt(Hgt) - i % 2);
     for (&m.caveCov, 0..) |*c, i| c.* = @intCast(CAVE_EDGE + i % 2);
     for (&m.caveFloor, &m.caveRoof) |*f, *r| {
-        f.* = HEIGHT_ZERO - 8;
-        r.* = HEIGHT_ZERO;
+        f.* = CAVE_H_ZERO - 8;
+        r.* = CAVE_H_ZERO;
     }
     try save(kept, m);
     const worstSaved = (try std.fs.cwd().statFile(kept)).size;
@@ -3980,7 +4106,7 @@ test "THE SHIPPED MAPS SIT INSIDE THE READ BUFFER, and `save` refuses to write o
     });
     try load(kept, back, &line);
     try std.testing.expectEqual(MAX_OPS, back.nops);
-    try std.testing.expectEqualSlices(u8, &m.height, &back.height);
+    try std.testing.expectEqualSlices(Hgt, &m.height, &back.height);
     try std.testing.expectEqualSlices(u8, &m.caveCov, &back.caveCov);
 }
 
@@ -4346,7 +4472,7 @@ test "the height field round-trips, and a FLAT map writes no height record at al
     try write(m, fbs.writer());
     var line: usize = 0;
     try parse(fbs.getWritten(), back, &line);
-    try std.testing.expectEqualSlices(u8, &m.height, &back.height);
+    try std.testing.expectEqualSlices(Hgt, &m.height, &back.height);
     try std.testing.expect(back.heightAt(-40, 20) > 8.0);
     try std.testing.expect(back.heightAt(30, -10) < -3.0);
     try std.testing.expectApproxEqAbs(@as(f32, 0), back.heightAt(0, 200), 1e-6);
@@ -4512,6 +4638,36 @@ test "a bad key or a missing field is a load error, never a default" {
     try std.testing.expectError(ParseError.MissingField, parse("version: 1\nbelt: fern -1 -1 1 1\n", &m, &ln));
     try std.testing.expectError(ParseError.UnknownRecord, parse("version: 1\nsplat: 1 2 3\n", &m, &ln));
     try std.testing.expectError(ParseError.BadVersion, parse("version: 99\n", &m, &ln));
+}
+
+test "A VERSION 1 HEIGHT ROW IS ONE BYTE ABOUT 64 AND IS WIDENED ON THE WAY IN — the shipped map's 88 is still 6.00 m, and a 2 writes the full range back" {
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    var ln: usize = 0;
+    var text: [96]u8 = undefined;
+    const v1 = try std.fmt.bufPrint(&text, "version: 1\nhgt: 88x{d} 40x{d}\n", .{ HEIGHT_CELLS / 2, HEIGHT_CELLS - HEIGHT_CELLS / 2 });
+    try parse(v1, m, &ln);
+    try std.testing.expectEqual(@as(Hgt, HEIGHT_ZERO + 24), m.height[0]);
+    try std.testing.expectApproxEqAbs(@as(f32, 6.0), heightOf(m.height[0]), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, -6.0), heightOf(m.height[HEIGHT_CELLS - 1]), 1e-6);
+
+    m.height[0] = heightByte(-600.0);
+    m.height[1] = heightByte(2000.0);
+    var buf: [4 * 1024 * 1024]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    try std.testing.expect(std.mem.startsWith(u8, fbs.getWritten(), "version: 2\n"));
+    const back = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(back);
+    try parse(fbs.getWritten(), back, &ln);
+    try std.testing.expectEqualSlices(Hgt, &m.height, &back.height);
+    try std.testing.expectApproxEqAbs(@as(f32, -600.0), heightOf(back.height[0]), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 2000.0), heightOf(back.height[1]), 1e-6);
+
+    try std.testing.expectError(ParseError.BadKind, parse("version: 1\nhgt: 300x1\n", m, &ln));
+    try std.testing.expectError(ParseError.BadNumber, parse("version: 2\nhgt: 70000x1\n", m, &ln));
+    try std.testing.expectError(ParseError.BadVersion, parse("hgt: 64x1\nversion: 2\n", m, &ln));
+    std.debug.print("\n  heights: {d} bits at {d:.2} m, {d:.2}..{d:.2} m (was -16.00..47.75)\n", .{ @bitSizeOf(Hgt), HEIGHT_STEP, HEIGHT_MIN, HEIGHT_MAX });
 }
 
 test "ONE FOE LIMIT, AND A MAP MAY SPEND ALL OF IT ON ONE KIND" {

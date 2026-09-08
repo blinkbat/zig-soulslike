@@ -920,6 +920,14 @@ pub fn partsOf(k: Kind) []const Part {
     };
 }
 
+/// The `rock.CLIFF_PROPS` row a cliff-family kind draws, null for everything else. The illusory wall is left out: it is a wall to walk into, not a face to seat.
+pub fn cliffRow(k: Kind) ?usize {
+    const first = @intFromEnum(Kind.cliff);
+    const i = @intFromEnum(k);
+    if (i < first or i >= first + rock.CLIFF_PROPS.len) return null;
+    return i - first;
+}
+
 // The six `cliffN` tags index `rock.CLIFF_PROPS` by their own order, in `partsOf` and again in `rock.cliff1`..`cliff6`. Reordering the enum or the table silently hands a face someone else's colliders.
 comptime {
     const first = @intFromEnum(Kind.cliff);

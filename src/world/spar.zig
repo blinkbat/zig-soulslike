@@ -153,6 +153,6 @@ test "the room round-trips through the writer, so the shot harness can be pointe
     try std.testing.expectEqual(m.narenas, back.narenas);
     try std.testing.expect(m.arenas[0].onWall(0, R));
     try std.testing.expectEqual(wf.FoeKind.bone_knight, m.arenas[0].boss[0]);
-    try std.testing.expectEqualSlices(u8, &m.height, &back.height);
+    try std.testing.expectEqualSlices(wf.Hgt, &m.height, &back.height);
     std.debug.print("spar file: {d} KB, {d} ops, start ({d:.0}, {d:.0})\n", .{ text.len / 1024, back.nops, back.start.x, back.start.z });
 }

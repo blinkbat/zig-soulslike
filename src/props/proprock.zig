@@ -89,14 +89,24 @@ pub const CliffBody = struct { x: f32, y: f32, z: f32, rx: f32, ry: f32, rz: f32
 /// The rock's solid masses in its own frame, recorded as the mesh is built: the five bodies and every base or apron boulder big enough to stop a body.
 /// A shattered kind can record 5 bodies, 9 base boulders, 14 apron boulders, 12 rib joints and 3 slabs; the cap is a panic because a dropped mass is a walk-through lobe.
 pub const MASS_CAP = 64;
+/// The five summits and the four saddles between them: the skyline `cliffseat` seats a lip against. Never in the walk band, so `fitParts` does not read them.
+pub const SKY_CAP = 9;
 pub const Masses = struct {
     items: [MASS_CAP]CliffBody = undefined,
     n: usize = 0,
+    sky: [SKY_CAP]CliffBody = undefined,
+    nsky: usize = 0,
 
     fn push(self: *Masses, b: CliffBody) void {
         if (self.n >= MASS_CAP) @panic("proprock: MASS_CAP exceeded — raise the cap");
         self.items[self.n] = b;
         self.n += 1;
+    }
+
+    fn pushSky(self: *Masses, b: CliffBody) void {
+        if (self.nsky >= SKY_CAP) @panic("proprock: SKY_CAP exceeded — raise the cap");
+        self.sky[self.nsky] = b;
+        self.nsky += 1;
     }
 };
 /// A boulder under this radius is stepped over, not walked round.
@@ -141,16 +151,45 @@ var fitStore: [CLIFF_PROPS.len][FIT_CAP]art.Part = undefined;
 var fitN: [CLIFF_PROPS.len]usize = [_]usize{0} ** CLIFF_PROPS.len;
 var fitDone: [CLIFF_PROPS.len]bool = [_]bool{false} ** CLIFF_PROPS.len;
 
-/// A row's colliders, fitted once off a throwaway build of its own seed.
+/// A row's colliders, fitted once off its own shape.
 pub fn cliffColliders(i: usize) []const art.Part {
     if (!fitDone[i]) {
-        var ms = Masses{};
-        var b = cliffBuildOpt(CLIFF_PROPS[i].seed, CLIFF_PROPS[i].kind, true, &ms);
-        b.deinit();
-        fitN[i] = fitParts(&ms, 1.0, &fitStore[i]).len;
+        fitN[i] = fitParts(&cliffShape(i).masses, 1.0, &fitStore[i]).len;
         fitDone[i] = true;
     }
     return fitStore[i][0..fitN[i]];
+}
+
+/// A placeable row's masses, its skyline, and the extent of its STONE, off one throwaway build of its own seed.
+pub const CliffShape = struct {
+    masses: Masses,
+    lo: rl.Vector3,
+    hi: rl.Vector3,
+    all: [MASS_CAP + SKY_CAP]CliffBody,
+
+    /// Every body that has a face: the colliding masses and the skyline, as `cliffFaceZ` reads them.
+    pub fn bodies(self: *const CliffShape) []const CliffBody {
+        return self.all[0 .. self.masses.n + self.masses.nsky];
+    }
+};
+
+var shapeStore: [CLIFF_PROPS.len]CliffShape = undefined;
+var shapeDone: [CLIFF_PROPS.len]bool = [_]bool{false} ** CLIFF_PROPS.len;
+
+pub fn cliffShape(i: usize) *const CliffShape {
+    if (!shapeDone[i]) {
+        var sh: *CliffShape = &shapeStore[i];
+        sh.masses = .{};
+        var b = cliffBuildOpt(CLIFF_PROPS[i].seed, CLIFF_PROPS[i].kind, true, &sh.masses);
+        const bb = b.boundsOf(.stone);
+        b.deinit();
+        sh.lo = bb.lo;
+        sh.hi = bb.hi;
+        @memcpy(sh.all[0..sh.masses.n], sh.masses.items[0..sh.masses.n]);
+        @memcpy(sh.all[sh.masses.n .. sh.masses.n + sh.masses.nsky], sh.masses.sky[0..sh.masses.nsky]);
+        shapeDone[i] = true;
+    }
+    return &shapeStore[i];
 }
 
 pub fn cliffFaceZ(bs: []const CliffBody, x: f32, y: f32) ?f32 {
@@ -239,6 +278,7 @@ pub fn cliffBuildOpt(seed: u64, k: CliffKind, fissures: bool, masses: ?*Masses) 
             if (rng.float() < 0.3) CLIFF_LT else CLIFF_ROCK,
         );
         bodies[nbody] = .{ .x = sx, .y = sy, .z = sz, .rx = srx, .ry = sry, .rz = srz };
+        if (masses) |ms| ms.pushSky(bodies[nbody]);
         nbody += 1;
         top[@intCast(m)] = .{ .x = sx, .z = sz, .y = sy + sry, .rx = srx, .rz = srz, .ry = sry };
     }
@@ -374,13 +414,16 @@ pub fn cliffBuildOpt(seed: u64, k: CliffKind, fissures: bool, masses: ?*Masses) 
         const a = top[@intCast(c)];
         const d = top[@intCast(c + 1)];
         const lo = @min(a.y, d.y);
-        b.addBlob(
-            v3((a.x + d.x) * 0.5, lo - H * rng.range(0.05, 0.10), (a.z + d.z) * 0.5 + rng.signed() * 0.4),
-            v3(@abs(d.x - a.x) * 0.5 + @min(a.rx, d.rx) * 0.75, H * rng.range(0.07, 0.12), @min(a.rz, d.rz) * rng.range(0.85, 1.05)),
-            5,
-            9,
-            if (rng.float() < 0.25) CLIFF_LT else CLIFF_ROCK,
-        );
+        const saddle = CliffBody{
+            .x = (a.x + d.x) * 0.5,
+            .y = lo - H * rng.range(0.05, 0.10),
+            .z = (a.z + d.z) * 0.5 + rng.signed() * 0.4,
+            .rx = @abs(d.x - a.x) * 0.5 + @min(a.rx, d.rx) * 0.75,
+            .ry = H * rng.range(0.07, 0.12),
+            .rz = @min(a.rz, d.rz) * rng.range(0.85, 1.05),
+        };
+        b.addBlob(v3(saddle.x, saddle.y, saddle.z), v3(saddle.rx, saddle.ry, saddle.rz), 5, 9, if (rng.float() < 0.25) CLIFF_LT else CLIFF_ROCK);
+        if (masses) |ms| ms.pushSky(saddle);
     }
     b.setMat(.plant);
     var g: i32 = 0;

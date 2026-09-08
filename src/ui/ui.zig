@@ -34,6 +34,9 @@ pub const alpha = mathx.withAlpha;
 pub const col = rgba;
 
 var dragOwner: ?rl.Rectangle = null;
+/// Where a gauge's track was GRABBED. A click alone must not move it: the label rides the track, and on a coordinate
+/// row a stray press near the left edge would fling the op the width of the map.
+var trackFrom: f32 = 0;
 
 pub const Ctx = struct {
     mouse: rl.Vector2,
@@ -50,6 +53,12 @@ pub const Ctx = struct {
 
     tipBuf: [MSG_CAP]u8 = undefined,
     tipLen: usize = 0,
+
+    /// A SCROLLED PANEL SCISSORS ITS DRAWING AND MUST SCISSOR ITS POINTER TOO: a row pushed above the panel's top is
+    /// still laid out and still tests the mouse, so without this the invisible rows keep taking the clicks.
+    clip: ?rl.Rectangle = null,
+    /// A LIST INSIDE A SCROLLED PANEL OWNS THE WHEEL OVER IT, or one notch moves the list AND the panel under it.
+    wheelTaken: bool = false,
 
     pub fn begin(t: f32) Ctx {
         if (!rl.isMouseButtonDown(.left)) dragOwner = null;
@@ -89,14 +98,36 @@ pub const Ctx = struct {
         ctx.down = false;
     }
 
+    /// THE ONE POINTER TEST IN THIS FILE. Every widget goes through it, or the clip is honoured by only some of them.
+    pub fn over(ctx: *const Ctx, r: rl.Rectangle) bool {
+        if (ctx.clip) |c| {
+            if (!rl.checkCollisionPointRec(ctx.mouse, c)) return false;
+        }
+        return rl.checkCollisionPointRec(ctx.mouse, r);
+    }
+
+    /// Scissors the drawing AND the pointer to `r`. Returns the clip it stood over, for `popClip` to put back.
+    pub fn pushClip(ctx: *Ctx, r: rl.Rectangle) ?rl.Rectangle {
+        const was = ctx.clip;
+        ctx.clip = r;
+        rl.beginScissorMode(@intFromFloat(r.x), @intFromFloat(r.y), @intFromFloat(r.width), @intFromFloat(r.height));
+        return was;
+    }
+
+    pub fn popClip(ctx: *Ctx, was: ?rl.Rectangle) void {
+        rl.endScissorMode();
+        ctx.clip = was;
+        if (was) |c| rl.beginScissorMode(@intFromFloat(c.x), @intFromFloat(c.y), @intFromFloat(c.width), @intFromFloat(c.height));
+    }
+
     pub fn owns(ctx: *Ctx, r: rl.Rectangle) bool {
-        if (ctx.pressed and rl.checkCollisionPointRec(ctx.mouse, r)) dragOwner = r;
+        if (ctx.pressed and ctx.over(r)) dragOwner = r;
         const o = dragOwner orelse return false;
         return o.x == r.x and o.y == r.y and o.width == r.width and o.height == r.height;
     }
 
     pub fn hot(ctx: *Ctx, r: rl.Rectangle) bool {
-        const h = rl.checkCollisionPointRec(ctx.mouse, r);
+        const h = ctx.over(r);
         if (h) ctx.anyHot = true;
         return h;
     }
@@ -110,8 +141,15 @@ pub const Ctx = struct {
 
 pub const rect = uiart.rect;
 
+/// `rl.endScissorMode` clears the scissor OUTRIGHT, so a widget that scissors its own text inside a scrolled panel
+/// has to put the panel's own back or everything drawn after it spills past the panel.
+fn endInnerScissor(ctx: *const Ctx) void {
+    rl.endScissorMode();
+    if (ctx.clip) |c| rl.beginScissorMode(@intFromFloat(c.x), @intFromFloat(c.y), @intFromFloat(c.width), @intFromFloat(c.height));
+}
+
 pub fn tipFor(ctx: *Ctx, r: rl.Rectangle, text: [:0]const u8) void {
-    if (rl.checkCollisionPointRec(ctx.mouse, r)) ctx.setTip(text);
+    if (ctx.over(r)) ctx.setTip(text);
 }
 
 const TIP_MAX_W: i32 = 420;
@@ -307,67 +345,149 @@ pub fn chip(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, active: bool, usedW:
     return button(ctx, rect(x, y, w, 24), label, hud.MONO, active, tip);
 }
 
-fn stepper(comptime T: type, ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *T, step: T, lo: T, hi: T, tip: [:0]const u8) bool {
-    const clampfn = comptime if (T == f32) mathx.clampF else mathx.clampI;
-    tipFor(ctx, rect(x, y, w, 22), tip);
-    hud.mono(label, x, y + 4, hud.MONO, LABEL);
-    const bw: i32 = 20;
-    // Wide enough for the WIDEST world coordinate ("-152.0"), or the sign and last digit clip and the readout lies about where the op is.
-    const vw: i32 = 62;
-    const bx = x + w - bw * 2 - vw;
+/// THE FURNITURE ON THE RIGHT OF EVERY NUMERIC ROW: two buttons around a readout wide enough for the widest value
+/// the editor writes — `36000.0` on an `elapsed` condition, and `-152.0` for a world coordinate.
+const STEP_BW: i32 = 20;
+const STEP_VW: i32 = 70;
+pub const STEP_FURNITURE: i32 = STEP_BW * 2 + STEP_VW;
+const TRACK_GAP: i32 = 6;
+/// Under this the row is furniture only: a bar this short cannot be aimed.
+const TRACK_MIN_W: i32 = 44;
+
+pub const GAUGE_H: i32 = 22;
+
+fn toF(comptime T: type, v: T) f32 {
+    return if (T == f32) v else @floatFromInt(v);
+}
+
+/// The track lands on the row's OWN lattice, so a swept value and a clicked one are the same set of numbers.
+fn writeSnapped(comptime T: type, v: *T, raw: f32, step: T, lo: T, hi: T, wrap: bool) bool {
+    if (T == f32) {
+        const base: f32 = if (wrap) 0 else lo;
+        var nv = if (step > 0) base + @round((raw - base) / step) * step else raw;
+        nv = if (wrap) mathx.wrapDeg360(nv) else mathx.clampF(nv, lo, hi);
+        if (nv == v.*) return false;
+        v.* = nv;
+        return true;
+    }
+    const s: i32 = @max(step, 1);
+    const q = lo + @as(i32, @intFromFloat(@round((raw - toF(i32, lo)) / toF(i32, s)))) * s;
+    const nv = mathx.clampI(q, lo, hi);
+    if (nv == v.*) return false;
+    v.* = nv;
+    return true;
+}
+
+fn writeStepped(comptime T: type, v: *T, d: T, lo: T, hi: T, wrap: bool) bool {
+    const nv = if (T == f32)
+        (if (wrap) mathx.wrapDeg360(v.* + d) else mathx.clampF(v.* + d, lo, hi))
+    else
+        mathx.clampI(v.* + d, lo, hi);
+    if (nv == v.*) return false;
+    v.* = nv;
+    return true;
+}
+
+/// THE TRACK HALF OF A NUMERIC ROW, on its own because a panel that draws its own readout still owes a sweep.
+/// Answers WHERE ALONG IT the grab is, 0..1 — and only once the grab has moved, since the label rides the bar and a
+/// stray press near the left edge would fling a world coordinate the width of the map.
+pub fn track(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, tint: rl.Color, frac: f32) ?f32 {
+    const x: i32 = @intFromFloat(r.x);
+    const y: i32 = @intFromFloat(r.y);
+    const w: i32 = @intFromFloat(r.width);
+    const h: i32 = @intFromFloat(r.height);
+    if (w < TRACK_MIN_W) {
+        hud.mono(label, x, y, hud.MONO, tint);
+        return null;
+    }
+    const over = ctx.hot(r);
+    rl.drawRectangleRec(r, IDLE_FILL);
+    rl.drawRectangleLinesEx(r, 1, alpha(TRIM, if (over) 170 else 70));
+    const fill: i32 = @intFromFloat(@as(f32, @floatFromInt(w - 2)) * mathx.clampF(frac, 0, 1));
+    if (fill > 0) {
+        rl.drawRectangle(x + 1, y + 1, fill, h - 2, alpha(TRIM, 66));
+        rl.drawRectangle(x + fill, y + 1, 1, h - 2, alpha(HOT, 190));
+    }
+    // A label longer than the bar would otherwise run out over the buttons beside it.
+    rl.beginScissorMode(x + 1, y + 1, w - 2, h - 2);
+    hud.mono(label, x + 6, y, hud.MONO, if (over) VALUE else tint);
+    endInnerScissor(ctx);
+    if (ctx.pressed and ctx.over(r)) trackFrom = ctx.mouse.x;
+    if (!ctx.owns(r) or !ctx.down or @abs(ctx.mouse.x - trackFrom) <= DRAG_PX) return null;
+    return mathx.clampF((ctx.mouse.x - r.x) / r.width, 0, 1);
+}
+
+/// A NUMERIC ROW IS A TRACK AND A CLICKER, never one or the other: the track sweeps the whole range in one gesture
+/// and the buttons walk it a `step` at a time. The track is the row's own left-hand side with the label drawn over
+/// it, so it costs no height a stepper was not already spending on the gap between its label and its buttons.
+/// `wrap` gives an ANGLE its own track — one turn, [0, 360) — since a range wide enough to step through is a track
+/// nobody can aim, and past the end an angle comes back round rather than stopping.
+fn gauge(comptime T: type, ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *T, step: T, lo: T, hi: T, wrap: bool, tip: [:0]const u8) bool {
+    tipFor(ctx, rect(x, y, w, GAUGE_H), tip);
+    const bx = x + w - STEP_FURNITURE;
+    const trackW = bx - TRACK_GAP - x;
     var changed = false;
-    if (button(ctx, rect(bx, y, bw, 22), "-", hud.MONO, false, tip)) {
-        const nv = clampfn(v.* - step, lo, hi);
-        if (nv != v.*) {
-            v.* = nv;
-            changed = true;
+
+    if (trackW >= TRACK_MIN_W) {
+        const base: f32 = if (wrap) 0 else toF(T, lo);
+        const span: f32 = if (wrap) 360 else toF(T, hi) - base;
+        const shown: f32 = if (wrap) mathx.wrapDeg360(toF(T, v.*)) else toF(T, v.*);
+        const frac = if (span > 0) mathx.clampF((shown - base) / span, 0, 1) else 0;
+        if (track(ctx, rect(x, y, trackW, GAUGE_H), label, LABEL, frac)) |t| {
+            if (writeSnapped(T, v, base + t * span, step, lo, hi, wrap)) changed = true;
         }
+    } else {
+        hud.mono(label, x, y, hud.MONO, LABEL);
+    }
+
+    if (button(ctx, rect(bx, y, STEP_BW, GAUGE_H), "-", hud.MONO, false, tip)) {
+        if (writeStepped(T, v, -step, lo, hi, wrap)) changed = true;
     }
     var buf: [24]u8 = undefined;
-    const fmt = comptime if (T == f32) "{d:.1}" else "{d}";
-    const s = std.fmt.bufPrintZ(&buf, fmt, .{v.*}) catch "?";
-    hud.mono(s, bx + bw + @divTrunc(vw - hud.monoW(s, hud.MONO), 2), y + 4, hud.MONO, VALUE);
-    if (button(ctx, rect(bx + bw + vw, y, bw, 22), "+", hud.MONO, false, tip)) {
-        const nv = clampfn(v.* + step, lo, hi);
-        if (nv != v.*) {
-            v.* = nv;
-            changed = true;
-        }
+    // TWO DECIMALS WHERE ONE CANNOT RESOLVE THE STEP: at `{d:.1}` a 0.05 scale shows the same 1.0 for four clicks
+    // running, and a 0.25 floor reads back 0.2 for a height the file stores as 0.25.
+    const s: [:0]const u8 = if (T == f32)
+        (if (@abs(step) < 0.5)
+            (std.fmt.bufPrintZ(&buf, "{d:.2}", .{v.*}) catch "?")
+        else
+            (std.fmt.bufPrintZ(&buf, "{d:.1}", .{v.*}) catch "?"))
+    else
+        (std.fmt.bufPrintZ(&buf, "{d}", .{v.*}) catch "?");
+    hud.mono(s, bx + STEP_BW + @divTrunc(STEP_VW - hud.monoW(s, hud.MONO), 2), y, hud.MONO, VALUE);
+    if (button(ctx, rect(bx + STEP_BW + STEP_VW, y, STEP_BW, GAUGE_H), "+", hud.MONO, false, tip)) {
+        if (writeStepped(T, v, step, lo, hi, wrap)) changed = true;
     }
     return changed;
 }
 
 pub fn stepperF(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, step: f32, lo: f32, hi: f32, tip: [:0]const u8) bool {
-    return stepper(f32, ctx, x, y, w, label, v, step, lo, hi, tip);
+    return gauge(f32, ctx, x, y, w, label, v, step, lo, hi, false, tip);
 }
 
 pub fn stepperI(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *i32, step: i32, lo: i32, hi: i32, tip: [:0]const u8) bool {
-    return stepper(i32, ctx, x, y, w, label, v, step, lo, hi, tip);
+    return gauge(i32, ctx, x, y, w, label, v, step, lo, hi, false, tip);
 }
 
+/// A HEADING IN DEGREES. Its track is one turn and its value comes back inside it, so a yaw is one sweep rather
+/// than twenty-four clicks and never accumulates a number no reader can place.
+pub fn angleF(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, step: f32, tip: [:0]const u8) bool {
+    return gauge(f32, ctx, x, y, w, label, v, step, 0, 360, true, tip);
+}
+
+/// A slider's fine step: the range in about a hundred parts, rounded to a 1, 2 or 5 figure so the readout resolves it.
+fn niceStep(span: f32) f32 {
+    if (!(span > 0)) return 0;
+    const raw = span / 100.0;
+    const p = std.math.pow(f32, 10.0, @floor(@log10(raw)));
+    const n = raw / p;
+    const mul: f32 = if (n < 1.5) 1 else if (n < 3.5) 2 else if (n < 7.5) 5 else 10;
+    return mul * p;
+}
+
+/// THE SAME ROW UNDER ANOTHER NAME — a continuous value still owes a fine clicker, and a stepped one still owes a
+/// sweep. The step is derived because a range like 0..1 has no natural one.
 pub fn slider(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, lo: f32, hi: f32, tip: [:0]const u8) bool {
-    hud.mono(label, x, y, hud.MONO, LABEL);
-    const barY = y + hud.monoLineH(hud.MONO) + 3;
-    tipFor(ctx, rect(x, y, w, barY + 12 - y), tip);
-    const r = rect(x, barY, w, 12);
-    const h = ctx.hot(r);
-    rl.drawRectangleRec(r, IDLE_FILL);
-    rl.drawRectangleLinesEx(r, 1, alpha(TRIM, if (h) 170 else 90));
-    const frac = mathx.clampF((v.* - lo) / (hi - lo), 0, 1);
-    const fill: i32 = @intFromFloat(@as(f32, @floatFromInt(w - 2)) * frac);
-    if (fill > 0) rl.drawRectangle(x + 1, barY + 1, fill, 10, alpha(TRIM, 200));
-    var buf: [24]u8 = undefined;
-    const s = std.fmt.bufPrintZ(&buf, "{d:.2}", .{v.*}) catch "?";
-    hud.mono(s, x + w - hud.monoW(s, hud.MONO), y, hud.MONO, VALUE);
-    if (ctx.owns(r) and ctx.down) {
-        const t = mathx.clampF((ctx.mouse.x - r.x) / r.width, 0, 1);
-        const nv = lo + t * (hi - lo);
-        if (nv != v.*) {
-            v.* = nv;
-            return true;
-        }
-    }
-    return false;
+    return gauge(f32, ctx, x, y, w, label, v, niceStep(hi - lo), lo, hi, false, tip);
 }
 
 pub fn checkbox(ctx: *Ctx, x: i32, y: i32, label: [:0]const u8, v: *bool, tip: [:0]const u8) bool {
@@ -395,7 +515,7 @@ pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, id: u32, el
     tipFor(ctx, r, tip);
     _ = ctx.hot(r);
     if (eligible) {
-        if (ctx.pressed and rl.checkCollisionPointRec(ctx.mouse, r)) kbOwner = id;
+        if (ctx.pressed and ctx.over(r)) kbOwner = id;
         if (kbOwner) |o| {
             if (o == id) kbSeen = true;
         }
@@ -429,7 +549,7 @@ pub fn textField(ctx: *Ctx, r: rl.Rectangle, buf: []u8, len: *usize, id: u32, el
     if (focused and @mod(ctx.t, 1.0) < 0.55) {
         rl.drawRectangle(bx + 9 + tw - off, @intFromFloat(r.y + 6), CARET_W, hud.monoLineH(hud.MONO) - 2, HOT);
     }
-    rl.endScissorMode();
+    endInnerScissor(ctx);
     return focused;
 }
 
@@ -447,7 +567,8 @@ pub fn list(ctx: *Ctx, r: rl.Rectangle, labels: []const [:0]const u8, sel: usize
     const rowH: i32 = ROW_H;
     const rows: i32 = listRows(@intFromFloat(r.height));
     const maxScroll = @max(0, @as(i32, @intCast(labels.len)) - rows);
-    if (rl.checkCollisionPointRec(ctx.mouse, r)) {
+    if (ctx.over(r)) {
+        ctx.wheelTaken = true;
         scroll.* -= @intFromFloat(ctx.wheel * 3);
     }
     scroll.* = @max(0, @min(maxScroll, scroll.*));
@@ -462,7 +583,7 @@ pub fn list(ctx: *Ctx, r: rl.Rectangle, labels: []const [:0]const u8, sel: usize
             @as(i32, @intFromFloat(r.width)) - 6,
             rowH - 2,
         );
-        const h = rl.checkCollisionPointRec(ctx.mouse, rowR);
+        const h = ctx.over(rowR);
         if (idx == sel) rl.drawRectangleRec(rowR, ACTIVE_FILL) else if (h) rl.drawRectangleRec(rowR, HOVER_FILL);
         hud.mono(labels[idx], @as(i32, @intFromFloat(rowR.x)) + 6, @as(i32, @intFromFloat(rowR.y)) + 2, hud.MONO, if (idx == sel) HOT else VALUE);
         if (h and ctx.pressed) clicked = idx;
@@ -648,6 +769,52 @@ pub fn beginModal(ctx: *Ctx, w: i32, h: i32, title: [:0]const u8) ModalBox {
     hud.mono(title, x + @divTrunc(w - hud.monoW(title, hud.MONO), 2), y + 12, hud.MONO, TITLE);
     uiart.divider(x + @divTrunc(w, 2), y + hud.monoLineH(hud.MONO) + 18, @divTrunc(w, 2) - 20, 140);
     return .{ .x = x, .y = y, .w = w, .h = h };
+}
+
+test "A WRAPPED ANGLE COMES BACK ROUND, and a swept value lands on the same lattice the buttons walk" {
+    var yaw: f32 = 350;
+    try std.testing.expect(writeStepped(f32, &yaw, 15, 0, 360, true));
+    try std.testing.expectEqual(@as(f32, 5), yaw);
+    try std.testing.expect(writeStepped(f32, &yaw, -15, 0, 360, true));
+    try std.testing.expectEqual(@as(f32, 350), yaw);
+
+    var swept: f32 = 0;
+    try std.testing.expect(writeSnapped(f32, &swept, 0.75 * 360, 15, 0, 360, true));
+    try std.testing.expectEqual(@as(f32, 270), swept);
+    var off: f32 = 0;
+    try std.testing.expect(writeSnapped(f32, &off, 268, 15, 0, 360, true));
+    try std.testing.expectEqual(@as(f32, 270), off);
+    off = 0;
+    try std.testing.expect(writeSnapped(f32, &off, 262, 15, 0, 360, true));
+    try std.testing.expectEqual(@as(f32, 255), off);
+
+    var count: i32 = 0;
+    try std.testing.expect(writeSnapped(i32, &count, 1234, 5, 0, 4000, false));
+    try std.testing.expectEqual(@as(i32, 1235), count);
+
+    // A row at its end answers false rather than banking an undo step for a value that did not move.
+    var lift: f32 = 12;
+    try std.testing.expect(!writeStepped(f32, &lift, 0.1, -12, 12, false));
+    var n: i32 = 4000;
+    try std.testing.expect(!writeStepped(i32, &n, 5, 0, 4000, false));
+}
+
+test "A SLIDER'S DERIVED STEP CUTS ITS RANGE INTO ABOUT A HUNDRED PARTS" {
+    for ([_][2]f32{
+        .{ 1, 0.01 },    // every 0..1 dial in the editor
+        .{ 23, 0.2 },    // the cave brush's width
+        .{ 30, 0.2 },    // a region's blend seconds
+        .{ 59, 0.5 },    // the ground brush's radius
+        .{ 11.5, 0.1 },  // sculpt strength
+    }) |row| {
+        const got = niceStep(row[0]);
+        std.testing.expectApproxEqAbs(row[1], got, 1e-4) catch |e| {
+            std.debug.print("\n  niceStep({d}) = {d}, wanted {d}\n", .{ row[0], got, row[1] });
+            return e;
+        };
+        try std.testing.expect(row[0] / got >= 40 and row[0] / got <= 250);
+    }
+    try std.testing.expectEqual(@as(f32, 0), niceStep(0));
 }
 
 test "AN OPEN DROPDOWN'S LIST OWNS THE POINTER OVER IT — nothing under it sees the click or the wheel" {

@@ -2,7 +2,6 @@ const std = @import("std");
 const item = @import("item.zig");
 const heromod = @import("hero.zig");
 const combat = @import("combat.zig");
-const mathx = @import("../core/mathx.zig");
 
 
 pub const Trade = enum { shop, smithy };

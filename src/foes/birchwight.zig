@@ -89,7 +89,7 @@ const BOUGH_FRONT_DOT: f32 = 0.34;
 const BOUGH_WIND: f32 = 0.86;
 const BOUGH_STRIKE: f32 = 0.22;
 /// The bough is still back at the strike's first frame; it arrives from here.
-const BOUGH_IMPACT_K: f32 = 0.68;
+const BOUGH_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const BOUGH_RECOVER: f32 = 0.95;
 const BOUGH_CD: f32 = 3.0;
 pub var BOUGH_HIT = combat.Hit{ .dmg = 22, .poise = 22, .stance = 14 };

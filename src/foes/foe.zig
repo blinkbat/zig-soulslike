@@ -253,6 +253,11 @@ pub const TELL_MIN: f32 = 0.30;
 
 pub const PARRY_LEAD: f32 = 0.18;
 
+/// The share of a strike that has run when the kit ARRIVES, for the families whose stroke is one plain swing
+/// through `catchMelee`. Per-move fractions stay per-move (the ogre's slam, the mastodon's tail); this is the
+/// one every ordinary limb bills at, and it is ONE number so a retune moves them together.
+pub const MELEE_IMPACT_K: f32 = 0.68;
+
 pub fn inParryWindow(left: f32) bool {
     return left >= 0 and left <= PARRY_LEAD;
 }
@@ -343,6 +348,16 @@ pub const Sky = struct { night: f32 = 0 };
 /// nocturnal gate compares against — named once, because two creatures reading 0.5 is two things to retune.
 pub const NIGHTFALL: f32 = 0.5;
 
+/// **A RING IS ONLY AS WIDE AS THE LIGHT ON IT.** Share of its own reach that anything — the hero's lock as
+/// much as a creature's aggro — keeps in the dead of night with no flame on it. Both directions read this one
+/// ramp, so darkness cannot be made to favour one of them.
+pub const SIGHT_DARK: f32 = 0.72;
+
+/// `night` is `daynight.nightShare`, `lit` the share of a flame's radius standing on the body (`Glare.k`).
+pub fn sightShare(night: f32, lit: f32) f32 {
+    return mathx.lerpF(1.0, SIGHT_DARK, mathx.clampF(night, 0, 1) * (1.0 - mathx.clampF(lit, 0, 1)));
+}
+
 /// **DARK IS WHAT WAKES IT** — the shared gate behind `owlbear.dozing` and `blinkbat.dozing`. A blow outranks
 /// the hour the way it outranks blindness, so a fight carried into the dawn finishes; ORDERS outrank it
 /// outright, since a route the map authored is the author saying this one is about.
@@ -360,6 +375,10 @@ pub const Leash = struct {
     breakLeft: f32 = 0,
     engagedLeft: f32 = 0,
     returning: bool = false,
+    /// **HOW MUCH OF ITS RING IT CAN SEE OVER** (`game.markHour`, off `sightShare`). Rides the leash for the
+    /// reason `win` does: `sensedDist` is the one place every creature's sense passes through, and it already
+    /// has this struct in its hand.
+    sight: f32 = 1,
     /// Whether the rig has ever run its chain (`foe.posed`); nothing else may write it.
     posedOnce: bool = false,
 
@@ -434,7 +453,35 @@ pub fn sensedDist(l: *const Leash, real: f32, aggroR: f32) f32 {
     if (l.blind()) return mathx.LONG_AGO;
     if (l.goingHome()) return mathx.LONG_AGO;
     if (l.roused()) return mathx.minF(real, aggroR);
+    if (real > aggroR * l.sight) return mathx.LONG_AGO;
     return real;
+}
+
+test "THE DARK NARROWS THE RING IT IS MEASURED AGAINST, and a flame on the body hands it back" {
+    const R: f32 = 24.0;
+    var l = Leash{};
+    const dark = sightShare(1, 0);
+    const at = R * dark;
+
+    try std.testing.expectEqual(@as(f32, 1), l.sight);
+    try std.testing.expectEqual(R - 1.0, sensedDist(&l, R - 1.0, R));
+
+    l.sight = dark;
+    try std.testing.expectEqual(at - 0.1, sensedDist(&l, at - 0.1, R));
+    try std.testing.expectEqual(mathx.LONG_AGO, sensedDist(&l, at + 0.1, R));
+
+    // The hero's own torch is what puts the metres back, on him and on them alike.
+    l.sight = sightShare(1, SHY_ON);
+    try std.testing.expect(sensedDist(&l, at + 0.1, R) < mathx.LONG_AGO);
+    l.sight = sightShare(1, 1);
+    try std.testing.expectEqual(R - 0.1, sensedDist(&l, R - 0.1, R));
+
+    // A blow outranks the hour the way it outranks blindness.
+    l.sight = dark;
+    l.provoke();
+    try std.testing.expectEqual(R, sensedDist(&l, R * 4, R));
+
+    std.debug.print("\n  aggro ring on a {d:.0} m creature: {d:.2} m at noon, {d:.2} m at midnight, {d:.2} m in the wick\n", .{ R, R * sightShare(0, 0), at, R * sightShare(1, 1) });
 }
 
 /// A `call` and not a `provoke` (see `Leash.call`). The radius is the SOUND's, so it is measured from where the noise was made and not from the creature that made it.

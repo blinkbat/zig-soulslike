@@ -165,7 +165,7 @@ const THRUST_HALF_W: f32 = (THRUST_R + foe.HERO_REACH) * @sqrt(1.0 - THRUST_FRON
 const THRUST_WIND: f32 = 0.52;
 const THRUST_STRIKE: f32 = 0.16;
 /// The point is still couched at the strike's first frame; it arrives from here.
-const THRUST_IMPACT_K: f32 = 0.68;
+const THRUST_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const THRUST_RECOVER: f32 = 0.86;
 const THRUST_CD: f32 = 2.6;
 pub const THRUST_HIT = combat.Hit{ .dmg = 32, .poise = 26, .stance = 16 };

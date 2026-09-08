@@ -89,7 +89,7 @@ const RAKE_FRONT_DOT: f32 = 0.42;
 const RAKE_WIND: f32 = 0.44;
 const RAKE_STRIKE: f32 = 0.20;
 /// The hands are still up at the strike's first frame; the rake arrives from here.
-const RAKE_IMPACT_K: f32 = 0.68;
+const RAKE_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const RAKE_RECOVER: f32 = 0.72;
 const RAKE_CD: f32 = 2.4;
 pub var RAKE_HIT = combat.Hit{ .dmg = 13, .poise = 12, .stance = 9, .elem = combat.elems(.{ .fire = 11 }) };

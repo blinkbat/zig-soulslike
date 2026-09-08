@@ -3,7 +3,7 @@ const mathx = @import("../core/mathx.zig");
 const wf = @import("worldfmt.zig");
 const NL = "\n";
 
-/// Where the cave bench is written; a test may only write .
+/// Where the cave bench is written; `wf.save` panics under `is_test` on anything but `worlds/test_*.world`.
 pub const BENCH_PATH = wf.DIR ++ "/test_caves.world";
 
 pub const N = wf.CAVE_N;

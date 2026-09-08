@@ -149,6 +149,13 @@ const CLIP_NEAR = 0.55;
 const CLIP_FAR = 320.0;
 
 const MAX_LOCK_R = 17.0;
+/// The hero reads the SAME ramp his enemies do (`foe.sightShare`), and the flame he carries answers for him what standing in it answers for them.
+fn lockReach(hour: f32, lit: f32) f32 {
+    return MAX_LOCK_R * foemod.sightShare(daynight.nightShare(hour), lit);
+}
+fn lockR(g: *const Game) f32 {
+    return lockReach(g.day.hour, if (g.hero.torchLit()) 1 else 0);
+}
 const LOCK_KEEP_SLACK: f32 = 2.0;
 const LOCK_CAM_EASE = 9.0;
 const LOCK_PITCH = 0.24;
@@ -1462,6 +1469,88 @@ const WADE_SLOWEST: f32 = 0.8;
 /// HE STARTS WITH NOTHING BUT WHAT IS IN HIS HANDS: every scroll was granted here, so a fresh run opened the book already holding the whole spell list.
 const STARTING_KIT = [_]item.Kind{};
 
+/// **AND THE FIGHT'S KIT DIES WITH THE FIGHT.** `saveNow` refuses to write a slot while `sparring()`, which is
+/// worth nothing if the whole list walks out of the room in his bag and lands in his file at the next fire.
+/// Taken where the MAP is (`editor.beginSpar`) and handed back at the one door out (`leaveSpar`).
+const SparKept = struct {
+    bag: item.Bag,
+    worn: heromod.Worn,
+    arm: heromod.Armament,
+    armAlt: heromod.Armament,
+    off: heromod.Armament,
+    offAlt: heromod.Armament,
+    mem: combat.Memory,
+    spell: combat.Spell,
+};
+var sparKept: ?SparKept = null;
+
+/// **THE CREATURE IS THE TEST, NOT THE KIT** — the sparring room hands him every armament and every scroll, so
+/// what is under the knife is the thing he came to fight and never what he happened to be carrying when he
+/// opened the editor. ASKED for and never listed: a tenth sorcery is in his hands the build it is written.
+fn sparKit(g: *Game) void {
+    sparKept = .{
+        .bag = g.bag,
+        .worn = g.hero.worn,
+        .arm = g.hero.arm,
+        .armAlt = g.hero.armAlt,
+        .off = g.hero.off,
+        .offAlt = g.hero.offAlt,
+        .mem = g.hero.mem,
+        .spell = g.hero.spell,
+    };
+    for (0..item.NK) |i| {
+        const k: item.Kind = @enumFromInt(i);
+        if (std.meta.activeTag(item.equipBank(k)) == .arm and g.bag.count(k) == 0) g.bag.add(k, 1);
+    }
+    for (combat.SPELLS_BANK) |row| {
+        if (g.bag.count(row.scroll) == 0) g.bag.add(row.scroll, 1);
+    }
+    inline for (@typeInfo(combat.SpiritKind).@"enum".fields) |f| {
+        const k = combat.scrollFor(@field(combat.SpiritKind, f.name));
+        if (g.bag.count(k) == 0) g.bag.add(k, 1);
+    }
+}
+
+/// THE ONE DOOR OUT OF THE SPARRING ROOM — the editor hands the MAP back and this hands the KIT back. `wear` is
+/// the door for a socket, so the sheet, the bars and the body are re-derived rather than assigned round.
+fn leaveSpar(g: *Game) bool {
+    if (!g.editor.endSpar(&g.map, &g.env)) return false;
+    if (sparKept) |k| {
+        sparKept = null;
+        g.bag = k.bag;
+        g.hero.arm = k.arm;
+        g.hero.armAlt = k.armAlt;
+        g.hero.off = k.off;
+        g.hero.offAlt = k.offAlt;
+        g.hero.mem = k.mem;
+        g.hero.spell = k.spell;
+        inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
+            const w: item.Wear = @enumFromInt(f.value);
+            _ = g.hero.wear(w, k.worn.at(w));
+        }
+    }
+    return true;
+}
+
+test "THE KIT COMES OFF AT THE SAME DOOR THE MAP DOES — nothing reaches `endSpar` except `leaveSpar`" {
+    const src = try worldfmt.readForTest(std.testing.allocator, "src/game.zig", 1 << 22);
+    defer std.testing.allocator.free(src);
+    // Spelled in halves so this test's own line is not one of the doors it counts.
+    const door = "editor.end" ++ "Spar(";
+    var doors: usize = 0;
+    var at: usize = 0;
+    while (std.mem.indexOfPos(u8, src, at, door)) |i| {
+        doors += 1;
+        at = i + 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), doors);
+    try std.testing.expect(std.mem.indexOf(u8, src, "fn leaveSpar(") != null);
+    // Every socket `sparKit`'s grant can reach through the book comes back with it.
+    inline for (.{ "bag", "worn", "arm", "armAlt", "off", "offAlt", "mem", "spell" }) |f| {
+        try std.testing.expect(@hasField(SparKept, f));
+    }
+}
+
 comptime {
     std.debug.assert(@abs(envmod.WADE_MAX - 0.760 * heromod.H) < 0.005);
     std.debug.assert(envmod.HERO_R_PIN == foemod.HERO_R);
@@ -1902,6 +1991,29 @@ test "ONLY SOMETHING THAT TOWERS TILTS THE LENS UP — everything else is framed
         high = @max(high, standHeight(&fly));
     }
     try std.testing.expect(high >= LOCK_TILT_TALL);
+}
+
+test "THE LOCK REACHES AS FAR AS THE LIGHT DOES, and the torch buys back every metre the night takes" {
+    const noon = lockReach(12, 0);
+    const midnight = lockReach(0, 0);
+    try std.testing.expectEqual(MAX_LOCK_R, noon);
+    try std.testing.expectApproxEqAbs(MAX_LOCK_R * foemod.SIGHT_DARK, midnight, 1e-4);
+
+    var h: f32 = 0;
+    var prev = midnight;
+    var least = noon;
+    while (h <= daynight.HOURS) : (h += 0.01) {
+        const r = lockReach(h, 0);
+        try std.testing.expect(r <= noon + 1e-4 and r >= midnight - 1e-4);
+        try std.testing.expect(@abs(r - prev) < 0.1);
+        try std.testing.expectEqual(noon, lockReach(h, 1));
+        least = @min(least, r);
+        prev = r;
+    }
+    try std.testing.expectApproxEqAbs(midnight, least, 1e-4);
+    try std.testing.expect(daynight.dayShare(daynight.SUNSET) == foemod.NIGHTFALL);
+
+    std.debug.print("\n  lock-on {d:.2} m at noon, {d:.2} m at sunset, {d:.2} m at midnight; {d:.2} m at any hour with the torch out\n", .{ noon, lockReach(daynight.SUNSET, 0), midnight, lockReach(0, 1) });
 }
 
 test "A GIANT ONLY BRINGS THE LENS DOWN WHEN IT IS ON TOP OF YOU, and it arrives smoothly" {
@@ -4277,9 +4389,10 @@ fn spendTurnedBlows(g: *Game) void {
 const TURNED_R: f32 = 0.45;
 const TURNED_SELF: f32 = 0.30;
 
-/// The hour onto every body: its own window (`foe.Win`) and, for the creatures whose BEHAVIOUR turns on the clock, the night itself.
-fn markHour(g: *Game) void {
+/// The hour onto every body: its own window (`foe.Win`), how far it can see through the dark (`foe.sightShare`) and, for the creatures whose BEHAVIOUR turns on the clock, the night itself.
+fn markHour(g: *Game, flame: ?gfx.Light) void {
     const day = daynight.dayShare(g.day.hour);
+    const night = 1.0 - day;
     inline for (FOE_GROUPS) |gr| {
         const M = std.meta.Child(@TypeOf(@field(g, gr.field).live()));
         for (@field(g, gr.field).live()) |*f| {
@@ -4287,14 +4400,19 @@ fn markHour(g: *Game) void {
             // A FIGHT IN PROGRESS OUTRANKS THE HOUR, as it outranks the tether: a body cannot go unhittable
             // mid-stroke and bill the blow out of nothing.
             f.leash.win.in = if (f.leash.roused()) mathx.maxF(share, foemod.WIN_SOLID) else share;
-            if (comptime @hasField(M, "sky")) f.sky.night = 1.0 - day;
+            f.leash.sight = foemod.sightShare(night, flameShare(flame, f.pos));
+            if (comptime @hasField(M, "sky")) f.sky.night = night;
         }
     }
 }
 
 /// ONLY THE FLAME HE CARRIES. A brazier the map placed is scenery: letting a fixed light hold a camp off would silently retune every encounter standing near one.
-fn markGlare(g: *Game) void {
-    const flame = g.hero.torchLight();
+fn flameShare(flame: ?gfx.Light, at: rl.Vector3) f32 {
+    const t = flame orelse return 0;
+    return mathx.clampF(1.0 - mathx.distXZ(at, t.pos) / t.radius, 0, 1);
+}
+
+fn markGlare(g: *Game, flame: ?gfx.Light) void {
     inline for (FOE_GROUPS) |gr| {
         const M = std.meta.Child(@TypeOf(@field(g, gr.field).live()));
         if (comptime !@hasField(M, "glare")) continue;
@@ -4303,7 +4421,7 @@ fn markGlare(g: *Game) void {
                 f.glare = .{ .at = f.pos };
                 continue;
             };
-            f.glare.k = mathx.clampF(1.0 - mathx.distXZ(f.pos, t.pos) / t.radius, 0, 1);
+            f.glare.k = flameShare(flame, f.pos);
             f.glare.at = t.pos;
             f.glare.shy = f.glare.k >= (if (f.glare.shy) foemod.SHY_OFF else foemod.SHY_ON);
         }
@@ -5143,7 +5261,7 @@ fn quitBlocked(g: *Game) bool {
     if (!g.editor.on) {
         g.lock = null;
         leavePlace(g);
-        if (g.editor.endSpar(&g.map, &g.env)) g.editor.reopen() else g.editor.enter(g.hero.pos);
+        if (leaveSpar(g)) g.editor.reopen() else g.editor.enter(g.hero.pos);
     }
     g.editor.requestQuit();
     return true;
@@ -5279,11 +5397,12 @@ pub fn run(mode: Mode) void {
                     armScript(g);
                 },
                 .quit => break,
-                // ONE CREATURE, IN A ROOM, WITH THE KIT HE IS CARRYING. His own map is set aside, not reloaded.
+                // ONE CREATURE, IN A ROOM, WITH EVERY ARMAMENT AND EVERY SCROLL. His own map is set aside, not reloaded.
                 .spar => {
                     const kind = g.editor.sparTarget(&g.map) orelse .toad;
                     g.editor.flushRebuild(&g.map, &g.env);
                     g.editor.beginSpar(&g.map, &g.env, kind);
+                    sparKit(g);
                     g.editor.on = false;
                     g.menu.started();
                     rl.hideCursor();
@@ -5345,12 +5464,12 @@ pub fn run(mode: Mode) void {
                     leavePlace(g);
                     // BACK TO THE VIEW HE LEFT: `enter` re-solves the camera onto the hero, which after a fight is the
                     // middle of the sparring room — and its "Editor ready" would bury what `endSpar` just said.
-                    if (g.editor.endSpar(&g.map, &g.env)) g.editor.reopen() else g.editor.enter(g.hero.pos);
+                    if (leaveSpar(g)) g.editor.reopen() else g.editor.enter(g.hero.pos);
                 },
                 .toTitle => {
                     // THE STASH MAY NOT OUTLIVE THE WORLD IT BELONGS TO: from the title he can start or load a
                     // game, and a stash still held then lands his old map over the one he is playing.
-                    _ = g.editor.endSpar(&g.map, &g.env);
+                    _ = leaveSpar(g);
                     g.menu.toTitle();
                 },
                 .newGame => |i| beginEnter(g, .{ .fresh = i }),
@@ -5687,8 +5806,10 @@ pub fn run(mode: Mode) void {
         if (g.hero.loosed) looseShaft(g);
         if (g.hero.rang) summonSpirit(g);
         const hitsBefore = allHits(g);
-        markHour(g);
-        markGlare(g);
+        // ONE FLAME A FRAME: both stamps answer for the same fire, and `torchLight` flickers off `rl.getTime`.
+        const flame = g.hero.torchLight();
+        markHour(g, flame);
+        markGlare(g, flame);
         markSight(g);
         markThreat(g, dt);
         markWays(g);
@@ -6895,7 +7016,7 @@ fn refInBounds(g: *const Game, r: FoeRef) bool {
 fn lockValid(g: *const Game, r: FoeRef) bool {
     if (!refInBounds(g, r)) return false;
     if (foeDisguised(g, r)) return false;
-    return foeLockable(g, r) and mathx.distXZ(g.hero.pos, foePos(g, r)) <= MAX_LOCK_R + LOCK_KEEP_SLACK;
+    return foeLockable(g, r) and mathx.distXZ(g.hero.pos, foePos(g, r)) <= lockR(g) + LOCK_KEEP_SLACK;
 }
 
 fn activeLock(g: *const Game) ?FoeRef {
@@ -6917,7 +7038,7 @@ fn lockScreenX(g: *const Game, r: FoeRef) ?f32 {
 }
 
 fn acquireLock(g: *const Game) ?FoeRef {
-    var ctx = LockCtx{ .g = g, .cx = @as(f32, @floatFromInt(rl.getScreenWidth())) * 0.5 };
+    var ctx = LockCtx{ .g = g, .maxR = lockR(g), .cx = @as(f32, @floatFromInt(rl.getScreenWidth())) * 0.5 };
     eachTarget(g, &ctx, LockCtx.visit);
     return ctx.best;
 }
@@ -6981,13 +7102,14 @@ test "THE BURROW TAKES THE LOCK OFF YOU, and gives it back when it surfaces" {
 
 const LockCtx = struct {
     g: *const Game,
+    maxR: f32,
     cx: f32,
     best: ?FoeRef = null,
     bestScore: f32 = 1e9,
 
     fn visit(self: *LockCtx, foes: anytype, kind: ?FoeKind) void {
         for (foes, 0..) |*f, i| {
-            if (!foemod.corporeal(f) or mathx.distXZ(self.g.hero.pos, f.pos) > MAX_LOCK_R) continue;
+            if (!foemod.corporeal(f) or mathx.distXZ(self.g.hero.pos, f.pos) > self.maxR) continue;
             if (disguised(f)) continue;
             const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
             if (!canSee(self.g, r)) continue;
@@ -7006,6 +7128,7 @@ const CycleCtx = struct {
     cur: FoeRef,
     curX: f32,
     dir: f32,
+    maxR: f32,
     best: ?FoeRef = null,
     bestGap: f32 = 1e9,
 
@@ -7014,7 +7137,7 @@ const CycleCtx = struct {
             const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
             if ((self.cur.kind == r.kind and self.cur.idx == i) or !foemod.corporeal(f)) continue;
             if (disguised(f)) continue;
-            if (mathx.distXZ(self.g.hero.pos, f.pos) > MAX_LOCK_R) continue;
+            if (mathx.distXZ(self.g.hero.pos, f.pos) > self.maxR) continue;
             if (!canSee(self.g, r)) continue;
             const sx = lockScreenX(self.g, r) orelse continue;
             const gap = (sx - self.curX) * self.dir;
@@ -7036,7 +7159,7 @@ fn cycleLock(g: *Game, dir: f32) void {
     }
     const body = FoeRef{ .kind = cur.kind, .idx = cur.idx };
     const curX = lockScreenX(g, body) orelse return;
-    var ctx = CycleCtx{ .g = g, .cur = body, .curX = curX, .dir = dir };
+    var ctx = CycleCtx{ .g = g, .cur = body, .curX = curX, .dir = dir, .maxR = lockR(g) };
     eachTarget(g, &ctx, CycleCtx.visit);
     if (ctx.best) |b| g.lock = .{ .kind = b.kind, .idx = b.idx, .part = if (dir > 0) 0 else foeParts(g, b) - 1 };
 }

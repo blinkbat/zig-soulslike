@@ -197,6 +197,7 @@ pub const Kind = enum(u8) {
     toolrack,
     stairflight,
     illusory,
+    illusory_wall,
     emberrock,
     emberrocks,
     burningrock,
@@ -464,7 +465,8 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .quenchtrough => "Quench Trough",
         .toolrack => "Tool Rack",
         .stairflight => "Stair Flight",
-        .illusory => "Illusory Wall",
+        .illusory => "Illusory Cliff",
+        .illusory_wall => "Illusory Wall",
         .emberrock => "Ember Boulder",
         .emberrocks => "Ember Rock Cluster",
         .burningrock => "Burning Rock",
@@ -513,13 +515,12 @@ pub fn displayName(k: Kind) [:0]const u8 {
 
 pub fn group(k: Kind) Group {
     return switch (k) {
-        .pillar, .broken, .block, .arch, .wall,
+        .pillar, .broken, .block, .arch, .wall, .illusory_wall,
         .statue, .monolith, .paving, .stairs, .rubble,
         .banner, .sword, .graves, .sarcophagus, .bones,
-        .gibbet, .cairn,
+        .gibbet, .cairn, .obelisk, .plinth, .altar,
         => .ruins,
         .chapel, .watchtower, .cottage, .tower, .gate, .causeway, .foggate, .ladder, .stairflight => .buildings,
-        .obelisk, .plinth, .altar => .ruins,
         .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart, .bonfire => .village,
         .anvil, .quenchtrough, .toolrack => .village,
         .chest, .pickup => .treasure,
@@ -590,7 +591,7 @@ pub const Biome = enum {
 
 pub fn biome(k: Kind) Biome {
     return switch (k) {
-        .rubble, .chest, .pickup, .water, .foggate, .ladder, .stairflight, .illusory,
+        .rubble, .chest, .pickup, .water, .foggate, .ladder, .stairflight, .illusory, .illusory_wall,
         .torch, .brazier, .campfire, .campfire_lit,
         .tuft, .patch, .shrub, .flowers, .glow, .grasstall, .clover,
         .thistle, .foxglove, .heather, .gorse, .wildflowers,
@@ -749,7 +750,7 @@ pub const Info = struct {
     occl: []const Blocker = &.{},
     casts: bool = true,
     ward: bool = false,
-    /// A wall that is not there: solid and sight-blocking until the hero's blade, roll or arrow touches it, then gone (`env.dispelIllusion`).
+    /// A wall that is not there: solid and sight-blocking until the hero's blade, roll or planted arrow touches it, then gone (`env.dispelIllusion`).
     illusion: bool = false,
     parts: []const Part = &.{},
     /// **METRES OF LOCAL HEIGHT ONE COPY OF THE MESH SPANS**, or 0 for everything else — one mesh, one draw.
@@ -893,9 +894,13 @@ const KIOSK_PARTS = blk: {
     break :blk out;
 };
 
-/// The illusory wall is `cliff2`'s face, so it shares the row's dimensions.
+/// The illusory cliff is `cliff2`'s face and the illusory wall is `ruins.wallMesh`'s courses, so each shares its reference's row: a mimic that collides differently from the thing it stands beside has told you what it is.
 const CLIFF2_BOUND: f32 = 17.0;
 const CLIFF2_TOP: f32 = 14.0;
+const WALL_BOUND: f32 = 5.0;
+const WALL_TOP: f32 = 3.6;
+const WALL_VIEW: f32 = 220;
+const wallParts = [_]Part{.{ .ax = -3.55, .az = -0.01, .bx = 3.25, .bz = -0.01, .r = 0.37, .h = 3.0, .flat = true }};
 /// A coarse pair that keeps the rows' comptime checks honest; `partsOf` hands out the set fitted off the rock itself.
 const cliffParts = [_]Part{
     .{ .ax = -5.4, .bx = 5.4, .r = 2.9, .h = 15.5 },
@@ -1125,7 +1130,7 @@ pub const INFO = [NK]Info{
         .{ .ax = 2.74, .az = -0.03, .bx = 2.74, .bz = -0.03, .r = 0.58, .h = 4.8 },
         .{ .ax = -1.65, .az = -0.18, .bx = -1.65, .bz = -0.18, .r = 0.45, .h = 0.8 },
     } },
-    .{ .kind = .wall, .build = ruins.wallMesh, .bound = 5.0, .top = 3.6, .view = 220, .solid = true, .parts = &.{.{ .ax = -3.55, .az = -0.01, .bx = 3.25, .bz = -0.01, .r = 0.37, .h = 3.0, .flat = true }} },
+    .{ .kind = .wall, .build = ruins.wallMesh, .bound = WALL_BOUND, .top = WALL_TOP, .view = WALL_VIEW, .solid = true, .parts = &wallParts },
     .{ .kind = .tree, .build = wood.treeMesh, .bound = 5.3, .top = 4.9, .view = 240, .parts = circleParts(0.38, 3.6), .occl = &.{.{ .r = 0.90, .y1 = 4.3 }}, .surf = .wood },
     .{ .kind = .graves, .build = ruins.gravesMesh, .bound = 2.3, .top = 1.05, .view = 150, .parts = &.{
         .{ .ax = -0.30, .az = -0.05, .bx = -0.30, .bz = -0.05, .r = 0.30, .h = 0.9 },
@@ -1477,7 +1482,9 @@ pub const INFO = [NK]Info{
     .{ .kind = .quenchtrough, .build = forge.quenchMesh, .bound = forge.QUENCH_R + 0.2, .top = forge.QUENCH_TOP, .view = 170, .parts = &.{.{ .ax = -0.62, .bx = 0.62, .r = 0.30, .h = forge.QUENCH_TOP }}, .surf = .wood },
     .{ .kind = .toolrack, .build = forge.toolRackMesh, .bound = forge.RACK_TOP + 0.6, .top = forge.RACK_TOP, .view = 220, .parts = &.{.{ .ax = -forge.RACK_HW, .bx = forge.RACK_HW, .r = 0.22, .h = forge.RACK_TOP * 0.9 }}, .surf = .wood },
     .{ .kind = .stairflight, .build = build.stairMesh, .bound = build.STAIR_RUN + 0.4, .top = build.STAIR_SEG, .view = 240, .stack = build.STAIR_SEG, .flight = .{ .run = build.STAIR_RUN, .halfW = build.STAIR_HALF, .treads = build.STAIR_TREADS }, .surf = .stone },
-    .{ .kind = .illusory, .build = rock.illusoryMesh, .bound = CLIFF2_BOUND, .top = CLIFF2_TOP, .view = FAR, .solid = true, .illusion = true, .parts = &cliffParts },
+    .{ .kind = .illusory, .build = rock.illusoryMesh, .bound = CLIFF2_BOUND, .top = CLIFF2_TOP, .view = FAR, .interact = true, .solid = true, .illusion = true, .parts = &cliffParts },
+    // The masonry twin: `ruins.wallMesh`'s own courses and the same collider, so it reads as one more length of the wall it stands in.
+    .{ .kind = .illusory_wall, .build = ruins.illusoryWallMesh, .bound = WALL_BOUND, .top = WALL_TOP, .view = WALL_VIEW, .interact = true, .solid = true, .illusion = true, .parts = &wallParts },
     .{ .kind = .emberrock, .build = ember.emberRockMesh, .bound = ember.ROCK_R * 1.9, .top = ember.ROCK_TOP + 0.15, .view = 240, .parts = circleParts(ember.ROCK_R * 0.92, ember.ROCK_TOP * 0.90), .surf = .stone },
     .{ .kind = .emberrocks, .build = ember.emberRocksMesh, .bound = 2.3, .top = 0.95, .view = 170, .surf = .stone },
     .{ .kind = .burningrock, .build = ember.burningRockMesh, .bound = 2.7, .top = ember.BURN_TOP, .view = 260, .parts = circleParts(0.95, 1.30), .light = .{ .y = ember.BURN_LIGHT_Y, .col = v3(1.05, 0.50, 0.16), .radius = 9.0, .flicker = 0.18 }, .surf = .stone },
@@ -1609,6 +1616,55 @@ test "collider parts stay inside their kind's bounding sphere" {
             const rb = @sqrt(part.bx * part.bx + part.bz * part.bz) + part.r;
             try std.testing.expect(@max(ra, rb) <= row.bound + 0.001);
         }
+    }
+}
+
+/// Mean vertex colour of a build, as the SCREEN shows it: albedo x 1.72 -> linear -> gamma 1/2.2, so a channel lands at albedo^(1/2.2) once the tone map has had it.
+fn screenTone(b: *const gfx.Builder) [3]f32 {
+    var sum = [3]f64{ 0, 0, 0 };
+    var n: usize = 0;
+    var i: usize = 0;
+    while (i + 3 < b.col.items.len) : (i += 4) {
+        for (0..3) |c| sum[c] += @floatFromInt(b.col.items[i + c]);
+        n += 1;
+    }
+    var out = [3]f32{ 0, 0, 0 };
+    if (n == 0) return out;
+    for (0..3) |c| {
+        const albedo = @as(f32, @floatCast(sum[c] / @as(f64, @floatFromInt(n)))) / 255.0;
+        out[c] = 255.0 * std.math.pow(f32, mathx.minF(1.0, albedo * 1.72), 1.0 / 2.2);
+    }
+    return out;
+}
+
+test "AN ILLUSION IS ITS REFERENCE UNDER ONE WASH — the cliff and the wall are off by the same rule, not by two hand-picked tints" {
+    std.debug.print("\n", .{});
+    const Row = struct { name: []const u8, real: *const fn () gfx.Builder, fake: *const fn () gfx.Builder };
+    const rows = [_]Row{
+        .{ .name = "cliff", .real = struct {
+            fn f() gfx.Builder {
+                return rock.cliffBuild(rock.CLIFF_PROPS[1].seed, rock.CLIFF_PROPS[1].kind);
+            }
+        }.f, .fake = rock.illusoryBuild },
+        .{ .name = "wall", .real = ruins.wallBuild, .fake = ruins.illusoryWallBuild },
+    };
+    for (rows) |row| {
+        var real = row.real();
+        defer real.deinit();
+        var fake = row.fake();
+        defer fake.deinit();
+        try std.testing.expectEqual(real.col.items.len, fake.col.items.len);
+
+        const a = screenTone(&real);
+        const b = screenTone(&fake);
+        std.debug.print("  {s}: on screen {d:.0}/{d:.0}/{d:.0} against the illusion's {d:.0}/{d:.0}/{d:.0} — off by {d:.0}/{d:.0}/{d:.0}\n", .{
+            row.name, a[0], a[1], a[2], b[0], b[1], b[2], b[0] - a[0], b[1] - a[1], b[2] - a[2],
+        });
+        // Off the reference, and off it the way the wash says: cooler, never warmer.
+        var moved = false;
+        for (0..3) |c| moved = moved or @abs(b[c] - a[c]) > 0.5;
+        try std.testing.expect(moved);
+        try std.testing.expect(b[2] - a[2] > b[0] - a[0]);
     }
 }
 

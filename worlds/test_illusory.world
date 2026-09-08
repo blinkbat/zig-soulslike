@@ -11,4 +11,8 @@ at: bonfire -2 -24 0 1
 at: cliff2 -15 6 0 1
 at: illusory 0 6 0 1
 at: cliff2 15 6 0 1
+at: wall -7 -10 0 1
+at: illusory_wall 0 -10 0 1
+at: wall 7 -10 0 1
 at: chest 0 13 180 1 loot=empty_flask,purgeleaf
+at: chest 0 -16 0 1 loot=smithing_stone

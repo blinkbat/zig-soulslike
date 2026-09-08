@@ -143,7 +143,7 @@ const MOVES_BANK = [_]Attack{
 };
 pub var MOVES = MOVES_BANK;
 
-const IMPACT_K: f32 = 0.68;
+const IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 
 comptime {
     const named = .{ .{ RAKE, RAKE_HIT }, .{ SLAM, SLAM_HIT } };

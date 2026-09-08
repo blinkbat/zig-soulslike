@@ -13,7 +13,6 @@ const Builder = gfx.Builder;
 
 const rx = mathx.rx;
 const ry = mathx.ry;
-const rz = mathx.rz;
 const tr = mathx.tr;
 const mul = mathx.mul;
 const mul3 = mathx.mul3;
@@ -309,10 +308,7 @@ pub const Golem = struct {
         defer if (!self.airborne()) held.hold(&self.pos);
         self.vit.tick(dt);
         if (held.downed) self.vit.beginStun(.heavy);
-        foe.fadeFlash(&self.flash, dt);
-        foe.tickParticles(&self.parts, dt, self.pos.y);
-        foe.applyShove(&self.pos, &self.shove, SHOVE_DECAY, bounds, dt);
-        foe.tickLeash(&self.leash, dt, self.pos, foe.tetherFor(self), hero, AGGRO_R);
+        foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
         self.smashCd = mathx.maxF(0, self.smashCd - dt);
         self.slamCd = mathx.maxF(0, self.slamCd - dt);
         self.sacCd = mathx.maxF(0, self.sacCd - dt);

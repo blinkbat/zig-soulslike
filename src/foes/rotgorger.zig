@@ -76,7 +76,7 @@ const BITE_FRONT_DOT: f32 = 0.55;
 const BITE_WIND: f32 = 0.38;
 const BITE_STRIKE: f32 = 0.16;
 /// The jaws are still open at the strike's first frame; they close from here.
-const BITE_IMPACT_K: f32 = 0.68;
+const BITE_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const BITE_RECOVER: f32 = 0.60;
 const BITE_CD: f32 = 1.9;
 pub var BITE_HIT = combat.Hit{ .dmg = 15, .poise = 13, .stance = 8, .elem = combat.elems(.{ .chaos = 9 }), .venom = true };

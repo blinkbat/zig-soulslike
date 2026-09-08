@@ -63,7 +63,7 @@ pub const SLAM_HIT = combat.Hit{ .dmg = 34, .poise = 26, .stance = 10, .launch =
 pub const SWEEP_HIT = combat.Hit{ .dmg = 26, .poise = 20 };
 pub const HOOK_HIT = combat.Hit{ .dmg = 14, .poise = 14 };
 pub const DRAG_PULL: f32 = 3.4;
-const IMPACT_K: f32 = 0.68;
+const IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 
 const Attack = struct {
     windDur: f32,

@@ -10,7 +10,6 @@ const wf = @import("../world/worldfmt.zig");
 const sfx = @import("../core/audio.zig");
 const archermod = @import("archer.zig");
 const ogremod = @import("ogre.zig");
-const propart = @import("../props/propart.zig");
 const elemfx = @import("../gfx/elemfx.zig");
 
 const v3 = mathx.v3;

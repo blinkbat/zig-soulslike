@@ -181,7 +181,6 @@ const DRIVE_REC_DUR = 0.95;
 const DRIVE_CD = 5.0;
 const DRIVE_MIN = 4.5;
 const DRIVE_MAX = 6.10;
-const FLASH_DUR = foe.FLASH_DUR;
 const SHOVE_DECAY = 6.0;
 
 const HP_MAX = 300.0;

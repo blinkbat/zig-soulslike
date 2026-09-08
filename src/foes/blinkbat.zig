@@ -111,7 +111,7 @@ const BLINK_ARC_MAX: f32 = 168.0;
 const BITE_WIND: f32 = 0.44;
 const BITE_STRIKE: f32 = 0.13;
 /// The jaws are still open at the strike's first frame; they close from here.
-const BITE_IMPACT_K: f32 = 0.68;
+const BITE_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const BITE_RECOVER: f32 = 0.46;
 const BITE_R: f32 = 2.05;
 const BITE_FRONT_DOT: f32 = 0.34;

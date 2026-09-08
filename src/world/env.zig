@@ -13,7 +13,6 @@ const wf = @import("worldfmt.zig");
 const caves = @import("caves.zig");
 const chestmod = @import("../play/chest.zig");
 const pickupmod = @import("../play/pickup.zig");
-const item = @import("../play/item.zig");
 const restmod = @import("../play/rest.zig");
 const foemod = @import("../foes/foe.zig");
 
@@ -1422,7 +1421,7 @@ pub const Env = struct {
             const pr = &self.props[pi];
             if (pr.gone) continue;
             const nfo = props.info(pr.kind);
-            if (nfo.solid) continue;
+            if (nfo.solid and !veilThins(nfo)) continue;
             if (nfo.flora and nfo.top * pr.scale < OCCL_TALL) continue;
             const thin = thinFor(pr, nfo, eye, at);
             if (thin <= 0) continue;
@@ -2439,9 +2438,10 @@ pub const Env = struct {
             if (!view.visible(pr.pos, reachOf(pr, nfo), nfo.view)) continue;
             self.stat_draws += 1;
             const sc = v3(pr.scale, pr.scale, pr.scale);
-            const fading = pr.shrink < 1.0;
+            const alpha = pr.shrink * pr.fade;
+            const fading = alpha < 1.0;
             if (fading) {
-                if (self.scene) |sn| sn.beginFade(pr.shrink);
+                if (self.scene) |sn| sn.beginFade(alpha);
             }
             const tint = if (pr.ward > 0 and self.wardShut[pr.ward - 1]) propfx.FOG_SHUT_TINT else rl.Color.white;
             rl.drawModelEx(mdl, pr.pos, v3(0, 1, 0), pr.yaw, sc, tint);
@@ -2480,7 +2480,7 @@ pub const Env = struct {
                         if (!castsInto(focus, pr.pos, bound, runOf(pr, nfo))) continue;
                     },
                 }
-                if (!casters_only and pr.fade < FADE_SOLID) continue;
+                if (!casters_only and pr.fade < FADE_SOLID and !veilThins(nfo)) continue;
                 self.stat_draws += 1;
                 const alpha = pr.shrink * (1.0 - pr.dissolve);
                 if (!casters_only and alpha < 1.0) {
@@ -2560,6 +2560,7 @@ pub const Env = struct {
             if (pr.gone) continue;
             if (pr.fade >= FADE_SOLID) continue;
             const nfo = props.info(pr.kind);
+            if (veilThins(nfo)) continue;
             if (!view.visible(pr.pos, reachOf(pr, nfo), nfo.view)) continue;
             const d = mathx.dist2XZ(pr.pos, view.pos);
             var i = n;
@@ -3605,6 +3606,11 @@ pub const PropFrame = struct {
 };
 
 /// 0 (solid) .. 1 (as thin as it gets). A conifer's collider is a 1.48 m cylinder against boughs that block the view at 3.8 m.
+/// **THE ONE SOLID THAT THINS**, and what thins is its VEIL: the arch is masonry and stays put, the sheet hung across it is the thing standing between the lens and him. `ward` is the fog gate's own mark (`collision.Solid.ward`).
+fn veilThins(nfo: *const props.Info) bool {
+    return nfo.ward;
+}
+
 fn thinFor(pr: *const Prop, nfo: *const props.Info, eye: rl.Vector3, at: rl.Vector3) f32 {
     var thin: f32 = 0;
     const fr = PropFrame.of(pr);
@@ -4367,6 +4373,31 @@ test "the sight line thins the tree standing in it, and only that tree" {
     e.markOccluders(v3(60, eyeY, -4), v3(60, 1.0, 4), 10.0);
     try std.testing.expectEqual(@as(f32, 1), e.props[0].fade);
     try std.testing.expectEqual(@as(usize, 0), e.noccl);
+}
+
+test "THE FOG GATE THINS LIKE ANYTHING ELSE STANDING IN THE SIGHT LINE — the sheet does, the arch it hangs in does not" {
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.props[0] = .{ .kind = .foggate, .pos = v3(0, 0, 0), .yaw = 90, .scale = 1 };
+    e.props[1] = .{ .kind = .cottage, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1 };
+    e.nprops = 2;
+    fillIndex(e, &e.stx, false);
+
+    const eyeY: f32 = 2.2;
+    e.markOccluders(v3(0, eyeY, -3), v3(0, 1.0, 3), 10.0);
+    try std.testing.expectApproxEqAbs(OCCL_FLOOR, e.props[0].fade, 0.001);
+    try std.testing.expectEqual(@as(f32, 1), e.props[1].fade); // masonry never thins, fog gate or not
+
+    e.markOccluders(v3(20, eyeY, -3), v3(20, 1.0, 3), 10.0);
+    try std.testing.expectEqual(@as(f32, 1), e.props[0].fade);
+    try std.testing.expectEqual(@as(usize, 0), e.noccl);
+
+    // The arch stays in the ordinary pass at every fade, and never doubles into the thinned one.
+    e.props[0].fade = OCCL_FLOOR;
+    try std.testing.expect(veilThins(props.info(.foggate)));
+    try std.testing.expect(!veilThins(props.info(.cottage)));
+    std.debug.print("\n  fog gate thins to {d:.2} of its sheet over {d:.2} s, back over {d:.2} s\n", .{ OCCL_FLOOR, OCCL_IN, OCCL_OUT });
 }
 
 test "THE FADE TAKES TIME, both ways, and never overshoots either end" {

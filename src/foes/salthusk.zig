@@ -86,7 +86,7 @@ const CLOUT_FRONT_DOT: f32 = 0.45;
 const CLOUT_WIND: f32 = 0.42;
 const CLOUT_STRIKE: f32 = 0.18;
 /// The arm is still back at the strike's first frame; the clout arrives from here.
-const CLOUT_IMPACT_K: f32 = 0.68;
+const CLOUT_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const CLOUT_RECOVER: f32 = 0.66;
 const CLOUT_CD: f32 = 2.2;
 pub var CLOUT_HIT = combat.Hit{ .dmg = 9, .poise = 8 };

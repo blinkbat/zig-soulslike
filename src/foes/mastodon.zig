@@ -7,7 +7,6 @@ const heromod = @import("../play/hero.zig");
 const foe = @import("foe.zig");
 const wolf = @import("wolf.zig");
 const wf = @import("../world/worldfmt.zig");
-const sfx = @import("../core/audio.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;

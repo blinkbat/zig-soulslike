@@ -10,7 +10,6 @@ const uiart = @import("../ui/uiart.zig");
 const sfx = @import("../core/audio.zig");
 
 const rgba = mathx.rgba;
-const v3 = mathx.v3;
 
 
 const RAISE: f32 = 0.14;

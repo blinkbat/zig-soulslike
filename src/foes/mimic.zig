@@ -6,7 +6,6 @@ const combat = @import("../play/combat.zig");
 const heromod = @import("../play/hero.zig");
 const foe = @import("foe.zig");
 const wf = @import("../world/worldfmt.zig");
-const sfx = @import("../core/audio.zig");
 const village = @import("../props/propvillage.zig");
 const chestmod = @import("../play/chest.zig");
 const archermod = @import("archer.zig");

@@ -73,12 +73,14 @@ pub fn cliff6(shader: rl.Shader) rl.Model {
     return cliffMesh(shader, CLIFF_PROPS[5].seed, CLIFF_PROPS[5].kind);
 }
 
-/// `cliff2`'s own face washed toward slate: near enough to pass at a glance, off enough to be found by someone who looks.
-pub const ILLUSION_WASH = mathx.rgba(96, 104, 134, 255);
-pub const ILLUSION_WASH_T: f32 = 0.36;
-pub fn illusoryMesh(shader: rl.Shader) rl.Model {
+/// `cliff2`'s own face under the illusion wash (`art.ILLUSION_WASH`).
+pub fn illusoryBuild() Builder {
     var b = cliffBuild(CLIFF_PROPS[1].seed, CLIFF_PROPS[1].kind);
-    b.wash(ILLUSION_WASH, ILLUSION_WASH_T);
+    b.wash(art.ILLUSION_WASH, art.ILLUSION_WASH_T);
+    return b;
+}
+pub fn illusoryMesh(shader: rl.Shader) rl.Model {
+    var b = illusoryBuild();
     return b.toModel(shader);
 }
 

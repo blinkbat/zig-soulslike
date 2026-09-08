@@ -29,7 +29,6 @@ const STONE_LT = art.STONE_LT;
 const STONE_MOSS = art.STONE_MOSS;
 const THATCH_DK = art.THATCH_DK;
 const TIMBER_DK = art.TIMBER_DK;
-const blade = art.blade;
 const chipsInto = art.chipsInto;
 const courseInto = art.courseInto;
 const courseStack = art.courseStack;
@@ -307,6 +306,22 @@ pub fn archMesh(shader: rl.Shader) rl.Model {
 }
 
 pub fn wallMesh(shader: rl.Shader) rl.Model {
+    var b = wallBuild();
+    return b.toModel(shader);
+}
+
+/// The same masonry under the illusion wash (`art.ILLUSION_WASH`) — the rock face's twin for a built place.
+pub fn illusoryWallBuild() Builder {
+    var b = wallBuild();
+    b.wash(art.ILLUSION_WASH, art.ILLUSION_WASH_T);
+    return b;
+}
+pub fn illusoryWallMesh(shader: rl.Shader) rl.Model {
+    var b = illusoryWallBuild();
+    return b.toModel(shader);
+}
+
+pub fn wallBuild() Builder {
     var b = Builder.init();
     var rng = mathx.Rng.init(4805);
     const th: f32 = 0.40;
@@ -334,7 +349,7 @@ pub fn wallMesh(shader: rl.Shader) rl.Model {
     tuftInto(&b, &rng, rng.range(-3.4, 3.4), rng.range(0.5, 0.9), 0.85);
     tuftInto(&b, &rng, rng.range(-3.4, 3.4), rng.range(-0.9, -0.5), 0.7);
     tuftInto(&b, &rng, rng.range(-3.4, 3.4), rng.range(-0.8, 0.8), 0.6);
-    return b.toModel(shader);
+    return b;
 }
 
 pub fn gravesMesh(shader: rl.Shader) rl.Model {

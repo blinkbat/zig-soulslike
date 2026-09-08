@@ -15,6 +15,10 @@ pub const MORTAR = rgba(36, 33, 29, 255);
 pub const MARBLE = rgba(54, 54, 52, 255);
 pub const MARBLE_LT = rgba(70, 70, 68, 255);
 pub const MARBLE_DK = rgba(34, 34, 34, 255);
+/// **A WALL THAT IS NOT THERE IS WASHED TOWARD SLATE** — near enough to pass at a glance, off enough to be found by someone who looks. ONE tone for every illusion, whatever it is imitating, so the tell is learnable rather than per-prop.
+pub const ILLUSION_WASH = rgba(96, 104, 134, 255);
+pub const ILLUSION_WASH_T: f32 = 0.36;
+
 pub const CLIFF_ROCK = rgba(46, 42, 36, 255);
 pub const CLIFF_DK = rgba(27, 27, 29, 255);
 pub const CLIFF_LT = rgba(56, 51, 42, 255);

@@ -273,8 +273,9 @@ pick against strings and fingers against neck.
 **Billing a blow.**
 
 - **A BLOW IS BILLED FROM ITS IMPACT, NOT THE STRIKE'S FIRST FRAME.** At `s = 0` the limb is still where the wind
-  left it; `*_IMPACT_K` (0.25 for the mastodon's tail to 0.85 for the ogre's slam, 0.68 across the seven families
-  sharing `foe.catchMelee`) is what `toImpact` hands the parry window AND where the `try*` gate opens. A stroke
+  left it; `*_IMPACT_K` (0.25 for the mastodon's tail to 0.85 for the ogre's slam) is what `toImpact` hands the
+  parry window AND where the `try*` gate opens. **THE ORDINARY SWING'S SHARE IS ONE NUMBER** —
+  `foe.MELEE_IMPACT_K`, which the seven `catchMelee` families and `rooted` alias rather than restate. A stroke
   judged off a SWEPT SEGMENT (`weaponReaches`) is exempt: it bills when the edge actually crosses him.
 - **A FRONTAL ANIMATION BILLS A FRONTAL CONE** (`foe.inFront` + a `*_FRONT_DOT`), never a radius. Only a RING — a
   shockwave, a burst, a thrown rock — is 360°.
@@ -609,7 +610,7 @@ stagger you suffer is time taken off the player. Hence `FOE_*_STUN_DUR` well pas
 slower.
 
 - **NOBODY IS POISE-DAMAGED WHILE ALREADY REELING, EITHER SIDE** — while a stun runs incoming poise is dropped and
-  when it ends poise goes back to FULL, both tiers; HP and direct STANCE damage still land. `Vitals` owns the
+  when it ends poise goes back to FULL, both tiers; STANCE is dropped with it and only HP still lands. `Vitals` owns the
   clock and it ticks BEFORE the regen gate, or a foe's `regenDelay` outlasts the window and the immunity never
   lifts. A GUARD BREAK is the one door `hit()` misses — `hero.enterStun` arms it.
 - **A DRIP IS NOT A BLOW** — anything that HOLDS bills damage every frame (`Vitals.drip`), and a blow's side
@@ -1548,7 +1549,10 @@ representable; that needs a different representation, not another brush.
   test over `worlds/` enforces it. The CAMPFIRE behind him is the RETRY.
 - **AND A FIGHT IS NOT A RUN, so it may not write his slot** (`game.saveNow` refuses while `sparring()`) — it would
   have written his position in a 96 m test room, a fresh picture over `save1.png`, and a rail bit for the boss he
-  just killed, and `snapRail` only ever GAINS a bit. **HE FIGHTS WITH THE KIT HE IS CARRYING.**
+  just killed, and `snapRail` only ever GAINS a bit. **THE ROOM HANDS HIM EVERY ARMAMENT AND EVERY SCROLL**
+  (`game.sparKit`) — the creature is the test, not the kit — **AND THE FIGHT'S KIT DIES WITH THE FIGHT**: bag,
+  sockets and rack are taken where the MAP is and handed back at the one door out (`game.leaveSpar`), or the
+  whole item list walks into his run and into his file at the next fire.
 
 ### Illusory walls, decks and ladders
 
@@ -1832,7 +1836,10 @@ biome whose FLOOR is authored (`wf.Soil.sand`). Bench: `worlds/test_palace.world
   over a BAND not a plane (`OCCL_DEPTH_BAND`); and `OCCL_MAX` counts what is in flight, both directions. **The
   shape is a pure function of where the value SITS, never of where a travel began.**
 - **EVERYTHING THINS EXCEPT WHAT SAYS `solid`** — architecture, cliffs, the water sheet, the bonfire. The flag is
-  that way round because as an opt-in every kind added afterwards opted out by silence.
+  that way round because as an opt-in every kind added afterwards opted out by silence. **ONE SOLID THINS AND WHAT
+  THINS IS ITS VEIL** (`env.veilThins`, off `Info.ward`): the fog gate's arch is masonry and stays put, the sheet
+  hung across it is the thing standing between the lens and him, so the STONE keeps the ordinary pass at full
+  alpha and the SHEET carries `fade` in `drawVeils`.
 - **GROUND COVER THINS FROM HIS WAIST UP** (`OCCL_TALL`, the rig's SPINE at 0.640·H) — `markOccluders` walks BOTH
   indices and the height gate is what keeps grass out of it. **Coverage will not do that job**: a tuft against
   the lens scores 0.54, over three times `OCCL_MIN`. **The gate is the INSTANCE'S height, `top * scale`, not the

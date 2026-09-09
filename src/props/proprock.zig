@@ -18,7 +18,6 @@ const SCRUB_DK = art.SCRUB_DK;
 const STONE_MOSS = art.STONE_MOSS;
 const tuftInto = art.tuftInto;
 
-
 pub const CliffKind = struct {
     H: f32,
     wLo: f32,
@@ -97,7 +96,7 @@ pub const Masses = struct {
     sky: [SKY_CAP]CliffBody = undefined,
     nsky: usize = 0,
 
-    fn push(self: *Masses, b: CliffBody) void {
+    pub fn push(self: *Masses, b: CliffBody) void {
         if (self.n >= MASS_CAP) @panic("proprock: MASS_CAP exceeded — raise the cap");
         self.items[self.n] = b;
         self.n += 1;
@@ -180,7 +179,7 @@ pub fn cliffShape(i: usize) *const CliffShape {
     if (!shapeDone[i]) {
         var sh: *CliffShape = &shapeStore[i];
         sh.masses = .{};
-        var b = cliffBuildOpt(CLIFF_PROPS[i].seed, CLIFF_PROPS[i].kind, true, &sh.masses);
+        var b = cliffBuildOpt(CLIFF_PROPS[i].seed, CLIFF_PROPS[i].kind, &sh.masses);
         const bb = b.boundsOf(.stone);
         b.deinit();
         sh.lo = bb.lo;
@@ -216,17 +215,6 @@ pub fn cliffSeatZ(bs: []const CliffBody, x: f32, y: f32, halfW: f32, halfH: f32)
     return back;
 }
 
-/// THE CLIFF FACES A PAINTED WALL CAN WEAR. One row each; `env.cliffWall` picks one at random per stretch and sinks it half into the wall.
-pub const CliffFace = struct { name: []const u8, seed: u64, kind: CliffKind };
-pub const CLIFF_FACES = [_]CliffFace{
-    .{ .name = "Rocky Cliff", .seed = 90210, .kind = CLIFF_ROUND },
-    .{ .name = "Rocky Cliff II", .seed = 41077, .kind = CLIFF_ROUND },
-    .{ .name = "Blocky Cliff", .seed = 4471, .kind = CLIFF_BLOCKY },
-    .{ .name = "Ragged Cliff", .seed = 7331, .kind = CLIFF_RAGGED },
-    .{ .name = "Shattered Cliff", .seed = 1999, .kind = CLIFF_SHATTERED },
-    .{ .name = "Ivied Cliff", .seed = 6160, .kind = CLIFF_IVIED },
-};
-
 pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
     var b = cliffBuild(seed, k);
     return b.toModel(shader);
@@ -234,11 +222,49 @@ pub fn cliffMesh(shader: rl.Shader, seed: u64, k: CliffKind) rl.Model {
 
 /// The mesh before it is a model, so it can be stamped into a wall instead of drawn as a prop.
 pub fn cliffBuild(seed: u64, k: CliffKind) Builder {
-    return cliffBuildOpt(seed, k, true, null);
+    return cliffBuildOpt(seed, k, null);
 }
 
-/// `fissures` false leaves out the six dark capsules that stand at the front as cracks: bisected into a sheet (`env.faceStamp`) the body sits behind the plane and they stood alone as a comb of dark spikes. The rng stream is kept, so the rest of the rock is the same either way. `masses` collects what `fitParts` colliders.
-pub fn cliffBuildOpt(seed: u64, k: CliffKind, fissures: bool, masses: ?*Masses) Builder {
+/// THE ROCK A CUT IS DRESSED WITH, one mass. A cliff piece is a 15 m wall and cannot be the unit a 3 m face is built from; these are what a hand places against a bank — 2.4-4.4 m across, faceted, sunk most of the way in. `blocky` runs 0 (rounded) to 1 (slabbed) and picks the ring and side counts.
+pub const FACE_ROCK_SEEDS = [_]u64{ 70001, 70019, 70037, 70061, 70079, 70103, 70121, 70141 };
+
+pub fn faceRockBuild(seed: u64, masses: ?*Masses) Builder {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(seed);
+    var frng = mathx.Rng.init(seed ^ 0x0FACE);
+    b.setMat(.stone);
+    const blocky = rng.range(0.25, 0.95);
+    const sides: i32 = @intFromFloat(@round(12.0 - 2.0 * blocky + rng.signed()));
+    const rings: i32 = @intFromFloat(@round(6.0 - blocky + rng.signed() * 0.5));
+    const R = rng.range(1.2, 2.2);
+    const core = v3(0, R * rng.range(0.62, 0.86), 0);
+    const ce = v3(R, R * rng.range(0.70, 1.05), R * rng.range(0.72, 1.02));
+    b.addBlob(core, ce, rings, sides, if (rng.float() < 0.45) CLIFF_DK else CLIFF_ROCK);
+    if (masses) |ms| ms.push(.{ .x = core.x, .y = core.y, .z = core.z, .rx = ce.x, .ry = ce.y, .rz = ce.z });
+    const nl = 1 + rng.intn(2);
+    var i: i32 = 0;
+    while (i < nl) : (i += 1) {
+        const a = rng.angle();
+        const r = R * rng.range(0.24, 0.42);
+        const c = v3(
+            core.x + mathx.cosf(a) * ce.x * rng.range(0.30, 0.55),
+            core.y + rng.signed() * ce.y * 0.55,
+            core.z + mathx.sinf(a) * ce.z * rng.range(0.30, 0.55),
+        );
+        const e = v3(r, r * rng.range(0.66, 1.00), r * rng.range(0.74, 1.10));
+        b.addBlob(c, e, @max(rings - 1, 3), @max(sides - 1, 5), if (@mod(i, 2) == 0) CLIFF_LT else CLIFF_ROCK);
+        if (masses) |ms| ms.push(.{ .x = c.x, .y = c.y, .z = c.z, .rx = e.x, .ry = e.y, .rz = e.z });
+    }
+    b.setMat(.plant);
+    const mx = core.x + rng.signed() * ce.x * 0.5;
+    const mz = core.z - ce.z * rng.range(0.30, 0.62);
+    const my = core.y + ce.y * rng.range(0.55, 0.90);
+    art.lichenInto(&b, &frng, v3(mx, my, mz), v3(R * 0.42, 0.05, R * 0.38), 4);
+    return b;
+}
+
+/// `masses` collects what `fitParts` colliders.
+pub fn cliffBuildOpt(seed: u64, k: CliffKind, masses: ?*Masses) Builder {
     const H = k.H;
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
@@ -317,7 +343,7 @@ pub fn cliffBuildOpt(seed: u64, k: CliffKind, fissures: bool, masses: ?*Masses) 
         const a = v3(cx, 0.2, z0 + rng.signed() * 0.14);
         const c = v3(cx + rng.signed() * 0.34, h, z0 + 0.35 + rng.signed() * 0.18);
         const rTop = rr * rng.range(0.70, 0.92);
-        if (fissures) b.addCapsule(a, c, rr, rTop, @as(i32, if (bold) 9 else 7), CLIFF_DK);
+        b.addCapsule(a, c, rr, rTop, @as(i32, if (bold) 9 else 7), CLIFF_DK);
     }
     var t: i32 = 0;
     while (t < 9) : (t += 1) {
@@ -731,8 +757,6 @@ pub fn screeMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-
-
 fn stratumCol(i: i32, n: i32) rl.Color {
     const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(@max(n - 1, 1)));
     return art.seam(art.weathered(ROCK_DEEP, CLIFF_LT, t), CLIFF_DK, i, 4);
@@ -860,8 +884,6 @@ test "a formation is top-heavy, a spire is not, and both know their own height" 
     try std.testing.expect(BALANCED_H < HOODOO_H);
     try std.testing.expect(FINGERS_H < SPIRE_H);
 }
-
-
 
 pub const SHARD_H: f32 = 0.58;
 

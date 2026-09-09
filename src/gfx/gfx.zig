@@ -6,7 +6,6 @@ const daynight = @import("../world/daynight.zig");
 
 const v3 = mathx.v3;
 
-
 const alloc = std.heap.raw_c_allocator;
 
 // Shadow sampler lives on a high texture slot raylib's default material never binds (it only uses slot 0 for albedo), so the per-frame bind survives drawModel/drawMesh.
@@ -35,7 +34,7 @@ pub const WATER_SHORE: u8 = glsl.WATER_SHORE;
 pub const WATER_DEEP_AT: f32 = 11.0;
 pub const WATER_WET_OUT: f32 = 3.4;
 
-/// THE RAW GL BLEND ENUMS, NAMED ONCE: `rl.gl.rlSetBlendFactors` takes them as bare ints, and two callers want them.
+/// THE RAW GL BLEND ENUMS, NAMED ONCE: `rl.gl.rlSetBlendFactors` takes them as bare ints, and four call sites want them.
 pub const GL_ZERO: i32 = 0;
 pub const GL_ONE: i32 = 1;
 pub const GL_FUNC_ADD: i32 = 0x8006;
@@ -311,7 +310,6 @@ pub const PRESET_PS1 = [_]Preset{ .{ .idx = RF_PIXELATE, .val = 0.35 }, .{ .idx 
 pub const PRESET_CRT = [_]Preset{ .{ .idx = RF_SCANLINES, .val = 0.6 }, .{ .idx = RF_CHROMA, .val = 0.45 }, .{ .idx = RF_CURVE, .val = 0.55 }, .{ .idx = RF_GRAIN, .val = 0.25 } };
 pub const PRESET_VHS = [_]Preset{ .{ .idx = RF_VHS, .val = 0.65 }, .{ .idx = RF_CHROMA, .val = 0.55 }, .{ .idx = RF_GRAIN, .val = 0.35 }, .{ .idx = RF_SEPIA, .val = 0.15 } };
 pub const PRESET_GB = [_]Preset{ .{ .idx = RF_GAMEBOY, .val = 1.0 }, .{ .idx = RF_PIXELATE, .val = 0.45 }, .{ .idx = RF_DITHER, .val = 0.4 } };
-
 
 pub const Retro = struct {
     shader: rl.Shader,
@@ -683,30 +681,30 @@ pub const Scene = struct {
         rl.setShaderValueV(self.shader, self.loc_liquidTone, &t, .vec3, LIQUID_N * 3);
     }
 
-var soilEdgeDilated: [@as(usize, @intCast(SOIL_N)) * @as(usize, @intCast(SOIL_N))]u8 = undefined;
+    var soilEdgeDilated: [@as(usize, @intCast(SOIL_N)) * @as(usize, @intCast(SOIL_N))]u8 = undefined;
 
-pub fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []const u8 {
-    @memcpy(out, edge);
-    for (0..n) |z| {
-        for (0..n) |x| {
-            const i = z * n + x;
-            if (ids[i] != 0) continue;
-            const nb = [4]?usize{
-                if (x > 0) i - 1 else null,
-                if (x + 1 < n) i + 1 else null,
-                if (z > 0) i - n else null,
-                if (z + 1 < n) i + n else null,
-            };
-            for (nb) |maybe| {
-                const j = maybe orelse continue;
-                if (ids[j] == 0) continue;
-                out[i] = edge[j];
-                break;
+    pub fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []const u8 {
+        @memcpy(out, edge);
+        for (0..n) |z| {
+            for (0..n) |x| {
+                const i = z * n + x;
+                if (ids[i] != 0) continue;
+                const nb = [4]?usize{
+                    if (x > 0) i - 1 else null,
+                    if (x + 1 < n) i + 1 else null,
+                    if (z > 0) i - n else null,
+                    if (z + 1 < n) i + n else null,
+                };
+                for (nb) |maybe| {
+                    const j = maybe orelse continue;
+                    if (ids[j] == 0) continue;
+                    out[i] = edge[j];
+                    break;
+                }
             }
         }
+        return out;
     }
-    return out;
-}
 
     pub fn setSoil(self: *Scene, ids: []const u8, cov: []const u8, edge: []const u8, half: f32) void {
         const n: usize = @intCast(SOIL_N);
@@ -799,7 +797,7 @@ pub fn dilateEdges(out: []u8, n: usize, ids: []const u8, edge: []const u8) []con
     }
 };
 
-pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke, ember, bark, fog, gilt };
+pub const Mat = enum(u8) { plain, stone, wood, cloth, steel, leather, skin, hide, plant, water, marble, flame, smoke, ember, bark, fog, gilt, rock, waterfall };
 comptime {
     std.debug.assert(@intFromEnum(Mat.stone) == 1);
     std.debug.assert(@intFromEnum(Mat.wood) == 2);
@@ -818,6 +816,8 @@ comptime {
     std.debug.assert(@intFromEnum(Mat.fog) == 15);
     // GOLD IS NOT STEEL WITH A YELLOW ALBEDO: the steel branch answers with a near-white glint and a COOL sky fresnel, and gold under it reads as blued silver at every edge.
     std.debug.assert(@intFromEnum(Mat.gilt) == 16);
+    std.debug.assert(@intFromEnum(Mat.rock) == 17);
+    std.debug.assert(@intFromEnum(Mat.waterfall) == 18);
 }
 
 pub fn smokeAnim(originY: f32, phase01: f32) f32 {
@@ -909,6 +909,10 @@ pub const Builder = struct {
         self.vert(a, na, col, a.x, a.z);
         self.vert(b, nb, col, b.x, b.z);
         self.vert(c, nc, col, c.x, c.z);
+    }
+
+    pub fn triColored(self: *Builder, p: [3]rl.Vector3, n: [3]rl.Vector3, colors: [3]rl.Color) void {
+        for (p, n, colors) |v, normal, col| self.vert(v, normal, col, v.x, v.z);
     }
 
     pub fn quadFade(self: *Builder, a: rl.Vector3, b: rl.Vector3, c: rl.Vector3, d: rl.Vector3, n: rl.Vector3, ab: rl.Color, cd: rl.Color) void {

@@ -475,7 +475,6 @@ pub const Game = struct {
 
 const SHOT_CLEAR: f32 = 0.02;
 
-
 const BOOT_AT_X: f32 = -60.0;
 const BOOT_AT_Z: f32 = 60.0;
 const BOOT_DRIFT_R: f32 = 26.0;
@@ -535,7 +534,7 @@ fn beginGame(g: *Game) void {
     g.hero.setSpawn(start, g.map.start.facing());
     g.hero.souls = .{};
     g.hero.gold = .{};
-        // The rack holds four DISTINCT armaments (`tidyHands`), so the two stowed cells are the other melee class and a torch.
+    // The rack holds four DISTINCT armaments (`tidyHands`), so the two stowed cells are the other melee class and a torch.
     g.hero.arm = .sword;
     g.hero.armAlt = .dagger;
     g.hero.off = .shield;
@@ -944,7 +943,7 @@ comptime {
 }
 
 test "EVERY FIELD ON `Game` IS ASSIGNED — `= .{}` never runs on an `alloc.create`, and a field nothing names is the fill byte" {
-        // It has bitten twice: `pack.n` came up as the fill byte, and `g.day` was never assigned (rate 0 is a held clock, and a NaN hour renders as the anchor hour).
+    // It has bitten twice: `pack.n` came up as the fill byte, and `g.day` was never assigned (rate 0 is a held clock, and a NaN hour renders as the anchor hour).
     const src = try worldfmt.readForTest(std.testing.allocator, "src/game.zig", 1 << 22);
     defer std.testing.allocator.free(src);
     var defaulted: usize = 0;
@@ -1035,15 +1034,25 @@ fn callUpdate(f: anytype, dt: f32, hero: rl.Vector3, bounds: f32) void {
 }
 
 test "SEVEN MELEE FAMILIES KEEP THEIR SWING UNTIL THE PARRY CONTACT" {
-    var c = cindermod.Cinder.spawn(mathx.zero3, 0, 1, 0.37); c.debugRake();
-    var w = birchmod.Wight.spawn(mathx.zero3, 0, 1, 0.37); w.debugBough();
-    var h = huskmod.Husk.spawn(mathx.zero3, 0, 1, 0.37); h.state = .clout;
-    var r = gorgermod.Gorger.spawn(mathx.zero3, 0, 1, 0.37); r.debugBite();
-    var f = fishmod.Fishman.spawnAs(.spearman, mathx.zero3, 0, 1, 0.37); f.debugAct();
-    var b = batmod.Bat.spawn(mathx.zero3, 0, 1, 0.37); b.debugBite();
-    var o = owlbearmod.Owlbear.spawn(mathx.zero3, 0, 1, 0.37); o.debugRake();
-    var slam = o; slam.debugSlam();
-    var burning = w; burning.debugLight(); burning.debugBough();
+    var c = cindermod.Cinder.spawn(mathx.zero3, 0, 1, 0.37);
+    c.debugRake();
+    var w = birchmod.Wight.spawn(mathx.zero3, 0, 1, 0.37);
+    w.debugBough();
+    var h = huskmod.Husk.spawn(mathx.zero3, 0, 1, 0.37);
+    h.state = .clout;
+    var r = gorgermod.Gorger.spawn(mathx.zero3, 0, 1, 0.37);
+    r.debugBite();
+    var f = fishmod.Fishman.spawnAs(.spearman, mathx.zero3, 0, 1, 0.37);
+    f.debugAct();
+    var b = batmod.Bat.spawn(mathx.zero3, 0, 1, 0.37);
+    b.debugBite();
+    var o = owlbearmod.Owlbear.spawn(mathx.zero3, 0, 1, 0.37);
+    o.debugRake();
+    var slam = o;
+    slam.debugSlam();
+    var burning = w;
+    burning.debugLight();
+    burning.debugBough();
     inline for (.{ c, w, h, r, f, b, o, slam, burning }) |initial| {
         for ([_]f32{ 30, 60, 144 }) |fps| {
             for ([_]f32{ 0.75, 1, 1.5 }) |scale| {
@@ -1127,15 +1136,15 @@ comptime {
         if (!excused) @compileError("game: `" ++ gr.field ++ "` has no `setParry`, so nothing it swings can " ++
             "ever be caught. Give it `parryable`/`takeParry` off `foe.inParryWindow`, or say why not in NO_PARRY");
     }
-        // BOTH HALVES OF THE PAIR OR NEITHER — `setParry` stamps the shield and `anyParried` is the only way a catch is
-        // ever reported, and each is reached by a bare `@hasDecl`, so one without the other fails SILENTLY.
+    // BOTH HALVES OF THE PAIR OR NEITHER — `setParry` stamps the shield and `anyParried` is the only way a catch is
+    // ever reported, and each is reached by a bare `@hasDecl`, so one without the other fails SILENTLY.
     for (FOE_GROUPS) |gr| {
         const G = @FieldType(Game, gr.field);
         if (@hasDecl(G, "setParry") != @hasDecl(G, "anyParried")) @compileError("game: `" ++ gr.field ++
             "` has one of `setParry`/`anyParried` and not the other — `parryBeat` never fires for it");
     }
-        // THE SAME PAIR ONE LEVEL DOWN, on the BODY: `partsOf` and `lockPointOf` each reach their half by a bare
-        // `@hasDecl` and fall back silently — `lockParts` alone walks points that never move, `lockPointAt` alone leaves every extra point unreachable.
+    // THE SAME PAIR ONE LEVEL DOWN, on the BODY: `partsOf` and `lockPointOf` each reach their half by a bare
+    // `@hasDecl` and fall back silently — `lockParts` alone walks points that never move, `lockPointAt` alone leaves every extra point unreachable.
     for (FOE_GROUPS) |gr| {
         const B = memberOf(gr.field);
         if (@hasDecl(B, "lockParts") != @hasDecl(B, "lockPointAt")) @compileError("game: `" ++ gr.field ++
@@ -1766,9 +1775,9 @@ test "THE MARK RIDES THE BODY, on every creature that has one" {
     var staff = duomod.Magus.spawn(mathx.zero3, 0, 1.0, 0.3);
 
     inline for (.{
-        .{ "toad", &toad },      .{ "archer", &bowman },   .{ "ogre", &giant },
-        .{ "berserker", &zerk },  .{ "mother", &mother },   .{ "shieldman", &boards },
-        .{ "shade", &ghost },     .{ "sporeling", &cap },   .{ "knight", &knight },
+        .{ "toad", &toad },          .{ "archer", &bowman },      .{ "ogre", &giant },
+        .{ "berserker", &zerk },     .{ "mother", &mother },      .{ "shieldman", &boards },
+        .{ "shade", &ghost },        .{ "sporeling", &cap },      .{ "knight", &knight },
         .{ "fungal sword", &blade }, .{ "fungal magus", &staff },
     }) |row| {
         const m = markSwing(row[1], hero);
@@ -2342,7 +2351,7 @@ fn shows(g: *const Game, l: editormod.Layer) bool {
 }
 
 fn drawCasters(g: *Game, cull: envmod.Cull) void {
-        // Bodies have no cell to be culled by, so the pass they are drawn for is the gate — set for the whole call and cleared at its end, because the object viewer draws the same groups under a lens of its own.
+    // Bodies have no cell to be culled by, so the pass they are drawn for is the gate — set for the whole call and cleared at its end, because the object viewer draws the same groups under a lens of its own.
     foemod.setCull(cull, drawFar(g));
     defer foemod.setCull(null, 0);
     if (shows(g, .props)) g.env.drawProps(cull);
@@ -2799,16 +2808,19 @@ const Reach = enum {
     gate,
 
     fn prompt(self: Reach) hud_.Hint {
-        return .{ .glyph = .{ .face = hud_.BTN_INTERACT }, .label = switch (self) {
-            .souls => "Reclaim",
-            .rest => "Rest",
-            .pickup => "Take",
-            .talk => "Speak",
-            // THE SAME WORD AS THE CHEST'S, or the prompt is the tell.
-            .mimic, .chest => "Open",
-            .ladder => "Climb",
-            .gate => "Enter",
-        } };
+        return .{
+            .glyph = .{ .face = hud_.BTN_INTERACT },
+            .label = switch (self) {
+                .souls => "Reclaim",
+                .rest => "Rest",
+                .pickup => "Take",
+                .talk => "Speak",
+                // THE SAME WORD AS THE CHEST'S, or the prompt is the tell.
+                .mimic, .chest => "Open",
+                .ladder => "Climb",
+                .gate => "Enter",
+            },
+        };
     }
 };
 
@@ -3983,7 +3995,6 @@ fn rimeBreathe(g: *Game, dt: f32) void {
     }
 }
 
-
 const STRIKE_RISE: f32 = 1.7;
 const STRIKE_LEAN: f32 = 0.9;
 const STRIKE_R: f32 = 0.30;
@@ -4380,7 +4391,7 @@ fn markHour(g: *Game, flame: ?gfx.Light) void {
         const M = std.meta.Child(@TypeOf(@field(g, gr.field).live()));
         for (@field(g, gr.field).live()) |*f| {
             const share = foemod.Win.shareOf(f.leash.win.when, day);
-                        // A FIGHT IN PROGRESS OUTRANKS THE HOUR, as it outranks the tether: a body cannot go unhittable mid-stroke and bill the blow out of nothing.
+            // A FIGHT IN PROGRESS OUTRANKS THE HOUR, as it outranks the tether: a body cannot go unhittable mid-stroke and bill the blow out of nothing.
             f.leash.win.in = if (f.leash.roused()) mathx.maxF(share, foemod.WIN_SOLID) else share;
             f.leash.sight = foemod.sightShare(night, flameShare(flame, f.pos));
             if (comptime @hasField(M, "sky")) f.sky.night = night;
@@ -4969,6 +4980,7 @@ pub fn drawScene(g: *Game) void {
     if (shows(g, .props)) g.env.drawThinned(&view);
     if (g.menu.wireframe) rl.gl.rlDisableWireMode();
     if (shows(g, .interact)) g.env.drawVeils(&view);
+    if (shows(g, .ground)) g.env.drawWaterfalls(&view);
     inline for (FOE_GROUPS) |f| {
         if (comptime @hasDecl(@FieldType(Game, f.field), "drawFx")) @field(g, f.field).drawFx();
     }
@@ -5335,7 +5347,7 @@ pub fn run(mode: Mode) void {
         const dt = mathx.minF(rawDt, DT_MAX) * g.menu.timeScale;
         g.drawDt = rawDt;
         PLAY_HALF = playHalfOf(g.map.half);
-                // The hour holds while he rests or talks; the weather does NOT — a frozen sheet hung in the air over the bonfire scene and the bed stopped answering the storm.
+        // The hour holds while he rests or talks; the weather does NOT — a frozen sheet hung in the air over the bonfire scene and the bed stopped answering the storm.
         if (!g.editor.on and !g.menu.isOpen() and !g.rest.active() and !g.talk.active() and !g.award.carding()) g.day.tick(dt);
         if (!g.editor.on and !g.menu.isOpen()) {
             tickWeather(g, dt);
@@ -5351,7 +5363,7 @@ pub fn run(mode: Mode) void {
             std.debug.print("INIT: {s: <10} {d:.1} ms (behind the menu)\n", .{ "audio rest", bankT * 1000.0 });
             bankT = -1;
         }
-                // ONE DRIVER, above every branch that `continue`s: the editor and the boot menu did not pump the streams, so a title track fading out under either stalled.
+        // ONE DRIVER, above every branch that `continue`s: the editor and the boot menu did not pump the streams, so a title track fading out under either stalled.
         tickAudioFades(g, rawDt);
         sfx.tickStreams();
 
@@ -5446,7 +5458,7 @@ pub fn run(mode: Mode) void {
                     if (leaveSpar(g)) g.editor.reopen() else g.editor.enter(g.hero.pos);
                 },
                 .toTitle => {
-                                        // THE STASH MAY NOT OUTLIVE THE WORLD IT BELONGS TO: a stash still held from the title lands his old map over the one he is playing.
+                    // THE STASH MAY NOT OUTLIVE THE WORLD IT BELONGS TO: a stash still held from the title lands his old map over the one he is playing.
                     _ = leaveSpar(g);
                     g.menu.toTitle();
                 },
@@ -5558,7 +5570,7 @@ pub fn run(mode: Mode) void {
             }
         }
         if (g.lock) |*li| {
-                        // The rider is shot off: the point it rode is gone, and the lock falls back onto the body that carried it.
+            // The rider is shot off: the point it rode is gone, and the lock falls back onto the body that carried it.
             if (refInBounds(g, li.*) and li.part >= foeParts(g, li.*)) li.part = 0;
         }
         if (g.lock) |li| {
@@ -5872,7 +5884,7 @@ pub fn run(mode: Mode) void {
                 spawnSac(g, from);
             }
         }
-                // OFF `billGroup` because the TONGUE HAULS: `g.hook` has to be cleared before the group can set it.
+        // OFF `billGroup` because the TONGUE HAULS: `g.hook` has to be cleared before the group can set it.
         g.hook = null;
         if (g.marsh.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, noteYank)) |b| {
             applyYank(g, heroTakes(g, b, b.hit.heavy(), true));
@@ -7218,7 +7230,6 @@ test "A RING IN THE BAG SAVES NOTHING — the snap is asked of the FINGER" {
     worn.put(.ring, null);
     try std.testing.expect(bindingWorn(worn) == null);
 }
-
 
 test "the editor's re-home stamp trips on every edit a placed body can take, and holds still otherwise" {
     const alloc = std.testing.allocator;

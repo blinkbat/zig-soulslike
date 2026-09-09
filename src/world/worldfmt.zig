@@ -7,9 +7,11 @@ const item = @import("../play/item.zig");
 
 const Kind = props.Kind;
 
-
-/// 2 widened `hgt:` to `Hgt` about `HEIGHT_ZERO`. A 1 still loads (its bytes are widened on the way in); a 2 on a build that only knows 1 is a LOAD ERROR, never a clamp.
-pub const VERSION: u32 = 2;
+/// 2 widened `hgt:` to `Hgt` about `HEIGHT_ZERO`; 3 added `CLIFF_FALL` to the `cliff:` grid. A 1 still loads (its bytes are
+/// widened on the way in); a 3 on a build that only knows 2 is a LOAD ERROR, never a clamp. **A NEW VALUE IN AN EXISTING
+/// GRID IS A NEW VERSION** — `readGrid` bounds every byte by its own `*_N`, so growing one makes an older build reject the
+/// map on the BYTE and not on the version line it was told it could read.
+pub const VERSION: u32 = 3;
 const OLDEST_VERSION: u32 = 1;
 
 pub const DEFAULT_HALF: f32 = 500.0;
@@ -41,7 +43,6 @@ pub const MAX_FOES: usize = 512;
 pub const FOE_SCALE_LO: f32 = 0.5;
 pub const FOE_SCALE_HI: f32 = 2.0;
 pub const NAME_CAP: usize = 48;
-
 
 pub const OpKind = enum(u8) {
     at,
@@ -196,7 +197,6 @@ pub fn scatDefaults(k: OpKind) Scatter {
     }
     return s;
 }
-
 
 pub const MAX_LOCATIONS: usize = 64;
 
@@ -591,8 +591,6 @@ pub const MAX_PER_KIND: usize = MAX_FOES;
 
 pub const Runway = struct { x: f32 = -3.4, z: f32 = -44, x1: f32 = 3.4, z1: f32 = 30 };
 
-
-
 pub const ID_CAP: usize = 24;
 pub const Id = [ID_CAP]u8;
 
@@ -778,7 +776,6 @@ pub const Dialog = struct {
         return idText(&self.id);
     }
 };
-
 
 pub const TALK_SAY_CAP: usize = 240;
 pub const TALK_LABEL_CAP: usize = 44;
@@ -1022,7 +1019,7 @@ pub fn compactText(m: *Map) void {
                 s.* = .{ .at = @intCast(hit), .len = @intCast(txt.len) };
                 return;
             }
-            @memcpy(buf[at.* ..][0..txt.len], txt);
+            @memcpy(buf[at.*..][0..txt.len], txt);
             s.* = .{ .at = at.*, .len = @intCast(txt.len) };
             at.* += @intCast(txt.len);
         }
@@ -1433,7 +1430,12 @@ pub const CAVE_EDGE: u8 = 128;
 pub const CLIFF_NONE: u8 = 0;
 pub const CLIFF_FACE: u8 = 1;
 pub const CLIFF_STAIR: u8 = 2;
-pub const CLIFF_N: u16 = 3;
+pub const CLIFF_FALL: u8 = 3;
+pub const CLIFF_N: u16 = 4;
+
+pub fn cliffFace(case: u8) bool {
+    return case == CLIFF_FACE or case == CLIFF_FALL;
+}
 
 /// One riser. Must stay at or under `env.STEP_UP` (asserted there) and be a whole number of `HEIGHT_STEP`, or a tread does not land on a height the encoding can hold.
 pub const STAIR_RISE: f32 = 0.5;
@@ -1487,7 +1489,6 @@ pub const RING_STEP = blk: {
     for (CLIFF_RING, 0..) |c, i| s[i] = .{ @intFromFloat(c[0]), @intFromFloat(c[1]) };
     break :blk s;
 };
-
 
 fn hash2(a: u32, b: u32) u32 {
     var h: u32 = a *% 0x9E3779B1;
@@ -1625,7 +1626,7 @@ pub fn sampleHeight(field: []const Hgt, cliff: []const u8, half: f32, px: f32, p
     if (case == CLIFF_STAIR) return stairTread(h00, h10, h01, h11);
     const t = cliffTiers(h00, h10, h01, h11);
     const minDrop = cliffMinDrop(step);
-    if (case != CLIFF_FACE or !cliffCuts(t, minDrop)) {
+    if (!cliffFace(case) or !cliffCuts(t, minDrop)) {
         return mathx.lerpF(mathx.lerpF(h00, h10, tx), mathx.lerpF(h01, h11, tx), tz);
     }
     const ring = [4]f32{ h00, h01, h11, h10 };
@@ -1656,13 +1657,28 @@ pub fn pointSpan(c: f32, r: f32, half: f32, step: f32, n: usize) ?[2]usize {
     return .{ @intFromFloat(lo), @intFromFloat(hi) };
 }
 
+/// THE LATTICE RECT A SWEPT BRUSH OF RADIUS `r` FROM `from` TO `to` CAN TOUCH: the bounding box of the two discs, which
+/// is `pointSpan` about the midpoint at half the run plus the radius. Every swept stroke in the editor wants exactly this.
+pub fn sweptSpan(from: [2]f32, to: [2]f32, r: f32, half: f32, step: f32, n: usize) ?[4]usize {
+    const xs = pointSpan((from[0] + to[0]) * 0.5, @abs(to[0] - from[0]) * 0.5 + r, half, step, n) orelse return null;
+    const zs = pointSpan((from[1] + to[1]) * 0.5, @abs(to[1] - from[1]) * 0.5 + r, half, step, n) orelse return null;
+    return .{ xs[0], zs[0], xs[1], zs[1] };
+}
+
+/// THE CELL A POINT FALLS IN, which is the FLOOR and never the nearest lattice point — a cell is named by its LOW
+/// corner, so rounding puts the answer half a cell past the point. `sampleHeight` steps on this same line.
+pub fn pointCell(c: f32, half: f32, step: f32, n: usize) ?usize {
+    const g = @floor((c + half) / step);
+    if (g < 0 or g > @as(f32, @floatFromInt(n - 2))) return null;
+    return @intFromFloat(g);
+}
+
 pub const Sculpt = enum {
     raise,
     lower,
     smooth,
     flatten,
 };
-
 
 pub const Map = struct {
     name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
@@ -1759,7 +1775,6 @@ pub const Map = struct {
         z.setName("plain");
         self.zones[0] = z;
         self.nzones = 1;
-
     }
 
     /// The scatter block behind an op, or a default-valued one when it has none — so a read never has to branch on the op kind.
@@ -2226,6 +2241,40 @@ pub const Map = struct {
         return changed;
     }
 
+    /// ONE STRAIGHT CUT ON THE LATTICE'S OWN CELLS. A swept disc leaves a ragged boundary and every cell of it
+    /// becomes its own wall chord; this walks the segment and flags only the cells it crosses.
+    pub fn cliffLine(self: *Map, x0: f32, z0: f32, x1: f32, z1: f32, case: u8, out: *[4]usize) bool {
+        out.* = EMPTY_SPAN;
+        const step = self.heightStep();
+        const dx = x1 - x0;
+        const dz = z1 - z0;
+        const len = @sqrt(dx * dx + dz * dz);
+        if (len < step * 0.5) return false;
+        const n: usize = @intFromFloat(@ceil(len / (step * 0.25)));
+        var lox: usize = HEIGHT_N;
+        var loz: usize = HEIGHT_N;
+        var hix: usize = 0;
+        var hiz: usize = 0;
+        var changed = false;
+        var i: usize = 0;
+        while (i <= n) : (i += 1) {
+            const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n));
+            const ix = pointCell(x0 + dx * t, self.half, step, HEIGHT_N) orelse continue;
+            const iz = pointCell(z0 + dz * t, self.half, step, HEIGHT_N) orelse continue;
+            lox = @min(lox, ix);
+            loz = @min(loz, iz);
+            hix = @max(hix, ix);
+            hiz = @max(hiz, iz);
+            const j = iz * HEIGHT_N + ix;
+            if (self.cliff[j] == case) continue;
+            self.cliff[j] = case;
+            changed = true;
+        }
+        if (lox > hix or loz > hiz) return false;
+        out.* = .{ lox, loz, hix, hiz };
+        return changed;
+    }
+
     /// The terrain lattice's spacing on THIS map: `2 * half` over the CELLS between the points, never over the points.
     pub fn heightStep(self: *const Map) f32 {
         return 2 * self.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
@@ -2346,7 +2395,6 @@ pub const Map = struct {
     }
 };
 
-
 fn found(table: []const Id, name: []const u8) ?u16 {
     for (table, 0..) |*id, i| {
         if (std.mem.eql(u8, idText(id), name)) return @intCast(i);
@@ -2361,7 +2409,6 @@ fn intern(table: []Id, n: *usize, name: []const u8, full: ParseError) !u16 {
     n.* += 1;
     return @intCast(n.* - 1);
 }
-
 
 pub fn write(m: *const Map, w: anytype) !void {
     try w.print("version: {d}\n", .{VERSION});
@@ -2664,7 +2711,6 @@ fn writeTail(w: anytype, v: anytype) !void {
         else => @compileError("worldfmt: no serializer for " ++ @typeName(T)),
     }
 }
-
 
 pub const ParseError = error{
     BadVersion,
@@ -3560,7 +3606,6 @@ fn parseVal(comptime T: type, tok: []const u8) !T {
     };
 }
 
-
 pub const DIR = "worlds";
 pub const START_MAP = DIR ++ "/01_fallen_plain" ++ EXT;
 
@@ -3731,7 +3776,6 @@ pub fn save(path: []const u8, m: *const Map) !void {
     try std.fs.cwd().rename(tmp, path);
 }
 
-
 fn isPositional(comptime k: OpKind, comptime name: []const u8) bool {
     // The field walk is O(op kinds x Op fields x name length) string compares at comptime, and the default 1000-branch budget is spent well before it finishes.
     @setEvalBranchQuota(20000);
@@ -3806,12 +3850,13 @@ fn trim(s: []const u8) []const u8 {
     return std.mem.trim(u8, s, " \t\r\n");
 }
 
-
 pub const TEST_HEAD =
     \\version: 1
     \\zone: plain -4000 -4000 4000 4000 0.7 grasstall
     \\
 ;
+/// The `half:` row for a test map that needs a real lattice rather than `DEFAULT_HALF` — one number, however many maps declare it.
+pub const TEST_HALF_ROW = "half: 107.4\n";
 const SCRIPT_HEAD = TEST_HEAD;
 
 pub fn testMap(alloc: std.mem.Allocator, text: []const u8) !*Map {
@@ -4656,7 +4701,8 @@ test "A VERSION 1 HEIGHT ROW IS ONE BYTE ABOUT 64 AND IS WIDENED ON THE WAY IN �
     var buf: [4 * 1024 * 1024]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);
     try write(m, fbs.writer());
-    try std.testing.expect(std.mem.startsWith(u8, fbs.getWritten(), "version: 2\n"));
+    var vline: [24]u8 = undefined;
+    try std.testing.expect(std.mem.startsWith(u8, fbs.getWritten(), try std.fmt.bufPrint(&vline, "version: {d}\n", .{VERSION})));
     const back = try std.testing.allocator.create(Map);
     defer std.testing.allocator.destroy(back);
     try parse(fbs.getWritten(), back, &ln);
@@ -5582,4 +5628,40 @@ test "A SPAWN'S HOUR IS DERIVED UNTIL THE EDITOR SAYS OTHERWISE, and an old map 
         if (foeWhen(@enumFromInt(f.value)) != .any) nocturnal += 1;
     }
     std.debug.print("\n  spawns: {d} of {d} kinds keep half the clock by default\n", .{ nocturnal, NFOE });
+}
+
+test "A CUT LINE FLAGS THE CELLS THE SEGMENT CROSSES — a cell is its LOW corner, so a rounded index lands half a cell past the drag" {
+    const m = try testMap(std.testing.allocator, TEST_HEAD ++ TEST_HALF_ROW);
+    defer std.testing.allocator.destroy(m);
+    const step = m.heightStep();
+    std.debug.print("\n  cut line on a {d:.3} m lattice\n", .{step});
+
+    // Every sample of the drag must land in the cell that CONTAINS it, worst case over a full cell of phase.
+    var worst: f32 = 0;
+    var phase: f32 = 0;
+    while (phase < 1.0) : (phase += 0.05) {
+        const x = -m.half + (17.0 + phase) * step;
+        const ix = pointCell(x, m.half, step, HEIGHT_N) orelse return error.TestUnexpectedResult;
+        const lo = -m.half + @as(f32, @floatFromInt(ix)) * step;
+        worst = @max(worst, @max(lo - x, x - (lo + step)));
+    }
+    std.debug.print("    worst overshoot of the cell holding the point: {d:.4} m\n", .{worst});
+    try std.testing.expect(worst <= 0);
+
+    var span: [4]usize = EMPTY_SPAN;
+    const z: f32 = 3.0;
+    try std.testing.expect(m.cliffLine(-20.0, z, 20.0, z, CLIFF_FACE, &span));
+    const rows = span[3] - span[1] + 1;
+    std.debug.print("    a straight run of 40 m: {d} cells of x, {d} row(s) of z\n", .{ span[2] - span[0] + 1, rows });
+    try std.testing.expectEqual(@as(usize, 1), rows);
+    try std.testing.expectEqual(pointCell(z, m.half, step, HEIGHT_N).?, span[1]);
+
+    // Every flagged cell holds a point of the segment, and every point of the segment is in a flagged cell.
+    var ix = span[0];
+    while (ix <= span[2]) : (ix += 1) {
+        try std.testing.expectEqual(CLIFF_FACE, m.cliff[span[1] * HEIGHT_N + ix]);
+        const lo = -m.half + @as(f32, @floatFromInt(ix)) * step;
+        try std.testing.expect(lo + step > -20.0 and lo < 20.0);
+    }
+    try std.testing.expect(!m.cliffLine(-20.0, z, 20.0, z, CLIFF_FACE, &span));
 }

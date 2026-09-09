@@ -130,32 +130,7 @@ fn measure(sh: *const proprock.CliffShape) Piece {
     return p;
 }
 
-/// A placed piece's frame: world from local (metres, scaled) and back.
-const Frame = struct {
-    pr: *const Prop,
-    c: f32,
-    sn: f32,
-
-    fn of(pr: *const Prop) Frame {
-        const th = mathx.radians(pr.yaw);
-        return .{ .pr = pr, .c = mathx.cosf(th), .sn = mathx.sinf(th) };
-    }
-    /// `lx`,`lz` in UNSCALED local metres.
-    fn world(self: Frame, lx: f32, lz: f32) [2]f32 {
-        const s = self.pr.scale;
-        return .{ self.pr.pos.x + s * (lx * self.c + lz * self.sn), self.pr.pos.z + s * (-lx * self.sn + lz * self.c) };
-    }
-    /// Local in WORLD metres along the piece's axes (scale applied), so a lattice point is tested against scaled extents.
-    fn local(self: Frame, wx: f32, wz: f32) [2]f32 {
-        const dx = wx - self.pr.pos.x;
-        const dz = wz - self.pr.pos.z;
-        return .{ self.c * dx - self.sn * dz, self.sn * dx + self.c * dz };
-    }
-    /// The outward normal: local âˆ’z in the world.
-    fn normal(self: Frame) [2]f32 {
-        return .{ -self.sn, -self.c };
-    }
-};
+const Frame = envmod.PropFrame;
 
 pub const Cut = struct {
     /// Signed metres along the outward normal from the probe point to the crossing.
@@ -215,7 +190,7 @@ pub fn seatOf(g: Ground, pr: *const Prop) ?Seat {
     const row = props.cliffRow(pr.kind) orelse return null;
     const pc = pieceOf(row);
     const fr = Frame.of(pr);
-    const n = fr.normal();
+    const n = fr.outward();
     const s = pr.scale;
     const reach = (pc.back - pc.front) * s;
     const topY = pr.pos.y + pc.top * s;
@@ -224,8 +199,8 @@ pub fn seatOf(g: Ground, pr: *const Prop) ?Seat {
     var x = pc.run0;
     while (x <= pc.run1 + 1e-4) : (x += STATION) {
         out.stations += 1;
-        const seatAt = fr.world(x, pc.seat);
-        const toe = fr.world(x, pc.front);
+        const seatAt = fr.atXZ(x, pc.seat);
+        const toe = fr.atXZ(x, pc.front);
         const under = pr.pos.y - g.at(toe[0], toe[1]);
         out.under = @max(out.under, under);
         const ct = cutAcross(g, seatAt[0], seatAt[1], n[0], n[1], reach) orelse {
@@ -251,9 +226,9 @@ pub fn cutOf(g: Ground, pr: *const Prop) ?CutZ {
     const row = props.cliffRow(pr.kind) orelse return null;
     const pc = pieceOf(row);
     const fr = Frame.of(pr);
-    const n = fr.normal();
+    const n = fr.outward();
     const mid = (pc.run0 + pc.run1) * 0.5;
-    const at = fr.world(mid, pc.seat);
+    const at = fr.atXZ(mid, pc.seat);
     const ct = cutAcross(g, at[0], at[1], n[0], n[1], (pc.back - pc.front) * pr.scale) orelse return null;
     return .{ .z = pc.seat * pr.scale - ct.t, .lip = ct.hi };
 }
@@ -290,7 +265,7 @@ pub fn conform(m: *wf.Map, pr: *const Prop, span: *[4]usize) Conform {
     var wz0: f32 = 1e9;
     var wz1: f32 = -1e9;
     for ([_][2]f32{ .{ lx0, lz0 }, .{ lx1, lz0 }, .{ lx0, lz1 }, .{ lx1, lz1 } }) |c| {
-        const w = fr.world(c[0] / s, c[1] / s);
+        const w = fr.atXZ(c[0] / s, c[1] / s);
         wx0 = @min(wx0, w[0]);
         wx1 = @max(wx1, w[0]);
         wz0 = @min(wz0, w[1]);
@@ -340,7 +315,7 @@ pub fn conform(m: *wf.Map, pr: *const Prop, span: *[4]usize) Conform {
     if (pr.op < m.nops and m.ops[pr.op].op == .at) {
         if (seatOf(.{ .map = m }, pr)) |st| {
             if (st.cut()) {
-                const n = fr.normal();
+                const n = fr.outward();
                 const ox = pr.pos.x - n[0] * st.meanSetback;
                 const oz = pr.pos.z - n[1] * st.meanSetback;
                 if (@abs(m.heightAt(ox, oz) - out.foot) <= TOL) {
@@ -371,8 +346,186 @@ pub fn rise(row: usize, scale: f32) f32 {
 
 pub const Rect = struct { x0: f32, z0: f32, x1: f32, z1: f32 };
 
+/// The span a stroke DIRTIES: one cell wider than the points it wrote, because a point moves the four cells around it.
+fn grown(sp: [4]usize) [4]usize {
+    return .{ sp[0] -| 1, sp[1] -| 1, @min(sp[2] + 1, wf.HEIGHT_N - 1), @min(sp[3] + 1, wf.HEIGHT_N - 1) };
+}
+
+/// THE FOUR CELLS A LATTICE POINT CORNERS, set to one case. A cell is named by its LOW corner, so the point's own cell
+/// and the three behind it are what a height moved here can cut; `HEIGHT_N - 1` is the phantom column and is skipped.
+fn markCells(m: *wf.Map, ix: usize, iz: usize, case: u8) bool {
+    var changed = false;
+    for (iz -| 1..@min(iz + 1, wf.HEIGHT_N - 1)) |cz| {
+        for (ix -| 1..@min(ix + 1, wf.HEIGHT_N - 1)) |cx| {
+            const j = cz * wf.HEIGHT_N + cx;
+            if (m.cliff[j] == case) continue;
+            m.cliff[j] = case;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+pub fn paint(m: *wf.Map, from: [2]f32, to: [2]f32, radius: f32, target: f32, span: *[4]usize) bool {
+    span.* = wf.EMPTY_SPAN;
+    const step = m.heightStep();
+    const r = @max(radius, step);
+    const sp = wf.sweptSpan(from, to, r, m.half, step, wf.HEIGHT_N) orelse return false;
+    const want = wf.heightByte(target);
+    var changed = false;
+    for (sp[1]..sp[3] + 1) |iz| {
+        for (sp[0]..sp[2] + 1) |ix| {
+            const p = m.heightPoint(ix, iz);
+            // A SWEPT BOX, not a swept disc (the brush's own width, `Editor.cliffHeight`'s rule): the slab test over
+            // both axes at once, so a corner of the drag is square and a stroke joins its own last sample.
+            var lo: f32 = 0;
+            var hi: f32 = 1;
+            for (0..2) |axis| {
+                const d = to[axis] - from[axis];
+                if (@abs(d) < 1e-5) {
+                    if (@abs(p[axis] - from[axis]) > r) hi = -1;
+                } else {
+                    const a = (p[axis] - r - from[axis]) / d;
+                    const b = (p[axis] + r - from[axis]) / d;
+                    lo = @max(lo, @min(a, b));
+                    hi = @min(hi, @max(a, b));
+                }
+            }
+            if (lo > hi) continue;
+            const i = iz * wf.HEIGHT_N + ix;
+            if (m.height[i] != want) {
+                m.height[i] = want;
+                changed = true;
+            }
+            if (markCells(m, ix, iz, wf.CLIFF_FACE)) changed = true;
+        }
+    }
+    if (changed) span.* = grown(sp);
+    return changed;
+}
+
 /// Where the cuts actually land: the lattice draws a rim halfway between the last point outside and the first point inside, so a piece is seated on THESE lines, not on the dragged ones.
 pub const Rim = struct { x0: f32, z0: f32, x1: f32, z1: f32, level: f32 };
+
+pub fn waterfall(m: *wf.Map, from: [2]f32, to: [2]f32, radius: f32, enabled: bool, span: *[4]usize) bool {
+    span.* = wf.EMPTY_SPAN;
+    const step = m.heightStep();
+    const r = @max(radius, step);
+    const sp = wf.sweptSpan(from, to, r, m.half, step, wf.HEIGHT_N) orelse return false;
+    const style: u8 = if (enabled) wf.CLIFF_FALL else wf.CLIFF_FACE;
+    var changed = false;
+    for (sp[1]..@min(sp[3] + 1, wf.HEIGHT_N - 1)) |iz| {
+        for (sp[0]..@min(sp[2] + 1, wf.HEIGHT_N - 1)) |ix| {
+            const i = iz * wf.HEIGHT_N + ix;
+            if (!wf.cliffFace(m.cliff[i]) or m.cliff[i] == style) continue;
+            const p = m.heightPoint(ix, iz);
+            // The CELL's middle, not its low corner: the brush answers where the face stands, and the face is the cell.
+            if (mathx.segNearXZ(.{ p[0] + step * 0.5, p[1] + step * 0.5 }, from, to).d > r) continue;
+            m.cliff[i] = style;
+            changed = true;
+        }
+    }
+    if (changed) span.* = grown(sp);
+    return changed;
+}
+
+pub fn ramp(m: *wf.Map, from: [2]f32, to: [2]f32, radius: f32, span: *[4]usize) bool {
+    span.* = wf.EMPTY_SPAN;
+    const step = m.heightStep();
+    const run = @sqrt((to[0] - from[0]) * (to[0] - from[0]) + (to[1] - from[1]) * (to[1] - from[1]));
+    const a = m.heightAt(from[0], from[1]);
+    const b = m.heightAt(to[0], to[1]);
+    if (run < step or @abs(b - a) > run * 0.5) return false;
+    const r = @max(radius, step);
+    const sp = wf.sweptSpan(from, to, r, m.half, step, wf.HEIGHT_N) orelse return false;
+    var changed = false;
+    for (sp[1]..sp[3] + 1) |iz| {
+        for (sp[0]..sp[2] + 1) |ix| {
+            const near = mathx.segNearXZ(m.heightPoint(ix, iz), from, to);
+            if (near.d > r) continue;
+            const i = iz * wf.HEIGHT_N + ix;
+            const want = wf.heightByte(mathx.lerpF(a, b, near.t));
+            if (m.height[i] != want) {
+                m.height[i] = want;
+                changed = true;
+            }
+            if (markCells(m, ix, iz, wf.CLIFF_NONE)) changed = true;
+        }
+    }
+    if (changed) span.* = grown(sp);
+    return changed;
+}
+
+test "terrain editor: cliff paint is a joined plateau regardless of mouse sampling" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD);
+    defer std.testing.allocator.destroy(m);
+    const slow = try wf.testMap(std.testing.allocator, wf.TEST_HEAD);
+    defer std.testing.allocator.destroy(slow);
+    var span: [4]usize = undefined;
+    try std.testing.expect(paint(m, .{ -20, -10 }, .{ 20, 10 }, 5, 6, &span));
+    var prev = [2]f32{ -20, -10 };
+    for (1..41) |i| {
+        const t = @as(f32, @floatFromInt(i)) / 40;
+        const next = [2]f32{ -20 + 40 * t, -10 + 20 * t };
+        _ = paint(slow, prev, next, 5, 6, &span);
+        prev = next;
+    }
+    try std.testing.expectEqualSlices(wf.Hgt, &m.height, &slow.height);
+    try std.testing.expectEqualSlices(u8, &m.cliff, &slow.cliff);
+    try std.testing.expectApproxEqAbs(@as(f32, 6), m.heightAt(0, 0), 0.001);
+    try std.testing.expect(!paint(m, .{ -20, -10 }, .{ 20, 10 }, 5, 6, &span));
+    try std.testing.expect(paint(m, .{ -20, -10 }, .{ 20, 10 }, 5, 0, &span));
+    try std.testing.expectApproxEqAbs(@as(f32, 0), m.heightAt(0, 0), 0.001);
+}
+
+test "terrain editor: waterfall paint preserves a cliff and its cave across save and erase" {
+    const caves = @import("caves.zig");
+    const alloc = std.testing.allocator;
+    const m = try wf.testMap(alloc, wf.TEST_HEAD);
+    defer alloc.destroy(m);
+    var span: [4]usize = undefined;
+    _ = paint(m, .{ -10, 0 }, .{ 0, 0 }, 10, 6, &span);
+    _ = caves.carve(caves.gridsOf(m), .{ .px = 0, .pz = 0, .from = .{ 20, 0 }, .r = 3, .floor = -0.25, .roof = 3 }, &span);
+    const copy = try alloc.create(wf.Map);
+    defer alloc.destroy(copy);
+    copy.* = m.*;
+    try std.testing.expect(waterfall(m, .{ 10, -4 }, .{ 10, 4 }, 3, true, &span));
+    try std.testing.expectEqualSlices(wf.Hgt, &copy.height, &m.height);
+    try std.testing.expectEqualSlices(u8, &copy.caveCov, &m.caveCov);
+    for (0..81) |i| {
+        const x = @as(f32, @floatFromInt(i)) * 0.25;
+        try std.testing.expectApproxEqAbs(copy.heightAt(x, 0), m.heightAt(x, 0), 0.001);
+    }
+    const buf = try alloc.alloc(u8, 4 << 20);
+    defer alloc.free(buf);
+    var fbs = std.io.fixedBufferStream(buf);
+    try wf.write(m, fbs.writer());
+    var line: usize = 0;
+    try wf.parse(fbs.getWritten(), copy, &line);
+    try std.testing.expectEqualSlices(u8, &m.cliff, &copy.cliff);
+    try std.testing.expectEqualSlices(u8, &m.caveFloor, &copy.caveFloor);
+    try std.testing.expect(waterfall(m, .{ 10, -4 }, .{ 10, 4 }, 3, false, &span));
+    for (m.cliff) |style| try std.testing.expect(style != wf.CLIFF_FALL);
+    try std.testing.expectEqualSlices(u8, &copy.caveCov, &m.caveCov);
+}
+
+test "terrain editor: a ramp connects two cliff levels without a lip or a wall in the path" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD);
+    defer std.testing.allocator.destroy(m);
+    var span: [4]usize = undefined;
+    _ = paint(m, .{ -10, 0 }, .{ 0, 0 }, 10, 6, &span);
+    try std.testing.expect(!ramp(m, .{ 12, 0 }, .{ 8, 0 }, 4, &span));
+    try std.testing.expect(ramp(m, .{ 30, 0 }, .{ 0, 0 }, 4, &span));
+    var previous: f32 = 0;
+    for (0..61) |i| {
+        const x = 30 - @as(f32, @floatFromInt(i)) * 0.5;
+        const y = m.heightAt(x, 0);
+        try std.testing.expect(y >= previous - 0.001);
+        try std.testing.expect(y - previous <= wf.STEP_UP);
+        try std.testing.expectApproxEqAbs(6 * (30 - x) / 30, y, wf.HEIGHT_STEP);
+        previous = y;
+    }
+}
 
 /// ONE FLAT LEVEL INSIDE A RECTANGLE AND A CUT ROUND IT. Every lattice point inside goes to `target` and every cell the edge crosses is painted `CLIFF_FACE`; the plateau brush hands a height above the ground it started on, the indent brush one below. Straight rims on the lattice's own lines, no feather.
 pub fn terrace(m: *wf.Map, r: Rect, target: f32, span: *[4]usize) ?Rim {
@@ -417,14 +570,12 @@ fn sideOf(fr: Frame, m: *const wf.Map, ix: usize, iz: usize, lx0: f32, lx1: f32,
 // ---------------------------------------------------------------------------------------------------------------------
 
 const BENCH = wf.DIR ++ "/test_cliffseat" ++ wf.EXT;
-const BENCH_HALF: f32 = 107.4;
 const BENCH_DROP: f32 = 6.0;
 const BENCH_WALL_X: f32 = 12.0;
 
 fn benchMap() !*wf.Map {
-    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++ wf.TEST_HALF_ROW ++
         \\name: Cliff Seat Bench
-        \\half: 107.4
         \\start: 0.00 4.00 180.0
         \\at: cliff 10.5 0 90 0.45
         \\at: cliff3 10.5 24 90 0.5
@@ -523,8 +674,8 @@ test "A RAW PLACEMENT READS RED IN METRES AND THE CONFORM BRUSH SEATS IT GREEN â
     var worstLip: f32 = 0;
     var worstFoot: f32 = 0;
     while (x <= pc.run1 + 1e-4) : (x += STATION) {
-        const behind = fr.world(x, pc.seat + 1.5 * cell / seated.scale);
-        const toe = fr.world(x, pc.front);
+        const behind = fr.atXZ(x, pc.seat + 1.5 * cell / seated.scale);
+        const toe = fr.atXZ(x, pc.front);
         worstLip = @max(worstLip, @abs(m.heightAt(behind[0], behind[1]) - r.lip));
         worstFoot = @max(worstFoot, @abs(m.heightAt(toe[0], toe[1]) - r.foot));
     }
@@ -536,7 +687,7 @@ test "A RAW PLACEMENT READS RED IN METRES AND THE CONFORM BRUSH SEATS IT GREEN â
 }
 
 fn terraceCase(row: usize, s: f32, indent: bool) !void {
-    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++ "half: 107.4\n");
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++ wf.TEST_HALF_ROW);
     defer std.testing.allocator.destroy(m);
     const base: f32 = 0.0;
     const pc = pieceOf(row);
@@ -586,7 +737,7 @@ test "A PLATEAU OR INDENT AT A ROW'S HEIGHT SEATS THAT ROW'S PIECE GREEN ON THE 
 }
 
 test "A TERRACE RIM IS A STRAIGHT LINE ON THE LATTICE â€” one level inside, the cut on one line, so a piece SEATS anywhere along it" {
-    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++ "half: 107.4\n");
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++ wf.TEST_HALF_ROW);
     defer std.testing.allocator.destroy(m);
     var span: [4]usize = wf.EMPTY_SPAN;
     const rim = terrace(m, .{ .x0 = -10.2, .z0 = -7.7, .x1 = 9.1, .z1 = 6.3 }, 4.0, &span) orelse return error.TestUnexpectedResult;
@@ -625,7 +776,7 @@ test "A SEATED PIECE COLLIDES AS THE ROCK IN FRONT OF THE CUT AND NOTHING ELSE â
     const ct = cutOf(.{ .env = e }, pr) orelse return error.TestUnexpectedResult;
     const pc = pieceOf(props.cliffRow(pr.kind).?);
     const fr = Frame.of(pr);
-    const n = fr.normal();
+    const n = fr.outward();
     const R: f32 = 0.35;
 
     var stopped: u32 = 0;
@@ -633,7 +784,7 @@ test "A SEATED PIECE COLLIDES AS THE ROCK IN FRONT OF THE CUT AND NOTHING ELSE â
     var shortest: f32 = 1e9;
     var x = pc.run0;
     while (x <= pc.run1 + 1e-4) : (x += STATION) {
-        const start = fr.world(x, pc.front - 3.0);
+        const start = fr.atXZ(x, pc.front - 3.0);
         var p = v3(start[0], pr.pos.y, start[1]);
         var steps: u32 = 0;
         while (steps < 400) : (steps += 1) {
@@ -659,7 +810,7 @@ test "A SEATED PIECE COLLIDES AS THE ROCK IN FRONT OF THE CUT AND NOTHING ELSE â
     while (lz < pc.back * pr.scale) : (lz += 0.5) {
         x = pc.x0;
         while (x <= pc.x1) : (x += STATION) {
-            const w = fr.world(x, lz / pr.scale);
+            const w = fr.atXZ(x, lz / pr.scale);
             const p = v3(w[0], ct.lip, w[1]);
             const r = e.resolveActor(p, R, ct.lip);
             if (mathx.distXZ(r, p) > 1e-4) pushed += 1;
@@ -679,11 +830,11 @@ test "THE AUTOMATIC FACE STEPS ASIDE FOR A PLACED PIECE â€” `covers` is true alo
     const fr = Frame.of(pr);
     var x = pc.run0;
     while (x <= pc.run1) : (x += STATION) {
-        const on = fr.world(x, pc.seat);
+        const on = fr.atXZ(x, pc.seat);
         try std.testing.expect(covers(pr, on[0], on[1]));
     }
-    const past = fr.world(pc.x1 + 1.0, pc.seat);
-    const far = fr.world(0, pc.back + 1.0);
+    const past = fr.atXZ(pc.x1 + 1.0, pc.seat);
+    const far = fr.atXZ(0, pc.back + 1.0);
     try std.testing.expect(!covers(pr, past[0], past[1]));
     try std.testing.expect(!covers(pr, far[0], far[1]));
 }

@@ -1152,7 +1152,7 @@ test "EVERY BLOW LANDS ON THE MAN WHERE HE STANDS — butt and bite thrown for r
     for ([_]f32{ wf.FOE_SCALE_LO, 1.0, wf.FOE_SCALE_HI }) |scale| {
         const probe = Mastodon.spawn(mathx.zero3, 0, scale, 0.3);
         const near = foe.closestApproach(probe.bodyR()) + 0.05;
-        inline for (.{ .{ "butt", BUTT_R, State.butt }, .{ "bite", BITE_R, State.bite } }) |row| {
+        inline for (.{ .{ "butt", BUTT_R, Mastodon.debugButt }, .{ "bite", BITE_R, Mastodon.debugBite } }) |row| {
             const far = foe.hurtReach(row[1], scale) - 0.02;
             if (far > near) {
                 for ([_]f32{ 0, 30 }) |deg| {
@@ -1161,8 +1161,7 @@ test "EVERY BLOW LANDS ON THE MAN WHERE HE STANDS — butt and bite thrown for r
                         var m = Mastodon.spawn(mathx.zero3, 0, scale, 0.3);
                         const a = mathx.radians(deg);
                         const hero = v3(@sin(a) * stand, 0, @cos(a) * stand);
-                        m.heroLatch = false;
-                        m.enter(row[2]);
+                        row[2](&m);
                         thrown += 1;
                         var hit = false;
                         var firstAt: f32 = 0;

@@ -102,14 +102,24 @@ pub fn headingXZ(v: rl.Vector3) f32 {
     return std.math.atan2(v.x, v.z);
 }
 
+pub const SegNear = struct { t: f32, d: f32 };
+
+/// WHERE A POINT SITS AGAINST A SEGMENT IN XZ: the clamped parameter and the distance to it. A swept brush is a segment
+/// with a radius, so every one of them asks this — and each hand-rolled copy carried its own degenerate epsilon.
+pub fn segNearXZ(p: [2]f32, a: [2]f32, b: [2]f32) SegNear {
+    const abx = b[0] - a[0];
+    const abz = b[1] - a[1];
+    const denom = abx * abx + abz * abz;
+    const t = if (denom < 1e-10) 0 else clampF(((p[0] - a[0]) * abx + (p[1] - a[1]) * abz) / denom, 0, 1);
+    const ex = p[0] - (a[0] + abx * t);
+    const ez = p[1] - (a[1] + abz * t);
+    return .{ .t = t, .d = @sqrt(ex * ex + ez * ez) };
+}
+
 /// Closest point on segment a-b to p, measured in the XZ plane (returned with Y = 0).
 pub fn closestOnSegXZ(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
-    const abx = b.x - a.x;
-    const abz = b.z - a.z;
-    const denom = abx * abx + abz * abz;
-    if (denom < 1e-10) return v3(a.x, 0, a.z);
-    const t = clampF(((p.x - a.x) * abx + (p.z - a.z) * abz) / denom, 0, 1);
-    return v3(a.x + abx * t, 0, a.z + abz * t);
+    const t = segNearXZ(.{ p.x, p.z }, .{ a.x, a.z }, .{ b.x, b.z }).t;
+    return v3(a.x + (b.x - a.x) * t, 0, a.z + (b.z - a.z) * t);
 }
 
 pub const TwoBone = struct { joint: rl.Vector3, end: rl.Vector3 };

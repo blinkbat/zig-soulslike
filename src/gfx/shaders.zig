@@ -268,6 +268,7 @@ pub const sceneVS =
     \\        p.x += drop*0.017*swing;
     \\        p.z += drop*0.017*swing*0.55;
     \\    }
+    \\    if (vertexTexCoord2.x > 17.5 && vertexTexCoord2.x < 18.5) fragLife = p.y - vertexTexCoord2.y;
     \\    fragPosition = vec3(matModel*vec4(p, 1.0));
     \\    fragColor = vertexColor*colDiffuse;
     \\    fragNormal = normalize(mat3(matModel)*vertexNormal);
@@ -428,6 +429,8 @@ pub const sceneFS =
     \\  if (caveOn == 0) return 0.0;
     \\  vec2 uv = wp.xz/(2.0*caveHalf) + 0.5;
     \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
+    \\  vec2 size = vec2(textureSize(caveCovMap, 0));
+    \\  uv = (uv*(size - 1.0) + 0.5)/size;
     \\  float cov = texture(caveCovMap, uv).r;
     \\  if (cov < 0.02) return 0.0;
     \\  float rb = texture(caveRoofMap, uv).r;
@@ -608,6 +611,14 @@ pub const sceneFS =
     \\    // …and the pits read as EROSION rather than as pepper.
     \\    base *= 1.0 - 0.15*smoothstep(0.70, 0.97, fvn(q, 5.5, vec2(31.7), px));
     \\    base = weather(base, q, n, px);   // rubble masonry has stood out in the rain the longest
+    \\  } else if (m == 18){
+    \\    float across = fragPosition.x*0.73 + fragPosition.z*0.61;
+    \\    float stream = fvn2(vec2(across, fragPosition.y + uTime*4.8), vec2(8.3, 0.55), vec2(0.0), px);
+    \\    stream = stream*0.75 + fvn2(vec2(across, fragPosition.y + uTime*6.2), vec2(21.0, 1.4), vec2(17.0), px)*0.25;
+    \\    float foam = exp(-max(fragLife, 0.0)*1.7);
+    \\    waterA = mix(0.24, 0.78, smoothstep(0.30, 0.76, stream));
+    \\    waterA = mix(waterA, 0.70, foam);
+    \\    base = mix(vec3(0.15, 0.30, 0.35), vec3(0.66, 0.79, 0.78), stream*0.6 + foam*0.4);
     \\  } else if (m == 2){ // WOOD: long grain streaks along v, slow wander, BOARD scale
     \\    float grain = fvn2(q, vec2(9.0, 0.8), vec2(0.0), px);
     \\    // Timber comes in PIECES.
@@ -861,7 +872,14 @@ pub const sceneFS =
     \\    // width and the HEIGHT, since a wall varies up as well as along — and world xz's own footprint,
     \\    // which is the right order of magnitude and costs no third `fwidth` over the whole scene.
     \\    vec2 mq = (mi == 9) ? p : (mi == 15) ? vec2(p.x + p.y, fragPosition.y) : fragUV;
-    \\    base = matAlbedo(mi, mq, base, n, (mi == 9 || mi == 15) ? pxP : pxQ);
+    \\    if (mi == 17){
+    \\      vec3 w = pow(abs(n), vec3(4.0));
+    \\      w /= max(w.x + w.y + w.z, 1e-5);
+    \\      float pxR = length(fwidth(fragPosition));
+    \\      base = matAlbedo(1, fragPosition.zy, base, n, pxR)*w.x
+    \\           + matAlbedo(1, fragPosition.xz, base, n, pxR)*w.y
+    \\           + matAlbedo(1, fragPosition.xy, base, n, pxR)*w.z;
+    \\    } else base = matAlbedo(mi, mq, base, n, (mi == 9 || mi == 15) ? pxP : pxQ);
     \\    // …and its ripples live in the NORMAL, so they must land before any lighting term. `sheetKind` was set by
     \\    // `matAlbedo` one line up, so a tar pit reads its own crawl off the same swell field.
     \\    if (mi == 9) { vec2 sk = liquidSwell(sheetKind); n = waterNormal(p, uTime, pxP, sk.x, sk.y); nv = clamp(dot(n, V), 0.0, 1.0); }
@@ -950,7 +968,8 @@ pub const sceneFS =
     \\      }
     \\    }
     \\  }
-    \\  float emis = 1.0 - fragColor.a;
+    \\  if (mi == 18) lit += base*(ambSky*1.4 + vec3(0.09, 0.12, 0.14));
+    \\  float emis = (mi == 18) ? 0.0 : 1.0 - fragColor.a;
     \\  lit = mix(lit, base*1.35, emis);
     \\  // **LAVA IS A SOURCE.** Written by the sheet's own branch, so it costs one compare on every other surface;
     \\  // pushed past the mix above rather than through `emis`, which rides a vertex attribute the quad cannot carry.
@@ -974,7 +993,8 @@ pub const sceneFS =
     \\  outc += (hash21(gl_FragCoord.xy) - 0.5)*(2.0/255.0);
     \\  // …and the flame's own body is the only thing here that is not opaque.
     \\  float outA = (mi == 11) ? mix(FLAME_A_TIP, FLAME_A_CORE, smoothstep(0.62, 0.90, emis)) : 1.0;
-    \\  if (mi == 9) outA *= waterA;   // the painted sheet's shore fade; 1.0 on every authored water prop
+    \\  if (mi == 9 || mi == 18) outA *= waterA;
+    \\  if (mi == 18) outA *= fragColor.a;
     \\  // SMOKE IS THIN, AND IT THINS OUT.
     \\  if (mi == 12) outA = SMOKE_A*smoothstep(0.0, 0.10, fragLife)*(1.0 - smoothstep(0.22, 0.90, fragLife));
     \\  // AN EMBER IS THE OPPOSITE OF SMOKE: nearly solid, and it does not dissolve — it WINKS OUT.
@@ -1096,7 +1116,6 @@ pub const skyFS =
     \\  finalColor = vec4(col, 1.0);
     \\}
 ;
-
 
 pub const retroFS =
     \\#version 330

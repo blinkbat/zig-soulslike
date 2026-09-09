@@ -31,7 +31,6 @@ const heromod = @import("../play/hero.zig");
 const Kind = props.Kind;
 const v3 = mathx.v3;
 
-
 const LOOK_SENS: f32 = cameramod.LOOK_SENS;
 
 /// THE WINDOW THE PANELS HAVE TO FIT, READ AND NOT COPIED — `game.SCREEN_H` is the authority (AGENTS.md); two fit tests carried their own `800` and would have kept passing against a window that had moved.
@@ -125,7 +124,6 @@ var nClipNpcs: usize = 0;
 
 var listing: wf.Listing = .{};
 
-
 pub const Layer = enum(u8) {
     ground,
     caves,
@@ -182,6 +180,7 @@ const groundBrushes = [_][:0]const u8{
     "Conform",
     "Plateau",
     "Indent",
+    "Waterfall",
     "dirt",
     "turf",
     "stone",
@@ -264,9 +263,10 @@ const MAX_BRUSHES: usize = blk: {
     break :blk most;
 };
 
+/// The two seams the strip draws a heading at, TAKEN OFF THE ENUM: the run between them is the relief tools, and a
+/// count written down here is a count to bump by hand the next time one lands.
 const GROUND_CLIFF_0: usize = @intFromEnum(GroundBrush.cliff);
-const GROUND_CLIFF_N: usize = 7;
-const GROUND_SOIL_0: usize = GROUND_CLIFF_0 + GROUND_CLIFF_N;
+const GROUND_SOIL_0: usize = @intFromEnum(GroundBrush.dirt);
 
 const SCULPT_EVEN: f32 = 0.5;
 
@@ -275,8 +275,8 @@ const ENTRANCE_SINK = caves.ENTRANCE_SINK;
 const HEAD_MIN = caves.HEAD_MIN;
 /// Where a sparring room would be saved if he ever pressed Ctrl+S inside one. It is built in memory and never written on its own.
 const SPAR_PATH = spar.PATH;
-/// Under this much rock over a ceiling the hill is not a roof any more, and the panel says so.
-const CAVE_COVER_MIN: f32 = 0.5;
+/// Under this many METRES of rock over a ceiling the hill is not a roof any more, and `carveTint` says so on the carve box.
+const CARVE_ROOF_MIN: f32 = 0.5;
 /// The hero's own eye over the chamber floor, so what Look inside frames is what he will see.
 const LOOK_EYE: f32 = 1.6;
 /// How far down the passage it aims, and the shortest throw it settles for where the chamber ends at once.
@@ -317,13 +317,14 @@ const groundTips = [_][:0]const u8{
     "Sweep to lift the CEILING. Stops 1 m under the hill, so it cannot open a crater",
     "Sweep to bring the CEILING down. Stops 2 m over the floor, so it cannot shut the passage",
     "Sweep to dig a POOL FLOOR at the water-dweller depth - the deepest the hero still wades. Paint water over it",
-    "Sweep to CUT the drop under the brush into a face. Flatten both tiers first or the seam cracks",
+    "Click or drag to raise a flat area with connected rock faces. Height is fixed for the whole stroke.",
     "Sweep to TERRACE the ground under the brush. One tread a cell, one riser a step, so a grade becomes a flight",
-    "Sweep across a face to open a WAY UP it: drops the cut and grades what is left until it is walkable",
+    "Drag from low ground to the cliff top to connect a walkable ramp. Longer ramps are gentler.",
     "Sweep to give the drop back its ramp",
     "Click a placed CLIFF piece: the land under it goes to its foot, the land behind it to its top, and the cut lands on the rock's seat. The box reads green when it seats within 0.25 m, red where it gaps",
-    "Drag a rectangle: the ground inside rises by the chosen cliff piece's height, with a cut round it. Stand that piece on the rim and it seats green",
-    "Drag a rectangle: the ground inside sinks by the chosen cliff piece's height, with a cut round it. Stand pieces inside the notch, facing in",
+    "Drag a rectangle to raise a plateau by the selected height",
+    "Click or drag to lower an area with connected cliff faces.",
+    "Paint a waterfall along a cliff edge. Shift removes the water. Carve an entrance behind it for a hidden cave.",
     "[ ] sets radius",
     "",
     "",
@@ -524,7 +525,14 @@ fn brushShown(ed: *const Editor, i: usize) bool {
     // UNDERGROUND THE GROUND LAYER SHAPES THE CHAMBER, and only the sculpts have anything to shape: soil, liquid and cliff are the land's own fields. The two roof brushes are the mirror of that - there is no ceiling on the surface.
     if (ed.layer == .ground) {
         if (ed.floorSculpting()) return i <= @intFromEnum(GroundBrush.roof_down);
-        return !roofing(@enumFromInt(i));
+        const b: GroundBrush = @enumFromInt(i);
+        if (roofing(b)) return false;
+        return switch (ed.groundTools) {
+            .cliffs => b == .cliff or b == .indent or b == .ramp or b == .waterfall,
+            .sculpt => b == .raise or b == .lower or b == .smooth or b == .flat or b == .pool,
+            .paint => i >= GROUND_SOIL_0,
+            .all => true,
+        };
     }
     if (ed.layer != .units) return true;
     if (i + 1 == unitBrushes.len) return true;
@@ -640,7 +648,17 @@ comptime {
     }
 }
 
-pub const GroundBrush = enum { raise, lower, smooth, flat, roof_up, roof_down, pool, cliff, stair, ramp, slope, conform, plateau, indent, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, sand, water, oil, fungal, lava, level, reset, erase };
+pub const GroundBrush = enum { raise, lower, smooth, flat, roof_up, roof_down, pool, cliff, stair, ramp, slope, conform, plateau, indent, waterfall, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, sand, water, oil, fungal, lava, level, reset, erase };
+
+/// `groundBrushes` is PINNED to the enum's own tags (`pinBrushes`), so a brush whose strip name is not its tag says so
+/// here — and the panel title beside it reads the same two words.
+fn groundLabel(b: GroundBrush, tag: [:0]const u8) [:0]const u8 {
+    return switch (b) {
+        .cliff => "Raise cliff",
+        .indent => "Lower cliff",
+        else => tag,
+    };
+}
 
 fn roofing(b: GroundBrush) bool {
     return b == .roof_up or b == .roof_down;
@@ -649,6 +667,7 @@ fn roofing(b: GroundBrush) bool {
 fn cliffCaseOf(b: GroundBrush) ?u8 {
     return switch (b) {
         .cliff => wf.CLIFF_FACE,
+        .waterfall => wf.CLIFF_FALL,
         .stair => wf.CLIFF_STAIR,
         .slope => wf.CLIFF_NONE,
         else => null,
@@ -1044,7 +1063,6 @@ fn strokeDue(w: Wipe, g: rl.Vector3) bool {
     return w.t >= 1.0 / ERASE_HZ and mathx.dist2XZ(g, w.at) >= ERASE_STEP * ERASE_STEP;
 }
 
-
 pub const Editor = struct {
     on: bool = false,
     cam: rl.Camera3D = undefined,
@@ -1065,7 +1083,12 @@ pub const Editor = struct {
     brush: [Layer.N]usize = [_]usize{0} ** Layer.N,
     /// The floor a carve lays down and the room over it, in world metres. Pinned for the whole stroke.
     caveFloorY: f32 = -3.0,
-    caveHead: f32 = 2.8,
+    caveHead: f32 = 3.5,
+    caveDetails: bool = false,
+    strokeLast: ?rl.Vector3 = null,
+    cliffHeight: f32 = 6,
+    cliffTarget: f32 = 6,
+    groundTools: enum { cliffs, sculpt, paint, all } = .cliffs,
     /// THE LEVEL HE WORKS ON, kept across layers: which surface the cursor lands on, which one a body placed here stands on, and whether the hill over every chamber is drawn. The Caves layer turns it on; nothing turns it off but him.
     under: bool = false,
     /// `env.caveAny` as of this frame, so the brush strip can be filtered without a hand on the world.
@@ -1132,8 +1155,7 @@ pub const Editor = struct {
     hoverLive: bool = false,
     /// The cliff piece the gizmo pass coloured this frame, for the status line's numbers.
     seatRead: ?cliffseat.Seat = null,
-    /// Which `proprock.CLIFF_PROPS` row the Plateau/Indent brushes are sized for, and the scale both they and a stamped cliff piece use.
-    cliffRow: usize = 0,
+    /// The scale a stamped cliff piece is placed at in the Props layer.
     cliffScale: f32 = 1,
     /// The base the Level brush floods a body to, in metres over the datum; the sheet rides `env.WATER_SKIM` above it.
     waterLevel: f32 = 0,
@@ -1416,19 +1438,15 @@ pub const Editor = struct {
         return self.under and self.hasCave;
     }
 
-    fn carveCover(self: *const Editor, x: f32, z: f32) f32 {
-        return self.groundHeight(x, z) - envmod.groundY() - (self.caveFloorY + self.caveHead);
+    fn fittedFloor(self: *const Editor, env: *const envmod.Env, at: rl.Vector3) f32 {
+        if (!self.caveAutoFit) return self.caveFloorY;
+        const room = caves.sampleAt(env.caveFields(), at.x, at.z);
+        if (room.hollow()) return room.floor - envmod.groundY();
+        return @min(self.caveFloorY, caves.fitFloor(self.groundHeight(at.x, at.z) - envmod.groundY(), self.caveHead));
     }
 
-    /// A CARVE THAT CANNOT ROOF ITSELF SOLVES ITS OWN FLOOR. Asked once, at the click, because the floor is pinned for
-    /// the whole stroke — and the stepper's own number is kept wherever the hill there can roof it.
-    fn autoFitFloor(self: *Editor, at: rl.Vector3) void {
-        if (!self.caveAutoFit or self.carveCover(at.x, at.z) >= CAVE_COVER_MIN) return;
-        const fit = caves.fitFloor(self.groundHeight(at.x, at.z) - envmod.groundY(), self.caveHead);
-        if (fit == self.caveFloorY) return;
-        const was = self.caveFloorY;
-        self.caveFloorY = fit;
-        self.sayFmt("floor fitted to {d:.2} m - the hill here could not roof {d:.2}", .{ fit, was });
+    fn autoFitFloor(self: *Editor, env: *const envmod.Env, at: rl.Vector3) void {
+        self.caveFloorY = self.fittedFloor(env, at);
     }
 
     /// PUT THE EYE IN THE CHAMBER: on the floor under the cursor at eye height, looking the way the passage runs.
@@ -1554,7 +1572,6 @@ pub const Editor = struct {
         if (home != .any) self.foeBiome = home;
     }
 
-
     fn forward(self: *const Editor) rl.Vector3 {
         const cp = mathx.cosf(self.pitch);
         return v3(mathx.sinf(self.yaw) * cp, mathx.sinf(self.pitch), mathx.cosf(self.yaw) * cp);
@@ -1639,7 +1656,13 @@ pub const Editor = struct {
     fn traceGround(self: *const Editor) ?rl.Vector3 {
         const ray = rl.getScreenToWorldRay(rl.getMousePosition(), self.cam);
         if (ray.direction.y > -1e-4) return null;
-        if (self.under and self.layer != .caves) {
+        const terraceStroke = self.layer == .ground and (self.brushIdx() == @intFromEnum(GroundBrush.cliff) or self.brushIdx() == @intFromEnum(GroundBrush.indent));
+        if (self.painting and (self.layer == .caves or terraceStroke)) {
+            const anchor = if (self.layer == .caves) self.entranceFrom orelse self.dragFrom else self.dragFrom;
+            const t = (anchor.y - ray.position.y) / ray.direction.y;
+            if (t > 0) return mathx.addV(ray.position, mathx.scaleV(ray.direction, t));
+        }
+        if (self.under) {
             if (self.world) |w| {
                 if (w.caveAny) {
                     if (w.pickUnder(ray.position, mathx.normV(ray.direction))) |q| {
@@ -1683,7 +1706,6 @@ pub const Editor = struct {
     fn focusToGround(self: *Editor) void {
         self.focus.y = self.levelHeight(self.focus.x, self.focus.z);
     }
-
 
     pub fn bank(self: *Editor, m: *const wf.Map) void {
         if (undoAt > 0) {
@@ -1762,6 +1784,13 @@ pub const Editor = struct {
     pub fn applyCamForShot(self: *Editor) void {
         self.applyCam();
         self.resolveCursor();
+    }
+
+    pub fn terrainForShot(self: *Editor, m: *const wf.Map, env: *const envmod.Env) void {
+        self.world = env;
+        self.hasCave = env.caveAny;
+        self.surveyCaves(m, env);
+        self.miniGen +%= 1;
     }
 
     pub fn focusOnForShot(self: *Editor, m: *const wf.Map, i: usize) void {
@@ -1930,7 +1959,6 @@ pub const Editor = struct {
         self.applyCam();
         self.resolveCursor();
     }
-
 
     pub fn update(self: *Editor, m: *wf.Map, env: *envmod.Env, day: *daynight.Clock, dt: f32) Action {
         self.world = env;
@@ -2274,16 +2302,16 @@ pub const Editor = struct {
             return;
         }
 
-
         if (self.layer == .caves and !self.selecting) {
             if (rl.isMouseButtonDown(.left) and (self.painting or !blocked)) {
                 if (ground) |g| {
                     const b = @as(CaveBrush, @enumFromInt(self.brushIdx()));
                     if (!self.painting) {
-                        if (b != .sample) self.bank(m);
-                        if (b == .carve) self.autoFitFloor(g);
+                        if (b != .sample and b != .entrance) self.bank(m);
+                        if (b == .carve) self.autoFitFloor(env, g);
                         self.painting = true;
                         self.entranceFrom = g;
+                        self.strokeLast = g;
                     }
                     var span: [4]usize = wf.EMPTY_SPAN;
                     const moved = switch (b) {
@@ -2293,28 +2321,15 @@ pub const Editor = struct {
                             .r = self.radius,
                             .floor = self.caveFloorY,
                             .roof = self.caveFloorY + self.caveHead,
+                            .from = if (self.strokeLast) |p| .{ p.x, p.z } else null,
+                            .preserve = true,
+                            .vault = true,
                         }, &span),
                         .entrance => blk: {
-                            const from = self.entranceFrom orelse g;
-                            const dx = g.x - from.x;
-                            const dz = g.z - from.z;
-                            const run = @sqrt(dx * dx + dz * dz);
-                            const ux = if (run > 1e-4) dx / run else 0;
-                            const uz = if (run > 1e-4) dz / run else 0;
-                            const start = self.groundHeight(from.x, from.z) - envmod.groundY() - ENTRANCE_SINK;
-                            const floor = start - ENTRANCE_GRADE * run;
-                            break :blk caves.carve(caves.gridsOf(m), .{
-                                .px = g.x,
-                                .pz = g.z,
-                                .r = self.radius,
-                                .floor = floor,
-                                .roof = floor + self.caveHead,
-                                .dx = -ENTRANCE_GRADE * ux,
-                                .dz = -ENTRANCE_GRADE * uz,
-                                .floorMin = self.caveFloorY,
-                            }, &span);
+                            self.dragTo = g;
+                            break :blk false;
                         },
-                        .fill => caves.fill(caves.gridsOf(m), .{ .px = g.x, .pz = g.z, .r = self.radius, .floor = 0, .roof = 0 }, &span),
+                        .fill => caves.fill(caves.gridsOf(m), .{ .px = g.x, .pz = g.z, .r = self.radius, .floor = 0, .roof = 0, .from = if (self.strokeLast) |p| .{ p.x, p.z } else null }, &span),
                         .sample => blk: {
                             const s = caves.sampleAt(caves.fieldsOf(m), g.x, g.z);
                             if (s.hollow()) {
@@ -2324,12 +2339,14 @@ pub const Editor = struct {
                             break :blk false;
                         },
                     };
+                    self.strokeLast = g;
                     if (moved) {
                         env.carveCave(m, span);
                         self.caveStroke = true;
                     }
                 }
             } else if (self.painting and rl.isMouseButtonReleased(.left)) {
+                if (@as(CaveBrush, @enumFromInt(self.brushIdx())) == .entrance) self.finishEntrance(m, env);
                 self.entranceFrom = null;
                 self.endPaint(m, env);
             }
@@ -2338,9 +2355,15 @@ pub const Editor = struct {
         if (self.layer == .ground and !self.selecting) {
             if (rl.isMouseButtonDown(.left) and (self.painting or !blocked)) {
                 if (ground) |g| {
-                    if (!self.painting) {
+                    // A press begun over a panel reaches this block with the button already DOWN, so a drag's
+                    // origin is where painting starts and never `isMouseButtonPressed`, which is long past.
+                    const started = !self.painting;
+                    if (started) {
                         self.bank(m);
                         self.painting = true;
+                        self.strokeLast = g;
+                        self.cliffTarget = m.heightAt(g.x, g.z) + (if (@as(GroundBrush, @enumFromInt(self.brushIdx())) == .indent) -self.cliffHeight else self.cliffHeight);
+                        self.dragFrom = g;
                     }
                     switch (@as(GroundBrush, @enumFromInt(self.brushIdx()))) {
                         .roof_up, .roof_down => |b| {
@@ -2382,30 +2405,42 @@ pub const Editor = struct {
                                 self.heightStroke = true;
                             }
                         },
-                        .cliff, .stair, .slope => |b| {
+                        .cliff, .indent => {
+                            const prev = self.strokeLast orelse g;
+                            var span: [4]usize = wf.EMPTY_SPAN;
+                            if (cliffseat.paint(m, .{ prev.x, prev.z }, .{ g.x, g.z }, self.radius, self.cliffTarget, &span)) {
+                                env.sculptHeight(m, span);
+                                self.heightStroke = true;
+                            }
+                            self.strokeLast = g;
+                        },
+                        .waterfall => {
+                            const prev = self.strokeLast orelse g;
+                            var span: [4]usize = undefined;
+                            const remove = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
+                            if (cliffseat.waterfall(m, .{ prev.x, prev.z }, .{ g.x, g.z }, self.radius, !remove, &span)) {
+                                env.sculptHeight(m, span);
+                                self.heightStroke = true;
+                            }
+                            self.strokeLast = g;
+                        },
+                        .stair, .slope => |b| {
                             var span: [4]usize = wf.EMPTY_SPAN;
                             if (m.paintCliff(g.x, g.z, self.radius, cliffCaseOf(b).?, &span)) {
                                 env.sculptHeight(m, span);
                                 self.heightStroke = true;
                             }
                         },
-                        .conform => if (rl.isMouseButtonPressed(.left)) self.conformAt(m, env, g),
-                        .plateau, .indent => {
-                            if (rl.isMouseButtonPressed(.left)) self.dragFrom = g;
+                        .conform => if (started) self.conformAt(m, env, g),
+                        .plateau => {
+                            if (started) self.dragFrom = g;
                             self.dragTo = g;
                         },
                         // The cut goes first: a flagged cell steps, and a stroke that only smoothed it would move heights the face was still snapping away.
                         .ramp => {
-                            var span: [4]usize = wf.EMPTY_SPAN;
-                            var moved = m.paintCliff(g.x, g.z, self.radius, wf.CLIFF_NONE, &span);
-                            const amt = mathx.minF(self.sculptRate * dt * SCULPT_EVEN, 0.9);
-                            if (m.sculpt(g.x, g.z, self.radius, .smooth, amt, &span)) moved = true;
-                            if (moved) {
-                                env.sculptHeight(m, span);
-                                self.heightStroke = true;
-                            }
+                            self.dragTo = g;
                         },
-                        .level => if (rl.isMouseButtonPressed(.left)) self.levelAt(m, env, g),
+                        .level => if (started) self.levelAt(m, env, g),
                         .water, .oil, .fungal, .lava => |b| if (m.paintWater(g.x, g.z, self.radius, true, WATER_EDGE, liquidOf(b))) {
                             env.uploadWater(m);
                             self.wetStroke = true;
@@ -2426,8 +2461,15 @@ pub const Editor = struct {
                 }
             } else if (self.painting and rl.isMouseButtonReleased(.left)) {
                 switch (@as(GroundBrush, @enumFromInt(self.brushIdx()))) {
-                    .plateau => self.terraceAt(m, env, false),
-                    .indent => self.terraceAt(m, env, true),
+                    .ramp => {
+                        var span: [4]usize = undefined;
+                        if (cliffseat.ramp(m, .{ self.dragFrom.x, self.dragFrom.z }, .{ self.dragTo.x, self.dragTo.z }, self.radius, &span)) {
+                            env.sculptHeight(m, span);
+                            self.heightStroke = true;
+                            self.say("Ramp connected.");
+                        } else self.say("Ramp: drag farther from the foot to the top of the cliff.");
+                    },
+                    .plateau => self.terraceAt(m, env),
                     else => {},
                 }
                 self.endPaint(m, env);
@@ -2548,26 +2590,63 @@ pub const Editor = struct {
         self.sayFmt("level: the body under the brush now stands at {d:.2} m, its sheet at {d:.3} m", .{ wf.heightOf(base), envmod.levelOf(base) - envmod.groundY() });
     }
 
-    fn terraceAt(self: *Editor, m: *wf.Map, env: *envmod.Env, indent: bool) void {
-        const verb: []const u8 = if (indent) "indent" else "plateau";
+    fn finishEntrance(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
+        const from = self.entranceFrom orelse return;
+        const to = self.dragTo;
+        const dx = to.x - from.x;
+        const dz = to.z - from.z;
+        const run = @sqrt(dx * dx + dz * dz);
+        if (run < m.heightStep()) {
+            self.say("Entrance: drag from open ground into a chamber.");
+            return;
+        }
+        const start = m.heightAt(from.x, from.z) - ENTRANCE_SINK;
+        const room = caves.sampleAt(caves.fieldsOf(m), to.x, to.z);
+        const end = if (room.hollow()) room.floor else @max(start - ENTRANCE_GRADE * run, self.caveFloorY);
+        const grade = (end - start) / run;
+        if (@abs(grade) > ENTRANCE_GRADE) {
+            self.sayFmt("Entrance too steep. Start at least {d:.1} m from the chamber.", .{@abs(end - start) / ENTRANCE_GRADE});
+            return;
+        }
+        var span: [4]usize = wf.EMPTY_SPAN;
+        self.bank(m);
+        if (caves.carve(caves.gridsOf(m), .{
+            .px = to.x,
+            .pz = to.z,
+            .from = .{ from.x, from.z },
+            .r = self.radius,
+            .floor = end,
+            .roof = end + self.caveHead,
+            .dx = grade * dx / run,
+            .dz = grade * dz / run,
+            .floorMin = @min(start, end),
+            .floorMax = @max(start, end),
+            .vault = true,
+        }, &span)) {
+            env.carveCave(m, span);
+            self.caveStroke = true;
+            self.caveFloorY = end;
+            self.say("Entrance connected. Use Look inside to inspect it.");
+        }
+    }
+
+    fn terraceAt(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
         const r = normRect(self.dragFrom, self.dragTo);
         const cell = m.heightStep();
         if (r.x1 - r.x0 < cell or r.z1 - r.z0 < cell) {
-            self.sayFmt("{s}: drag a rectangle at least a cell ({d:.2} m) each way", .{ verb, cell });
+            self.sayFmt("plateau: drag a rectangle at least a cell ({d:.2} m) each way", .{cell});
             return;
         }
         const base = wf.heightOf(wf.heightByte(m.heightAt(self.dragFrom.x, self.dragFrom.z)));
-        const rise = cliffseat.rise(self.cliffRow, self.cliffScale);
+        const rise = self.cliffHeight;
         var span: [4]usize = wf.EMPTY_SPAN;
-        const rim = cliffseat.terrace(m, .{ .x0 = r.x0, .z0 = r.z0, .x1 = r.x1, .z1 = r.z1 }, if (indent) base - rise else base + rise, &span) orelse {
-            self.sayFmt("{s}: the rectangle runs off the lattice", .{verb});
+        const rim = cliffseat.terrace(m, .{ .x0 = r.x0, .z0 = r.z0, .x1 = r.x1, .z1 = r.z1 }, base + rise, &span) orelse {
+            self.say("plateau: the rectangle runs off the lattice");
             return;
         };
         env.sculptHeight(m, span);
         self.heightStroke = true;
-        self.sayFmt("{s} for cliff{d} x{d:.2}: {d:.2} m {s} {d:.2} m to {d:.2} m; rims at x {d:.2} / {d:.2}, z {d:.2} / {d:.2}", .{
-            verb, self.cliffRow + 1, self.cliffScale, rise, if (indent) "below" else "over", base, rim.level, rim.x0, rim.x1, rim.z0, rim.z1,
-        });
+        self.sayFmt("plateau: {d:.2} m high, top at {d:.2} m", .{ rise, rim.level });
     }
 
     fn conformAt(self: *Editor, m: *wf.Map, env: *envmod.Env, g: rl.Vector3) void {
@@ -2646,6 +2725,7 @@ pub const Editor = struct {
 
     fn endPaint(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
         self.painting = false;
+        self.strokeLast = null;
         self.clear = .{};
         if (self.wetStroke or self.heightStroke or self.caveStroke) {
             self.wetStroke = false;
@@ -3606,7 +3686,6 @@ pub const Editor = struct {
         self.sayFmt("duplicated #{d} -> #{d}", .{ s, idx });
     }
 
-
     /// Where a mark stands, whichever kind it names. `null` for one whose record has since gone.
     fn markedAt(self: *const Editor, m: *const wf.Map, i: usize) ?rl.Vector3 {
         if (self.layer == .units) {
@@ -3698,7 +3777,6 @@ pub const Editor = struct {
         self.rebuild(m, env);
         self.sayFmt("moved {d} by ({d:.1}, {d:.1})", .{ self.nMarked, dx, dz });
     }
-
 
     fn copyMarked(self: *Editor, m: *wf.Map, env: *envmod.Env, cut: bool) void {
         if (self.nMarked == 0) {
@@ -3875,8 +3953,6 @@ pub const Editor = struct {
         }
     }
 
-
-
     /// The window close button and Alt+F4 come in from the main loop, not from a widget.
     pub fn requestQuit(self: *Editor) void {
         self.request(.quit);
@@ -3980,7 +4056,6 @@ pub const Editor = struct {
         self.sayFmt("saved {s} - {d} ops", .{ self.curPath(), m.nops });
         return true;
     }
-
 
     pub fn visible(self: *const Editor, l: Layer) bool {
         return self.layer == l or self.shown[@intFromEnum(l)];
@@ -4250,15 +4325,36 @@ pub const Editor = struct {
             if (self.layer == .ground) {
                 switch (@as(GroundBrush, @enumFromInt(self.brushIdx()))) {
                     .conform => if (cliffUnder(env, g)) |pr| self.propBox(env, pr, @max(props.info(pr.kind).bound * pr.scale, 0.3) * 1.6),
-                    .plateau, .indent => if (self.painting) outlineOf(normRect(self.dragFrom, self.dragTo), y, ui.HOT),
+                    .plateau => if (self.painting) outlineOf(normRect(self.dragFrom, self.dragTo), y, ui.HOT),
+                    .cliff, .indent => |b| {
+                        const base = if (self.painting) self.dragFrom.y else g.y;
+                        const top = if (self.painting) envmod.groundY() + self.cliffTarget else base + (if (b == .indent) -self.cliffHeight else self.cliffHeight);
+                        rl.drawCubeWires(v3(g.x, (base + top) * 0.5, g.z), self.radius * 2, @abs(top - base), self.radius * 2, ui.HOT);
+                        outlineOf(normRect(v3(g.x - self.radius, 0, g.z - self.radius), v3(g.x + self.radius, 0, g.z + self.radius)), top + 0.04, ui.HOT);
+                    },
+                    .ramp => if (self.painting) {
+                        const a = self.dragFrom;
+                        const b = self.dragTo;
+                        const length = mathx.distXZ(a, b);
+                        if (length > 0.1) {
+                            const col = if (@abs(b.y - a.y) > length * 0.5) CARVE_SKY else ui.HOT;
+                            const dx = -(b.z - a.z) / length * self.radius;
+                            const dz = (b.x - a.x) / length * self.radius;
+                            rl.drawLine3D(v3(a.x + dx, a.y + 0.1, a.z + dz), v3(b.x + dx, b.y + 0.1, b.z + dz), col);
+                            rl.drawLine3D(v3(a.x - dx, a.y + 0.1, a.z - dz), v3(b.x - dx, b.y + 0.1, b.z - dz), col);
+                            rl.drawLine3D(v3(a.x + dx, a.y + 0.1, a.z + dz), v3(a.x - dx, a.y + 0.1, a.z - dz), col);
+                            rl.drawLine3D(v3(b.x + dx, b.y + 0.1, b.z + dz), v3(b.x - dx, b.y + 0.1, b.z - dz), col);
+                        }
+                    },
                     else => {},
                 }
             }
-            const showRadius = self.layer == .ground or self.layer == .caves or (self.erasing() and self.layer == .units);
+            const squareBrush = self.layer == .ground and (self.brushIdx() == @intFromEnum(GroundBrush.cliff) or self.brushIdx() == @intFromEnum(GroundBrush.indent));
+            const showRadius = (self.layer == .ground and !squareBrush) or self.layer == .caves or (self.erasing() and self.layer == .units);
             if (showRadius) {
                 ringXZ(g.x, g.z, self.radius, y, ui.HOT);
                 ringXZ(g.x, g.z, self.radius * 0.5, y, ui.alpha(ui.HOT, 90));
-            } else {
+            } else if (!squareBrush) {
                 ringXZ(g.x, g.z, CURSOR_R, y, ui.alpha(ui.HOT, 200));
             }
         }
@@ -4315,9 +4411,9 @@ pub const Editor = struct {
     }
 
     fn drawCarveBox(self: *const Editor, at: rl.Vector3) void {
-        const floor = envmod.groundY() + self.caveFloorY;
+        const floor = envmod.groundY() + if (!self.painting and self.world != null) self.fittedFloor(self.world.?, at) else self.caveFloorY;
         const roof = floor + self.caveHead;
-        const col = carveTint(self.carveCover(at.x, at.z));
+        const col = carveTint(self.groundHeight(at.x, at.z) - roof);
         ringAtY(at.x, at.z, self.radius, floor, col, PREVIEW_SEG);
         ringAtY(at.x, at.z, self.radius, roof, ui.alpha(col, 160), PREVIEW_SEG);
         for (0..PREVIEW_POSTS) |i| {
@@ -4335,7 +4431,12 @@ pub const Editor = struct {
     fn entranceTap(self: *const Editor, env: *const envmod.Env, from: rl.Vector3, ux: f32, uz: f32, s: f32) Tap {
         const x = from.x + ux * s;
         const z = from.z + uz * s;
-        const floor = mathx.maxF(self.groundHeight(from.x, from.z) - ENTRANCE_SINK - ENTRANCE_GRADE * s, envmod.groundY() + self.caveFloorY);
+        const endAt = self.dragTo;
+        const run = @max(mathx.distXZ(from, endAt), 0.001);
+        const start = self.groundHeight(from.x, from.z) - ENTRANCE_SINK;
+        const room = caves.sampleAt(env.caveFields(), endAt.x, endAt.z);
+        const end = if (room.hollow()) room.floor else @max(start - ENTRANCE_GRADE * run, envmod.groundY() + self.caveFloorY);
+        const floor = mathx.lerpF(start, end, mathx.clampF(s / run, 0, 1));
         const c = caves.sampleAt(env.caveFields(), x, z);
         return .{
             .x = x,
@@ -4406,9 +4507,9 @@ const CARVE_SKY = ui.col(214, 84, 62, 255);
 const PREVIEW_SEG: i32 = 32;
 const PREVIEW_POSTS: usize = 8;
 
-fn carveTint(cover: f32) rl.Color {
-    if (cover >= CAVE_COVER_MIN) return CARVE_ROOFED;
-    return if (cover > 0) CARVE_THIN else CARVE_SKY;
+fn carveTint(overhead: f32) rl.Color {
+    if (overhead >= CARVE_ROOF_MIN) return CARVE_ROOFED;
+    return if (overhead > 0) CARVE_THIN else CARVE_SKY;
 }
 
 /// A ring at ONE world height. `ringXZ` lifts off whatever surface is under it, and a chamber's floor and roof are heights, not offsets from the hill.
@@ -4582,7 +4683,6 @@ fn ringSeg(cx: f32, cz: f32, r: f32, y: f32, col: rl.Color, seg: i32) void {
         );
     }
 }
-
 
 const BAR_H: i32 = 34;
 /// TWO ROWS: the file verbs and the panel buttons on top, the layer strip under them with room for its names.
@@ -4926,6 +5026,17 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
     hud.mono("BRUSH", 10, y, hud.MONO, ui.alpha(ui.TRIM, 235));
     y += ROW_H;
     if (ed.layer == .units) y = drawUnitTabs(ed, ctx, y);
+    if (ed.layer == .ground and !ed.floorSculpting()) {
+        inline for (.{ .cliffs, .sculpt, .paint, .all }, .{ "Cliffs", "Sculpt", "Paint", "All tools" }) |tab, label| {
+            if (ui.button(ctx, ui.rect(8, y, SIDE_W - 16, ROW_H - 3), label, hud.MONO, ed.groundTools == tab, "")) {
+                ed.groundTools = tab;
+                ed.propScroll = 0;
+                armFirstShown(ed);
+            }
+            y += ROW_H;
+        }
+        y += 8;
+    }
     const brushes = brushesFor(ed.layer);
     const tips = brushTipsFor(ed.layer);
     const glyphs = brushIconsFor(ed.layer);
@@ -4938,11 +5049,19 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
             y += hud.monoLineH(hud.MONO);
         }
         var lab: [40]u8 = undefined;
-        const s = if (slot < DIGIT_KEYS) (std.fmt.bufPrintZ(&lab, "{d} {s}", .{ slot + 1, b }) catch b) else b;
+        const label = if (ed.layer == .ground) groundLabel(@enumFromInt(i), b) else b;
+        const s = if (slot < DIGIT_KEYS) (std.fmt.bufPrintZ(&lab, "{d} {s}", .{ slot + 1, label }) catch label) else label;
         const r = ui.rect(8, y, SIDE_W - 16, ROW_H - 4);
         const on = !ed.selecting and ed.brushIdx() == i;
         const gone = brushRemoves(ed.layer, i);
-        const hit = if (glyphs) |g|
+        const hit = if (ed.layer == .caves)
+            ui.swatchButton(ctx, r, switch (@as(CaveBrush, @enumFromInt(i))) {
+                .carve => CARVE_ROOFED,
+                .entrance => CARVE_THIN,
+                .fill => GONE,
+                .sample => ui.LABEL,
+            }, s, hud.MONO, on, tips[i])
+        else if (glyphs) |g|
             ui.iconButtonIn(ctx, r, g[i], s, hud.MONO, on, if (gone) GONE else ui.VALUE, tips[i])
         else
             (if (i + 1 == brushes.len)
@@ -4953,6 +5072,7 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
                 .smooth, .flat, .pool => ui.swatchButton(ctx, r, EVEN_SWATCH, s, hud.MONO, on, tips[i]),
                 .roof_up => ui.swatchButton(ctx, r, ROOF_UP_SWATCH, s, hud.MONO, on, tips[i]),
                 .roof_down => ui.swatchButton(ctx, r, ROOF_DOWN_SWATCH, s, hud.MONO, on, tips[i]),
+                .waterfall => ui.swatchButton(ctx, r, MINI_CAVE, s, hud.MONO, on, tips[i]),
                 .cliff => ui.swatchButton(ctx, r, CLIFF_SWATCH, s, hud.MONO, on, tips[i]),
                 .stair => ui.swatchButton(ctx, r, STAIR_SWATCH, s, hud.MONO, on, tips[i]),
                 .ramp => ui.swatchButton(ctx, r, RAMP_SWATCH, s, hud.MONO, on, tips[i]),
@@ -5018,7 +5138,6 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
     ed.sideHeld = y - top + 10;
     endScroll(ctx, view, &ed.sideScroll, ed.sideHeld, was);
 }
-
 
 fn drawUnitTabs(ed: *Editor, ctx: *ui.Ctx, y0: i32) i32 {
     var y = y0;
@@ -5104,45 +5223,6 @@ fn gradientRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op, s: *wf.Scatter
     return ch;
 }
 
-/// WHERE THE DRAG WOULD ARRIVE, in words: the mouth's own run out, and the one failure a preview alone cannot put a
-/// number on — a grade that meets the chamber above the floor it is meant to join, which is fixed by starting further out.
-fn drawEntranceVerdict(ed: *Editor, env: *const envmod.Env, x: i32, y0: i32) i32 {
-    var y = y0;
-    var buf: [96]u8 = undefined;
-    const at = ed.groundAt() orelse return y;
-    const from = ed.entranceFrom orelse {
-        hud.mono("drag in from open ground - the hill opens itself", x, y, hud.MONO, ui.alpha(ui.LABEL, 190));
-        return y + ROW_H;
-    };
-    const dx = at.x - from.x;
-    const dz = at.z - from.z;
-    const run = @sqrt(dx * dx + dz * dz);
-    if (run < LOOK_STEP) return y;
-    const ux = dx / run;
-    const uz = dz / run;
-    var over: f32 = 0;
-    var opensAt: ?f32 = null;
-    var s: f32 = 0;
-    while (s <= run) : (s += LOOK_STEP) {
-        const tap = ed.entranceTap(env, from, ux, uz, s);
-        over = mathx.maxF(over, tap.over);
-        if (tap.opens and opensAt == null) opensAt = s;
-    }
-    hud.mono(std.fmt.bufPrintZ(&buf, "run {d:.1} m, falls {d:.2} m", .{ run, ENTRANCE_GRADE * run }) catch "", x, y, hud.MONO, ui.LABEL);
-    y += ROW_H;
-    if (opensAt) |o| {
-        hud.mono(std.fmt.bufPrintZ(&buf, "the hill opens {d:.1} m along", .{o}) catch "", x, y, hud.MONO, CARVE_THIN);
-    } else {
-        hud.mono("no mouth yet - drag out toward thinner ground", x, y, hud.MONO, ui.alpha(ui.LABEL, 190));
-    }
-    y += ROW_H;
-    if (over > wf.STEP_UP) {
-        hud.mono(std.fmt.bufPrintZ(&buf, "arrives {d:.2} m too high - start further out", .{over - wf.STEP_UP}) catch "", x, y, hud.MONO, CARVE_SKY);
-        y += ROW_H;
-    }
-    return y;
-}
-
 /// THE WALK IN, SAID OUT LOUD. A carve is not a cave until something can get into it, and nothing else in the editor ever said so.
 fn drawCaveWalk(ed: *Editor, env: *const envmod.Env, ctx: *ui.Ctx, x: i32, y0: i32, w: i32) i32 {
     var y = y0;
@@ -5151,9 +5231,9 @@ fn drawCaveWalk(ed: *Editor, env: *const envmod.Env, ctx: *ui.Ctx, x: i32, y0: i
     if (r.open == 0) return y;
     y += 4;
     if (r.sealed()) {
-        hud.mono("SEALED - no entrance anywhere on the map", x, y, hud.MONO, CARVE_SKY);
+        hud.mono("Sealed: add an Entrance.", x, y, hud.MONO, CARVE_SKY);
     } else if (r.stranded() > 0) {
-        hud.mono(std.fmt.bufPrintZ(&buf, "walkable to the outside; {d} points are not", .{r.stranded()}) catch "", x, y, hud.MONO, CARVE_THIN);
+        hud.mono("Some passages are disconnected.", x, y, hud.MONO, CARVE_THIN);
     } else {
         hud.mono("walkable to the outside", x, y, hud.MONO, CARVE_ROOFED);
     }
@@ -5218,55 +5298,61 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             .sample => "SAMPLE",
         }, x, y, hud.MONO, ui.TITLE);
         y += ROW_H + 4;
-        var buf: [96]u8 = undefined;
-        const at = ed.groundAt() orelse mathx.zero3;
-        const land = ed.groundHeight(at.x, at.z) - envmod.groundY();
-        // One base for the whole panel: `env.caveFields` is in world Y, and every height printed here is taken back to the datum once.
-        const s = caves.sampleAt(env.caveFields(), at.x, at.z);
-
-        _ = ui.slider(ctx, x, y, w, "width", &ed.radius, 1, 24, "How wide the passage is, in metres - the brush IS the passage");
-        y += ROW_H;
-        _ = ui.slider(ctx, x, y, w, "headroom", &ed.caveHead, HEAD_MIN, 8, "Ceiling over the floor, in metres");
-        y += ROW_H;
-        _ = ui.stepperF(ctx, x, y, w, "floor", &ed.caveFloorY, 0.25, wf.CAVE_H_MIN, wf.CAVE_H_MAX, "The world height a carve lays its floor at. Fit solves it off the hill under the cursor; Sample takes it off a chamber");
-        y += ROW_H;
-        const fit = caves.fitFloor(land, ed.caveHead);
-        const fitLab = std.fmt.bufPrintZ(&buf, "Fit under the hill here ({d:.2} m)", .{fit}) catch "Fit under the hill here";
-        if (ui.button(ctx, ui.rect(x, y, w, ROW_H), fitLab, hud.MONO, false, "Set the floor so this headroom sits under the ground at the cursor with 1 m of rock for a roof")) ed.caveFloorY = fit;
-        y += ROW_H + 2;
-        _ = ui.checkbox(ctx, x, y, "auto-fit each carve", &ed.caveAutoFit, "Let a carve solve its own floor where the one above cannot roof it, off the hill at the click. Then the only numbers you set are the width and the headroom");
+        const colw = @divTrunc(w - 6, 2);
+        if (ui.button(ctx, ui.rect(x, y, colw, ROW_H), "Inside", hud.MONO, ed.under, "Hide the ceiling and hill to edit the cave interior")) ed.setUnder(true);
+        if (ui.button(ctx, ui.rect(x + colw + 6, y, colw, ROW_H), "Surface", hud.MONO, !ed.under, "Show the ceiling and hill. Use Ground to shape the top.")) ed.setUnder(false);
         y += ROW_H + 6;
-
-        const roof = ed.caveFloorY + ed.caveHead;
-        const cover = land - roof;
-        hud.mono(std.fmt.bufPrintZ(&buf, "hill {d:.2} m   roof {d:.2} m", .{ land, roof }) catch "", x, y, hud.MONO, ui.LABEL);
+        hud.mono(if (ed.under) "Ceiling hidden" else "Ceiling visible", x, y, hud.MONO, ui.LIVE);
         y += ROW_H;
-        // The words and the box in the world are the same verdict, so they wear the same colour.
-        if (cover >= CAVE_COVER_MIN) {
-            hud.mono(std.fmt.bufPrintZ(&buf, "a carve here keeps {d:.2} m of rock overhead", .{cover}) catch "", x, y, hud.MONO, CARVE_ROOFED);
-        } else if (cover > 0) {
-            hud.mono(std.fmt.bufPrintZ(&buf, "TOO THIN - {d:.2} m of rock overhead", .{cover}) catch "", x, y, hud.MONO, CARVE_THIN);
-        } else {
-            hud.mono("OPEN TO THE SKY - a carve here is a pit, a mouth or a crater", x, y, hud.MONO, CARVE_SKY);
+        if (b == .carve) {
+            if (ui.button(ctx, ui.rect(x, y, colw, ROW_H), "Tunnel", hud.MONO, ed.radius == 3, "A passage with room to move")) {
+                ed.radius = 3;
+                ed.caveHead = 3.5;
+            }
+            if (ui.button(ctx, ui.rect(x + colw + 6, y, colw, ROW_H), "Chamber", hud.MONO, ed.radius == 8, "A broad room with a higher ceiling")) {
+                ed.radius = 8;
+                ed.caveHead = 5;
+            }
+            y += ROW_H + 6;
         }
+        var width = ed.radius * 2;
+        if (ui.stepperF(ctx, x, y, w, "passage width", &width, 0.5, 4, 32, "Full width of the passage, in metres")) ed.radius = width * 0.5;
         y += ROW_H;
-        if (s.hollow()) {
-            const thick = land - (s.roof - envmod.groundY());
-            hud.mono(std.fmt.bufPrintZ(&buf, "chamber here: floor {d:.2} m, room {d:.2} m", .{ s.floor - envmod.groundY(), s.headroom() }) catch "", x, y, hud.MONO, ui.LIVE);
-            y += ROW_H;
-            hud.mono(if (thick > 0)
-                std.fmt.bufPrintZ(&buf, "its roof holds {d:.2} m of rock", .{thick}) catch ""
-            else
-                (std.fmt.bufPrintZ(&buf, "it is open to the sky - a mouth", .{}) catch ""), x, y, hud.MONO, if (thick > 0) ui.LABEL else CARVE_THIN);
+        _ = ui.stepperF(ctx, x, y, w, "headroom", &ed.caveHead, 0.25, HEAD_MIN, 8, "Space from the floor to the ceiling");
+        y += ROW_H + 6;
+        hud.mono(switch (b) {
+            .carve => "Drag to carve a passage.",
+            .entrance => "Drag outside into a chamber.",
+            .fill => "Drag to put rock back.",
+            .sample => "Click a cave to copy its level.",
+        }, x, y, hud.MONO, ui.LABEL);
+        y += ROW_H;
+        if (b == .carve) {
+            hud.mono("The floor fits automatically.", x, y, hud.MONO, ui.LABEL);
             y += ROW_H;
         }
-        if (b == .entrance) y = drawEntranceVerdict(ed, env, x, y);
+        if (ui.button(ctx, ui.rect(x, y, w, ROW_H), if (ed.under) "Edit floor / ceiling" else "Edit the hill", hud.MONO, false, "Open Ground tools for the visible surface")) {
+            ed.setLayer(.ground);
+        }
+        y += ROW_H + 6;
         y = drawCaveWalk(ed, env, ctx, x, y, w);
-        y += 4;
-        hud.mono("Carve under a hill, drag Entrance in", x, y, hud.MONO, ui.alpha(ui.LABEL, 160));
-        y += hud.monoLineH(hud.MONO);
-        hud.mono("from open ground. Ground shapes the floor.", x, y, hud.MONO, ui.alpha(ui.LABEL, 160));
+        if (ui.button(ctx, ui.rect(x, y, w, ROW_H), "Add a waterfall", hud.MONO, false, "Paint water across the cliff above a cave entrance")) {
+            ed.setUnder(false);
+            ed.groundTools = .cliffs;
+            ed.setLayer(.ground);
+            ed.setBrush(@intFromEnum(GroundBrush.waterfall));
+            ed.radius = 4;
+        }
+        y += ROW_H + 6;
+        if (ui.button(ctx, ui.rect(x, y, w, ROW_H), if (ed.caveDetails) "Less" else "Floor settings", hud.MONO, ed.caveDetails, "Optional manual floor height")) ed.caveDetails = !ed.caveDetails;
         y += ROW_H;
+        if (ed.caveDetails) {
+            _ = ui.checkbox(ctx, x, y, "automatic floor", &ed.caveAutoFit, "Continue at an existing chamber's level, or fit a new room under the hill");
+            y += ROW_H;
+            _ = ui.stepperF(ctx, x, y, w, "floor", &ed.caveFloorY, 0.25, wf.CAVE_H_MIN, wf.CAVE_H_MAX - ed.caveHead, "Floor height in metres");
+            y += ROW_H;
+        }
+        return;
     }
 
     if (ed.layer == .ground) {
@@ -5274,12 +5360,12 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         const liquid = liquidOf(brush);
         const wet = liquid != null;
         const cliffing = cliffCaseOf(brush) != null;
-        const terracing = brush == .plateau or brush == .indent;
+        const terracing = brush == .cliff or brush == .plateau or brush == .indent;
         const sculpting = cliffing or switch (brush) {
             .raise, .lower, .smooth, .flat, .roof_up, .roof_down, .pool, .ramp, .conform, .plateau, .indent, .reset => true,
             else => false,
         };
-        const title: [:0]const u8 = if (roofing(brush)) "CAVE ROOF" else if (ed.floorSculpting()) "CAVE FLOOR" else if (brush == .reset) "RESET" else if (brush == .conform) "CONFORM TO A CLIFF PIECE" else if (brush == .plateau) "PLATEAU AT A CLIFF HEIGHT" else if (brush == .indent) "INDENT BY A CLIFF HEIGHT" else if (brush == .level) "WATER LEVEL" else if (cliffing) "RELIEF" else if (sculpting) "SCULPT" else if (liquid) |l| switch (l) {
+        const title: [:0]const u8 = if (brush == .waterfall) "WATERFALL" else if (brush == .cliff) "RAISE CLIFF" else if (brush == .indent) "LOWER CLIFF" else if (brush == .ramp) "CONNECT A RAMP" else if (roofing(brush)) "CAVE ROOF" else if (ed.floorSculpting()) "CAVE FLOOR" else if (brush == .reset) "RESET" else if (brush == .conform) "CONFORM TO A CLIFF PIECE" else if (brush == .plateau) "PLATEAU" else if (brush == .level) "WATER LEVEL" else if (cliffing) "RELIEF" else if (sculpting) "SCULPT" else if (liquid) |l| switch (l) {
             .water => "WATER BRUSH",
             .oil => "OIL BRUSH",
             .fungal => "FUNGAL BRUSH",
@@ -5289,6 +5375,30 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         y += ROW_H + 4;
         if (terracing) {
             y = drawCliffHeightPicker(ed, ctx, x, y, w);
+            return;
+        }
+        if (brush == .waterfall) {
+            var width = ed.radius * 2;
+            if (ui.stepperF(ctx, x, y, w, "width", &width, 1, 3, 24, "Width painted along the cliff edge")) ed.radius = width * 0.5;
+            y += ROW_H + 6;
+            hud.mono("Paint along a cliff edge.", x, y, hud.MONO, ui.LABEL);
+            y += ROW_H;
+            hud.mono("Shift removes the water.", x, y, hud.MONO, ui.LABEL);
+            y += ROW_H + 6;
+            hud.mono("Carve a cave behind the fall.", x, y, hud.MONO, ui.LIVE);
+            y += ROW_H;
+            hud.mono("The curtain stays walkable.", x, y, hud.MONO, ui.LABEL);
+            y += ROW_H;
+            return;
+        }
+        if (brush == .ramp) {
+            var width = ed.radius * 2;
+            if (ui.stepperF(ctx, x, y, w, "width", &width, 1, 5, 30, "Full ramp width in metres")) ed.radius = width * 0.5;
+            y += ROW_H + 6;
+            hud.mono("Drag from the foot to the top.", x, y, hud.MONO, ui.LABEL);
+            y += ROW_H;
+            hud.mono("Longer ramps are gentler.", x, y, hud.MONO, ui.LABEL);
+            y += ROW_H;
             return;
         }
         if (brush == .level) {
@@ -6047,26 +6157,25 @@ const MINI_FOE = ui.col(232, 58, 44, 255);
 const MINI_CAVE = ui.alpha(ui.LIVE, 150);
 const MINI_MOUTH = ui.col(150, 236, 222, 255);
 
-/// THE HEIGHT IS ONE OF THE SIX THE PIECES OFFER, never a free number: a chip per `proprock.CLIFF_PROPS` row showing `cliffseat.rise` at the scale the Props layer will stamp the piece at.
 fn drawCliffHeightPicker(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, w: i32) i32 {
     var y = y0;
-    hud.mono("piece height", x, y, hud.MONO, ui.LABEL);
+    hud.mono("CLIFF HEIGHT", x, y, hud.MONO, ui.LABEL);
     y += ROW_H;
     var lab: [24]u8 = undefined;
-    for (0..proprock.CLIFF_PROPS.len) |row| {
-        const rise = cliffseat.rise(row, ed.cliffScale);
-        const s = std.fmt.bufPrintZ(&lab, "cliff{d}  {d:.2} m", .{ row + 1, rise }) catch "";
-        if (ui.button(ctx, ui.rect(x, y, w, ROW_H - 2), s, hud.MONO, ed.cliffRow == row, props.displayName(@enumFromInt(@intFromEnum(Kind.cliff) + row)))) ed.cliffRow = row;
+    for ([_]f32{ 3, 6, 12 }) |rise| {
+        const s = std.fmt.bufPrintZ(&lab, "{d:.0} m", .{rise}) catch "";
+        if (ui.button(ctx, ui.rect(x, y, w, ROW_H - 2), s, hud.MONO, ed.cliffHeight == rise, "Height added or removed in one stroke")) ed.cliffHeight = rise;
         y += ROW_H;
     }
     y += 4;
-    _ = ui.stepperF(ctx, x, y, w, "piece scale", &ed.cliffScale, 0.05, 0.1, 4, "The scale the plateau is sized for, and the scale a cliff piece stamps at in the Props layer");
-    y += ROW_H + 6;
-    hud.mono("drag a rectangle; its edge is the cut", x, y, hud.MONO, ui.alpha(ui.LABEL, 160));
+    _ = ui.stepperF(ctx, x, y, w, "height", &ed.cliffHeight, 0.25, 3, 24, "Metres added or removed in one stroke");
     y += ROW_H;
-    var hbuf: [64]u8 = undefined;
-    const hs = std.fmt.bufPrintZ(&hbuf, "snapped to {d:.2} m steps", .{wf.HEIGHT_STEP}) catch "";
-    hud.mono(hs, x, y, hud.MONO, ui.alpha(ui.LABEL, 160));
+    var width = ed.radius * 2;
+    if (ui.stepperF(ctx, x, y, w, "brush width", &width, 1, 5, 60, "Click to place. Drag to paint connected cliffs.")) ed.radius = width * 0.5;
+    y += ROW_H + 6;
+    hud.mono("Click or drag to place.", x, y, hud.MONO, ui.LABEL);
+    y += ROW_H;
+    hud.mono("Faces join automatically.", x, y, hud.MONO, ui.LABEL);
     return y + ROW_H;
 }
 
@@ -6135,7 +6244,7 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
     const base = if (ed.dirty) ui.HOT else ui.LABEL;
     const rightX = sw - (wHead + wHgt + hud.monoW(tail, hud.MONO)) - CHROME_PAD;
     hud.mono(head, rightX, ty, hud.MONO, base);
-        // THE HEIGHT READS TEAL WHEN THE POINT UNDER THE CURSOR IS A CHAMBER FLOOR and not the land over it — the same teal the bar's own rule uses.
+    // THE HEIGHT READS TEAL WHEN THE POINT UNDER THE CURSOR IS A CHAMBER FLOOR and not the land over it — the same teal the bar's own rule uses.
     hud.mono(hs, rightX + wHead, ty, hud.MONO, if (hs.len > 0 and env.underground(g.x, g.z, g.y)) ui.LIVE else base);
     hud.mono(tail, rightX + wHead + wHgt, ty, hud.MONO, base);
 
@@ -6200,13 +6309,12 @@ var cribW = [_]i32{-1} ** CRIBS.len;
 
 /// The caves layer's own order of work, widest-that-fits like the rest. The `>` is an arrow: the atlas is ASCII 32..126 and nothing else.
 const CAVE_CRIBS = [_][:0]const u8{
-    "Fit  >  Carve under a hill  >  Entrance in from open ground  >  Fill puts rock back   |   U level   I look inside   [ ] width   Ctrl+Z undo   F5 play from the camera",
-    "Fit  >  Carve under a hill  >  Entrance in from open ground  >  Fill puts rock back   |   U level   I look inside   F5 play",
-    "Fit  >  Carve  >  Entrance from open ground  >  Fill   |   U level   I inside   F5 play",
-    "Fit > Carve > Entrance > Fill   I inside   F5 play",
+    "Carve rooms  >  Entrance from outside  >  Fill puts rock back   |   U level   I look inside   [ ] width   Ctrl+Z undo   F5 play from the camera",
+    "Carve rooms  >  Entrance from outside  >  Fill puts rock back   |   U level   I look inside   F5 play",
+    "Carve  >  Entrance from outside  >  Fill   |   U level   I inside   F5 play",
+    "Carve > Entrance > Fill   I inside   F5 play",
 };
 var caveCribW = [_]i32{-1} ** CAVE_CRIBS.len;
-
 
 fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: *daynight.Clock, ctx: *ui.Ctx) void {
     const alt = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
@@ -6256,7 +6364,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             }
             const rows = lootRowsIn(nshown);
             const title: [:0]const u8 = if (m.ops[sPre].kind == .chest) "Chest contents" else "Item contents";
-                    const box = ui.beginModal(ctx, LOOT_W, lootModalH(rows), title);
+            const box = ui.beginModal(ctx, LOOT_W, lootModalH(rows), title);
             const s = sPre;
             const o = &m.ops[s];
             const tally = placedTally(ed, m);
@@ -6668,7 +6776,6 @@ fn nextWhen(w: wf.FoeWhen) wf.FoeWhen {
 const MENU_W: i32 = 150;
 const MENU_EDGE: i32 = 4;
 
-
 fn lootOp(ed: *const Editor, m: *const wf.Map) ?usize {
     const s = ed.sel orelse return null;
     if (s >= m.nops) return null;
@@ -6827,7 +6934,6 @@ const SCRIPT_W: i32 = 780;
 const SCRIPT_H: i32 = 610;
 const SCRIPT_LIST_W: i32 = 200;
 
-
 const COND_NAMES = blk: {
     var out: [@typeInfo(wf.CondKind).@"enum".fields.len][:0]const u8 = undefined;
     for (&out, 0..) |*o, i| o.* = condName(@enumFromInt(i));
@@ -6900,7 +7006,6 @@ fn actTip(k: wf.ActKind) [:0]const u8 {
     };
 }
 
-
 const OPT_W: i32 = 420;
 const OPT_ROWS: i32 = 4;
 const OPT_H: i32 = 56 + OPT_ROWS * (ROW_H + hud.monoLineH(hud.MONO) + 8) + 3 * (ROW_H + 6) + DLG_FOOT;
@@ -6936,7 +7041,6 @@ fn drawOptionsModal(ed: *Editor, ctx: *ui.Ctx) void {
 
     if (ui.button(ctx, ui.rect(box.x + box.w - DLG_PAD - 110, box.y + box.h - DLG_FOOT, 110, DLG_BTN_H), "Close", hud.MONO, false, "Back to the map (Esc)")) ed.modal = .none;
 }
-
 
 comptime {
     // `openTalk` copies a node in AT the format's cap and `ui.textField` writes the terminator at `len`, so a buffer merely as wide as the cap is a write one past its end.
@@ -7823,7 +7927,6 @@ fn drawContextMenu(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx) void
     if (ctx.pressed and !rl.checkCollisionPointRec(ctx.mouse, box)) ed.menuOpen = false;
 }
 
-
 fn testEnv(alloc: std.mem.Allocator) !*envmod.Env {
     const e = try alloc.create(envmod.Env);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -7923,7 +8026,6 @@ test "the rate gate paces a sweep, and an empty sweep costs no undo step" {
     try std.testing.expectEqual(@as(usize, 0), undoN);
     try std.testing.expect(!idle.dirty);
 }
-
 
 test "NO NUMERIC ROW IN THE SCRIPT PANEL OVERHANGS THE DELETE BUTTON BESIDE IT" {
     // What `condFields` and `actFields` are handed: the right column, less the kind dropdown and the `x` button.
@@ -8130,8 +8232,8 @@ test "EVERY LIST MODAL FITS THE WINDOW IT OPENS IN" {
     std.debug.print("  item tabs: {d} px each, widest name \"{s} *\" is {d} of {d} characters\n", .{ tabW, widestName, widest, LOOT_TAB_CHARS });
     try std.testing.expect(widest <= LOOT_TAB_CHARS);
     std.debug.print("\n  items: {d} kinds over {d} shelves, deepest is {s} at {d} rows -> {d} px in a {d} window (one shelf of {d} was {d})\n", .{
-        item.NK,          item.NCLASS,           deepestAt.shelf(), deepest,
-        lootModalH(lootRowsIn(deepest)), SCREEN_H, item.NK,          LOOT_TOP + TAB_H + @as(i32, item.NK) * LOOT_ROW_H + LOOT_GOLD_H + foot,
+        item.NK,                         item.NCLASS, deepestAt.shelf(), deepest,
+        lootModalH(lootRowsIn(deepest)), SCREEN_H,    item.NK,           LOOT_TOP + TAB_H + @as(i32, item.NK) * LOOT_ROW_H + LOOT_GOLD_H + foot,
     });
     try std.testing.expect(lootModalH(lootRowsIn(deepest)) <= SCREEN_H);
 
@@ -8159,10 +8261,10 @@ test "EVERY LIST MODAL FITS THE WINDOW IT OPENS IN" {
     std.debug.print(
         "\n  gate seal: {d} bosses -> {d} px (was {d}); zone mix: {d} shelves, tallest {d} -> {d} px (was {d}); window {d}\n",
         .{
-            bosses,                                                                        sealH,
-            LOOT_TOP + (NFOE_KIND + 1) * LOOT_ROW_H + foot,                                MIX_GROUPS.len,
-            tallest,                                                                       mixH,
-            LOOT_TOP + @as(i32, @intCast(props.FLORA_KINDS.len)) * LOOT_ROW_H + foot,       SCREEN_H,
+            bosses,                                                                   sealH,
+            LOOT_TOP + (NFOE_KIND + 1) * LOOT_ROW_H + foot,                           MIX_GROUPS.len,
+            tallest,                                                                  mixH,
+            LOOT_TOP + @as(i32, @intCast(props.FLORA_KINDS.len)) * LOOT_ROW_H + foot, SCREEN_H,
         },
     );
     try std.testing.expect(sealH <= SCREEN_H);
@@ -8483,6 +8585,7 @@ test "THE LEVEL FILTERS THE STRIP AND THE PICK: underground the Ground layer kee
     try std.testing.expect(env.caveAny);
 
     var ed = Editor{};
+    ed.groundTools = .all;
     ed.layer = .ground;
     ed.hasCave = env.caveAny;
     for (0..groundBrushes.len) |i| {

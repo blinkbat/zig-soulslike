@@ -1297,8 +1297,8 @@ A HEIGHTFIELD sculpted in Ground > Raise/Lower/Smooth/Flat, stored as one QUANTI
 and the writer is a run-length encoder. The mesh is TILED, with normals from the FIELD so two tiles agree at their
 seam.
 
-- **A HEIGHT IS `wf.Hgt` (u16), −1024..+15359.75 m** — `version: 2`. A `version: 1` file's `hgt:` bytes are widened
-  onto `HEIGHT_ZERO` as they are read, so the shipped map loads unchanged; a 2 on a build that knows only 1 is a
+- **A HEIGHT IS `wf.Hgt` (u16), −1024..+15359.75 m** — `version: 3`. A `version: 1` file's `hgt:` bytes are widened
+  onto `HEIGHT_ZERO` as they are read, so the shipped map loads unchanged; a 3 on a build that knows only 2 is a
   LOAD ERROR, never a clamp. **THE CAVE FLOOR AND ROOF STAY ONE BYTE** (`CAVE_H_ZERO`, `caveH`/`caveByte`,
   −16..+47.75 m): the roof is a GPU texture the shader decodes, so a chamber cannot be carved under land above
   47.75 m. `heightByte` keeps its name and returns a `Hgt`.
@@ -1356,8 +1356,8 @@ seam.
 ### Cliffs — a drop drawn as a FACE instead of a ramp
 
 A second grid (`Map.cliff`, one case per CELL, indexed by its low corner) says which cells cut instead of
-interpolating. Ground > Cliff paints it, Slope takes it back. **3..255 ARE UNCLAIMED** and a map using one is a
-LOAD ERROR on a build that does not know it.
+interpolating. Ground > Cliff paints it, Slope takes it back. **4..255 ARE UNCLAIMED** and a map using one is a
+LOAD ERROR on a build that does not know it — which is what `wf.VERSION` 3 bought when `CLIFF_FALL` took 3.
 
 - **THE FLAG IS OPT-IN AND CHANGES NOTHING ELSE** — no `cliff:` row means the map loads and walks exactly as it
   did. The same 6 m drop is a wall or a ramp depending on the flag, not on how steeply it was sculpted.
@@ -1378,22 +1378,25 @@ LOAD ERROR on a build that does not know it.
   proud the strata stand (keyed on WORLD height, so a course runs level through every cell), `cleft` the grooves,
   `ivy` the curtains, `broken` the talus. The kind is a 27 m field, so a run reads as one geology. **THE LIP IS
   STRAIGHT AND THE CUT IS EXACT** — a ±0.3-cell wander made every straight line an accordion of facets.
-- **AND THE FACADE IS ONE OF THE `cliff*` PROPS, BISECTED INTO IT.** The wall is a PLAIN SHEET on the cut, lip and
-  foot on the two floors at the chord's ends so it runs with sloping ground (a test measures its area against the
-  cut's own to 1%), and the rock is `proprock.CLIFF_FACES` stamped along the run by `env.faceStamp`, turned so its
-  front looks out, scaled off its own STONE height (`Builder.boundsOf`, because a cliff prop's ivy carries a third
-  of its height again) and sunk until `FACE_PROP_PROUD` stands in front of the cut — **BOTH SPREAD PER STAMP**,
-  or every stamp crests the same 16% and the rim reads as a picket of boulders. **THE SHEET IS DIMMED UNDER
-  THEM.** **EVERY LOBE THAT STANDS PAST THE CUT IS SOLID** (`stampSolids` → `Env.cliffSolids`), one capsule along
-  the run per lobe, appended by `buildSolids` and dropped with its tile, so nothing walks into the stone and
-  nothing stops in the air between two lobes. **AND NO STAMP GOES OVER A LADDER'S FOOT OR A FLIGHT'S HEAD**
-  (`climbsNear`) — which is why `Env.replay` adopts the fields, materializes the props and only then builds the
-  tiles. `Builder.stamp` copies a prototype in turned, scaled and moved, so a forty-metre run costs ONE built
-  mesh. **Adding a face is one row in `CLIFF_FACES`.** Everything before this tried to make the sheet itself into
-  rock and every version read as plates pasted on a wall.
-- **THE FACE PROTOTYPES ARE BUILT WITHOUT THE PROP'S FISSURES** (`cliffBuildOpt`) — the dark capsules that stand
-  at a cliff prop's front stood alone once the body was bisected behind the sheet. **THE SHEET'S SHADING BUMP IS
-  0.10 m**; at 0.45 the relief noise tilted its normals past 45°.
+- **AND THE FACADE IS ROCK STOOD AGAINST IT, NOT A BISECTED CLIFF PROP.** The wall is a PLAIN SHEET on the cut, lip
+  and foot on the two floors at the chord's ends so it runs with sloping ground (a test measures its area against
+  the cut's own to 1%), and the rock is `proprock.faceRockBuild` — a 2.4-4.4 m mass, its own size, never the
+  drop's — stamped by `env.faceStamp` in a LATTICE: a column every `FACE_ROCK_RUN` of run, a row every
+  `FACE_ROCK_RISE` up the face, each sunk until `FACE_ROCK_PROUD` of its own depth stands in front of the cut,
+  **EVERY ONE SPREAD PER STAMP** (`FACE_ROCK_TURN`, `FACE_ROCK_DRIFT`, `FACE_ROCK_SCALE_VAR`) or a column reads as
+  a stack. **NOTHING IN THE FIT READS THE DROP** — the same stone dresses a 2 m face and a 12 m one, and only the
+  ROW COUNT changes; a rock cresting past `FACE_ROCK_CREST` over the lip is dropped so the plateau stays a
+  straight line, and one last rock is hung with its crown ON the lip to close the bare band the rows leave. **THE
+  SHEET IS DIMMED UNDER THEM.** **EVERY LOBE THAT STANDS PAST THE CUT IS SOLID** (`stampSolids` →
+  `Env.cliffSolids`), one capsule along the run per lobe, appended by `buildSolids` and dropped with its tile, so
+  nothing walks into the stone and nothing stops in the air between two lobes — but only up to
+  `FACE_ROCK_SOLID_H` off the low ground, because above that the cut's own wall is what stops him. **AND NO ROCK
+  GOES OVER A LADDER'S FOOT OR A FLIGHT'S HEAD** (`climbsNear`) — which is why `Env.replay` adopts the fields,
+  materializes the props and only then builds the tiles. `Builder.stamp` copies a prototype in turned, scaled and
+  moved, so a forty-metre run costs EIGHT built meshes. **Adding a rock is one seed in `FACE_ROCK_SEEDS`.**
+  Everything before this tried to make the sheet itself into rock, and then to scale a whole cliff prop down to
+  the drop; the first read as plates pasted on a wall, the second as one boulder per stamp.
+- **THE SHEET'S SHADING BUMP IS 0.10 m** (`FACE_BUMP`); at 0.45 the relief noise tilted its normals past 45°.
 - **A CUT EDGE SHARED WITH ANOTHER CUTTING CELL GETS NO SKIRT** (`nbCut`) — `edgeOther` reads a neighbour as the
   line through the two corners they share, which across a cut is a ramp, and the skirt stood a fin HALF THE DROP
   tall at every cell of every straight face. A stair neighbour still takes the skirt (its tread is the surface),
@@ -1428,12 +1431,13 @@ LOAD ERROR on a build that does not know it.
   it crosses, then the piece walks ≤ half a cell onto the cut the lattice could actually draw. **A seated piece's
   colliders are clipped at the cut** (`env.seatedPart`): nothing behind it, `h` capped at the lip, so the plateau
   stays open, and **`faceStamp` puts no automatic stone where a placed piece already covers the cut**
-  (`cliffseat.covers`). **Ground > Plateau / Indent DRAG A RECTANGLE** whose inside goes to one level a
-  `cliffseat.rise(row, scale)` above or below the ground it started on — the piece's own `top`, FLOORED to
-  `HEIGHT_STEP`, so `over` is zero by construction — with `CLIFF_FACE` round the rim; the panel's six chips are the
-  only heights on offer and `Editor.cliffScale` is also the scale a stamped cliff piece takes. The rim lands half a
-  cell inside the drag, on the lattice's own line. `worlds/test_cliffseat.world` is the bench, written once by its
-  test if missing.
+  (`cliffseat.covers`). **Ground > Plateau DRAGS A RECTANGLE** whose inside goes to one level `Editor.cliffHeight`
+  over the ground it started on, with `CLIFF_FACE` round the rim; the rim lands half a cell inside the drag, on the
+  lattice's own line. **Raise cliff / Lower cliff are the free-hand pair** (`cliffseat.paint`) — a swept box at the
+  brush's own width, one target height pinned for the whole stroke. The height is a free number now
+  (3/6/12 m chips, or the stepper's 3..24), NOT a cliff piece's `top`: `cliffseat.rise` measures a piece and only its
+  own test reads it, and `Editor.cliffScale` is only the scale a stamped cliff piece takes.
+  `worlds/test_cliffseat.world` is the bench, written once by its test if missing.
 - **THE SHIPPED MAP'S NORTH-WEST BASIN LIP IS ONE OF THESE** — terraced to two tiers, a **13.25 m** face past
   `FALL_DEATH`. Walking off it kills.
 
@@ -1514,10 +1518,7 @@ representable; that needs a different representation, not another brush.
   at `CAVE_EDGE`, saddles decided the way `cliffCut` does. The open polygon is floor and ceiling, the chords are
   walls, and the ROCK polygon is what is left of the hill — same crossing points, so a mouth cannot crack against
   the hill it opens through.
-- **A MOUTH IS WHERE THE CEILING COMES UP THROUGH THE HILL** — no flag: `roof >= groundAt` and the cell drops its
-  ceiling, the terrain over it is cut to the contour, and `mouthBand` closes the cut edge. Which is why the
-  Entrance tool needs no hand-solved ramp: carve out toward open ground and the hill opens itself where it gets
-  too thin to roof one.
+- **A MOUTH USES THE ACTUAL ROOF/HILL INTERSECTION** (`CaveCell.roofed`) — terrain and ceiling share its clipped boundary; whole-cell roof removal and vertical mouth bands produce fins. Cliff faces and backing must also subtract cave air.
 - **THE CARVE FLOOR IS A FIELD, NOT A NUMBER** (`Brush.dx/dz`) — a stroke stamps a disc many times over, and with
   one floor per stamp the overlaps walked the floor down under themselves and the mouth ended a metre below the
   ground it started on. A slope written per CELL is the same value however many stamps cover it.
@@ -1546,18 +1547,17 @@ representable; that needs a different representation, not another brush.
   ONE gate every body answers, so a foe, a folk or a chest standing on the land over an excavated cell is left out
   with its shadow the way `Env.floats` left out a prop. A tile's cliff plates get a second model with the ones over
   a chamber dropped (`cutFaces`/`cutFaceCut`); a tile whose every plate is over one draws none.
+- **CAVE LIGHTING INCLUDES THE WALL RELIEF** — the GPU roof texture uses canonical ghost heights and lattice-centred UVs; shelter extends one cave cell into rock, or recessed walls leak triangular patches of sunlight.
+- **CAVE ROOFS ARE SEPARATE MESHES** — Inside hides ceilings as well as overlying terrain; floor and wall meshes stay visible.
+- **WATERFALL IS A CLIFF STYLE, NOT A DIFFERENT CUT** (`CLIFF_FALL`, `wf.cliffFace`) — persistence and ground sampling retain the cliff topology; its transparent curtain draws after opaque bodies, never blocks a cave mouth or casts an opaque shadow.
 - **THE EDITOR WORKS ON ONE LEVEL AT A TIME** (`Editor.under`, the bar's Surface/Underground button, `U`) —
   Underground takes the hill off every chamber (`Env.cutaway`), the cursor lands on the chamber floor through the
   hole (`caves.pickUnder`: the land where it still stands, the floor where it does not, rock met from inside a
   chamber is a wall), what is placed there is marked `under`, gizmos project onto the body's OWN level, picking
   and hover answer only what the level shows (`onLevel`), and a surface prop standing over an open cell is not
   drawn (`Prop.under`, `Env.floats`). The Caves layer turns the level on and nothing turns it off but him.
-- **THE CAVES LAYER'S CURSOR RIDES THE LAND, CUT AWAY OR NOT** — the brush follows the hill a chamber goes under
-  and does not fall into the hole it has just opened. Solved on a floor PLANE it aimed metres past the mouse
-  (the plane sat 3–11 m under the hill), and riding the drawn surface it jumped the moment a stroke cut the hill.
-- **UNDERGROUND, THE GROUND LAYER SHAPES THE CHAMBER FLOOR** (`caves.sculpt`) — Raise/Lower/Smooth/Flat only
-  (`brushShown` hides the rest: soil, liquid and cliff are the land's fields), a point is never lifted to within
-  `HEAD_MIN` of its own roof, smooth reads open neighbours only, and Carve over a shaped floor SETS it again.
+- **A TERRAIN GESTURE KEEPS ITS INITIAL HIT PLANE** — caves and cliff paint pin the plane through the first visible hit until release; tracing freshly edited terrain moves the brush away from the mouse.
+- **UNDERGROUND, GROUND SHAPES THE CHAMBER FLOOR** — Raise/Lower/Smooth/Flat and the roof pair only; Carve preserves an existing floor and can expand the roof. An empty coverage corner must extrapolate neighbouring heights, never interpolate toward the datum.
 - **UNDERGROUND, THE GROUND LAYER ALSO WORKS THE CEILING** (`caves.sculptRoof`, Roof up / Roof down) — headroom
   was set at carve time and only a re-carve could change it. The roof never comes down inside `HEAD_MIN` of its
   own floor and never goes up inside `ROOF_MIN` of the hill, so neither stroke can shut a passage or open a
@@ -1569,8 +1569,7 @@ representable; that needs a different representation, not another brush.
   to the sky, on the floor and roof rings AND on the words, because the point is the box under a hill that is
   still standing in front of it. An Entrance drag draws its own grade, rings where the hill opens, and goes red
   across any stretch meeting a chamber more than `STEP_UP` over its floor: the failure is fixed by starting FURTHER OUT.
-- **A CARVE SOLVES ITS OWN FLOOR** (`Editor.autoFitFloor`, on by default) — asked ONCE at the click, because the
-  floor is pinned for the whole stroke, and only where the hill there cannot roof the stepper's number.
+- **A CARVE SOLVES ITS FLOOR ONCE AT THE CLICK** — continue an existing chamber's floor, otherwise fit under the hill if necessary; the floor stays pinned for the complete swept stroke.
 - **THE LEVEL AT THE DESTINATION DECIDES `under`, NEVER THE SOURCE'S FLAG** — paste, duplicate and move all
   re-derive it through `underAt`. Carried over, a surface prop duplicated across a chamber lands on the hill and
   `Env.floats` does not draw it. The right-click menu flips one in place, and refuses Underground where nothing is hollow.
@@ -2181,8 +2180,8 @@ Keyboard+mouse or gamepad; the pad follows **Elden Ring's default layout** (ER i
   turns any mid-dark value pale on a large sunward face. The bigger the face, the darker it must start.
 - **TWO STONE MATERIALS** — `.stone` is rubble masonry, matte (walls/towers/rubble); `.marble` is dressed stone,
   veined, with the only real gloss besides steel and water, kept LOW (columns/arches/statues).
-- **`gfx.Mat` IS APPEND-ONLY** — the shader branches on the raw ordinal 1..16 and comptime asserts pin the TAIL
-  (water 9 through gilt 16); pinning `water == 9` is what catches an insert below it. **The VERTEX-ANIMATED ids
+- **`gfx.Mat` IS APPEND-ONLY** — the shader branches on the raw ordinal 1..18 and comptime asserts pin the TAIL
+  (water 9 through waterfall 18); pinning `water == 9` is what catches an insert below it. **The VERTEX-ANIMATED ids
   are bounded at BOTH ends** (`> 11.5 && < 13.5`, fog's `> 14.5 && < 15.5`): an open-ended test claims every id
   added after it, which is how `bark` went in and every trunk started climbing like an ember.
 - **THE FLAME MATERIAL IS THE ONE THING DRAWN SEMI-TRANSPARENT BY ITS MATERIAL** (the faded hero under an aim is

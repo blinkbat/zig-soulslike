@@ -72,13 +72,18 @@ liquid brushes, prop and unit placement (foes and NPCs alike), zones, clearings,
 undo/redo, cut/copy/paste, grid snap, object viewer, sound jukebox, FX bench, bake-time sound filter rack. F6
 drops into a walled arena against the one creature under the cursor and hands your map back when you leave.
 
-Carving one shows its own answer before the stroke: the chamber's floor and roof rings drawn under the standing
-hill, teal where the rock can roof it and red where it would break the sky; an entrance drag draws the grade it
-will lay, marks where the hill opens and turns red where it would meet the chamber too high to step down from.
-After every stroke the panel says whether the cave is walkable to the outside or SEALED, and any placement whose
-chamber has been filled in draws in the removal colour. A carve solves its own floor where the panel's cannot
-roof it, a creature too big for the passage is refused with both measurements, I stands the eye on the chamber
-floor looking down the passage, and a post at the camera target shows where F5 will drop you.
+Ground starts with a compact **Cliffs** palette: click or drag **Raise cliff / Lower cliff** at a chosen
+height, or drag a **Ramp** from foot to top. **Waterfall** paints flowing water along an existing cliff edge;
+hold Shift to remove the water. A cave entrance can remain open behind the curtain.
+
+**Caves** offers Tunnel and Chamber presets, connected drag strokes, automatic floor fitting, and a graded
+Entrance tool. **Inside / Surface** hides or shows both the ceiling and the hill above; the adjacent edit
+button opens Ground on that level. Carving preserves a sculpted floor. Fill restores rock; I looks inside,
+F5 playtests, and undo restores a gesture. Manual floor settings live behind their own button.
+
+The cave representation supports one underground floor/ceiling interval at each horizontal position, not
+independently stacked tunnels. [Research and design decisions](docs/TERRAIN_EDITOR_RESEARCH.md) compare SC2,
+Fortnite, Unity, Roblox, Skyrim, Deep Rock Galactic, and volumetric alternatives.
 
 **Save.** Three slots, written only by sitting at a bonfire, each with the thumbnail taken there. Text files in
 the map's own `key: value` grammar.

@@ -72,9 +72,9 @@ const Lerp = struct {
         return mathx.lerpF(a, b, self.tz);
     }
 
-    fn hgt(self: Lerp, field: []const u8, base: f32) f32 {
-        const a = mathx.lerpF(wf.caveH(field[self.i00]), wf.caveH(field[self.i10]), self.tx);
-        const b = mathx.lerpF(wf.caveH(field[self.i01]), wf.caveH(field[self.i11]), self.tx);
+    fn hgt(self: Lerp, f: Fields, field: []const u8, base: f32) f32 {
+        const a = mathx.lerpF(ghostHeight(f, field, self.i00), ghostHeight(f, field, self.i10), self.tx);
+        const b = mathx.lerpF(ghostHeight(f, field, self.i01), ghostHeight(f, field, self.i11), self.tx);
         return base + mathx.lerpF(a, b, self.tz);
     }
 };
@@ -122,11 +122,28 @@ pub fn openAt(f: Fields, px: f32, pz: f32) f32 {
 pub fn sampleAt(f: Fields, px: f32, pz: f32) Sample {
     if (!f.any) return .{ .open = 0, .floor = 0, .roof = 0 };
     const l = Lerp.of(f.half, px, pz);
-    return .{ .open = l.cov(f.cov), .floor = l.hgt(f.floor, f.base), .roof = l.hgt(f.roof, f.base) };
+    return .{ .open = l.cov(f.cov), .floor = l.hgt(f, f.floor, f.base), .roof = l.hgt(f, f.roof, f.base) };
+}
+
+fn ghostHeight(f: Fields, field: []const u8, i: usize) f32 {
+    if (f.cov[i] != 0) return wf.caveH(field[i]);
+    const ix = i % N;
+    const iz = i / N;
+    var best = i;
+    for (iz -| 1..@min(iz + 2, N)) |z| {
+        for (ix -| 1..@min(ix + 2, N)) |x| {
+            const j = z * N + x;
+            if (f.cov[j] > f.cov[best]) best = j;
+        }
+    }
+    return wf.caveH(field[best]);
 }
 
 /// THE FLOOR UNDER A BODY, decided by the CEILING: feet under a chamber's roof are in the chamber, and there is no walking up onto the hill through it. Feet at or over the roof are out on the land.
 pub fn supportAt(f: Fields, land: f32, px: f32, pz: f32, fromY: f32) Support {
+    // Rock is the common answer under a body as much as along a sight line (`spaceAt`), and coverage alone settles it:
+    // `ghostHeight`'s ghost fill scans a 3x3 per corner where a point is unpainted, and this runs per body per frame.
+    if (openAt(f, px, pz) < EDGE_F) return .{ .y = land, .surface = .land };
     const s = sampleAt(f, px, pz);
     if (!s.hollow() or fromY >= s.roof) return .{ .y = land, .surface = .land };
     return .{ .y = s.floor, .surface = .cave };
@@ -152,6 +169,9 @@ pub const SHELTER_CONTOUR: f32 = 2.0;
 /// 1 under solid roof, 0 out under the sky. **THE FRAGMENT SHADER RUNS THIS SAME ARITHMETIC** (`shelterAt`
 /// in `shaders.zig`, off a field `env.cutShelter` has already multiplied by the rock over the ceiling), and
 /// the two cannot drift apart: this one decides which lights reach a fragment that one shades.
+/// **ONE DELIBERATE DIFFERENCE:** `env.cutShelterAt` dilates the coverage over a 3×3 before baking, because the
+/// texture is BILINEAR and a field going hard to 0 outside the contour steps at every mouth. That is filtering,
+/// not the predicate — a body one cell outside a chamber is out under the sky and this must keep saying so.
 pub fn shelterAt(f: Fields, land: f32, px: f32, py: f32, pz: f32) f32 {
     const s = sampleAt(f, px, pz);
     if (!s.hollow()) return 0;
@@ -168,6 +188,10 @@ pub const Brush = struct {
     r: f32,
     floor: f32,
     roof: f32,
+    from: ?[2]f32 = null,
+    preserve: bool = false,
+    vault: bool = false,
+    floorMax: f32 = 1e9,
     /// The floor's SLOPE, in metres per metre. A graded stroke writes the same height into a cell however many stamps cover it, so overlapping stamps cannot walk the floor down under themselves.
     dx: f32 = 0,
     dz: f32 = 0,
@@ -175,7 +199,7 @@ pub const Brush = struct {
     floorMin: f32 = -1e9,
 
     fn floorAt(self: Brush, x: f32, z: f32) f32 {
-        return mathx.maxF(self.floor + self.dx * (x - self.px) + self.dz * (z - self.pz), self.floorMin);
+        return mathx.clampF(self.floor + self.dx * (x - self.px) + self.dz * (z - self.pz), self.floorMin, self.floorMax);
     }
 };
 
@@ -193,18 +217,29 @@ fn brushR(half: f32, r: f32) f32 {
 
 fn strokeSpan(g: Grids, b: Brush, out: *[4]usize) ?[4]usize {
     const step = cellStep(g.half);
-    const r = brushR(g.half, b.r);
+    const r = brushR(g.half, b.r) + step;
     out.* = wf.EMPTY_SPAN;
-    const xs = wf.pointSpan(b.px, r, g.half, step, N) orelse return null;
-    const zs = wf.pointSpan(b.pz, r, g.half, step, N) orelse return null;
-    out.* = .{ xs[0], zs[0], xs[1], zs[1] };
-    return .{ xs[0], zs[0], xs[1], zs[1] };
+    const sp = wf.sweptSpan(b.from orelse .{ b.px, b.pz }, .{ b.px, b.pz }, r, g.half, step, N) orelse return null;
+    out.* = sp;
+    return sp;
 }
 
 /// The brush's own width is the PASSAGE width: full coverage to one cell short of the rim, and only that last cell feathers.
 fn falloff(step: f32, r: f32, d: f32) f32 {
     const feather = @min(step, r * 0.5);
-    return mathx.smoothstep(r, r - feather, d);
+    return mathx.smoothstep(r + feather * 0.5, r - feather * 0.5, d);
+}
+
+fn brushDistance(b: Brush, p: [2]f32) f32 {
+    return mathx.segNearXZ(p, b.from orelse .{ b.px, b.pz }, .{ b.px, b.pz }).d;
+}
+
+/// A SCULPT'S FEATHER IS NOT A CARVE'S — a carve eases over its rim alone so a passage keeps its walls, a sculpt eases
+/// over most of the disc (`Map.sculptTo`'s shape). The share is here rather than at the floor and the roof, which had it twice.
+const SCULPT_FEATHER: f32 = 0.15;
+
+fn sculptFall(r: f32, d: f32) f32 {
+    return mathx.smoothstep(r, r * SCULPT_FEATHER, d);
 }
 
 pub fn carve(g: Grids, b: Brush, out: *[4]usize) bool {
@@ -218,10 +253,7 @@ pub fn carve(g: Grids, b: Brush, out: *[4]usize) bool {
         var ix = sp[0];
         while (ix <= sp[2]) : (ix += 1) {
             const p = pointAt(g.half, ix, iz);
-            const dx = p[0] - b.px;
-            const dz = p[1] - b.pz;
-            const d = @sqrt(dx * dx + dz * dz);
-            if (d > r) continue;
+            const d = brushDistance(b, p);
             const fall = falloff(step, r, d);
             if (fall <= 0) continue;
             const i = iz * N + ix;
@@ -230,10 +262,11 @@ pub fn carve(g: Grids, b: Brush, out: *[4]usize) bool {
             // A cell the stroke OPENS takes the stroke's heights outright; one already open blends, so a passage joining a chamber does not yank its floor.
             const fresh = was < EDGE;
             const want = b.floorAt(p[0], p[1]);
+            const arch = if (b.vault) @min(@max(head - HEAD_MIN, 0), 0.8) * mathx.clampF(d * d / (r * r), 0, 1) else 0;
             const wantF = wf.caveByte(mathx.clampF(want, wf.CAVE_H_MIN, wf.CAVE_H_MAX));
-            const wantR = wf.caveByte(mathx.clampF(want + head, wf.CAVE_H_MIN, wf.CAVE_H_MAX));
-            const nf = if (fresh) wantF else wf.caveByte(mathx.lerpF(wf.caveH(g.floor[i]), want, fall));
-            const nr = if (fresh) wantR else wf.caveByte(mathx.lerpF(wf.caveH(g.roof[i]), want + head, fall));
+            const wantR = wf.caveByte(mathx.clampF(want + head - arch, wf.CAVE_H_MIN, wf.CAVE_H_MAX));
+            const nf = if (fresh) wantF else if (b.preserve) g.floor[i] else wf.caveByte(mathx.lerpF(wf.caveH(g.floor[i]), want, fall));
+            const nr = if (fresh) wantR else if (b.preserve) @max(g.roof[i], wantR) else wf.caveByte(mathx.lerpF(wf.caveH(g.roof[i]), want + head - arch, fall));
             if (cov != was or nf != g.floor[i] or nr != g.roof[i]) changed = true;
             g.cov[i] = cov;
             g.floor[i] = nf;
@@ -253,10 +286,7 @@ pub fn fill(g: Grids, b: Brush, out: *[4]usize) bool {
         var ix = sp[0];
         while (ix <= sp[2]) : (ix += 1) {
             const p = pointAt(g.half, ix, iz);
-            const dx = p[0] - b.px;
-            const dz = p[1] - b.pz;
-            const d = @sqrt(dx * dx + dz * dz);
-            if (d > r) continue;
+            const d = brushDistance(b, p);
             const fall = falloff(step, r, d);
             if (fall <= 0) continue;
             const i = iz * N + ix;
@@ -270,7 +300,6 @@ pub fn fill(g: Grids, b: Brush, out: *[4]usize) bool {
     return changed;
 }
 
-
 pub fn fieldsOf(m: *const wf.Map) Fields {
     return .{ .cov = &m.caveCov, .floor = &m.caveFloor, .roof = &m.caveRoof, .half = m.half, .any = m.anyCave() };
 }
@@ -279,6 +308,10 @@ pub fn gridsOf(m: *wf.Map) Grids {
     return .{ .cov = &m.caveCov, .floor = &m.caveFloor, .roof = &m.caveRoof, .half = m.half };
 }
 
+/// A brush's own grids read back as a sample field, at the DATUM: a sculpt is mid-stroke, so `anyCave` is not asked.
+pub fn fieldsOfGrids(g: Grids) Fields {
+    return .{ .cov = g.cov, .floor = g.floor, .roof = g.roof, .half = g.half, .any = true };
+}
 
 pub const MAX_PTS: usize = 8;
 
@@ -404,11 +437,11 @@ pub fn covAt(f: Fields, ix: usize, iz: usize) f32 {
 }
 
 pub fn floorAtPoint(f: Fields, ix: usize, iz: usize) f32 {
-    return f.base + wf.caveH(f.floor[iz * N + ix]);
+    return f.base + ghostHeight(f, f.floor, iz * N + ix);
 }
 
 pub fn roofAtPoint(f: Fields, ix: usize, iz: usize) f32 {
-    return f.base + wf.caveH(f.roof[iz * N + ix]);
+    return f.base + ghostHeight(f, f.roof, iz * N + ix);
 }
 
 pub fn bilerp(v: [4]f32, u: f32, w: f32) f32 {
@@ -417,7 +450,6 @@ pub fn bilerp(v: [4]f32, u: f32, w: f32) f32 {
     const b = mathx.lerpF(v[1], v[2], u);
     return mathx.lerpF(a, b, w);
 }
-
 
 /// Which way the air THINS. A wall underground is a coverage gradient, not a terrain one, so a body slides along the rock instead of along the hill over its head.
 pub fn covGrad(f: Fields, px: f32, pz: f32) [2]f32 {
@@ -455,7 +487,8 @@ pub fn fitFloor(land: f32, head: f32) f32 {
     return mathx.clampF(want, wf.CAVE_H_MIN, wf.CAVE_H_MAX);
 }
 
-/// A ceiling this far under the land still counts as up through it; `env.MOUTH_EPS` is the mesher's own copy of the slack.
+/// A ceiling this far under the land still counts as up through it. The MESHER does not read it: `env.CaveCell.hasOpening`
+/// tests the roof against the hill at the shape's own corners, so a mouth is cut where the surfaces actually cross.
 pub const MOUTH_SLACK: f32 = 0.02;
 
 /// FOUR-CONNECTED, which is what a body walking a passage is: `--fix-caves`'s components and the editor's walk-in both step this way.
@@ -611,7 +644,7 @@ pub fn sculpt(g: Grids, px: f32, pz: f32, radius: f32, mode: wf.Sculpt, amount: 
             const dz = p[1] - pz;
             const d = @sqrt(dx * dx + dz * dz);
             if (d > r) continue;
-            const fall = mathx.smoothstep(r, r * 0.15, d);
+            const fall = sculptFall(r, d);
             const cur = wf.caveH(g.floor[i]);
             const want = switch (mode) {
                 .raise => cur + amount * fall,
@@ -669,7 +702,7 @@ pub fn sculptRoof(g: Grids, m: *const wf.Map, px: f32, pz: f32, radius: f32, up:
             const dz = p[1] - pz;
             const d = @sqrt(dx * dx + dz * dz);
             if (d > r) continue;
-            const fall = mathx.smoothstep(r, r * 0.15, d);
+            const fall = sculptFall(r, d);
             const cur = wf.caveH(g.roof[i]);
             const hi = mathx.maxF(m.heightAt(p[0], p[1]) - ROOF_MIN, cur);
             const lo = mathx.minF(wf.caveH(g.floor[i]) + HEAD_MIN, hi);
@@ -686,7 +719,7 @@ pub fn sculptRoof(g: Grids, m: *const wf.Map, px: f32, pz: f32, radius: f32, up:
 /// Flat levels toward the floor under the brush's centre; over rock, toward the mean floor of the open points it covers.
 fn flattenTarget(g: Grids, px: f32, pz: f32, r: f32, sp: [4]usize) f32 {
     const l = Lerp.of(g.half, px, pz);
-    if (l.cov(g.cov) >= EDGE_F) return l.hgt(g.floor, 0);
+    if (l.cov(g.cov) >= EDGE_F) return l.hgt(fieldsOfGrids(g), g.floor, 0);
     var sum: f32 = 0;
     var n: f32 = 0;
     var iz = sp[1];
@@ -706,8 +739,47 @@ fn flattenTarget(g: Grids, px: f32, pz: f32, r: f32, sp: [4]usize) f32 {
     return if (n > 0) sum / n else 0;
 }
 
+test "terrain editor: fast cave strokes stay connected, keep their width and preserve a sculpted floor" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD);
+    defer std.testing.allocator.destroy(m);
+    var span: [4]usize = undefined;
+    const brush = Brush{ .px = 25, .pz = 18, .from = .{ -25, -18 }, .r = 3, .floor = -5, .roof = -1.5, .vault = true, .preserve = true };
+    try std.testing.expect(carve(gridsOf(m), brush, &span));
+    const f = fieldsOf(m);
+    for (0..101) |i| {
+        const t = @as(f32, @floatFromInt(i)) / 100;
+        const x = -25 + 50 * t;
+        const z = -18 + 36 * t;
+        const s = sampleAt(f, x, z);
+        try std.testing.expect(s.hollow());
+        try std.testing.expectApproxEqAbs(@as(f32, -5), s.floor, 0.001);
+        try std.testing.expect(s.headroom() >= HEAD_MIN);
+    }
+    _ = sculpt(gridsOf(m), 0, 0, 2, .lower, 0.5, &span);
+    const before = sampleAt(fieldsOf(m), 0, 0).floor;
+    _ = carve(gridsOf(m), brush, &span);
+    try std.testing.expectApproxEqAbs(before, sampleAt(fieldsOf(m), 0, 0).floor, 0.001);
+    var erase = brush;
+    erase.r = 4;
+    try std.testing.expect(fill(gridsOf(m), erase, &span));
+    try std.testing.expect(!sampleAt(fieldsOf(m), 0, 0).hollow());
+}
 
-/// THE BENCH: a hill with a chamber under it, a bent passage out to a mouth on the flat, and a low stretch on the way. Authored here so the editor, the tests and the shot harness all stand on the same map.
+test "terrain editor: unpainted cave corners do not pull a deep chamber back to the datum" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD);
+    defer std.testing.allocator.destroy(m);
+    var span: [4]usize = undefined;
+    _ = carve(gridsOf(m), .{ .px = 0, .pz = 0, .r = 6, .floor = -10, .roof = -6 }, &span);
+    const f = fieldsOf(m);
+    for (0..360) |i| {
+        const a = @as(f32, @floatFromInt(i)) * std.math.pi / 180;
+        const s = sampleAt(f, mathx.cosf(a) * 5.8, mathx.sinf(a) * 5.8);
+        if (!s.hollow()) continue;
+        try std.testing.expectApproxEqAbs(@as(f32, -10), s.floor, 0.001);
+        try std.testing.expectApproxEqAbs(@as(f32, -6), s.roof, 0.001);
+    }
+}
+
 pub const bench = struct {
     pub const FLOOR: f32 = -3.0;
     pub const HEAD: f32 = 3.0;
@@ -1225,3 +1297,4 @@ test "fit lays the floor ROOF_MIN of rock under the hill, on the height step" {
     const head: f32 = 2.8;
     try std.testing.expect(land - (fitFloor(land, head) + head) >= ROOF_MIN);
 }
+

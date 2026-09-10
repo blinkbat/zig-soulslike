@@ -6,6 +6,7 @@ const wf = @import("../world/worldfmt.zig");
 const item = @import("item.zig");
 // For their `REACH` alone — the two other rings this one is sized against (see the comptime block).
 const chestmod = @import("chest.zig");
+const envmod = @import("../world/env.zig");
 const soulsmod = @import("souls.zig");
 
 const v3 = mathx.v3;
@@ -143,12 +144,7 @@ pub const Pickups = struct {
     }
 };
 
-pub const Site = struct {
-    pos: rl.Vector3,
-    yaw: f32,
-    scale: f32,
-    op: u16,
-};
+pub const Site = envmod.Site;
 
 comptime {
     std.debug.assert(REACH > chestmod.REACH);

@@ -482,9 +482,11 @@ fn runGrow(alloc: std.mem.Allocator, path: []const u8, want: f32, write: bool) !
     };
     for (grids) |g| wf.regrid(u8, g.dst, g.n, half, g.src, g.n, was, g.kind, g.smooth);
     wf.regrid(wf.Hgt, &m.height, wf.HEIGHT_N, half, &src.height, wf.HEIGHT_N, was, .point, true);
-        // The rim is CARRIED OUTWARD, so the margin repeats whatever the old edge held. Water and cave out there would be a moat and a tunnel nobody authored.
+    // NEAREST, never smoothed: a level is the body's, and a blend between two bodies is a sheet neither stands at.
+    wf.regrid(wf.Hgt, &m.waterBase, wf.WATER_N, half, &src.waterBase, wf.WATER_N, was, .cell, false);
+    // The rim is CARRIED OUTWARD, so the margin repeats whatever the old edge held. Water and cave out there would be a moat and a tunnel nobody authored.
     var wetted: usize = 0;
-    const wcell = 2 * half / @as(f32, @floatFromInt(wf.WATER_N));
+    const wcell = wf.cellStepFor(half, wf.WATER_N);
     for (0..wf.WATER_N) |iz| {
         for (0..wf.WATER_N) |ix| {
             const p = [2]f32{ wf.cellCentre(half, wcell, ix), wf.cellCentre(half, wcell, iz) };
@@ -492,6 +494,7 @@ fn runGrow(alloc: std.mem.Allocator, path: []const u8, want: f32, write: bool) !
             const i = iz * wf.WATER_N + ix;
             if (m.water[i] != 0) wetted += 1;
             m.water[i] = 0;
+            m.waterBase[i] = wf.HEIGHT_ZERO;
         }
     }
     var dug: usize = 0;
@@ -524,8 +527,8 @@ fn runGrow(alloc: std.mem.Allocator, path: []const u8, want: f32, write: bool) !
     std.debug.print(
         "  cell {d:.3} -> {d:.3} m, cave cell {d:.3} -> {d:.3} m; {d} taps over the old extent, worst height move {d:.3} m at {d:.1},{d:.1}\n",
         .{
-            2 * was / @as(f32, @floatFromInt(wf.HEIGHT_N - 1)),
-            2 * half / @as(f32, @floatFromInt(wf.HEIGHT_N - 1)),
+            wf.heightStepFor(was),
+            wf.heightStepFor(half),
             caves.cellStep(was),
             caves.cellStep(half),
             taps,

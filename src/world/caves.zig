@@ -867,7 +867,7 @@ pub const bench = struct {
 
 test "the cave lattice halves the terrain's spacing, and the ring pays for it in megabytes" {
     const half = wf.DEFAULT_HALF;
-    const land = 2 * half / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+    const land = wf.heightStepFor(half);
     const cave = cellStep(half);
     std.debug.print(
         "\ncave lattice: {d}^2 cells at {d:.3} m (terrain {d}^2 at {d:.3} m)\n",

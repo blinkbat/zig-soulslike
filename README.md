@@ -94,7 +94,7 @@ presets.
 
 ## Performance
 
-**Roughly 17,000 static props and 1,800 colliders; a frame draws about 975 in the city and 1,250 in the wood** —
+**Roughly 17,000 static props and 8,000 colliders; a frame draws about 975 in the city and 1,250 in the wood** —
 read off Debug > Stats in `shots/91_stats_city.png` and `92_stats_wood.png`. Nothing pins them: `env`'s
 "replaying the SHIPPED map produces a stable world" test asks only that a replay match itself and stay inside
 `MAX_PROPS` / `MAX_SOLIDS`, so the figures drift with every pass over the map.

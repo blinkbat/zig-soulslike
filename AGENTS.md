@@ -2178,7 +2178,8 @@ Keyboard+mouse or gamepad; the pad follows **Elden Ring's default layout** (ER i
   LIGHT** — a throat, a flame, an eye.
 - **A BIG SMOOTH MASS NEEDS A NEARLY-BLACK ALBEDO — and FORM BREAKS.** The hot key (×1.72) plus the gamma lift
   turns any mid-dark value pale on a large sunward face. The bigger the face, the darker it must start.
-- **TWO STONE MATERIALS** — `.stone` is rubble masonry, matte (walls/towers/rubble); `.marble` is dressed stone,
+- **THREE STONE MATERIALS** — `.stone` is rubble masonry, matte (walls/towers/rubble); `.rock` is the natural cut and
+  the cave shell, the same albedo TRIPLANAR off world position and with no gloss at all; `.marble` is dressed stone,
   veined, with the only real gloss besides steel and water, kept LOW (columns/arches/statues).
 - **`gfx.Mat` IS APPEND-ONLY** — the shader branches on the raw ordinal 1..18 and comptime asserts pin the TAIL
   (water 9 through waterfall 18); pinning `water == 9` is what catches an insert below it. **The VERTEX-ANIMATED ids

@@ -27,6 +27,12 @@ pub const HEIGHT_N: i32 = 400;
 /// Half the terrain's cell, sharing its lattice points.
 pub const CAVE_N: i32 = 2 * HEIGHT_N - 1;
 
+/// A CELL FIELD'S SPACING, the one the soil and water shader uniforms are fed — `2 * half` over `n`, no phantom
+/// column. The POINT lattices divide by `n - 1` (`worldfmt.heightStepFor`), and the two are one keystroke apart.
+pub fn fieldCell(half: f32, n: i32) f32 {
+    return 2.0 * half / @as(f32, @floatFromInt(n));
+}
+
 /// Re-exported from the shader, which is where the GLSL that indexes `liquidTone` is generated from it.
 pub const LIQUID_N: usize = glsl.LIQUID_N;
 
@@ -669,7 +675,7 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_waterOn, &on, .int);
         var h = half;
         rl.setShaderValue(self.shader, self.loc_waterHalf, &h, .float);
-        var cell = 2.0 * half / @as(f32, @floatFromInt(WATER_N));
+        var cell = fieldCell(half, WATER_N);
         rl.setShaderValue(self.shader, self.loc_waterCell, &cell, .float);
     }
 
@@ -724,7 +730,7 @@ pub const Scene = struct {
         rl.setShaderValue(self.shader, self.loc_soilOn, &painted, .int);
         var h = half;
         rl.setShaderValue(self.shader, self.loc_soilHalf, &h, .float);
-        var cell = 2.0 * half / @as(f32, @floatFromInt(SOIL_N));
+        var cell = fieldCell(half, SOIL_N);
         rl.setShaderValue(self.shader, self.loc_soilCell, &cell, .float);
     }
 

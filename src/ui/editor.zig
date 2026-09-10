@@ -524,12 +524,12 @@ comptime {
 fn brushShown(ed: *const Editor, i: usize) bool {
     // UNDERGROUND THE GROUND LAYER SHAPES THE CHAMBER, and only the sculpts have anything to shape: soil, liquid and cliff are the land's own fields. The two roof brushes are the mirror of that - there is no ceiling on the surface.
     if (ed.layer == .ground) {
-        if (ed.floorSculpting()) return i <= @intFromEnum(GroundBrush.roof_down);
         const b: GroundBrush = @enumFromInt(i);
+        if (ed.floorSculpting()) return shaping(b) or roofing(b);
         if (roofing(b)) return false;
         return switch (ed.groundTools) {
             .cliffs => b == .cliff or b == .indent or b == .ramp or b == .waterfall,
-            .sculpt => b == .raise or b == .lower or b == .smooth or b == .flat or b == .pool,
+            .sculpt => shaping(b) or b == .pool,
             .paint => i >= GROUND_SOIL_0,
             .all => true,
         };
@@ -571,7 +571,7 @@ fn brushRemoves(l: Layer, i: usize) bool {
 
 fn brushSectionFor(l: Layer, i: usize) ?[:0]const u8 {
     if (l != .ground) return null;
-    if (i == 0) return "shape";
+    if (i == @intFromEnum(GroundBrush.raise)) return "shape";
     if (i == @intFromEnum(GroundBrush.roof_up)) return "ceiling";
     if (i == GROUND_CLIFF_0) return "relief";
     if (i == GROUND_SOIL_0) return "surface";
@@ -662,6 +662,12 @@ fn groundLabel(b: GroundBrush, tag: [:0]const u8) [:0]const u8 {
 
 fn roofing(b: GroundBrush) bool {
     return b == .roof_up or b == .roof_down;
+}
+
+/// THE FOUR THAT MOVE A SURFACE — the chamber floor's underground, the land's on top. `pool` shapes the land only
+/// and the two roof brushes the ceiling only, so each names itself beside this rather than riding an ordinal range.
+fn shaping(b: GroundBrush) bool {
+    return b == .raise or b == .lower or b == .smooth or b == .flat;
 }
 
 fn cliffCaseOf(b: GroundBrush) ?u8 {
@@ -893,16 +899,8 @@ fn lootModalH(rows: i32) i32 {
 
 pub const Pending = enum { none, new, open, leave, quit };
 
-const Rect = struct {
-    x0: f32,
-    z0: f32,
-    x1: f32,
-    z1: f32,
-
-    fn holds(r: Rect, px: f32, pz: f32) bool {
-        return px >= r.x0 and px <= r.x1 and pz >= r.z0 and pz <= r.z1;
-    }
-};
+/// The same four world-XZ metres `cliffseat.terrace` takes, so a drag goes to it whole.
+const Rect = cliffseat.Rect;
 
 /// A numeric row is `ui.STEP_FURNITURE` of buttons and readout before it is anything else. Handed less it lays its minus button out to the LEFT of the x it was given.
 const STEP_MIN_W: i32 = ui.STEP_FURNITURE;
@@ -2416,7 +2414,7 @@ pub const Editor = struct {
                         },
                         .waterfall => {
                             const prev = self.strokeLast orelse g;
-                            var span: [4]usize = undefined;
+                            var span: [4]usize = wf.EMPTY_SPAN;
                             const remove = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
                             if (cliffseat.waterfall(m, .{ prev.x, prev.z }, .{ g.x, g.z }, self.radius, !remove, &span)) {
                                 env.sculptHeight(m, span);
@@ -2462,7 +2460,7 @@ pub const Editor = struct {
             } else if (self.painting and rl.isMouseButtonReleased(.left)) {
                 switch (@as(GroundBrush, @enumFromInt(self.brushIdx()))) {
                     .ramp => {
-                        var span: [4]usize = undefined;
+                        var span: [4]usize = wf.EMPTY_SPAN;
                         if (cliffseat.ramp(m, .{ self.dragFrom.x, self.dragFrom.z }, .{ self.dragTo.x, self.dragTo.z }, self.radius, &span)) {
                             env.sculptHeight(m, span);
                             self.heightStroke = true;
@@ -2640,7 +2638,7 @@ pub const Editor = struct {
         const base = wf.heightOf(wf.heightByte(m.heightAt(self.dragFrom.x, self.dragFrom.z)));
         const rise = self.cliffHeight;
         var span: [4]usize = wf.EMPTY_SPAN;
-        const rim = cliffseat.terrace(m, .{ .x0 = r.x0, .z0 = r.z0, .x1 = r.x1, .z1 = r.z1 }, base + rise, &span) orelse {
+        const rim = cliffseat.terrace(m, r, base + rise, &span) orelse {
             self.say("plateau: the rectangle runs off the lattice");
             return;
         };

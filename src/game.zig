@@ -951,9 +951,7 @@ test "EVERY FIELD ON `Game` IS ASSIGNED — `= .{}` never runs on an `alloc.crea
     var missing: usize = 0;
     inline for (@typeInfo(Game).@"struct".fields) |f| {
         if (f.default_value_ptr != null) defaulted += 1;
-        const plain = "g." ++ f.name ++ " =";
-        const indexed = "g." ++ f.name ++ "[";
-        var seated = std.mem.indexOf(u8, src, plain) != null or std.mem.indexOf(u8, src, indexed) != null;
+        var seated = worldfmt.assignsField(src, "g", f.name);
         for (SEATED_BY) |row| {
             if (std.mem.eql(u8, row.field, f.name)) seated = true;
         }
@@ -1949,7 +1947,7 @@ test "THE JUMP IS SIZED AGAINST THE TERRAIN IT EXISTS TO CROSS, not against a nu
     try std.testing.expect(heromod.JUMP_APEX > envmod.STEP_UP);
     try std.testing.expect(heromod.JUMP_APEX < 6.0 * worldfmt.HEIGHT_STEP);
     try std.testing.expect(heromod.SPRINT_SPEED * heromod.JUMP_AIR > heromod.ROLL_DIST);
-    const step = 2.0 * worldfmt.DEFAULT_HALF / @as(f32, @floatFromInt(worldfmt.HEIGHT_N - 1));
+    const step = worldfmt.heightStepFor(worldfmt.DEFAULT_HALF);
     std.debug.print("\n  jump reach {d:.2} m against the least cut {d:.2} m; melee reach refused over {d:.2} m\n", .{ heromod.JUMP_APEX + envmod.STEP_UP, worldfmt.cliffMinDrop(step), foemod.REACH_RISE });
     try std.testing.expect(heromod.JUMP_APEX + envmod.STEP_UP < worldfmt.cliffMinDrop(step));
     try std.testing.expect(foemod.REACH_RISE < worldfmt.cliffMinDrop(step));
@@ -2266,7 +2264,7 @@ test "THE ROLL OBEYS THE GROUND — a committed move may not take him up what a 
     e.* = .{ .ground = undefined, .models = undefined };
     e.heightAny = true;
     e.heightHalf = 100.0;
-    const pitch = 2 * e.heightHalf / @as(f32, @floatFromInt(worldfmt.HEIGHT_N - 1));
+    const pitch = e.lattice();
     for (0..worldfmt.HEIGHT_N) |zi| {
         for (0..worldfmt.HEIGHT_N) |xi| {
             const x = @as(f32, @floatFromInt(xi)) * pitch - e.heightHalf;

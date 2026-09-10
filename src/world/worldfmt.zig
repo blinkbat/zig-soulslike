@@ -1383,9 +1383,15 @@ pub fn cellCentre(half: f32, cell: f32, i: usize) f32 {
     return -half + (@as(f32, @floatFromInt(i)) + 0.5) * cell;
 }
 
+/// A CELL LATTICE'S SPACING — `2 * half` over `n`, because a cell grid has no phantom column to divide out.
+/// The point lattices divide by `n - 1` (`heightStepFor`, `caves.cellStep`); the two are one keystroke apart.
+pub fn cellStepFor(half: f32, n: usize) f32 {
+    return 2 * half / @as(f32, @floatFromInt(n));
+}
+
 pub fn cellAxis(half: f32, n: usize, w: f32) usize {
     if (n == 0 or !(half > 0)) return 0;
-    const cell = 2 * half / @as(f32, @floatFromInt(n));
+    const cell = cellStepFor(half, n);
     const hi: f32 = @floatFromInt(n - 1);
     return @min(@as(usize, @intFromFloat(mathx.clampF((w + half) / cell, 0, hi))), n - 1);
 }
@@ -1395,6 +1401,20 @@ pub const WATER_CELLS: usize = WATER_N * WATER_N;
 
 pub const HEIGHT_N: usize = @intCast(gfx.HEIGHT_N);
 pub const HEIGHT_CELLS: usize = HEIGHT_N * HEIGHT_N;
+
+/// THE TERRAIN LATTICE'S SPACING, and the ONE place the phantom column is divided out: `2 * half` over the CELLS
+/// between the points, never over the points. `Map.heightStep` and `Env.lattice` are this on their own half.
+pub fn heightStepFor(half: f32) f32 {
+    return 2 * half / @as(f32, @floatFromInt(HEIGHT_N - 1));
+}
+
+comptime {
+    // `gfx` is BELOW this file and cannot import it, so it carries its own cell-lattice divide (`fieldCell`, which
+    // feeds the soil and water shader uniforms). Pinned here because the two halves of one field must agree.
+    std.debug.assert(cellStepFor(DEFAULT_HALF, WATER_N) == gfx.fieldCell(DEFAULT_HALF, gfx.WATER_N));
+    std.debug.assert(cellStepFor(DEFAULT_HALF, SOIL_N) == gfx.fieldCell(DEFAULT_HALF, gfx.SOIL_N));
+    std.debug.assert(heightStepFor(DEFAULT_HALF) != cellStepFor(DEFAULT_HALF, HEIGHT_N));
+}
 pub const HEIGHT_STEP: f32 = 0.25;
 /// One terrain height. 16 bits at 0.25 m; the zero sits 1024 m up the range because a 1000 m map cannot descend more than tan 40° × 1000 m = 839 m walkably, and everything else is headroom.
 pub const Hgt = u16;
@@ -1426,12 +1446,13 @@ comptime {
 /// Coverage at or over this is excavated, so a cave wall lands BETWEEN lattice points instead of on a cell boundary.
 pub const CAVE_EDGE: u8 = 128;
 
-/// One case per height CELL, indexed by the cell's low corner. 3..255 are unclaimed, and a map that uses one is a LOAD ERROR on a build that does not know it.
+/// One case per height CELL, indexed by the cell's low corner. Past the last one the values are unclaimed, and a map that uses one is a LOAD ERROR on a build that does not know it.
 pub const CLIFF_NONE: u8 = 0;
 pub const CLIFF_FACE: u8 = 1;
 pub const CLIFF_STAIR: u8 = 2;
 pub const CLIFF_FALL: u8 = 3;
-pub const CLIFF_N: u16 = 4;
+/// DERIVED off the last case, because `readGrid` bounds every `cliff:` byte by it: a count bumped by hand is a count that lags the case it was added for, and the map that used it then loads on the BYTE.
+pub const CLIFF_N: u16 = CLIFF_FALL + 1;
 
 pub fn cliffFace(case: u8) bool {
     return case == CLIFF_FACE or case == CLIFF_FALL;
@@ -1609,7 +1630,7 @@ pub fn cliffLevels(field: []const Hgt, x0: usize, z0: usize, minDrop: f32, cut: 
 pub fn sampleHeight(field: []const Hgt, cliff: []const u8, half: f32, px: f32, pz: f32) f32 {
     std.debug.assert(field.len == HEIGHT_CELLS);
     const last: f32 = @floatFromInt(HEIGHT_N - 1);
-    const step = 2 * half / last;
+    const step = heightStepFor(half);
     const fx = mathx.clampF((px + half) / step, 0, last);
     const fz = mathx.clampF((pz + half) / step, 0, last);
     const x0: usize = @intFromFloat(@floor(fx));
@@ -1636,7 +1657,7 @@ pub fn sampleHeight(field: []const Hgt, cliff: []const u8, half: f32, px: f32, p
 }
 
 pub fn sampleGrad(field: []const Hgt, cliff: []const u8, half: f32, px: f32, pz: f32) [2]f32 {
-    const step = 2 * half / @as(f32, @floatFromInt(HEIGHT_N - 1));
+    const step = heightStepFor(half);
     const hx1 = sampleHeight(field, cliff, half, px + step, pz);
     const hx0 = sampleHeight(field, cliff, half, px - step, pz);
     const hz1 = sampleHeight(field, cliff, half, px, pz + step);
@@ -1748,6 +1769,7 @@ pub const Map = struct {
         self.nops = 0;
         self.nscats = 0;
         self.nzones = 0;
+        self.nlocations = 0;
         self.nclearings = 0;
         self.narenas = 0;
         self.nfoes = 0;
@@ -2275,9 +2297,8 @@ pub const Map = struct {
         return changed;
     }
 
-    /// The terrain lattice's spacing on THIS map: `2 * half` over the CELLS between the points, never over the points.
     pub fn heightStep(self: *const Map) f32 {
-        return 2 * self.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
+        return heightStepFor(self.half);
     }
 
     /// THE LATTICE SPAN A DISC BRUSH DIRTIES, and the one place a radius is widened to half a cell — under that a
@@ -3683,6 +3704,42 @@ pub fn readForTest(alloc: std.mem.Allocator, path: []const u8, cap: usize) ![]u8
         if (e == error.FileNotFound) return error.SkipZigTest;
         return e;
     };
+}
+
+/// Does `src` ASSIGN `<recv>.<field>` — the one predicate behind "EVERY FIELD ON `Game`/`Env` IS ASSIGNED", which
+/// both files spelled out for themselves. **AN INDEX IS ONLY A SEAT WHEN SOMETHING IS WRITTEN THROUGH IT**:
+/// `self.props[pi]` is a READ, and taking it for an assignment excuses the fill byte those tests exist to catch.
+/// A pointer handed out (`&self.field`) counts, because the callee is what seats it.
+pub fn assignsField(src: []const u8, comptime recv: []const u8, comptime field: []const u8) bool {
+    const head = recv ++ "." ++ field;
+    var at: usize = 0;
+    while (std.mem.indexOfPos(u8, src, at, head)) |i| {
+        at = i + head.len;
+        const amp = i > 0 and src[i - 1] == '&';
+        if (i > 0 and !amp and (std.ascii.isAlphanumeric(src[i - 1]) or src[i - 1] == '_')) continue;
+        // A longer field whose name merely starts with this one.
+        if (at < src.len and (std.ascii.isAlphanumeric(src[at]) or src[at] == '_')) continue;
+        if (amp) return true;
+        const rest = src[at..];
+        if (std.mem.startsWith(u8, rest, " =") and !std.mem.startsWith(u8, rest, " ==")) return true;
+        if (rest.len > 0 and rest[0] == '[') {
+            // Past the MATCHING bracket, not the first one: `e.sgrid_items[cursor[c]] =` nests an index inside the index.
+            var depth: usize = 0;
+            var j: usize = 0;
+            while (j < rest.len) : (j += 1) {
+                if (rest[j] == '[') depth += 1;
+                if (rest[j] == ']') {
+                    depth -= 1;
+                    if (depth == 0) break;
+                }
+            }
+            if (j >= rest.len) continue;
+            j += 1;
+            while (j < rest.len and rest[j] == ' ') j += 1;
+            if (j < rest.len and rest[j] == '=' and !(j + 1 < rest.len and rest[j + 1] == '=')) return true;
+        }
+    }
+    return false;
 }
 
 pub const EXT = ".world";

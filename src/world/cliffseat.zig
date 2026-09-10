@@ -39,7 +39,7 @@ pub const Ground = union(enum) {
     pub fn cell(self: Ground) f32 {
         return switch (self) {
             .map => |m| m.heightStep(),
-            .env => |e| 2 * e.heightHalf / @as(f32, @floatFromInt(wf.HEIGHT_N - 1)),
+            .env => |e| e.lattice(),
         };
     }
 };
@@ -344,7 +344,16 @@ pub fn rise(row: usize, scale: f32) f32 {
     return @floor(pieceOf(row).top * scale / wf.HEIGHT_STEP) * wf.HEIGHT_STEP;
 }
 
-pub const Rect = struct { x0: f32, z0: f32, x1: f32, z1: f32 };
+pub const Rect = struct {
+    x0: f32,
+    z0: f32,
+    x1: f32,
+    z1: f32,
+
+    pub fn holds(r: Rect, px: f32, pz: f32) bool {
+        return px >= r.x0 and px <= r.x1 and pz >= r.z0 and pz <= r.z1;
+    }
+};
 
 /// The span a stroke DIRTIES: one cell wider than the points it wrote, because a point moves the four cells around it.
 fn grown(sp: [4]usize) [4]usize {
@@ -548,7 +557,7 @@ pub fn terrace(m: *wf.Map, r: Rect, target: f32, span: *[4]usize) ?Rim {
             if (!inside) m.cliff[iz * wf.HEIGHT_N + ix] = wf.CLIFF_FACE;
         }
     }
-    span.* = .{ xs[0] - 1, zs[0] - 1, xs[1] + 1, zs[1] + 1 };
+    span.* = grown(.{ xs[0], zs[0], xs[1], zs[1] });
     const lo = m.heightPoint(xs[0], zs[0]);
     const hi = m.heightPoint(xs[1], zs[1]);
     return .{

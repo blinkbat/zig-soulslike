@@ -235,6 +235,15 @@ fn coastBand(e: wf.Edge) f32 {
     };
 }
 
+/// WHERE A PLACED INTERACTABLE STANDS, handed to whoever runs it: the prop's transform and the op that put it there.
+/// One type for chests and pickups both — they are the same placement, and two copies of it drifted apart field by field.
+pub const Site = struct {
+    pos: rl.Vector3,
+    yaw: f32,
+    scale: f32,
+    op: u16,
+};
+
 pub const Prop = struct {
     kind: Kind,
     pos: rl.Vector3,
@@ -489,6 +498,11 @@ pub const Env = struct {
     npickups: usize = 0,
     restItems: [restmod.CAP]u32 = undefined,
     nrests: usize = 0,
+    /// THE PROPS A CUT-FACE STATION CAN BE REFUSED BY — climbs, flights and seated cliff pieces, a couple of hundred
+    /// out of the tens of thousands a map places. Derived in `indexProps`, because asked per station a full rebuild of
+    /// the shipped map walked the whole prop list twice at each of ~4,700 stations over 729 tiles.
+    faceSkip: [MAX_PROPS]u32 = undefined,
+    nfaceSkip: usize = 0,
     scene: ?*gfx.Scene = null,
     props: [MAX_PROPS]Prop = undefined,
     nprops: usize = 0,
@@ -620,6 +634,7 @@ pub const Env = struct {
         self.nchests = 0;
         self.npickups = 0;
         self.nrests = 0;
+        self.nfaceSkip = 0;
         self.stx = .{};
         self.flx = .{};
         self.stat_draws = 0;
@@ -639,6 +654,14 @@ pub const Env = struct {
         self.shellBuilt = [_]bool{false} ** NTILES;
         self.roofBuilt = [_]bool{false} ** NTILES;
         self.waterfallBuilt = [_]bool{false} ** NTILES;
+        // `replay` asks `caveStale` BEFORE `adoptCave` writes these, and on a map with no elevation `heightStale` is
+        // false so the `or` does not short-circuit past it — an unassigned `caveAny` is a bool read out of malloc.
+        self.caveCovSrc = [_]u8{0} ** wf.CAVE_CELLS;
+        self.caveFloorSrc = [_]u8{wf.CAVE_H_ZERO} ** wf.CAVE_CELLS;
+        self.caveRoofSrc = [_]u8{wf.CAVE_H_ZERO} ** wf.CAVE_CELLS;
+        self.caveShelterSrc = [_]u8{0} ** wf.CAVE_CELLS;
+        self.caveHalf = wf.DEFAULT_HALF;
+        self.caveAny = false;
         self.caveRoofShade = [_]u8{wf.CAVE_H_ZERO} ** wf.CAVE_CELLS;
         self.cutawayBuilt = [_]bool{false} ** NTILES;
         self.cutFaceBuilt = [_]bool{false} ** NTILES;
@@ -736,13 +759,16 @@ pub const Env = struct {
 
     fn cutShelterAt(self: *Env, ix: usize, iz: usize) void {
         const i = iz * caves.N + ix;
-        self.caveRoofShade[i] = wf.caveByte(caves.roofAtPoint(self.caveFields(), ix, iz) - GROUND_Y);
         var cov = self.caveCovSrc[i];
         if (cov < 255) {
             for (iz -| 1..@min(iz + 2, caves.N)) |z| {
                 for (ix -| 1..@min(ix + 2, caves.N)) |x| cov = @max(cov, self.caveCovSrc[z * caves.N + x]);
             }
         }
+        // NOTHING PAINTED IN THAT 3x3 IS ALREADY THE ANSWER: `ghostHeight` scans the same neighbourhood for a painted
+        // corner and, finding none, hands back this point's own byte — and `caveByte(caveH(b))` is `b`. Over a whole
+        // field that is 638,401 second scans and float round-trips skipped for the rock no cave is anywhere near.
+        self.caveRoofShade[i] = if (cov == 0) self.caveRoofSrc[i] else wf.caveByte(caves.roofAtPoint(self.caveFields(), ix, iz) - GROUND_Y);
         if (cov < caves.EDGE) {
             self.caveShelterSrc[i] = 0;
             return;
@@ -880,8 +906,7 @@ pub const Env = struct {
 
     fn caveBreachedAt(self: *const Env, cx: usize, cz: usize) bool {
         if (!self.caveAny or !self.caveOpenNear(cx, cz)) return false;
-        const c = self.caveCellOf(cx, cz);
-        return c.hasOpening();
+        return self.caveCellOf(cx, cz).hasOpening();
     }
 
     fn caveCellOf(self: *const Env, cx: usize, cz: usize) CaveCell {
@@ -945,14 +970,17 @@ pub const Env = struct {
         }
     }
 
+    /// COVERAGE FIRST, and under `cutAll` it is the WHOLE question: the hill comes off wherever a chamber reaches, so
+    /// the cell's shape is never asked. Read the other way round this built a whole `CaveCell` — four terrain samples
+    /// and two ghost-fill scans a corner — for every sub-cell of every cell of all 729 tiles, and threw the answer away.
     fn mouthCell(self: *const Env, ix: usize, iz: usize, cutAll: bool) bool {
         if (!self.caveAny) return false;
         for (0..2) |sz| {
             for (0..2) |sx| {
                 const cx = 2 * ix + sx;
                 const cz = 2 * iz + sz;
-                if (self.caveBreachedAt(cx, cz)) return true;
-                if (cutAll and self.caveOpenNear(cx, cz)) return true;
+                if (!self.caveOpenNear(cx, cz)) continue;
+                if (cutAll or self.caveCellOf(cx, cz).hasOpening()) return true;
             }
         }
         return false;
@@ -1038,7 +1066,7 @@ pub const Env = struct {
         const x1 = @min(x0 + TCHUNK - 1, wf.HEIGHT_N - 1);
         const z1 = @min(z0 + TCHUNK - 1, wf.HEIGHT_N - 1);
         const half = self.heightHalf;
-        const step = 2 * half / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+        const step = self.lattice();
         var b = gfx.Builder.init();
         var cutb = gfx.Builder.init();
         var cutAny = false;
@@ -1125,7 +1153,9 @@ pub const Env = struct {
                     }
                     continue;
                 }
-                if (self.mouthCell(ix, iz, false)) {
+                // `overCave` is the SAME scan with `cutAll` on, so it is a superset: false there is false here, and
+                // the gate spares the 16 coverage taps on every cell of a map that has a cave somewhere else.
+                if (overCave and self.mouthCell(ix, iz, false)) {
                     self.mouthTerrain(&b, ix, iz, false);
                     continue;
                 }
@@ -1194,7 +1224,7 @@ pub const Env = struct {
         const out = groundOut(self.mapHalf);
         if (out <= half) return;
         const n = wf.HEIGHT_N - 1;
-        const step = 2 * half / @as(f32, @floatFromInt(n));
+        const step = self.lattice();
         const up = v3(0, 1, 0);
         var b = gfx.Builder.init();
         var i: usize = 0;
@@ -1233,14 +1263,14 @@ pub const Env = struct {
     fn cellSurface(self: *const Env, ix: usize, iz: usize) f32 {
         const last = wf.HEIGHT_N - 2;
         const half = self.heightHalf;
-        const step = 2 * half / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+        const step = self.lattice();
         const x = -half + (@as(f32, @floatFromInt(@min(ix, last))) + 0.5) * step;
         const z = -half + (@as(f32, @floatFromInt(@min(iz, last))) + 0.5) * step;
         return self.groundAt(x, z);
     }
 
-    fn lattice(self: *const Env) f32 {
-        return 2 * self.heightHalf / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+    pub fn lattice(self: *const Env) f32 {
+        return wf.heightStepFor(self.heightHalf);
     }
 
     fn caseAt(self: *const Env, ix: usize, iz: usize) u8 {
@@ -1289,7 +1319,7 @@ pub const Env = struct {
 
     /// A NORMAL NEVER READS ACROSS A FACE: differenced through a cut the lip shades as a black band one cell wide. A tap that crosses one falls back to the point itself.
     fn pointNormal(self: *const Env, ix: usize, iz: usize) rl.Vector3 {
-        const step = 2 * self.heightHalf / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+        const step = self.lattice();
         const here = self.pointY(ix, iz);
         const xmCut = ix == 0 or self.cutAlong(ix - 1, iz, true);
         const xpCut = ix + 1 >= wf.HEIGHT_N or self.cutAlong(ix, iz, true);
@@ -2046,14 +2076,14 @@ pub const Env = struct {
 
     /// A surface prop over an open cell hangs in the air once the cutaway takes the hill from under it.
     fn floats(self: *const Env, pr: *const Prop) bool {
-        return cutaway and !pr.under and self.caveOpenAt(pr.pos.x, pr.pos.z);
+        return cutaway() and !pr.under and self.caveOpenAt(pr.pos.x, pr.pos.z);
     }
 
     /// THE SAME GATE FOR A BODY, and it asks nothing of the body but where its FEET are: the ceiling already decides
     /// which world a body is in (`supportAt`), so a creature standing on the LAND over an excavated cell is exactly the
     /// one the cutaway has left hanging. Foes, folk and chests all answer this; a body in the chamber is the point of the view.
     pub fn floatsAt(self: *const Env, x: f32, z: f32, footY: f32) bool {
-        if (!cutaway or !self.caveOpenAt(x, z)) return false;
+        if (!cutaway() or !self.caveOpenAt(x, z)) return false;
         return !self.underground(x, z, footY);
     }
 
@@ -2236,7 +2266,7 @@ pub const Env = struct {
             if (t <= 0) return null;
             return v3(origin.x + dir.x * t, GROUND_Y, origin.z + dir.z * t);
         }
-        const step = 2 * self.heightHalf / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+        const step = self.lattice();
         const horiz = mathx.lenXZ(dir);
         const dt = if (horiz > 1e-4) step * 0.5 / horiz else step * 0.5;
         const MAX_T: f32 = 4.0 * GROUND_HALF;
@@ -2330,7 +2360,7 @@ pub const Env = struct {
 
     /// Flattens every water dweller's pool floor to `dwellerFloor`, masked to the PAINTED water cells so the shore is never carved; eight passes converge the inner disc. Returns the lattice points moved (`--fix-lurkers`).
     pub fn digPools(m: *wf.Map, radius: f32) usize {
-        const step = 2 * m.half / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+        const step = m.heightStep();
         var moved: usize = 0;
         for (m.foes[0..m.nfoes]) |f| {
             if (foemod.poolBand(f.kind) == null) continue;
@@ -2473,11 +2503,14 @@ pub const Env = struct {
     }
 
     /// The editor's underground view: where a tile has a cutaway, the hill over its chambers is not drawn.
-    pub var cutaway: bool = false;
+    /// DERIVED, never stored: a flag beside `cutOf` is a second half that can be set on its own, and a cutaway
+    /// with no world behind it draws the hill off the chambers and leaves every body standing on it in the air.
+    pub fn cutaway() bool {
+        return cutOf != null;
+    }
 
     /// Set it with the world it is a cutaway OF, so `bodyDrawn` — a free function with no `self` — can ask which surface a body stands on.
     pub fn setCutaway(on: bool, of: *const Env) void {
-        cutaway = on;
         cutOf = if (on) of else null;
     }
 
@@ -2493,7 +2526,7 @@ pub const Env = struct {
                 if (!vw.visible(mid, rad, GROUND_HALF)) continue;
             }
             self.stat_draws += 1;
-            const cut = cutaway and self.cutawayBuilt[i];
+            const cut = cutaway() and self.cutawayBuilt[i];
             rl.drawModel(if (cut) self.cutaways[i] else t, mathx.zero3, 1.0, rl.Color.white);
         }
         if (self.skirtBuilt) rl.drawModel(self.skirt, mathx.zero3, 1.0, rl.Color.white);
@@ -2503,7 +2536,7 @@ pub const Env = struct {
     pub fn drawCliffFaces(self: *Env, view: ?*const View) void {
         if (!self.tiled()) return;
         for (0..NTILES) |i| {
-            const cut = cutaway and self.cutFaceCut[i];
+            const cut = cutaway() and self.cutFaceCut[i];
             if (if (cut) !self.cutFaceBuilt[i] else !self.faceBuilt[i]) continue;
             if (view) |vw| {
                 if (!vw.visible(self.tileMid[i], self.tileRad[i], GROUND_HALF)) continue;
@@ -2522,7 +2555,7 @@ pub const Env = struct {
             }
             self.stat_draws += 1;
             rl.drawModel(s, mathx.zero3, 1.0, rl.Color.white);
-            if (!cutaway and self.roofBuilt[i]) {
+            if (!cutaway() and self.roofBuilt[i]) {
                 self.stat_draws += 1;
                 rl.drawModel(self.roofs[i], mathx.zero3, 1.0, rl.Color.white);
             }
@@ -2533,11 +2566,13 @@ pub const Env = struct {
     /// side of a hill never meets its own depth, so it cannot acne, and the far side is the silhouette that throws.
     pub fn drawGroundCasters(self: *Env, focus: rl.Vector3) void {
         if (!self.tiled()) return;
-        for (self.tiles[0..], self.tileBuilt[0..], self.tileMid[0..], self.tileRad[0..], self.tileH[0..]) |t, built, mid, rad, top| {
+        for (self.tiles[0..], self.tileBuilt[0..], self.tileMid[0..], self.tileRad[0..], self.tileH[0..], 0..) |t, built, mid, rad, top, i| {
             if (!built) continue;
             if (!castsInto(focus, mid, rad, top)) continue;
             self.stat_draws += 1;
-            rl.drawModel(t, mathx.zero3, 1.0, rl.Color.white);
+            // THE SAME MODEL `drawGround` PICKS: a hill the cutaway does not draw may not throw a shadow either, or the chamber under it is lit by nothing.
+            const cut = cutaway() and self.cutawayBuilt[i];
+            rl.drawModel(if (cut) self.cutaways[i] else t, mathx.zero3, 1.0, rl.Color.white);
         }
     }
 
@@ -2588,15 +2623,19 @@ pub const Env = struct {
         return self.nprops;
     }
 
-    pub fn chestSites(self: *const Env, out: []chestmod.Site) usize {
+    fn siteList(self: *const Env, items: []const u32, out: []Site) usize {
         var n: usize = 0;
-        for (self.chestItems[0..self.nchests]) |pi| {
+        for (items) |pi| {
             if (n >= out.len) break;
             const pr = &self.props[pi];
             out[n] = .{ .pos = pr.pos, .yaw = pr.yaw, .scale = pr.scale, .op = pr.op };
             n += 1;
         }
         return n;
+    }
+
+    pub fn chestSites(self: *const Env, out: []Site) usize {
+        return self.siteList(self.chestItems[0..self.nchests], out);
     }
     pub fn setPickupDraw(self: *Env, i: usize, left: f32, gone: bool) void {
         if (i >= self.npickups) return;
@@ -2604,15 +2643,8 @@ pub const Env = struct {
         pr.shrink = mathx.clampF(left, 0, 1);
         pr.gone = gone;
     }
-    pub fn pickupSites(self: *const Env, out: []pickupmod.Site) usize {
-        var n: usize = 0;
-        for (self.pickupItems[0..self.npickups]) |pi| {
-            if (n >= out.len) break;
-            const pr = &self.props[pi];
-            out[n] = .{ .pos = pr.pos, .yaw = pr.yaw, .scale = pr.scale, .op = pr.op };
-            n += 1;
-        }
-        return n;
+    pub fn pickupSites(self: *const Env, out: []Site) usize {
+        return self.siteList(self.pickupItems[0..self.npickups], out);
     }
     pub fn restSites(self: *const Env, out: []restmod.Site) usize {
         var n: usize = 0;
@@ -3517,15 +3549,16 @@ fn stampSolids(sl: *StampSolids, ms: *const proprock.Masses, ox: f32, oz: f32, t
 
 /// A hand-placed cliff piece already stands over this point of the cut, so the automatic face puts no second stone there.
 fn pieceCovers(e: *const Env, x: f32, z: f32) bool {
-    for (e.props[0..e.nprops]) |*pr| {
-        if (cliffseat.covers(pr, x, z)) return true;
+    for (e.faceSkip[0..e.nfaceSkip]) |i| {
+        if (cliffseat.covers(&e.props[i], x, z)) return true;
     }
     return false;
 }
 
 /// A ladder's foot or a flight's head within `r`: the rung line and the top tread meet the wall there, so no rock goes over them.
 fn climbsNear(e: *const Env, x: f32, z: f32, r: f32) bool {
-    for (e.props[0..e.nprops]) |*pr| {
+    for (e.faceSkip[0..e.nfaceSkip]) |i| {
+        const pr = &e.props[i];
         const nfo = props.info(pr.kind);
         if (!nfo.climb and nfo.flight == null) continue;
         var hx = pr.pos.x;
@@ -4715,6 +4748,14 @@ fn buildDecks(e: *Env) void {
     }
 }
 
+/// One prop onto one index list, PANICKING past the cap rather than dropping it: five lists were each spelling out
+/// the same bounds test, and the one that skipped it lost a prop silently.
+fn indexOnto(list: []u32, n: *usize, i: u32, comptime what: []const u8) void {
+    if (n.* >= list.len) @panic("env: " ++ what ++ " index full — raise the cap");
+    list[n.*] = i;
+    n.* += 1;
+}
+
 fn indexProps(e: *Env) void {
     fillIndex(e, &e.stx, false);
     fillIndex(e, &e.flx, true);
@@ -4722,31 +4763,17 @@ fn indexProps(e: *Env) void {
     e.nchests = 0;
     e.npickups = 0;
     e.nrests = 0;
+    e.nfaceSkip = 0;
     @memset(&e.opOwned, 0);
     for (e.props[0..e.nprops], 0..) |*pr, pi| {
         const i: u32 = @intCast(pi);
         if (pr.op < e.opOwned.len) e.opOwned[pr.op] +|= 1;
         const nfo = props.info(pr.kind);
-        if (nfo.veil != null or nfo.stow != null) {
-            if (e.ndress >= MAX_DRESSED) @panic("env: MAX_DRESSED exceeded — raise the cap");
-            e.dressItems[e.ndress] = i;
-            e.ndress += 1;
-        }
-        if (pr.kind == .chest) {
-            if (e.nchests >= chestmod.CAP) @panic("env: chest cap exceeded — raise chest.CAP");
-            e.chestItems[e.nchests] = i;
-            e.nchests += 1;
-        }
-        if (pr.kind == .pickup) {
-            if (e.npickups >= pickupmod.CAP) @panic("env: pickup cap exceeded — raise pickup.CAP");
-            e.pickupItems[e.npickups] = i;
-            e.npickups += 1;
-        }
-        if (restmod.isRestKind(pr.kind)) {
-            if (e.nrests >= restmod.CAP) @panic("env: rest cap exceeded — raise rest.CAP");
-            e.restItems[e.nrests] = i;
-            e.nrests += 1;
-        }
+        if (nfo.climb or nfo.flight != null or props.cliffRow(pr.kind) != null) indexOnto(&e.faceSkip, &e.nfaceSkip, i, "cut-face skip");
+        if (nfo.veil != null or nfo.stow != null) indexOnto(&e.dressItems, &e.ndress, i, "MAX_DRESSED");
+        if (pr.kind == .chest) indexOnto(&e.chestItems, &e.nchests, i, "chest.CAP");
+        if (pr.kind == .pickup) indexOnto(&e.pickupItems, &e.npickups, i, "pickup.CAP");
+        if (restmod.isRestKind(pr.kind)) indexOnto(&e.restItems, &e.nrests, i, "rest.CAP");
     }
 }
 
@@ -5367,7 +5394,7 @@ fn envWithRamp(rise: f32) !*Env {
     e.* = .{ .ground = undefined, .models = undefined };
     e.heightHalf = wf.DEFAULT_HALF;
     e.heightAny = true;
-    const step = 2 * e.heightHalf / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+    const step = e.lattice();
     for (0..wf.HEIGHT_N) |iz| {
         for (0..wf.HEIGHT_N) |ix| {
             const x = -e.heightHalf + @as(f32, @floatFromInt(ix)) * step;
@@ -5489,7 +5516,7 @@ test "a SLIGHT STEP is always taken, however steep the face carrying it" {
             e.heightField[iz * wf.HEIGHT_N + ix] = wf.heightByte(if (ix >= mid) LEDGE else 0.0);
         }
     }
-    const step = 2 * e.heightHalf / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+    const step = e.lattice();
     const x0 = -e.heightHalf + @as(f32, @floatFromInt(mid)) * step - step * 1.5;
     var p = v3(x0, 0, 0);
     var i: usize = 0;
@@ -6038,7 +6065,7 @@ test "A PAINTED CLIFF IS A WALL AND A LIP — the bench's three faces, in metres
     e.* = .{ .ground = undefined, .models = undefined };
     e.adoptHeight(m);
 
-    const cell = 2 * m.half / @as(f32, @floatFromInt(wf.HEIGHT_N - 1));
+    const cell = m.heightStep();
     const g0 = e.groundAt(0, -16);
 
     const straight = faceWidth(e, -16, 8, 16);
@@ -6940,14 +6967,14 @@ test "EVERY FIELD ON `Env` IS ASSIGNED — `Game` is `alloc.create`d and `Env` s
     defer std.testing.allocator.free(src);
     var defaulted: usize = 0;
     var missing: usize = 0;
+    // BOTH RECEIVER NAMES: methods take `self` and the free functions take `e`, so a scan for `self.` alone excuses
+    // any field only a free function ever seats — which is the fill byte this test exists to catch.
     inline for (@typeInfo(Env).@"struct".fields) |f| {
         if (f.default_value_ptr != null) defaulted += 1;
-        const plain = "self." ++ f.name ++ " =";
-        const indexed = "self." ++ f.name ++ "[";
-        const taken = "&self." ++ f.name;
-        const seated = std.mem.indexOf(u8, src, plain) != null or
-            std.mem.indexOf(u8, src, indexed) != null or
-            std.mem.indexOf(u8, src, taken) != null;
+        var seated = false;
+        inline for ([_][]const u8{ "self", "e" }) |recv| {
+            seated = seated or wf.assignsField(src, recv, f.name);
+        }
         if (!seated) {
             std.debug.print("\n  `Env.{s}` is assigned nowhere in env.zig — it comes up as the fill byte\n", .{f.name});
             missing += 1;
@@ -6956,3 +6983,4 @@ test "EVERY FIELD ON `Env` IS ASSIGNED — `Game` is `alloc.create`d and `Env` s
     try std.testing.expectEqual(@as(usize, 0), missing);
     std.debug.print("\n  all {d} of Env's fields assigned — {d} carry a default that never runs\n", .{ @typeInfo(Env).@"struct".fields.len, defaulted });
 }
+

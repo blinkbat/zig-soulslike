@@ -1148,11 +1148,18 @@ comptime {
         if (!std.meta.eql(MOVES_BANK[row[0]], row[1])) @compileError("knight: a *_I index no longer names its own row of MOVES");
     }
     std.debug.assert(CHOOSE_N <= MOVES.len and SWEEP2_I >= CHOOSE_N and SWAT_I >= CHOOSE_N);
+    if (STROKE.len != MOVES.len) @compileError("knight: STROKE has a row per MOVES row and no longer does");
     for (0..MOVES.len) |i| {
         for (i + 1..MOVES.len) |j| {
             if (windFor(i) == windFor(j))
                 @compileError("knight: two MOVES rows share a gather state — a stroke is wearing another's animation");
+            if (STROKE[i].swing == STROKE[j].swing)
+                @compileError("knight: two MOVES rows break into the same swing — one of them lands as the other");
         }
+    }
+    // A gather that is also a swing would re-enter itself out of `swingFor` and never resolve.
+    for (STROKE) |row| {
+        if (swingFor(row.swing) != null) @compileError("knight: a swing state is also a gather state");
     }
 }
 const CHOOSE_N = 4;
@@ -1198,16 +1205,28 @@ const QUAKE_STEP: f32 = 0.07;
 /// HALF THE DISTANCE BETWEEN HIS BOOTS, pre-scale.
 const TURN_STANCE_HALF: f32 = 0.105;
 
+/// ONE ROW PER STROKE, in `MOVES_BANK`'s own order: the gather it enters and the swing that gather breaks into.
+/// Three lists were kept in lockstep — this mapping, the gather prong in `update`, and the gather->swing switch
+/// inside it, whose `else` was `unreachable`. A stroke added to one and not the others panicked mid-fight.
+const STROKE = [_]struct { wind: State, swing: State }{
+    .{ .wind = .sweepwind, .swing = .sweep },
+    .{ .wind = .overwind, .swing = .over },
+    .{ .wind = .thrustwind, .swing = .thrust },
+    .{ .wind = .bashwind, .swing = .bash },
+    .{ .wind = .chainwind, .swing = .sweep2 },
+    .{ .wind = .swatwind, .swing = .swat },
+};
+
 fn windFor(mv: usize) State {
-    return switch (mv) {
-        SWEEP_I => .sweepwind,
-        OVER_I => .overwind,
-        THRUST_I => .thrustwind,
-        SWEEP2_I => .chainwind,
-        SWAT_I => .swatwind,
-        BASH_I => .bashwind,
-        else => .bashwind,
-    };
+    return STROKE[if (mv < STROKE.len) mv else BASH_I].wind;
+}
+
+/// The swing a gather breaks into, or null for a state that is not a gather.
+fn swingFor(s: State) ?State {
+    for (STROKE) |row| {
+        if (row.wind == s) return row.swing;
+    }
+    return null;
 }
 
 const Choice = enum { fall, slam, hop, charge, strike, approach, wait, hold, stepturn, leap };
@@ -2035,15 +2054,7 @@ pub const Knight = struct {
                 const w = a.weight;
                 const load: f32 = if (w == .light) GATHER_PLAIN else GATHER_HEAVY;
                 self.emitGather(dt, mathx.clampF(self.t / dur, 0, 1) * load, w);
-                if (self.t >= dur) self.enter(switch (self.state) {
-                    .sweepwind => .sweep,
-                    .chainwind => .sweep2,
-                    .overwind => .over,
-                    .thrustwind => .thrust,
-                    .swatwind => .swat,
-                    .bashwind => .bash,
-                    else => unreachable,
-                });
+                if (self.t >= dur) self.enter(swingFor(self.state).?);
             },
             .sweep, .sweep2, .over, .thrust, .bash, .swat => {
                 const turn: f32 = a.track;

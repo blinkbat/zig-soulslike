@@ -155,12 +155,7 @@ pub const Chests = struct {
     }
 };
 
-pub const Site = struct {
-    pos: rl.Vector3,
-    yaw: f32,
-    scale: f32,
-    op: u16,
-};
+pub const Site = envmod.Site;
 
 comptime {
     std.debug.assert(village.CHEST_HINGE_Z < 0);

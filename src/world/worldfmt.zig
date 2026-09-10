@@ -1437,12 +1437,8 @@ pub fn caveByte(m: f32) u8 {
 }
 
 /// THE CAVE LATTICE HALVES THE TERRAIN'S CELL — 1.25 m on the shipped 1000 m map, where the terrain's 2.51 m cell cannot hold a passage at all. `2n-1` points, so cave point (2i,2j) IS terrain point (i,j) and a mouth can share its vertices with the hill.
-pub const CAVE_N: usize = 2 * HEIGHT_N - 1;
+pub const CAVE_N: usize = @intCast(gfx.CAVE_N);
 pub const CAVE_CELLS: usize = CAVE_N * CAVE_N;
-
-comptime {
-    std.debug.assert(CAVE_N == @as(usize, @intCast(gfx.CAVE_N)));
-}
 /// Coverage at or over this is excavated, so a cave wall lands BETWEEN lattice points instead of on a cell boundary.
 pub const CAVE_EDGE: u8 = 128;
 
@@ -2026,7 +2022,7 @@ pub const Map = struct {
     }
 
     pub fn cellSize(self: *const Map, n: usize) f32 {
-        return 2 * self.half / @as(f32, @floatFromInt(n));
+        return cellStepFor(self.half, n);
     }
 
     pub fn soilIndex(self: *const Map, px: f32, pz: f32) ?usize {
@@ -4694,7 +4690,7 @@ test "the height sampler is bilinear, edge-clamped, and its gradient points UPHI
             m.height[iz * HEIGHT_N + ix] = heightByte(rise);
         }
     }
-    const step = 2 * m.half / @as(f32, @floatFromInt(HEIGHT_N - 1));
+    const step = m.heightStep();
     const x0 = -m.half + @as(f32, @floatFromInt(mid + 10)) * step;
     try std.testing.expectApproxEqAbs(@as(f32, 2.5), m.heightAt(x0, 0), 1e-3);
     try std.testing.expectApproxEqAbs(@as(f32, 2.625), m.heightAt(x0 + step * 0.5, 0), 1e-3);

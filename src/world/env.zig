@@ -36,7 +36,7 @@ pub fn groundOut(half: f32) f32 {
     return half + mathx.maxF(GROUND_APRON_MIN, half * GROUND_APRON);
 }
 
-const GROUND_HALF: f32 = groundOut(wf.MAX_DECLARED_HALF);
+pub const GROUND_HALF: f32 = groundOut(wf.MAX_DECLARED_HALF);
 
 comptime {
     // The flat path draws ONE quad built at this and scaled down, so the widest map a file may declare has to fit inside it with skirt left over.
@@ -902,11 +902,6 @@ pub const Env = struct {
         if (!self.tileBuilt[i]) return;
         unloadTerrain(self.tiles[i]);
         self.tileBuilt[i] = false;
-    }
-
-    fn caveBreachedAt(self: *const Env, cx: usize, cz: usize) bool {
-        if (!self.caveAny or !self.caveOpenNear(cx, cz)) return false;
-        return self.caveCellOf(cx, cz).hasOpening();
     }
 
     fn caveCellOf(self: *const Env, cx: usize, cz: usize) CaveCell {
@@ -2071,7 +2066,19 @@ pub const Env = struct {
     }
 
     pub fn pickUnder(self: *const Env, origin: rl.Vector3, dir: rl.Vector3) ?caves.Pick {
-        return caves.pickUnder(self.caveFields(), self, .{ origin.x, origin.y, origin.z }, .{ dir.x, dir.y, dir.z }, caves.PICK_REACH);
+        // The same slab bound `rayGround` takes: `PICK_REACH` is 400 m at a 0.35 m stride, so a ray laid off the
+        // edge of the world walked 1,143 steps of `groundAt` under the cursor every frame to answer null — and the
+        // steps taken OUTSIDE read a `groundAt` and an `openAt` clamped to the rim, which is a pick in the void.
+        const out = groundOut(mathx.maxF(self.mapHalf, self.heightHalf));
+        const enter = @max(slabEnter(origin.x, dir.x, out), slabEnter(origin.z, dir.z, out));
+        const exit = @min(
+            caves.PICK_REACH,
+            @max(slabExit(origin.x, dir.x, out, caves.PICK_REACH), 0),
+            @max(slabExit(origin.z, dir.z, out, caves.PICK_REACH), 0),
+        );
+        if (exit <= enter) return null;
+        const at = mathx.addV(origin, mathx.scaleV(dir, enter));
+        return caves.pickUnder(self.caveFields(), self, .{ at.x, at.y, at.z }, .{ dir.x, dir.y, dir.z }, exit - enter);
     }
 
     /// A surface prop over an open cell hangs in the air once the cutaway takes the hill from under it.
@@ -2259,6 +2266,19 @@ pub const Env = struct {
         return gx * gx + gz * gz <= MAX_SLOPE * MAX_SLOPE;
     }
 
+    /// Where a ray leaves the `±out` slab on one axis, `cap` for an axis it never crosses. Negative when the ray
+    /// starts outside and is already leaving, which is what makes the march refuse to run at all.
+    fn slabExit(o: f32, d: f32, out: f32, cap: f32) f32 {
+        if (@abs(d) < 1e-6) return if (@abs(o) <= out) cap else -1;
+        return @max((out - o) / d, (-out - o) / d);
+    }
+
+    /// Where a ray enters the `±out` slab on one axis; 0 where it starts inside or runs parallel to the walls.
+    fn slabEnter(o: f32, d: f32, out: f32) f32 {
+        if (@abs(d) < 1e-6) return 0;
+        return @max(@min((out - o) / d, (-out - o) / d), 0);
+    }
+
     pub fn rayGround(self: *const Env, origin: rl.Vector3, dir: rl.Vector3) ?rl.Vector3 {
         if (!self.heightAny) {
             if (@abs(dir.y) < 1e-6) return null;
@@ -2269,9 +2289,17 @@ pub const Env = struct {
         const step = self.lattice();
         const horiz = mathx.lenXZ(dir);
         const dt = if (horiz > 1e-4) step * 0.5 / horiz else step * 0.5;
-        const MAX_T: f32 = 4.0 * GROUND_HALF;
-        var t: f32 = 0;
-        var prev = origin.y - self.groundAt(origin.x, origin.z);
+        // THE MARCH RUNS ONLY WHERE THE GROUND IS. Past the apron there is no surface drawn to cross, and a ray laid
+        // along the horizon otherwise walked the whole 2.3 km of the cap — some 1,400 heightfield taps — to answer
+        // null, once a frame under the editor's cursor. Outside the field `sampleHeight` clamps to the rim, so a walk
+        // that ran out there could also report a hit standing in the void beyond anything `drawGround` puts: the
+        // ENTRY is what refuses that, and the exit alone never did.
+        const cap: f32 = 4.0 * GROUND_HALF;
+        const out = groundOut(mathx.maxF(self.mapHalf, self.heightHalf));
+        const MAX_T: f32 = @min(cap, @max(slabExit(origin.x, dir.x, out, cap), 0), @max(slabExit(origin.z, dir.z, out, cap), 0));
+        var t: f32 = @max(slabEnter(origin.x, dir.x, out), slabEnter(origin.z, dir.z, out));
+        if (t >= MAX_T) return null;
+        var prev = (origin.y + dir.y * t) - self.groundAt(origin.x + dir.x * t, origin.z + dir.z * t);
         while (t < MAX_T) {
             const nt = t + dt;
             const p = v3(origin.x + dir.x * nt, origin.y + dir.y * nt, origin.z + dir.z * nt);
@@ -2412,6 +2440,46 @@ pub const Env = struct {
         return deep > limit and deep > self.wadeDepth(fromX, fromZ);
     }
 
+    /// How far off the ray a point stands, squared, measuring from the origin for anything behind it.
+    fn rayPerp2(origin: rl.Vector3, dir: rl.Vector3, at: rl.Vector3) f32 {
+        const oc = mathx.subV(at, origin);
+        const along = mathx.maxF(oc.x * dir.x + oc.y * dir.y + oc.z * dir.z, 0);
+        return mathx.maxF((oc.x * oc.x + oc.y * oc.y + oc.z * oc.z) - along * along, 0);
+    }
+
+    /// THE CELLS THE RAY PASSES THROUGH, out of the ones the lens can see. The frustum walk is the same one pass
+    /// `eachInView` makes; the extra test is the cell's own sphere against the LINE rather than against the cone,
+    /// which is what a cursor actually asks. On a full map that is a scan of the props in a dozen cells instead of
+    /// every prop on screen. A DDA over the grid loses to this: a prop sits in the one cell its origin falls in,
+    /// so the walk would have to be padded by the widest `bound` and would rescan the overlap at every step.
+    fn eachPropOnRay(
+        self: *const Env,
+        view: *const View,
+        origin: rl.Vector3,
+        dir: rl.Vector3,
+        ctx: anytype,
+        comptime visit: fn (@TypeOf(ctx), u32) void,
+    ) void {
+        for ([_]*const Index{ &self.stx, &self.flx }) |idx| {
+            var c: usize = 0;
+            while (c < NCELL) : (c += 1) {
+                if (idx.start[c] == idx.start[c + 1]) continue;
+                const vspan = (idx.yhi[c] - idx.ylo[c]) * 0.5;
+                const rad = CELL_CIRCUM + idx.bound[c] + vspan;
+                if (rayPerp2(origin, dir, idx.cellAt(c)) > rad * rad) continue;
+                if (!idx.cellSeen(c, view)) continue;
+                var k = idx.start[c];
+                while (k < idx.start[c + 1]) : (k += 1) {
+                    const pi = idx.items[k];
+                    const pr = &self.props[pi];
+                    const nfo = props.info(pr.kind);
+                    if (!view.visible(pr.pos, reachOf(pr, nfo), nfo.view)) continue;
+                    visit(ctx, pi);
+                }
+            }
+        }
+    }
+
     pub fn pickIf(
         self: *const Env,
         view: *const View,
@@ -2445,7 +2513,7 @@ pub const Env = struct {
             }
         };
         var p = Pick{ .e = self, .origin = origin, .dir = dir, .ctx = ctx };
-        self.eachInView(view, &p, Pick.at);
+        self.eachPropOnRay(view, origin, dir, &p, Pick.at);
         return p.best;
     }
 
@@ -5649,6 +5717,27 @@ test "rayGround finds the surface of a hill, not the plane under it" {
     try std.testing.expect(oblique.x < -60 + flatT * 0.9);
     try std.testing.expectApproxEqAbs(e.groundAt(oblique.x, oblique.z), oblique.y, 0.05);
     try std.testing.expect(e.rayGround(v3(0, 10, 0), mathx.normV(v3(0, 1, 0))) == null);
+}
+
+test "A RAY THAT LEAVES THE WORLD STOPS THERE — the march is not walked out into the void" {
+    const e = try envWithRamp(0.5);
+    defer std.testing.allocator.destroy(e);
+    const out = groundOut(mathx.maxF(e.mapHalf, e.heightHalf));
+    // Already outside the apron and still going: refused without a tap, where the march walked its whole cap.
+    try std.testing.expect(e.rayGround(v3(out + 50, 100, 0), mathx.normV(v3(1, -1, 0))) == null);
+    try std.testing.expect(e.rayGround(v3(0, 100, out + 50), mathx.normV(v3(0, -1, 1))) == null);
+    // Aimed back in over the apron it still lands, and on the real surface.
+    const back = e.rayGround(v3(out + 50, 600, 0), mathx.normV(v3(-1, -1, 0))) orelse return error.NoHit;
+    try std.testing.expect(@abs(back.x) <= out);
+    try std.testing.expectApproxEqAbs(e.groundAt(back.x, back.z), back.y, 0.05);
+    // A SHALLOW RAY FROM OUTSIDE MAY NOT LAND IN THE VOID: `sampleHeight` clamps to the rim out there, so a march
+    // that started at the origin instead of at the slab's ENTRY crossed the clamped height and reported that point.
+    // The ramp rises with +x, so this comes in low over the high side, where the clamped rim is highest.
+    for ([_]f32{ 0.004, 0.02, 0.08 }) |slope| {
+        const shallow = e.rayGround(v3(out + 300, e.groundAt(out, 0) + 4, 0), mathx.normV(v3(-1, -slope, 0))) orelse continue;
+        try std.testing.expect(@abs(shallow.x) <= out and @abs(shallow.z) <= out);
+    }
+    std.debug.print("\n  ray bound: ground reaches {d:.0} m, so a ray runs from where it enters that to where it leaves, not the {d:.0} m cap\n", .{ out, 4.0 * GROUND_HALF });
 }
 
 test "the cover field actually varies — real clearings and real thickets" {

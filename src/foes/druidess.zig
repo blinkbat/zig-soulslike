@@ -1137,10 +1137,6 @@ pub const Druidess = struct {
         self.rollWhipSpots();
         self.enter(.whip_wind);
     }
-    pub fn debugSpear(self: *Druidess) void {
-        self.spearCd = 0;
-        self.enter(.spear_wind);
-    }
     pub fn stageGather(self: *Druidess, u: f32) void {
         self.state = .vine_wind;
         self.t = mathx.clampF(u, 0, 1) * VINE_WIND;

@@ -262,7 +262,7 @@ pub fn carve(g: Grids, b: Brush, out: *[4]usize) bool {
             // A cell the stroke OPENS takes the stroke's heights outright; one already open blends, so a passage joining a chamber does not yank its floor.
             const fresh = was < EDGE;
             const want = b.floorAt(p[0], p[1]);
-            const arch = if (b.vault) @min(@max(head - HEAD_MIN, 0), 0.8) * mathx.clampF(d * d / (r * r), 0, 1) else 0;
+            const arch = if (b.vault) mathx.clampF(head - HEAD_MIN, 0, 0.8) * mathx.clampF(d * d / (r * r), 0, 1) else 0;
             const wantF = wf.caveByte(mathx.clampF(want, wf.CAVE_H_MIN, wf.CAVE_H_MAX));
             const wantR = wf.caveByte(mathx.clampF(want + head - arch, wf.CAVE_H_MIN, wf.CAVE_H_MAX));
             const nf = if (fresh) wantF else if (b.preserve) g.floor[i] else wf.caveByte(mathx.lerpF(wf.caveH(g.floor[i]), want, fall));

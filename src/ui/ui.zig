@@ -10,7 +10,7 @@ pub const Icon = icons.Icon;
 const rgba = mathx.rgba;
 
 
-/// Holds the widest tip the game builds — the loot row's `item.EFFECT_BUF + 32` = 160 — plus its terminator. At 120 that row and the bench's `foe.flinch` were both cut mid-sentence by `Ctx.setTip`, silently.
+/// Holds the widest tip the game builds — the loot row's `item.EFFECT_BUF + 32` = 160 — plus its terminator. At 120 that row and the bench's foe `flinch` column (`tune.FOE_COLS`) were both cut mid-sentence by `Ctx.setTip`, silently.
 pub const MSG_CAP = 176;
 
 pub const ROW_H: i32 = hud.monoLineH(hud.MONO) + 6;

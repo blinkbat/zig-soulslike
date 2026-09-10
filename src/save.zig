@@ -557,7 +557,10 @@ pub fn parse(text: []const u8, d: *Data) !void {
             while (it.next()) |tok| : (i += 1) {
                 if (i >= d.quick.len) return Error.BadField;
                 if (std.mem.eql(u8, tok, "-")) continue;
-                d.quick[i] = item.fromTag(tok) orelse return Error.BadField;
+                d.quick[i] = item.fromTag(tok) orelse {
+                    if (!item.retired(tok)) return Error.BadField;
+                    continue;
+                };
             }
         } else if (std.mem.eql(u8, key, "memory:")) {
             d.memory = [_]?combat.Spell{null} ** combat.MEM_SLOTS;
@@ -575,7 +578,10 @@ pub fn parse(text: []const u8, d: *Data) !void {
             while (wi < NWEAR) : (wi += 1) {
                 const tok = it.next() orelse break;
                 if (!std.mem.eql(u8, tok, "-")) {
-                    const k = item.fromTag(tok) orelse return Error.BadField;
+                    const k = item.fromTag(tok) orelse {
+                        if (!item.retired(tok)) return Error.BadField;
+                        continue;
+                    };
                     d.worn.put(item.wearSlot(k) orelse return Error.BadField, k);
                 }
             }
@@ -632,16 +638,24 @@ pub fn parse(text: []const u8, d: *Data) !void {
                 g.n = try int(u8, &it);
                 if (g.n > pickupmod.DROP_MAX) return Error.BadField;
                 var j: usize = 0;
+                var kept: u8 = 0;
                 while (j < g.n) : (j += 1) {
                     const tok = it.next() orelse return Error.BadField;
-                    g.loot[j] = item.fromTag(tok) orelse return Error.BadField;
+                    const k = item.fromTag(tok) orelse {
+                        if (!item.retired(tok)) return Error.BadField;
+                        continue;
+                    };
+                    g.loot[kept] = k;
+                    kept += 1;
                 }
+                g.n = kept;
                 if (it.peek()) |tok| {
                     if (tok.len > 1 and tok[0] == 'g') {
                         g.gold = std.fmt.parseInt(u32, tok[1..], 10) catch return Error.BadField;
                         _ = it.next();
                     }
                 }
+                if (g.n == 0 and g.gold == 0) continue;
                 d.ground[d.groundN] = g;
                 d.groundN += 1;
             }
@@ -917,6 +931,28 @@ test "A RETIRED TAG IS SKIPPED, NOT REFUSED — the golden seeds in an older bag
     try parse("version: 1\nbag: golden_seed 2 rune_arc 1\n", &d);
     try testing.expectEqual(@as(u16, 1), d.bag[@intFromEnum(item.Kind.rune_arc)]);
     try testing.expectEqual(@as(u16, 0), d.bag[@intFromEnum(item.Kind.empty_flask)]);
+}
+
+test "EVERY ROW THAT NAMES AN ITEM SKIPS A RETIRED TAG — the bar, the doll and a pile on the ground, not just the bag" {
+    var d = Data{};
+    try parse("version: 1\nquick: golden_seed rune_arc\n", &d);
+    try testing.expect(d.quick[0] == null);
+    try testing.expectEqual(item.Kind.rune_arc, d.quick[1].?);
+
+    d = Data{};
+    try parse("version: 1\nworn: golden_seed\n", &d);
+    try testing.expect(d.worn.at(.helm) == null);
+
+    d = Data{};
+    try parse("version: 1\nground: 0 0 0 2 golden_seed rune_arc\n", &d);
+    try testing.expectEqual(@as(usize, 1), d.groundN);
+    try testing.expectEqual(@as(u8, 1), d.ground[0].n);
+    try testing.expectEqual(item.Kind.rune_arc, d.ground[0].loot[0]);
+
+    // A pile that was nothing but retired tags is not a pile at all.
+    d = Data{};
+    try parse("version: 1\nground: 0 0 0 1 golden_seed\n", &d);
+    try testing.expectEqual(@as(usize, 0), d.groundN);
 }
 
 test "THE FLASK POOL SURVIVES THE FILE — a found flask is still his after a load, and a file from before the pool grew keeps the default" {

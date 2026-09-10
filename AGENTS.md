@@ -599,7 +599,9 @@ What transfers:
   what the tip sinks. **AN EFFECT'S PHASE IS ITS OWN DECAY, NOT A CLOCK BESIDE IT** — a landing ring runs off
   `thud`, not `self.t`, which resets on every state change.
 - **`stageGather` AND NOT `stageRise`** — `shots.runMapShots` finds a creature's signature move off `@hasDecl` of
-  that ONE name, and under any other the creature goes unshot.
+  `shots.STAGE_SHOT`'s two names (`stagePounce`, else `stageGather`), and under any other the creature would go
+  unshot. **IT IS NO LONGER SILENT**: `shots.checkStageDecls` is a compile error on any `stage*` decl that is
+  neither shot nor named in `STAGE_UNSHOT` with a reason.
 - **A RETRIGGER, NOT A LOOP** (`WHINE_EVERY`, `HUM_EVERY`) — raylib cannot loop a synthesized take, so cut a hair
   LONGER than its own period; gapped, it chatters and reads as a helicopter.
 

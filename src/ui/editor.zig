@@ -43,6 +43,9 @@ const REBUILD_QUIET: f32 = 0.28;
 const ERASE_HZ: f32 = 5.0;
 const ERASE_STEP: f32 = 0.6;
 const MAX_MARKERS: usize = 500;
+/// Orphan rings the overlay will draw. The COUNT the panel prints is the true one; past this the rest go unringed,
+/// because a map with more than this many stranded placements is read off the number, not by hunting rings.
+const MAX_ORPHAN_MARKS: usize = 256;
 
 const WATER_EDGE: wf.Edge = .speckle;
 
@@ -1100,6 +1103,12 @@ pub const Editor = struct {
     caveReach: caves.Reach = .{},
     /// Placements marked `under` whose chamber has since been filled — `caves.homeY` gives them the land back and never said so.
     caveOrphans: usize = 0,
+    orphanOps: [MAX_ORPHAN_MARKS]u32 = undefined,
+    nOrphanOps: usize = 0,
+    /// Bumped once at the top of `update`; `resolveCursorOnce` is the only reader.
+    frame: u64 = 0,
+    cursorAt: u64 = std.math.maxInt(u64),
+    cursorWorld: ?*const envmod.Env = null,
     /// An entry inherits a world `game` already built, so the survey owes one pass that no stroke asked for.
     caveSurveyDue: bool = true,
     decorKind: Kind = .fern,
@@ -1494,6 +1503,7 @@ pub const Editor = struct {
         if (!env.caveAny) {
             self.caveReach = .{};
             self.caveOrphans = 0;
+            self.nOrphanOps = 0;
             return;
         }
         self.caveReach = caves.reachOut(env.caveFields(), env, &reachMark, &reachQueue);
@@ -1506,8 +1516,16 @@ pub const Editor = struct {
         for (m.npcs[0..m.nnpcs]) |x| {
             if (x.under and !caves.sampleAt(f, x.x, x.z).hollow()) n += 1;
         }
-        for (m.ops[0..m.nops]) |*o| {
-            if (o.under and !caves.sampleAt(f, o.x, o.z).hollow()) n += 1;
+        // THE OPS ARE KEPT, NOT JUST COUNTED: `drawOrphans` re-asked this same cave sample of all 17,168 ops every
+        // frame to find the handful that answer yes. The count still walks them all; only the drawing reads the list.
+        self.nOrphanOps = 0;
+        for (m.ops[0..m.nops], 0..) |*o, i| {
+            if (!(o.under and !caves.sampleAt(f, o.x, o.z).hollow())) continue;
+            n += 1;
+            if (self.nOrphanOps < MAX_ORPHAN_MARKS) {
+                self.orphanOps[self.nOrphanOps] = @intCast(i);
+                self.nOrphanOps += 1;
+            }
         }
         self.caveOrphans = n;
     }
@@ -1647,7 +1665,21 @@ pub const Editor = struct {
 
     fn resolveCursor(self: *Editor) void {
         if (self.world) |w| envmod.Env.setCutaway(self.under, w);
+        self.cursorAt = self.frame;
+        self.cursorWorld = self.world;
         self.cursor = self.traceGround();
+    }
+
+    /// ONE MARCH A FRAME. `update` and `drawOverlay` both want the cursor, off a mouse and a camera that cannot
+    /// move between them, and the march is a walk of the heightfield (or of the cave field, at a 0.35 m stride).
+    /// `setCutaway` still runs every time — the draw pass reads it — and a world arriving for the first time forces
+    /// the ray, since `update` resolved against nothing.
+    fn resolveCursorOnce(self: *Editor) void {
+        if (self.cursorAt == self.frame and self.cursorWorld == self.world) {
+            if (self.world) |w| envmod.Env.setCutaway(self.under, w);
+            return;
+        }
+        self.resolveCursor();
     }
 
     /// THE CAVES LAYER READS THE LAND, cut away or not: the brush follows the hill a chamber goes under, and does not fall into the hole it has just opened. Every other layer picks the surface of the LEVEL — underground, the chamber floor through the cut-away hill.
@@ -1959,6 +1991,7 @@ pub const Editor = struct {
     }
 
     pub fn update(self: *Editor, m: *wf.Map, env: *envmod.Env, day: *daynight.Clock, dt: f32) Action {
+        self.frame +%= 1;
         self.world = env;
         self.hasCave = env.caveAny;
         if (self.caveSurveyDue) {
@@ -2789,10 +2822,15 @@ pub const Editor = struct {
         if (self.layer == .units) {
             const g = self.groundAt() orelse return .none;
             var near = mathx.Nearest.within(FOE_PICK_R);
+            // THE DISC BEFORE THE LEVEL: `onLevel` asks the cave field of a surface body, and all but the one or two
+            // under the cursor are already out on a distance test that is two subtractions.
+            const pick2 = FOE_PICK_R * FOE_PICK_R;
             for (m.foes[0..m.nfoes], 0..) |f, i| {
+                if (mathx.dist2XZ(v3(f.x, 0, f.z), g) >= pick2) continue;
                 if (self.onLevel(env, f.under, f.x, f.z)) near.offer(i, v3(f.x, 0, f.z), g);
             }
             for (m.npcs[0..m.nnpcs], 0..) |nn, i| {
+                if (mathx.dist2XZ(v3(nn.x, 0, nn.z), g) >= pick2) continue;
                 if (self.onLevel(env, nn.under, nn.x, nn.z)) near.offer(wf.MAX_FOES + i, v3(nn.x, 0, nn.z), g);
             }
             const w = near.best orelse return .none;
@@ -4108,6 +4146,7 @@ pub const Editor = struct {
     pub fn draw3D(self: *Editor, m: *const wf.Map, env: *const envmod.Env) void {
         gizmoWorld = env;
         gizmoUnder = self.under;
+        gizmoView = self.camView();
         self.seatRead = null;
         const y: f32 = 0.05;
         rl.drawCubeWires(v3(0, envmod.groundY() + y, 0), m.half * 2, 0.02, m.half * 2, ui.alpha(ui.TRIM, 90));
@@ -4189,6 +4228,9 @@ pub const Editor = struct {
                 const ordered = f.ai != .hold;
                 const col = if (sel) ui.HOT else if (ordered) ui.alpha(ui.LIVE, unitA) else ui.alpha(foeSwatch(f.kind), unitA);
                 const at = liftAt(f.x, f.z, y + FOE_BOX_H * 0.5);
+                // The body's own tap pays for the cull too, so a foe off screen costs one and its roam ring costs none.
+                // The SELECTED one is never culled: its patrol legs run wherever they were authored, well past any ring.
+                if (!sel and !gizmoShows(at, foemod.ROAM_R)) continue;
                 rl.drawCubeWires(at, FOE_BOX_W, FOE_BOX_H, FOE_BOX_W, col);
                 if (ordered and self.layer == .units and f.ai == .roam) {
                     ringXZ(f.x, f.z, foemod.ROAM_R, y + 0.02, ui.alpha(ui.LIVE, if (sel) 190 else 70));
@@ -4387,8 +4429,9 @@ pub const Editor = struct {
         for (m.npcs[0..m.nnpcs]) |nn| {
             if (self.orphaned(m, nn.under, nn.x, nn.z)) rl.drawCubeWires(liftAt(nn.x, nn.z, y + MARK_BOX_H * 0.5), MARK_BOX_W, MARK_BOX_H, MARK_BOX_W, GONE);
         }
-        for (m.ops[0..m.nops], 0..) |*o, i| {
-            if (!self.orphaned(m, o.under, o.x, o.z)) continue;
+        for (self.orphanOps[0..self.nOrphanOps]) |oi| {
+            const i: usize = oi;
+            if (i >= m.nops) continue;
             const p = opAnchorAt(m, i);
             ringSeg(p.x, p.z, MARK_RING_R, y, GONE, MARK_RING_SEG);
         }
@@ -4426,15 +4469,26 @@ pub const Editor = struct {
     /// how far OVER an existing chamber's floor the grade still is — which is the "arrives too high to step down" failure.
     const Tap = struct { x: f32, z: f32, floor: f32, opens: bool, over: f32 };
 
-    fn entranceTap(self: *const Editor, env: *const envmod.Env, from: rl.Vector3, ux: f32, uz: f32, s: f32) Tap {
-        const x = from.x + ux * s;
-        const z = from.z + uz * s;
+    /// THE PART OF AN ENTRANCE RUN THAT IS NOT THE TAP: solved once for the whole guide. Read per tap it cost a
+    /// heightfield sample at the mouth and a cave sample at the far end on every one of a 60 m run's 120 steps.
+    const Run = struct { len: f32, start: f32, end: f32 };
+
+    fn entranceRun(self: *const Editor, env: *const envmod.Env, from: rl.Vector3) Run {
         const endAt = self.dragTo;
-        const run = @max(mathx.distXZ(from, endAt), 0.001);
+        const len = @max(mathx.distXZ(from, endAt), 0.001);
         const start = self.groundHeight(from.x, from.z) - ENTRANCE_SINK;
         const room = caves.sampleAt(env.caveFields(), endAt.x, endAt.z);
-        const end = if (room.hollow()) room.floor else @max(start - ENTRANCE_GRADE * run, envmod.groundY() + self.caveFloorY);
-        const floor = mathx.lerpF(start, end, mathx.clampF(s / run, 0, 1));
+        return .{
+            .len = len,
+            .start = start,
+            .end = if (room.hollow()) room.floor else @max(start - ENTRANCE_GRADE * len, envmod.groundY() + self.caveFloorY),
+        };
+    }
+
+    fn entranceTap(self: *const Editor, env: *const envmod.Env, from: rl.Vector3, ux: f32, uz: f32, r: Run, s: f32) Tap {
+        const x = from.x + ux * s;
+        const z = from.z + uz * s;
+        const floor = mathx.lerpF(r.start, r.end, mathx.clampF(s / r.len, 0, 1));
         const c = caves.sampleAt(env.caveFields(), x, z);
         return .{
             .x = x,
@@ -4453,11 +4507,12 @@ pub const Editor = struct {
         if (run < LOOK_STEP) return;
         const ux = dx / run;
         const uz = dz / run;
-        var prev = self.entranceTap(env, from, ux, uz, 0);
+        const leg = self.entranceRun(env, from);
+        var prev = self.entranceTap(env, from, ux, uz, leg, 0);
         var opened = false;
         var s: f32 = LOOK_STEP;
         while (s <= run + LOOK_STEP * 0.5) : (s += LOOK_STEP) {
-            const tap = self.entranceTap(env, from, ux, uz, @min(s, run));
+            const tap = self.entranceTap(env, from, ux, uz, leg, @min(s, run));
             const steep = @max(prev.over, tap.over) > wf.STEP_UP;
             rl.drawLine3D(v3(prev.x, prev.floor, prev.z), v3(tap.x, tap.floor, tap.z), if (steep) CARVE_SKY else CARVE_ROOFED);
             rl.drawLine3D(v3(tap.x, tap.floor, tap.z), v3(tap.x, tap.floor + self.caveHead, tap.z), ui.alpha(if (steep) CARVE_SKY else CARVE_ROOFED, 90));
@@ -4602,6 +4657,26 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
 var gizmoWorld: ?*const envmod.Env = null;
 /// The level a gizmo is projected onto: the chamber floor where there is one, else the land. `draw3D` sets it per body off the body's own `under`.
 var gizmoUnder: bool = false;
+/// The frustum `gizmoShows` culls against, set once per `draw3D`. Null leaves every gizmo drawn (tests, the shot harness).
+var gizmoView: ?envmod.View = null;
+
+/// Metres of slack on a gizmo's cull sphere: the centre is one heightfield tap and the rim sits on ground that tap
+/// never saw, so the sphere is grown by more than a cliff before it is asked. Never a far clip — an author who zooms
+/// out is asking to see the far side of the map.
+const GIZMO_RELIEF: f32 = 16.0;
+
+/// A WIRE OFF SCREEN COSTS A HEIGHTFIELD TAP A VERTEX AND SHOWS NOTHING — a ring is 48 of them and an outline 52.
+/// `at` is the gizmo's own anchor, already lifted; `rad` its reach in XZ.
+fn gizmoShows(at: rl.Vector3, rad: f32) bool {
+    const vw = gizmoView orelse return true;
+    return vw.visible(at, rad + GIZMO_RELIEF, envmod.GROUND_HALF);
+}
+
+/// The same test where the caller has no lifted point yet, and one tap is the whole saving.
+fn gizmoShowsAt(x: f32, z: f32, rad: f32) bool {
+    if (gizmoView == null) return true;
+    return gizmoShows(liftAt(x, z, 0), rad);
+}
 
 fn liftAt(x: f32, z: f32, lift: f32) rl.Vector3 {
     if (gizmoWorld) |w| return v3(x, w.surfaceY(x, z, gizmoUnder) + lift, z);
@@ -4617,18 +4692,19 @@ fn handlePost(x: f32, z: f32, y: f32, held: bool) void {
 fn arenaWall(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void {
     const SEG = GROUND_SEG;
     const top = ui.alpha(col, @intFromFloat(@as(f32, @floatFromInt(col.a)) * 0.55));
+    // ONE TAP A POST: the head is the foot plus the wall's height, and the next post's foot is carried into it.
+    var foot = liftAt(x0, z0, lift);
+    if (!gizmoShows(foot, mathx.lenXZ(v3(x1 - x0, 0, z1 - z0)) + ARENA_WALL_H)) return;
     var i: i32 = 0;
     while (i <= SEG) : (i += 1) {
-        const t0 = @as(f32, @floatFromInt(i)) / SEG;
-        const x = mathx.lerpF(x0, x1, t0);
-        const z = mathx.lerpF(z0, z1, t0);
-        rl.drawLine3D(liftAt(x, z, lift), liftAt(x, z, lift + ARENA_WALL_H), if (@mod(i, 3) == 0) col else top);
+        const head = v3(foot.x, foot.y + ARENA_WALL_H, foot.z);
+        rl.drawLine3D(foot, head, if (@mod(i, 3) == 0) col else top);
         if (i == SEG) break;
-        const t1 = @as(f32, @floatFromInt(i + 1)) / SEG;
-        const x1s = mathx.lerpF(x0, x1, t1);
-        const z1s = mathx.lerpF(z0, z1, t1);
-        rl.drawLine3D(liftAt(x, z, lift), liftAt(x1s, z1s, lift), col);
-        rl.drawLine3D(liftAt(x, z, lift + ARENA_WALL_H), liftAt(x1s, z1s, lift + ARENA_WALL_H), top);
+        const t = @as(f32, @floatFromInt(i + 1)) / SEG;
+        const next = liftAt(mathx.lerpF(x0, x1, t), mathx.lerpF(z0, z1, t), lift);
+        rl.drawLine3D(foot, next, col);
+        rl.drawLine3D(head, v3(next.x, next.y + ARENA_WALL_H, next.z), top);
+        foot = next;
     }
 }
 
@@ -4636,15 +4712,14 @@ const GROUND_SEG: i32 = 12;
 
 fn groundLine(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void {
     const SEG = GROUND_SEG;
-    var i: i32 = 0;
-    while (i < SEG) : (i += 1) {
-        const t0 = @as(f32, @floatFromInt(i)) / SEG;
-        const t1 = @as(f32, @floatFromInt(i + 1)) / SEG;
-        rl.drawLine3D(
-            liftAt(mathx.lerpF(x0, x1, t0), mathx.lerpF(z0, z1, t0), lift),
-            liftAt(mathx.lerpF(x0, x1, t1), mathx.lerpF(z0, z1, t1), lift),
-            col,
-        );
+    // CARRIED, not re-sampled: a segment's far end is the next one's near end, and `liftAt` is a heightfield tap.
+    var prev = liftAt(x0, z0, lift);
+    var i: i32 = 1;
+    while (i <= SEG) : (i += 1) {
+        const t = @as(f32, @floatFromInt(i)) / SEG;
+        const p = liftAt(mathx.lerpF(x0, x1, t), mathx.lerpF(z0, z1, t), lift);
+        rl.drawLine3D(prev, p, col);
+        prev = p;
     }
 }
 
@@ -4658,27 +4733,43 @@ fn outlineOf(r: Rect, y: f32, col: rl.Color) void {
 }
 
 fn outline(x0: f32, z0: f32, x1: f32, z1: f32, y: f32, col: rl.Color) void {
+    const mx = (x0 + x1) * 0.5;
+    const mz = (z0 + z1) * 0.5;
+    if (!gizmoShowsAt(mx, mz, 0.5 * mathx.lenXZ(v3(x1 - x0, 0, z1 - z0)))) return;
     groundLine(x0, z0, x1, z0, y, col);
     groundLine(x1, z0, x1, z1, y, col);
     groundLine(x1, z1, x0, z1, y, col);
     groundLine(x0, z1, x0, z0, y, col);
 }
 
+/// Metres of rim a segment covers. A flat 48 spent the same 48 heightfield taps on a 0.9 m cursor ring as on a
+/// 50 m clearing, and at 0.12 m a segment the small one was drawing under the width of its own line.
+const RING_ARC: f32 = 2.5;
+const RING_SEG_MIN: i32 = 12;
+const RING_SEG_MAX: i32 = 48;
+
 fn ringXZ(cx: f32, cz: f32, r: f32, y: f32, col: rl.Color) void {
-    ringSeg(cx, cz, r, y, col, 48);
+    const want: i32 = @intFromFloat(@round(std.math.tau * @max(r, 0) / RING_ARC));
+    ringSeg(cx, cz, r, y, col, std.math.clamp(want, RING_SEG_MIN, RING_SEG_MAX));
 }
 
 fn ringSeg(cx: f32, cz: f32, r: f32, y: f32, col: rl.Color, seg: i32) void {
     if (r < 0.02) return;
-    var i: i32 = 0;
-    while (i < seg) : (i += 1) {
-        const a0 = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(seg));
-        const a1 = std.math.tau * @as(f32, @floatFromInt(i + 1)) / @as(f32, @floatFromInt(seg));
-        rl.drawLine3D(
-            liftAt(cx + mathx.cosf(a0) * r, cz + mathx.sinf(a0) * r, y),
-            liftAt(cx + mathx.cosf(a1) * r, cz + mathx.sinf(a1) * r, y),
-            col,
-        );
+    // CARRIED like `groundLine`, and the last spoke closes on the first point rather than re-taking it at tau.
+    const first = liftAt(cx + r, cz, y);
+    // The rim point already taken is the cull anchor, and every other point of the ring is inside `2r` of it.
+    if (!gizmoShows(first, 2 * r)) return;
+    var prev = first;
+    var i: i32 = 1;
+    while (i <= seg) : (i += 1) {
+        if (i == seg) {
+            rl.drawLine3D(prev, first, col);
+            break;
+        }
+        const a = std.math.tau * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(seg));
+        const p = liftAt(cx + mathx.cosf(a) * r, cz + mathx.sinf(a) * r, y);
+        rl.drawLine3D(prev, p, col);
+        prev = p;
     }
 }
 
@@ -4757,7 +4848,7 @@ fn endScroll(ctx: *ui.Ctx, r: rl.Rectangle, scroll: *i32, held: i32, was: ?rl.Re
 pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: *daynight.Clock, t: f32) void {
     ed.world = env;
     ed.hasCave = env.caveAny;
-    ed.resolveCursor();
+    ed.resolveCursorOnce();
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
     var ctx = ui.Ctx.begin(t);
@@ -4987,7 +5078,7 @@ fn drawRoomsPanel(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y0: i32, w: i32
         hud.mono("outline crosses itself", x, y, hud.MONO, ui.HOT);
         y += ROW_H;
     }
-    if (gateOnWall(m, a) == null) {
+    if (!hasGateOnWall(ed, m, a)) {
         hud.mono("no gate on its wall", x, y, hud.MONO, ui.HOT);
         y += ROW_H;
     }
@@ -6800,6 +6891,28 @@ var unfilledAt: u64 = std.math.maxInt(u64);
 var unfilledOps: usize = std.math.maxInt(usize);
 var unfilledWas: usize = 0;
 
+var gateAt: u64 = std.math.maxInt(u64);
+var gateOps: usize = std.math.maxInt(usize);
+var gateKey: u64 = 0;
+var gateWas: bool = false;
+
+/// `unfilledCount`'s law for the Rooms panel's gate line: drawn every frame, it re-read all 17,232 ops of the
+/// shipped map for one bool — 30.9 us, and the cap is 40,960. The key carries the room's own CORNERS as well as
+/// the ops, because a drag banks once and then moves the wall for as many frames as the mouse is down.
+fn hasGateOnWall(ed: *const Editor, m: *const wf.Map, a: *const wf.Arena) bool {
+    var key: u64 = a.n;
+    for (0..a.verts()) |i| {
+        key = key *% 31 +% @as(u32, @bitCast(a.vx[i]));
+        key = key *% 31 +% @as(u32, @bitCast(a.vz[i]));
+    }
+    if (gateAt == ed.miniGen and gateOps == m.nops and gateKey == key) return gateWas;
+    gateAt = ed.miniGen;
+    gateOps = m.nops;
+    gateKey = key;
+    gateWas = gateOnWall(m, a) != null;
+    return gateWas;
+}
+
 var tallyAt: u64 = std.math.maxInt(u64);
 var tallyOps: usize = std.math.maxInt(usize);
 var tallyWas: [item.NK]u16 = [_]u16{0} ** item.NK;
@@ -7614,6 +7727,35 @@ fn trigI(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y: i32, w: i32, label: [
     return true;
 }
 
+/// EVERY NUMERIC ROW IN THE SCRIPT MODAL, ONE TABLE. `condFields`/`actFields` place them off this and the overhang
+/// test at the foot of the file measures the same rows, so a width moved in the panel cannot pass a test still
+/// holding the old one. `cap` sizes a box rather than stretching it; 0 fills what is left of `w`.
+const ScriptNum = enum { counter_n, elapsed_s, near_r, deaths_n, act_count, act_timer, act_wait };
+
+const SCRIPT_NUMS = [_]struct { name: []const u8, at: i32, gap: i32, cap: i32 = 0 }{
+    .{ .name = "counter n ", .at = 168, .gap = 172 },
+    .{ .name = "elapsed s ", .at = 46, .gap = 50 },
+    .{ .name = "near r    ", .at = 156, .gap = 160 },
+    .{ .name = "deaths n  ", .at = 198, .gap = 202 },
+    .{ .name = "act count ", .at = 218, .gap = 222 },
+    .{ .name = "act timer ", .at = 124, .gap = 128 },
+    .{ .name = "act wait  ", .at = 0, .gap = 0, .cap = 140 },
+};
+
+comptime {
+    if (SCRIPT_NUMS.len != @typeInfo(ScriptNum).@"enum".fields.len)
+        @compileError("editor: SCRIPT_NUMS and ScriptNum disagree on how many numeric rows the script modal has");
+}
+
+fn numAt(n: ScriptNum) i32 {
+    return SCRIPT_NUMS[@intFromEnum(n)].at;
+}
+
+fn numW(n: ScriptNum, w: i32) i32 {
+    const r = SCRIPT_NUMS[@intFromEnum(n)];
+    return @max(if (r.cap > 0) @min(w, r.cap) else w - r.gap, STEP_MIN_W);
+}
+
 fn condFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, c: *wf.Cond, x: i32, y: i32, w: i32) bool {
     var hit = false;
     switch (c.kind) {
@@ -7629,7 +7771,7 @@ fn condFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, c: *wf.Cond, x: i32, y: i32
         .counter => {
             hit = slotRow(ed, ctx, m, &c.slot, &m.counterNames, m.ncounters, x, y, w - 110, "counter") or hit;
             hit = cmpRow(ed, ctx, m, &c.cmp, x + 124, y) or hit;
-            hit = trigI(ed, ctx, m, x + 168, y, @max(w - 172, STEP_MIN_W), "", &c.n, 1, -9999, 9999, "The number it is compared against") or hit;
+            hit = trigI(ed, ctx, m, x + numAt(.counter_n), y, numW(.counter_n, w), "", &c.n, 1, -9999, 9999, "The number it is compared against") or hit;
         },
         .timer => {
             hit = slotRow(ed, ctx, m, &c.slot, &m.timerNames, m.ntimers, x, y, w - 60, "timer") or hit;
@@ -7641,7 +7783,7 @@ fn condFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, c: *wf.Cond, x: i32, y: i32
         },
         .elapsed => {
             hit = cmpRow(ed, ctx, m, &c.cmp, x, y) or hit;
-            hit = trigF(ed, ctx, m, x + 46, y, @max(w - 50, STEP_MIN_W), "s", &c.r, 1, 0, 36000, "Seconds since the map started") or hit;
+            hit = trigF(ed, ctx, m, x + numAt(.elapsed_s), y, numW(.elapsed_s, w), "s", &c.r, 1, 0, 36000, "Seconds since the map started") or hit;
         },
         .region => {
             var rb: [48]u8 = undefined;
@@ -7662,13 +7804,13 @@ fn condFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, c: *wf.Cond, x: i32, y: i32
         },
         .near => {
             hit = npcRow(ed, ctx, m, &c.slot, x, y, 150) or hit;
-            hit = trigF(ed, ctx, m, x + 156, y, @max(w - 160, STEP_MIN_W), "r", &c.r, 0.5, 0.5, 200, "How near he has to come, in metres") or hit;
+            hit = trigF(ed, ctx, m, x + numAt(.near_r), y, numW(.near_r, w), "r", &c.r, 0.5, 0.5, 200, "How near he has to come, in metres") or hit;
         },
         .talked => hit = dialogRow(ed, ctx, m, &c.ref, x, y, w, 11) or hit,
         .deaths, .alive => {
             hit = foeRow(ed, ctx, m, &c.foe, x, y, w - 120) or hit;
             hit = cmpRow(ed, ctx, m, &c.cmp, x + 154, y) or hit;
-            hit = trigI(ed, ctx, m, x + 198, y, @max(w - 202, STEP_MIN_W), "", &c.n, 1, 0, 9999, "How many") or hit;
+            hit = trigI(ed, ctx, m, x + numAt(.deaths_n), y, numW(.deaths_n, w), "", &c.n, 1, 0, 9999, "How many") or hit;
         },
     }
     return hit;
@@ -7712,14 +7854,14 @@ fn actFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, a: *wf.Act, x: i32, y: i32, 
                 a.countop = @enumFromInt(pick);
                 hit = true;
             }
-            hit = trigI(ed, ctx, m, x + 218, y, @max(w - 222, STEP_MIN_W), "", &a.n, 1, -9999, 9999, "By how much") or hit;
+            hit = trigI(ed, ctx, m, x + numAt(.act_count), y, numW(.act_count, w), "", &a.n, 1, -9999, 9999, "By how much") or hit;
         },
         .timer => {
             hit = slotRow(ed, ctx, m, &a.slot, &m.timerNames, m.ntimers, x, y, w - 100, "timer") or hit;
-            hit = trigF(ed, ctx, m, x + 124, y, @max(w - 128, STEP_MIN_W), "s", &a.v, 0.5, 0, 3600, "How long it runs for, in seconds") or hit;
+            hit = trigF(ed, ctx, m, x + numAt(.act_timer), y, numW(.act_timer, w), "s", &a.v, 0.5, 0, 3600, "How long it runs for, in seconds") or hit;
         },
         .wait => {
-            hit = trigF(ed, ctx, m, x, y, @max(@min(w, 140), STEP_MIN_W), "s", &a.v, 0.25, 0, 600, "Seconds held before the next action") or hit;
+            hit = trigF(ed, ctx, m, x + numAt(.act_wait), y, numW(.act_wait, w), "s", &a.v, 0.25, 0, 600, "Seconds held before the next action") or hit;
         },
     }
     return hit;
@@ -8029,19 +8171,11 @@ test "NO NUMERIC ROW IN THE SCRIPT PANEL OVERHANGS THE DELETE BUTTON BESIDE IT" 
     // What `condFields` and `actFields` are handed: the right column, less the kind dropdown and the `x` button.
     const rw = SCRIPT_W - SCRIPT_LIST_W - DLG_PAD * 3;
     const w = rw - 154 - 26;
-    const rows = [_]struct { name: []const u8, at: i32, wide: i32 }{
-        .{ .name = "counter n ", .at = 168, .wide = @max(w - 172, STEP_MIN_W) },
-        .{ .name = "elapsed s ", .at = 46, .wide = @max(w - 50, STEP_MIN_W) },
-        .{ .name = "near r    ", .at = 156, .wide = @max(w - 160, STEP_MIN_W) },
-        .{ .name = "deaths n  ", .at = 198, .wide = @max(w - 202, STEP_MIN_W) },
-        .{ .name = "act count ", .at = 218, .wide = @max(w - 222, STEP_MIN_W) },
-        .{ .name = "act timer ", .at = 124, .wide = @max(w - 128, STEP_MIN_W) },
-        .{ .name = "act wait  ", .at = 0, .wide = @max(@min(w, 140), STEP_MIN_W) },
-    };
-    for (rows) |r| {
-        std.debug.print("\n  {s} x+{d:>3} w {d:>3} -> ends at {d:>3} of {d}", .{ r.name, r.at, r.wide, r.at + r.wide, w });
-        if (r.at + r.wide <= w) continue;
-        std.debug.print("  OVER by {d}\n", .{r.at + r.wide - w});
+    for (SCRIPT_NUMS, 0..) |r, i| {
+        const wide = numW(@enumFromInt(i), w);
+        std.debug.print("\n  {s} x+{d:>3} w {d:>3} -> ends at {d:>3} of {d}", .{ r.name, r.at, wide, r.at + wide, w });
+        if (r.at + wide <= w) continue;
+        std.debug.print("  OVER by {d}\n", .{r.at + wide - w});
         return error.TestUnexpectedResult;
     }
     std.debug.print("\n  furniture {d} px, floor {d} px\n", .{ ui.STEP_FURNITURE, STEP_MIN_W });
@@ -8495,6 +8629,42 @@ test "THE COUNT IS HELD, AND AN EDIT MOVES IT — a stale label sends the author
     ed.bank(m);
     try std.testing.expectEqual(@as(usize, 1), unfilledCount(&ed, m));
     try std.testing.expectEqual(countUnfilled(m), unfilledCount(&ed, m));
+}
+
+test "THE ROOMS PANEL'S GATE LINE IS HELD, AND BOTH AN OP AND A DRAGGED WALL MOVE IT" {
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    m.blank("gateheld");
+    var a = wf.Arena{ .n = 4 };
+    a.vx = [_]f32{0} ** wf.MAX_ARENA_VERTS;
+    a.vz = [_]f32{0} ** wf.MAX_ARENA_VERTS;
+    a.vx[0] = -10;
+    a.vz[0] = -10;
+    a.vx[1] = 10;
+    a.vz[1] = -10;
+    a.vx[2] = 10;
+    a.vz[2] = 10;
+    a.vx[3] = -10;
+    a.vz[3] = 10;
+    m.arenas[0] = a;
+    m.narenas = 1;
+    var o = wf.defaults(.at);
+    o.kind = .foggate;
+    o.x = 0;
+    o.z = -10;
+    const oi = try m.add(o);
+
+    var ed = Editor{};
+    try std.testing.expect(hasGateOnWall(&ed, m, &m.arenas[0]));
+    // Held: the gate walks off the wall and the line does not know until the edit banks.
+    m.ops[oi].z = 400;
+    try std.testing.expect(hasGateOnWall(&ed, m, &m.arenas[0]));
+    ed.bank(m);
+    try std.testing.expect(!hasGateOnWall(&ed, m, &m.arenas[0]));
+    // A DRAG BANKS ONCE AND THEN KEEPS MOVING: the corners are in the key, so the wall coming to the gate is seen.
+    m.arenas[0].vz[0] = 400;
+    m.arenas[0].vz[1] = 400;
+    try std.testing.expect(hasGateOnWall(&ed, m, &m.arenas[0]));
 }
 
 test "WHAT THE EMPTY-CONTAINER COUNT COSTS A FRAME — the button's label is a walk of every op" {

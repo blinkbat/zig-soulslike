@@ -1093,15 +1093,9 @@ const cliffParts = [_]Part{
 
 /// THE COLLIDERS A KIND STANDS UP. A cliff's are fitted off its own rock (`rock.cliffColliders`, one capsule per lobe and boulder through the walk band); every other kind carries its row's. Nothing that builds or draws a collider reads `Info.parts` directly.
 pub fn partsOf(k: Kind) []const Part {
-    return switch (k) {
-        .cliff => rock.cliffColliders(0),
-        .cliff2, .illusory => rock.cliffColliders(1),
-        .cliff3 => rock.cliffColliders(2),
-        .cliff4 => rock.cliffColliders(3),
-        .cliff5 => rock.cliffColliders(4),
-        .cliff6 => rock.cliffColliders(5),
-        else => info(k).parts,
-    };
+    if (k == .illusory) return rock.cliffColliders(cliffRow(.cliff2).?);
+    if (cliffRow(k)) |row| return rock.cliffColliders(row);
+    return info(k).parts;
 }
 
 /// The `rock.CLIFF_PROPS` row a cliff-family kind draws, null for everything else. The illusory wall is left out: it is a wall to walk into, not a face to seat.
@@ -1112,13 +1106,13 @@ pub fn cliffRow(k: Kind) ?usize {
     return i - first;
 }
 
-// The six `cliffN` tags index `rock.CLIFF_PROPS` by their own order, in `partsOf` and again in `rock.cliff1`..`cliff6`. Reordering the enum or the table silently hands a face someone else's colliders.
+// The six `cliffN` tags index `rock.CLIFF_PROPS` by their own order, through `cliffRow` and again in `rock.cliff1`..`cliff6`. Reordering the enum or the table silently hands a face someone else's colliders.
 comptime {
     const first = @intFromEnum(Kind.cliff);
     for ([_]Kind{ .cliff, .cliff2, .cliff3, .cliff4, .cliff5, .cliff6 }, 0..) |k, i| {
-        if (@intFromEnum(k) != first + i) @compileError("props: the `cliffN` tags are no longer consecutive — `partsOf` indexes `rock.CLIFF_PROPS` by that run");
+        if (@intFromEnum(k) != first + i) @compileError("props: the `cliffN` tags are no longer consecutive — `cliffRow` indexes `rock.CLIFF_PROPS` by that run");
     }
-    if (rock.CLIFF_PROPS.len != 6) @compileError("props: `rock.CLIFF_PROPS` is no longer six rows — `partsOf` names one `cliffN` tag per row");
+    if (rock.CLIFF_PROPS.len != 6) @compileError("props: `rock.CLIFF_PROPS` is no longer six rows — `rock.cliff1`..`cliff6` name one builder per row");
 }
 
 pub const FIT_CAP = rock.FIT_CAP;

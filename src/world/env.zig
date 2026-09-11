@@ -419,10 +419,13 @@ const Index = struct {
     }
 };
 
+/// The ceiling on `View.floor` for the flora pass. 180 m from a boom 55 m back is 125 m of carpet ahead of the subject, past anything play reaches.
+pub const FLORA_FLOOR: f32 = 180.0;
+
 pub const View = struct {
     pos: rl.Vector3,
     n: [4]rl.Vector3,
-    /// Metres every per-kind view distance is lifted to, so what culls is the frustum and the far clip. 0 in play.
+    /// Metres every per-kind view distance is lifted to, so what culls is the frustum and the far clip. 0 in play. Ground cover is capped at `FLORA_FLOOR`.
     floor: f32 = 0,
 
     pub fn fromCamera(cam: rl.Camera3D, aspect: f32) View {
@@ -2737,8 +2740,11 @@ pub const Env = struct {
         return self.nlights;
     }
 
+    /// GROUND COVER IS NOT LIFTED WITH THE REST (`FLORA_FLOOR`) — the boot screen's floor of 2600 m put 7,904 tufts on the frame against 798 in play, and past 180 m a tuft is under two pixels.
     pub fn drawFlora(self: *Env, view: *const View) void {
-        self.drawIndexed(&self.flx, .{ .view = view.* });
+        var v = view.*;
+        v.floor = mathx.minF(v.floor, FLORA_FLOOR);
+        self.drawIndexed(&self.flx, .{ .view = v });
     }
 
     pub fn drawVeils(self: *Env, view: *const View) void {

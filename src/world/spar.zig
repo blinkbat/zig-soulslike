@@ -4,7 +4,7 @@ const env = @import("env.zig");
 const foemod = @import("../foes/foe.zig");
 
 /// Where the room is written when a test or the harness needs it on disk; the editor names the same file.
-pub const PATH = wf.DIR ++ "/test_spar.world";
+pub const PATH = wf.DIR ++ "/test_spar" ++ wf.EXT;
 
 /// The floor's radius — 42 m across, which is room enough for the mastodon to charge and turn.
 pub const R: f32 = 21.0;

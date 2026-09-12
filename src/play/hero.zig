@@ -1379,6 +1379,20 @@ pub fn rootAt(pos: rl.Vector3) rl.Matrix {
     return tr(pos.x, pos.y, pos.z);
 }
 
+/// The spin a body carries at its own pelvis, in the rig's frame: roll about its facing, pitch over its toes,
+/// `prot` the pelvis turning inside the body, `sway` lateral metres and `lift` metres straight up (a hop, a hover).
+pub const RootSpin = struct { roll: f32 = 0, pitch: f32 = 0, prot: f32 = 0, sway: f32 = 0, pelvY: f32, lift: f32 = 0 };
+
+/// THE ROOT OF EVERY HUMANOID ON THE SHARED SCAFFOLD, written once. `pelvY` and `sway` are stature-relative and
+/// billed `* fs` here, which is the law a scale≠1 body sinks through when the chain is transcribed by hand.
+pub fn rootChain(fs: f32, s: RootSpin, facingDeg: f32, pos: rl.Vector3) rl.Matrix {
+    return mul(scaleM(fs, fs, fs), mul3(
+        mul3(rz(s.roll), rx(s.pitch), ry(s.prot)),
+        mul(tr(s.sway * fs, s.pelvY * fs + s.lift, 0), ry(facingDeg)),
+        rootAt(pos),
+    ));
+}
+
 fn bump(u: f32, a: f32, b: f32) f32 {
     const mid = 0.5 * (a + b);
     return mathx.pulse(u, a, mid, mid, b);

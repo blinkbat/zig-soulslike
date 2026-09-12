@@ -1464,11 +1464,14 @@ pub const Warrior = struct {
         const collapse = mathx.lerpF(hipY, 0.22 * H, dk);
         const pitchRoot = (self.bodyLean * PELVIS_SHARE) + 20.0 * dk + 4.0 * kn;
         const pelvY = if (dead) collapse else hipY + bob - dip - braceSink;
-        wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul3(rz(9.0 * dk), rx(pitchRoot), ry(prot + self.twist * 0.22)),
-            mul(tr(sway * fs, pelvY * fs + sink + self.hop, 0), ry(facingDeg)),
-            heromod.rootAt(self.pos),
-        ));
+        wx[ROOT] = heromod.rootChain(fs, .{
+            .roll = 9.0 * dk,
+            .pitch = pitchRoot,
+            .prot = prot + self.twist * 0.22,
+            .sway = sway,
+            .pelvY = pelvY,
+            .lift = sink + self.hop,
+        }, facingDeg, self.pos);
 
         const legsTaken = dead or kn > 0.001 or self.leaping();
         if (!legsTaken) {

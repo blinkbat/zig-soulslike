@@ -1078,11 +1078,14 @@ pub const Archer = struct {
         const collapse = mathx.lerpF(hipY, 0.22 * H, dk);
         const pitchBody = 20.0 * dk;
         const pelvY = if (dead) collapse else hipY + bob - dip - self.leapCrouch();
-        wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul3(rz(10.0 * dk), rx(pitchBody), ry(prot)),
-            mul(tr(sway * fs, pelvY * fs + sink + self.hop, 0), ry(facingDeg)),
-            heromod.rootAt(self.pos),
-        ));
+        wx[ROOT] = heromod.rootChain(fs, .{
+            .roll = 10.0 * dk,
+            .pitch = pitchBody,
+            .prot = prot,
+            .sway = sway,
+            .pelvY = pelvY,
+            .lift = sink + self.hop,
+        }, facingDeg, self.pos);
 
         if (!dead) {
             heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, solePatches);

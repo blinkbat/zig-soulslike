@@ -6456,7 +6456,7 @@ test "EVERY SHIPPED MAP LOADS AND MATERIALIZES, not just the one the game starts
     }
     try std.testing.expect(seen >= 3);
     var line: usize = 0;
-    try wf.load(wf.DIR ++ "/03_bone_court" ++ wf.EXT, m, &line);
+    try wf.loadForTest(wf.DIR ++ "/03_bone_court" ++ wf.EXT, m, &line);
     var shields: usize = 0;
     var blades: usize = 0;
     for (m.foes[0..m.nfoes]) |f| {

@@ -627,11 +627,14 @@ pub const Ent = struct {
 
         var wx: [N]rl.Matrix = undefined;
         const pelvY = if (dead) lerpF(hipY, hipY * 0.70, dk) else hipY + pel.bob - pel.dip;
-        wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul3(rz(creak * 0.5 + lumber * 0.4 + 7.0 * dk), rx(leanX), ry(pel.prot)),
-            mul(tr(pel.sway * fs, pelvY * fs + sink, 0), ry(facingDeg)),
-            heromod.rootAt(self.pos),
-        ));
+        wx[ROOT] = heromod.rootChain(fs, .{
+            .roll = creak * 0.5 + lumber * 0.4 + 7.0 * dk,
+            .pitch = leanX,
+            .prot = pel.prot,
+            .sway = pel.sway,
+            .pelvY = pelvY,
+            .lift = sink,
+        }, facingDeg, self.pos);
         if (!dead) {
             heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, solePatches);
         } else {

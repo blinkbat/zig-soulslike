@@ -713,11 +713,14 @@ pub const Ancient = struct {
         var wx: [N]rl.Matrix = undefined;
         const collapse = lerpF(hipY, 0.20 * H, dk);
         const pelvY = if (dead) collapse else hipY + pel.bob - pel.dip;
-        wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul3(rz(8.0 * dk), rx(17.0 * dk), ry(pel.prot)),
-            mul(tr(pel.sway * fs, pelvY * fs + sink, 0), ry(facingDeg)),
-            heromod.rootAt(self.pos),
-        ));
+        wx[ROOT] = heromod.rootChain(fs, .{
+            .roll = 8.0 * dk,
+            .pitch = 17.0 * dk,
+            .prot = pel.prot,
+            .sway = pel.sway,
+            .pelvY = pelvY,
+            .lift = sink,
+        }, facingDeg, self.pos);
         if (!dead) {
             heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, solePatches);
         }

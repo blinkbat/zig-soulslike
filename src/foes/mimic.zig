@@ -659,11 +659,12 @@ pub const Mimic = struct {
 
         var wx: [N]rl.Matrix = undefined;
         const rootY = lerpF(0.0, ROOT_Y, up) * (1.0 - 0.7 * dk) + bob + breathe;
-        wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul(rz(4.0 * mathx.sinf(self.phase * std.math.tau) * m + 26.0 * dk), rx(-6.0 * stun + 14.0 * dk)),
-            mul(tr(0, rootY * fs + sink, 0), ry(facingDeg)),
-            heromod.rootAt(self.pos),
-        ));
+        wx[ROOT] = heromod.rootChain(fs, .{
+            .roll = 4.0 * mathx.sinf(self.phase * std.math.tau) * m + 26.0 * dk,
+            .pitch = -6.0 * stun + 14.0 * dk,
+            .pelvY = rootY,
+            .lift = sink,
+        }, facingDeg, self.pos);
 
         inline for (LEGS, 0..) |L, i| {
             const pairPhase = if (i == 0 or i == 3) self.phase else self.phase + 0.5;

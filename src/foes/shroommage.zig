@@ -736,11 +736,14 @@ pub const Mage = struct {
         var wx: [N]rl.Matrix = undefined;
         const collapse = lerpF(hipY, 0.16 * H, dk);
         const pelvY = if (dead) collapse else hipY + pel.bob - pel.dip;
-        wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul3(rz(11.0 * dk), rx(20.0 * dk), ry(pel.prot)),
-            mul(tr(pel.sway * fs, pelvY * fs + sink, 0), ry(facingDeg)),
-            heromod.rootAt(self.pos),
-        ));
+        wx[ROOT] = heromod.rootChain(fs, .{
+            .roll = 11.0 * dk,
+            .pitch = 20.0 * dk,
+            .prot = pel.prot,
+            .sway = pel.sway,
+            .pelvY = pelvY,
+            .lift = sink,
+        }, facingDeg, self.pos);
 
         if (!dead) {
             heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, SOLES);
@@ -1222,7 +1225,10 @@ test "IT BURNS ONCE AND THEN LEAVES — the spring lands it back in its own band
 test "THE FIREBALL IS SLOW, IT BOUNCES, AND IT IS THE ONLY THING IN THE POOL THAT DOES" {
     try std.testing.expect(EMBER_SPEED < koboldmod.CLUMP_SPEED);
     try std.testing.expect(archermod.bouncesOf(.emberball) >= 2);
-    inline for (.{ .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp }) |s| {
+    // OFF THE ENUM, never a list beside it: the hand-written list named 7 of the 12 that do not bounce.
+    inline for (@typeInfo(archermod.Shot).@"enum".fields) |f| {
+        const s: archermod.Shot = @enumFromInt(f.value);
+        if (s == .emberball) continue;
         try std.testing.expectEqual(@as(u8, 0), archermod.bouncesOf(s));
     }
     try std.testing.expectApproxEqAbs(@as(f32, 0), EMBER_HIT.dmg, 1e-6);

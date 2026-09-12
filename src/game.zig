@@ -2395,6 +2395,55 @@ fn setCasterShaders(g: *Game, sh: rl.Shader) void {
     g.pack.setShader(sh);
 }
 
+/// DEV SENSOR (`Env.checkModels` is the same watch over the world's prototypes): a foe's `model` is written
+/// ONCE, by `init`, and never again — so a mesh or material that has MOVED means something walked over the
+/// `Game`, and the fault that follows lands inside `DrawMesh`, where the cause is unreadable. The material's
+/// SHADER is left out on purpose: `setCasterShaders` swaps that twice a frame.
+var foeStamp: [FOE_GROUPS.len]u64 = [_]u64{0} ** FOE_GROUPS.len;
+var foeWatched = false;
+
+fn mixStamp(h: *u64, x: u64) void {
+    h.* = (h.* ^ x) *% 0x9E3779B97F4A7C15;
+}
+
+fn stampParts(h: *u64, v: anytype) void {
+    const T = @TypeOf(v);
+    if (T == rl.Mesh) {
+        mixStamp(h, @intFromPtr(v.vboId));
+        mixStamp(h, @as(u32, @bitCast(v.vaoId)));
+        mixStamp(h, @as(u32, @bitCast(v.vertexCount)));
+        return;
+    }
+    if (T == rl.Material) return mixStamp(h, @intFromPtr(v.maps));
+    if (T == rl.Model) {
+        mixStamp(h, @intFromPtr(v.meshes));
+        mixStamp(h, @intFromPtr(v.materials));
+        mixStamp(h, @as(u32, @bitCast(v.meshCount)));
+        return;
+    }
+    switch (@typeInfo(T)) {
+        .array => for (v) |e| stampParts(h, e),
+        .optional => if (v) |e| stampParts(h, e),
+        .@"struct" => inline for (std.meta.fields(T)) |f| stampParts(h, @field(v, f.name)),
+        else => {},
+    }
+}
+
+fn checkFoeModels(g: *const Game, where: []const u8) void {
+    inline for (FOE_GROUPS, 0..) |gr, i| {
+        if (comptime @hasField(@FieldType(Game, gr.field), "model")) {
+            var h: u64 = 0xF0E;
+            stampParts(&h, @field(g, gr.field).model);
+            if (!foeWatched) {
+                foeStamp[i] = h;
+            } else if (foeStamp[i] != h) {
+                std.debug.panic("game: the {s} model was CLOBBERED by {s} — stamp 0x{x}, was 0x{x}", .{ gr.field, where, h, foeStamp[i] });
+            }
+        }
+    }
+    foeWatched = true;
+}
+
 pub fn heroCenterY(g: *const Game) f32 {
     return g.hero.pos.y + HERO_CENTER_Y;
 }
@@ -4913,6 +4962,7 @@ fn drawWeatherOverlay(g: *Game) void {
 }
 
 pub fn drawScene(g: *Game) void {
+    checkFoeModels(g, "the frame ahead of it");
     g.env.resetStats();
     applyStow(g);
     // The cutaway is the editor's view of its level and nobody else's: left set, an F5 from Underground played with the hill off.
@@ -4964,6 +5014,7 @@ pub fn drawScene(g: *Game) void {
     g.env.drawCaveShells(&view);
     if (shows(g, .ground)) g.env.drawWater();
     if (g.menu.wireframe) rl.gl.rlEnableWireMode();
+    checkFoeModels(g, "the shadow pass");
     drawCasters(g, .{ .view = view });
     if (shows(g, .decor)) {
         g.scene.setWind(true);
@@ -7234,7 +7285,7 @@ test "the editor's re-home stamp trips on every edit a placed body can take, and
     const m = try alloc.create(worldfmt.Map);
     defer alloc.destroy(m);
     var line: usize = 0;
-    try worldfmt.load(worldfmt.DIR ++ "/01_fallen_plain" ++ worldfmt.EXT, m, &line);
+    try worldfmt.loadForTest(worldfmt.START_MAP, m, &line);
     try std.testing.expect(m.nfoes > 0);
 
     const at0 = foePlacementStamp(m);

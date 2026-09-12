@@ -806,11 +806,12 @@ pub const Bat = struct {
         const waist = bodyPitch - leanX;
 
         var wx: [N]rl.Matrix = undefined;
-        wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul(rz(24.0 * dk), rx(leanX * (1.0 - furl) + 180.0 * furl)),
-            mul(tr(0, hipY * fs + bob, 0), ry(facingDeg)),
-            heromod.rootAt(v3(self.pos.x, self.pos.y + self.lift(), self.pos.z)),
-        ));
+        wx[ROOT] = heromod.rootChain(fs, .{
+            .roll = 24.0 * dk,
+            .pitch = leanX * (1.0 - furl) + 180.0 * furl,
+            .pelvY = hipY,
+            .lift = bob,
+        }, facingDeg, v3(self.pos.x, self.pos.y + self.lift(), self.pos.z));
 
         setLocal(&wx, SPINE, self.rest, rx(waist * 0.55));
         const deflect = self.deflect.spring.v;

@@ -4,7 +4,7 @@ const wf = @import("worldfmt.zig");
 const NL = "\n";
 
 /// Where the cave bench is written; `wf.save` panics under `is_test` on anything but `worlds/test_*.world`.
-pub const BENCH_PATH = wf.DIR ++ "/test_caves.world";
+pub const BENCH_PATH = wf.DIR ++ "/test_caves" ++ wf.EXT;
 
 pub const N = wf.CAVE_N;
 pub const CELLS = wf.CAVE_CELLS;

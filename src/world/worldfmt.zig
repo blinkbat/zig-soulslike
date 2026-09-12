@@ -1682,14 +1682,6 @@ pub fn sweptSpan(from: [2]f32, to: [2]f32, r: f32, half: f32, step: f32, n: usiz
     return .{ xs[0], zs[0], xs[1], zs[1] };
 }
 
-/// THE CELL A POINT FALLS IN, which is the FLOOR and never the nearest lattice point — a cell is named by its LOW
-/// corner, so rounding puts the answer half a cell past the point. `sampleHeight` steps on this same line.
-pub fn pointCell(c: f32, half: f32, step: f32, n: usize) ?usize {
-    const g = @floor((c + half) / step);
-    if (g < 0 or g > @as(f32, @floatFromInt(n - 2))) return null;
-    return @intFromFloat(g);
-}
-
 pub const Sculpt = enum {
     raise,
     lower,
@@ -2256,40 +2248,6 @@ pub const Map = struct {
                 changed = true;
             }
         }
-        return changed;
-    }
-
-    /// ONE STRAIGHT CUT ON THE LATTICE'S OWN CELLS. A swept disc leaves a ragged boundary and every cell of it
-    /// becomes its own wall chord; this walks the segment and flags only the cells it crosses.
-    pub fn cliffLine(self: *Map, x0: f32, z0: f32, x1: f32, z1: f32, case: u8, out: *[4]usize) bool {
-        out.* = EMPTY_SPAN;
-        const step = self.heightStep();
-        const dx = x1 - x0;
-        const dz = z1 - z0;
-        const len = @sqrt(dx * dx + dz * dz);
-        if (len < step * 0.5) return false;
-        const n: usize = @intFromFloat(@ceil(len / (step * 0.25)));
-        var lox: usize = HEIGHT_N;
-        var loz: usize = HEIGHT_N;
-        var hix: usize = 0;
-        var hiz: usize = 0;
-        var changed = false;
-        var i: usize = 0;
-        while (i <= n) : (i += 1) {
-            const t = @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(n));
-            const ix = pointCell(x0 + dx * t, self.half, step, HEIGHT_N) orelse continue;
-            const iz = pointCell(z0 + dz * t, self.half, step, HEIGHT_N) orelse continue;
-            lox = @min(lox, ix);
-            loz = @min(loz, iz);
-            hix = @max(hix, ix);
-            hiz = @max(hiz, iz);
-            const j = iz * HEIGHT_N + ix;
-            if (self.cliff[j] == case) continue;
-            self.cliff[j] = case;
-            changed = true;
-        }
-        if (lox > hix or loz > hiz) return false;
-        out.* = .{ lox, loz, hix, hiz };
         return changed;
     }
 
@@ -5683,38 +5641,3 @@ test "A SPAWN'S HOUR IS DERIVED UNTIL THE EDITOR SAYS OTHERWISE, and an old map 
     std.debug.print("\n  spawns: {d} of {d} kinds keep half the clock by default\n", .{ nocturnal, NFOE });
 }
 
-test "A CUT LINE FLAGS THE CELLS THE SEGMENT CROSSES — a cell is its LOW corner, so a rounded index lands half a cell past the drag" {
-    const m = try testMap(std.testing.allocator, TEST_HEAD ++ TEST_HALF_ROW);
-    defer std.testing.allocator.destroy(m);
-    const step = m.heightStep();
-    std.debug.print("\n  cut line on a {d:.3} m lattice\n", .{step});
-
-    // Every sample of the drag must land in the cell that CONTAINS it, worst case over a full cell of phase.
-    var worst: f32 = 0;
-    var phase: f32 = 0;
-    while (phase < 1.0) : (phase += 0.05) {
-        const x = -m.half + (17.0 + phase) * step;
-        const ix = pointCell(x, m.half, step, HEIGHT_N) orelse return error.TestUnexpectedResult;
-        const lo = -m.half + @as(f32, @floatFromInt(ix)) * step;
-        worst = @max(worst, @max(lo - x, x - (lo + step)));
-    }
-    std.debug.print("    worst overshoot of the cell holding the point: {d:.4} m\n", .{worst});
-    try std.testing.expect(worst <= 0);
-
-    var span: [4]usize = EMPTY_SPAN;
-    const z: f32 = 3.0;
-    try std.testing.expect(m.cliffLine(-20.0, z, 20.0, z, CLIFF_FACE, &span));
-    const rows = span[3] - span[1] + 1;
-    std.debug.print("    a straight run of 40 m: {d} cells of x, {d} row(s) of z\n", .{ span[2] - span[0] + 1, rows });
-    try std.testing.expectEqual(@as(usize, 1), rows);
-    try std.testing.expectEqual(pointCell(z, m.half, step, HEIGHT_N).?, span[1]);
-
-    // Every flagged cell holds a point of the segment, and every point of the segment is in a flagged cell.
-    var ix = span[0];
-    while (ix <= span[2]) : (ix += 1) {
-        try std.testing.expectEqual(CLIFF_FACE, m.cliff[span[1] * HEIGHT_N + ix]);
-        const lo = -m.half + @as(f32, @floatFromInt(ix)) * step;
-        try std.testing.expect(lo + step > -20.0 and lo < 20.0);
-    }
-    try std.testing.expect(!m.cliffLine(-20.0, z, 20.0, z, CLIFF_FACE, &span));
-}

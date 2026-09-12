@@ -4,6 +4,7 @@ const gfx = @import("../gfx/gfx.zig");
 const mathx = @import("../core/mathx.zig");
 const combat = @import("../play/combat.zig");
 const heromod = @import("../play/hero.zig");
+const anim = @import("../core/anim.zig");
 const foe = @import("foe.zig");
 const behave = @import("behave.zig");
 const wf = @import("../world/worldfmt.zig");
@@ -325,6 +326,8 @@ const HEM_DRAG = 13.0;
 const HEM_EASE = 6.0;
 const HEM_SETTLE = 3.2;
 const HEM_SWAY = 2.0;
+const HEM_STIFF: f32 = HEM_EASE * HEM_SETTLE;
+const HEM_ZETA: f32 = HEM_EASE / (2.0 * @sqrt(HEM_EASE * HEM_SETTLE));
 
 const ORB_AT = v3(0, -0.062 * H, 0.052 * H);
 const ORB_R = 0.052 * H;
@@ -539,7 +542,7 @@ pub const Druidess = struct {
     /// 0..1, how lit the orb is: the gather of a cast and the whole of the channel.
     glow: f32 = 0,
     hemLean: f32 = 0,
-    hemVel: f32 = 0,
+    hemSpring: anim.Spring = .{},
     trailDrag: f32 = 0,
     trailYaw: [TRAIL_N]f32 = [_]f32{0} ** TRAIL_N,
     trailVel: [TRAIL_N]f32 = [_]f32{0} ** TRAIL_N,
@@ -580,6 +583,7 @@ pub const Druidess = struct {
             .heroWas = home,
         };
         d.rest = REST;
+        d.hemSpring.set(0);
         d.fxRng = foe.fxStream(seed, 74011.0, 0xD8);
         d.aiRng = foe.fxStream(seed, 30931.0, 0xD9);
         d.vineCd = 0.6 + seed * 0.8;
@@ -1318,11 +1322,10 @@ pub const Druidess = struct {
     }
 
     fn tickHem(self: *Druidess, dt: f32, speed: f32) void {
+        // THE SAME SPRING `necro.tickHem` is on: a hand-rolled `1 - HEM_EASE * dt` goes negative past 167 ms a
+        // frame, and under-integrates the overshoot differently at every rate — 1.4% at 30 Hz against 4.3% at 144.
         const want = HEM_DRAG * mathx.clampF(speed / WALK_SPEED, 0, 1);
-        const accel = (want - self.hemLean) * HEM_EASE * HEM_SETTLE;
-        self.hemVel += accel * dt;
-        self.hemVel *= mathx.maxF(0, 1.0 - HEM_EASE * dt);
-        self.hemLean += self.hemVel * dt;
+        self.hemLean = self.hemSpring.step(want, HEM_STIFF, HEM_ZETA, dt);
     }
 
         /// THREE SPRINGS ON HER HEADING: each tail chases her facing through its own stiffness and rings past it.
@@ -1362,11 +1365,14 @@ pub const Druidess = struct {
         var wx: [N]rl.Matrix = undefined;
         const collapse = lerpF(hipY, 0.22 * H, dk);
         const pelvY = if (dead) collapse else hipY + pel.bob - pel.dip + self.hop / mathx.maxF(self.scale, 1e-3);
-        wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul3(rz(self.sideLean + 9.0 * dk), rx(16.0 * dk), ry(pel.prot)),
-            mul(tr(pel.sway * fs, pelvY * fs + sink, 0), ry(facingDeg)),
-            heromod.rootAt(self.pos),
-        ));
+        wx[ROOT] = heromod.rootChain(fs, .{
+            .roll = self.sideLean + 9.0 * dk,
+            .pitch = 16.0 * dk,
+            .prot = pel.prot,
+            .sway = pel.sway,
+            .pelvY = pelvY,
+            .lift = sink,
+        }, facingDeg, self.pos);
         if (!dead) {
             heromod.legPair(&wx, &self.rest, self.pos.y + self.hop, self.phase, m, 0, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, solePatches);
         }

@@ -936,11 +936,14 @@ pub const Kobold = struct {
             16.0 * dk;
         const sag = legSink(crouch);
         const pelvY = if (dead) collapse else hipY + bob + 0.006 * H * o.br - dip - sag;
-        wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul3(rz(8.0 * dk + 1.6 * o.rock), rx(slouch), ry(prot)),
-            mul(tr(sway * fs, pelvY * fs + sink + self.hop, 0), ry(facingDeg)),
-            heromod.rootAt(self.pos),
-        ));
+        wx[ROOT] = heromod.rootChain(fs, .{
+            .roll = 8.0 * dk + 1.6 * o.rock,
+            .pitch = slouch,
+            .prot = prot,
+            .sway = sway,
+            .pelvY = pelvY,
+            .lift = sink + self.hop,
+        }, facingDeg, self.pos);
 
         if (dead) {
             self.legCrumple(&wx, dk);

@@ -933,11 +933,14 @@ pub const Necro = struct {
         const ground = if (dead) collapse else hipY + bob - dip - CROUCH_DROP * self.crouch;
         // The HOP rides on every state's pelvis, death included, or a body killed in flight snaps to the floor.
         const pelvY = ground + self.hop / mathx.maxF(self.scale, 1e-3);
-        wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul3(rz(9.0 * dk), rx(pitchBody), ry(prot)),
-            mul(tr(sway * fs, pelvY * fs + sink, 0), ry(facingDeg)),
-            heromod.rootAt(self.pos),
-        ));
+        wx[ROOT] = heromod.rootChain(fs, .{
+            .roll = 9.0 * dk,
+            .pitch = pitchBody,
+            .prot = prot,
+            .sway = sway,
+            .pelvY = pelvY,
+            .lift = sink,
+        }, facingDeg, self.pos);
 
         if (!dead) {
             heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, solePatches);

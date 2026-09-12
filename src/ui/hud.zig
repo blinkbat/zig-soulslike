@@ -1403,7 +1403,10 @@ test "a word wider than the whole column is taken rather than dropped" {
 
 
 test "A STATUS SAYS ITS OWN NAME — except a stun, which says nothing" {
-    inline for (.{ combat.Ail.poison, .burning, .chill, .bleed, .sleep, .confusion, .charm, .berserk, .stupefy }) |a| {
+    // OFF THE ENUM, never a list beside it: an eleventh meter added to `combat.Ail` has to say its own name too.
+    inline for (@typeInfo(combat.Ail).@"enum".fields) |f| {
+        const a: combat.Ail = @enumFromInt(f.value);
+        if (a == .stun) continue;
         try std.testing.expect(ailWord(a) != null);
     }
     try std.testing.expect(ailWord(.stun) == null);

@@ -486,11 +486,14 @@ pub const Cinder = struct {
         var wx: [N]rl.Matrix = undefined;
         const collapse = lerpF(hipY, 0.22 * H, dk);
         const pelvY = if (dead) collapse else hipY + pel.bob - pel.dip;
-        wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul3(rz(9.0 * dk + lumber * 0.5), rx(leanX), ry(pel.prot)),
-            mul(tr(pel.sway * fs, pelvY * fs + sink, 0), ry(facingDeg)),
-            heromod.rootAt(self.pos),
-        ));
+        wx[ROOT] = heromod.rootChain(fs, .{
+            .roll = 9.0 * dk + lumber * 0.5,
+            .pitch = leanX,
+            .prot = pel.prot,
+            .sway = pel.sway,
+            .pelvY = pelvY,
+            .lift = sink,
+        }, facingDeg, self.pos);
         if (!dead) {
             heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, solePatches);
         } else {

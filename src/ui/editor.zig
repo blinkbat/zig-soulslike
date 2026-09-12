@@ -515,6 +515,7 @@ comptime {
     std.debug.assert(propIcons.len == propBrushes.len);
     std.debug.assert(interactIcons.len == interactBrushes.len);
     std.debug.assert(unitIcons.len == unitBrushes.len);
+    std.debug.assert(GROUND_TOOL_LABELS.len == @typeInfo(GroundTools).@"enum".fields.len);
     std.debug.assert(groundTips.len == groundBrushes.len);
     std.debug.assert(caveTips.len == caveBrushes.len);
     std.debug.assert(locationTips.len == locationBrushes.len);
@@ -698,6 +699,11 @@ fn liquidOf(b: GroundBrush) ?wf.Liquid {
         else => null,
     };
 }
+/// Which of the ground layer's brushes the side rail shows. `GROUND_TOOL_LABELS` is its tab row, pinned to it in
+/// the comptime block — the labels are not the tags (`all` is "All tools"), so only the LENGTH can be checked.
+const GroundTools = enum { cliffs, sculpt, paint, all };
+const GROUND_TOOL_LABELS = [_][:0]const u8{ "Cliffs", "Sculpt", "Paint", "All tools" };
+
 const LocationBrush = enum { clearing, zone, location, arena, erase };
 pub const DecorBrush = enum { single, patch, scatter, erase };
 const PropBrush = enum { stamp, row, ring, cluster, ivy, erase };
@@ -1089,7 +1095,7 @@ pub const Editor = struct {
     strokeLast: ?rl.Vector3 = null,
     cliffHeight: f32 = 6,
     cliffTarget: f32 = 6,
-    groundTools: enum { cliffs, sculpt, paint, all } = .cliffs,
+    groundTools: GroundTools = .cliffs,
     /// THE LEVEL HE WORKS ON, kept across layers: which surface the cursor lands on, which one a body placed here stands on, and whether the hill over every chamber is drawn. The Caves layer turns it on; nothing turns it off but him.
     under: bool = false,
     /// `env.caveAny` as of this frame, so the brush strip can be filtered without a hand on the world.
@@ -1682,7 +1688,10 @@ pub const Editor = struct {
         self.resolveCursor();
     }
 
-    /// THE CAVES LAYER READS THE LAND, cut away or not: the brush follows the hill a chamber goes under, and does not fall into the hole it has just opened. Every other layer picks the surface of the LEVEL — underground, the chamber floor through the cut-away hill.
+    /// A STROKE RIDES THE PLANE IT STARTED ON: once a carve or a cliff drag is down, the cursor is the ray against a
+    /// level plane at the anchor's own height, so the brush cannot fall into the hole it has just opened or climb the
+    /// step it has just raised. Off a stroke it picks the surface of the LEVEL — underground, the chamber floor
+    /// through the cut-away hill.
     fn traceGround(self: *const Editor) ?rl.Vector3 {
         const ray = rl.getScreenToWorldRay(rl.getMousePosition(), self.cam);
         if (ray.direction.y > -1e-4) return null;
@@ -3585,6 +3594,7 @@ pub const Editor = struct {
                     self.bankStroke(m);
                     std.mem.copyForwards(wf.Clearing, m.clearings[i .. m.nclearings - 1], m.clearings[i + 1 .. m.nclearings]);
                     m.nclearings -= 1;
+                    self.clearSel = null;
                     self.rebuild(m, env);
                     self.say("-clearing");
                     return true;
@@ -5116,7 +5126,8 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
     y += ROW_H;
     if (ed.layer == .units) y = drawUnitTabs(ed, ctx, y);
     if (ed.layer == .ground and !ed.floorSculpting()) {
-        inline for (.{ .cliffs, .sculpt, .paint, .all }, .{ "Cliffs", "Sculpt", "Paint", "All tools" }) |tab, label| {
+        inline for (@typeInfo(GroundTools).@"enum".fields, GROUND_TOOL_LABELS) |f, label| {
+            const tab: GroundTools = @enumFromInt(f.value);
             if (ui.button(ctx, ui.rect(8, y, SIDE_W - 16, ROW_H - 3), label, hud.MONO, ed.groundTools == tab, "")) {
                 ed.groundTools = tab;
                 ed.propScroll = 0;

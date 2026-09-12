@@ -735,11 +735,14 @@ pub const Owlbear = struct {
         var wx: [N]rl.Matrix = undefined;
         const crouch = 0.16 * H * settle;
         const pelvY = if (dead) lerpF(hipY, hipY * 0.60, dk) else hipY + pel.bob - pel.dip - crouch;
-        wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul3(rz(sway * 0.5), rx(leanX), ry(pel.prot)),
-            mul(tr(pel.sway * fs, pelvY * fs + sink + self.hop * self.scale, 0), ry(facingDeg)),
-            heromod.rootAt(self.pos),
-        ));
+        wx[ROOT] = heromod.rootChain(fs, .{
+            .roll = sway * 0.5,
+            .pitch = leanX,
+            .prot = pel.prot,
+            .sway = pel.sway,
+            .pelvY = pelvY,
+            .lift = sink + self.hop * self.scale,
+        }, facingDeg, self.pos);
         if (!dead) {
             heromod.legPair(&wx, &self.rest, self.pos.y + self.hop * self.scale, self.phase, m, 0, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, solePatches);
         } else {

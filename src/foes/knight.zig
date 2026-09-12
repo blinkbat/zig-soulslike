@@ -1149,6 +1149,11 @@ comptime {
     }
     std.debug.assert(CHOOSE_N <= MOVES.len and SWEEP2_I >= CHOOSE_N and SWAT_I >= CHOOSE_N);
     if (STROKE.len != MOVES.len) @compileError("knight: STROKE has a row per MOVES row and no longer does");
+    // `windFor` INDEXES `STROKE` by the move, so row i must be move i. Reordering `MOVES_BANK` alone would hand
+    // every stroke its neighbour's gather, and the uniqueness checks below would still pass.
+    for (.{ .{ SWEEP_I, State.sweepwind }, .{ OVER_I, State.overwind }, .{ THRUST_I, State.thrustwind }, .{ BASH_I, State.bashwind }, .{ SWEEP2_I, State.chainwind }, .{ SWAT_I, State.swatwind } }) |row| {
+        if (STROKE[row[0]].wind != row[1]) @compileError("knight: a STROKE row no longer sits at its own move's index");
+    }
     for (0..MOVES.len) |i| {
         for (i + 1..MOVES.len) |j| {
             if (windFor(i) == windFor(j))
@@ -1163,6 +1168,22 @@ comptime {
     }
 }
 const CHOOSE_N = 4;
+
+/// EVERY STROKE, AND THE SWAT ON BOTH SHOULDERS — the roster the throw-it-for-real probes walk. Pinned to `MOVES`
+/// so a stroke added there cannot leave a probe measuring six of seven and passing.
+const THROWN = [_]struct { mv: usize, shield: bool }{
+    .{ .mv = SWEEP_I, .shield = false },
+    .{ .mv = OVER_I, .shield = false },
+    .{ .mv = THRUST_I, .shield = false },
+    .{ .mv = BASH_I, .shield = false },
+    .{ .mv = SWEEP2_I, .shield = false },
+    .{ .mv = SWAT_I, .shield = false },
+    .{ .mv = SWAT_I, .shield = true },
+};
+comptime {
+    if (THROWN.len != MOVES.len + 1) @compileError("knight: THROWN is every MOVES row plus the shield-side swat");
+}
+
 
 const SWEEP_BEARING = 72.0;
 /// EVERY gather aims at full `TURN_RATE`, and the sweep's runs 1.00 s — 183 deg — so a sweep begun out here arrives well inside `SWEEP_BEARING`.
@@ -1227,6 +1248,15 @@ fn swingFor(s: State) ?State {
         if (row.wind == s) return row.swing;
     }
     return null;
+}
+
+/// Still inside a stroke — the gather or the swing it breaks into. Off `STROKE`, so a stroke added there cannot
+/// leave a probe listing the twelve states by hand breaking out early and measuring nothing.
+fn inStroke(s: State) bool {
+    for (STROKE) |row| {
+        if (row.wind == s or row.swing == s) return true;
+    }
+    return false;
 }
 
 const Choice = enum { fall, slam, hop, charge, strike, approach, wait, hold, stepturn, leap };
@@ -5293,17 +5323,8 @@ test "THE WINDOW IS AN INSTANT BEFORE THE HIT, on all five strokes — and the F
 test "EACH STROKE'S DECLARED REACH IS WHAT THE KIT ACTUALLY ARRIVES AT — ON THE LINE HE IS FACING, WHILE LIVE" {
 // MEASURED DOWN HIS FACING, not at any bearing, and THROUGH THE REAL UPDATE: the springs lag the keyed pose by a few frames, so a keyed replay reads a third of the swat's reach.
     const dt = 1.0 / 240.0;
-    const rows = [_]struct { mv: usize, shield: bool }{
-        .{ .mv = SWEEP_I, .shield = false },
-        .{ .mv = OVER_I, .shield = false },
-        .{ .mv = THRUST_I, .shield = false },
-        .{ .mv = BASH_I, .shield = false },
-        .{ .mv = SWEEP2_I, .shield = false },
-        .{ .mv = SWAT_I, .shield = false },
-        .{ .mv = SWAT_I, .shield = true },
-    };
     var wrong: usize = 0;
-    for (rows) |row| {
+    for (THROWN) |row| {
         var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
         k.atk = row.mv;
         k.opener = row.mv;
@@ -5316,10 +5337,7 @@ test "EACH STROKE'S DECLARED REACH IS WHAT THE KIT ACTUALLY ARRIVES AT — ON TH
         while (guard < 4000) : (guard += 1) {
             _ = k.update(dt, v3(0, 0, 40.0), 400.0, .{});
             if (k.strung != 0) break;
-            switch (k.state) {
-                .sweepwind, .chainwind, .overwind, .thrustwind, .bashwind, .swatwind, .sweep, .sweep2, .over, .thrust, .bash, .swat => {},
-                else => break,
-            }
+            if (!inStroke(k.state)) break;
             if (!k.live) continue;
             const door = k.doorSwings();
             const lane = foe.hurtReach(if (door) SH_RAM_HALF else SW_HALF_W, k.scale);
@@ -5487,17 +5505,8 @@ test "THE SWORD DOES NOT PASS THROUGH THE DOOR — a forward stroke carries the 
 test "THE SWORD IS SWUNG AT THE MAN WHERE HE STANDS — thrown for real, every stroke lands anywhere in its band" {
     const dt = 1.0 / 120.0;
     var misses: usize = 0;
-    const rows = [_]struct { mv: usize, shield: bool }{
-        .{ .mv = SWEEP_I, .shield = false },
-        .{ .mv = OVER_I, .shield = false },
-        .{ .mv = THRUST_I, .shield = false },
-        .{ .mv = BASH_I, .shield = false },
-        .{ .mv = SWEEP2_I, .shield = false },
-        .{ .mv = SWAT_I, .shield = false },
-        .{ .mv = SWAT_I, .shield = true },
-    };
     for ([_]usize{ SWEEP_I, SWEEP2_I, SWAT_I, BASH_I }) |mv| try std.testing.expectEqual(@as(f32, 0), MOVES[mv].reachIn);
-    for (rows) |row| {
+    for (THROWN) |row| {
         const mv = row.mv;
         const near = mathx.maxF(foe.closestApproach(BODY_R * SCALE) + (if (row.shield) @as(f32, 0.04) else 0.2), nearR(MOVES[mv], SCALE) + 0.1);
         const far = strokeBandR(mv, row.shield, SCALE) * 0.97;
@@ -5539,10 +5548,7 @@ test "THE SWORD IS SWUNG AT THE MAN WHERE HE STANDS — thrown for real, every s
                     lowXZ = mathx.minF(lowXZ, g.xz);
                     overY = mathx.minF(overY, g.overY);
                 }
-                switch (k.state) {
-                    .sweepwind, .chainwind, .overwind, .thrustwind, .bashwind, .swatwind, .sweep, .sweep2, .over, .thrust, .bash, .swat => {},
-                    else => break,
-                }
+                if (!inStroke(k.state)) break;
             }
             if (!hit) {
                 misses += 1;
@@ -6921,10 +6927,7 @@ test "knight physical attacks reach their chosen bands at different sizes and fr
                         const apart = foe.closestApproach(k.bodyR());
                         if (mathx.distXZ(k.pos, hero) < apart) hero = mathx.addV(k.pos, mathx.scaleV(mathx.dirXZ(k.pos, hero), apart));
                         if (k.strung != 0) break;
-                        switch (k.state) {
-                            .sweepwind, .chainwind, .overwind, .thrustwind, .bashwind, .swatwind, .sweep, .sweep2, .over, .thrust, .bash, .swat => {},
-                            else => break,
-                        }
+                        if (!inStroke(k.state)) break;
                     }
                     if (!hit) {
                         misses += 1;

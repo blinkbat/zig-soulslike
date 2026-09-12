@@ -309,6 +309,14 @@ const SW_LUNGE_REC_KEYS = recTrack(&SW_LUNGE_KEYS, SW_CARRY);
 
 const SwState = enum { idle, stride, slash_wind, slash, slash2, heavy_wind, heavy, lunge_wind, lunge, back, recover, stunlight, stunheavy, dead };
 
+/// The states in which his edge is live, named once: the bill and the parry both asked, each with its own list.
+fn swSwinging(s: SwState) bool {
+    return switch (s) {
+        .slash, .slash2, .heavy, .lunge => true,
+        else => false,
+    };
+}
+
 const SwChoice = enum { hold, close, slash, heavy, lunge, back };
 
 const Recover = enum {
@@ -821,7 +829,7 @@ pub const Swordsman = struct {
         }
         self.stateStep(dt, hero, bounds);
         self.takeParry();
-        switch (self.state) { .slash, .slash2, .heavy, .lunge => self.tryReach(hero), else => {} }
+        if (swSwinging(self.state)) self.tryReach(hero);
         self.tryHit(blade);
         return self.heroHit;
     }
@@ -1022,7 +1030,7 @@ pub const Swordsman = struct {
 
     pub fn takeParry(self: *Swordsman) void {
         const reach = foe.hurtReach(SW_KIT_R, self.scale) + SW_BLADE_LEN * self.scale * 0.5;
-        const swinging = switch (self.state) { .slash, .slash2, .heavy, .lunge => true, else => false };
+        const swinging = swSwinging(self.state);
         const touching = swinging and self.t > 0.03 and !self.dealt and
             foe.weaponReaches(self.wpnWas, self.bladeSeg(), self.parry.at, foe.hurtReach(SW_KIT_R, self.scale));
         if (!foe.caught(self, reach, self.toImpact(), touching)) return;
@@ -1655,11 +1663,14 @@ fn poseBody(self: anytype, deathDur: f32) void {
     var wx: [N]rl.Matrix = undefined;
     const collapse = lerpF(hipY, 0.18 * H, dk);
     const pelvY = if (dead) collapse else hipY + pel.bob - pel.dip + self.hopOf();
-    wx[ROOT] = mathx.mul(mathx.scaleM(fs, fs, fs), mathx.mul3(
-        mathx.mul3(mathx.rz(9.0 * dk), mathx.rx(22.0 * dk), mathx.ry(pel.prot)),
-        mathx.mul(mathx.tr(pel.sway * fs, pelvY * fs + sink, 0), mathx.ry(facingDeg)),
-        heromod.rootAt(self.pos),
-    ));
+    wx[ROOT] = heromod.rootChain(fs, .{
+        .roll = 9.0 * dk,
+        .pitch = 22.0 * dk,
+        .prot = pel.prot,
+        .sway = pel.sway,
+        .pelvY = pelvY,
+        .lift = sink,
+    }, facingDeg, self.pos);
 
     if (!dead) {
         heromod.legPair(&wx, &self.rest, self.pos.y, self.phase, m, 0, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, SOLES);

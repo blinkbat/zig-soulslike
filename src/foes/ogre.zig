@@ -300,6 +300,21 @@ const Particle = foe.Particle;
 
 const State = enum { idle, approach, windup, slam, swipewind, swipe, backwind, backswipe, drivewind, drive, recover, stunlight, stunheavy, dead };
 
+/// THE FOUR STATES THAT ARE A BLOW, named ONCE (`knight.STROKE`'s rule): the same four were listed at the enter,
+/// at the bill, at the parry and again inside a `switch` whose `else` was `unreachable`, and a fifth stroke added
+/// to some of them and not the rest is a panic mid-fight.
+const Blow = enum { slam, swipe, backswipe, drive };
+
+fn blowOf(s: State) ?Blow {
+    return switch (s) {
+        .slam => .slam,
+        .swipe => .swipe,
+        .backswipe => .backswipe,
+        .drive => .drive,
+        else => null,
+    };
+}
+
 const Choice = enum { slam, swipe, drive, approach, wait, idle };
 const SWIPE_BEARING = 32.0;
 /// UP IN HIS FACE THE QUICK ONE WINS. Fraction of the sweep band, out from its inner edge, inside which the swipe beats the slam even squared up with the slam ready — the 0.52 s cock-back rather than the 1.35 s rear.
@@ -374,7 +389,7 @@ pub const Ogre = struct {
     windHold: f32 = 0,
     elapsed: f32 = 0,
     slammed: bool = false,
-    blowKind: enum { slam, swipe, backswipe, drive } = .slam,
+    blowKind: Blow = .slam,
     homing: bool = false,
 
     clubShoulder: f32 = CARRY_SH,
@@ -697,7 +712,7 @@ pub const Ogre = struct {
             else => 1,
         };
         var target = self.poseChannels();
-        const striking = self.state == .slam or self.state == .swipe or self.state == .backswipe or self.state == .drive;
+        const striking = blowOf(self.state) != null;
         self.poseSprings.chase(&target, if (striking or live != null) 18000 else 6500, 0.78, 0.97, dt);
         inline for (POSE_FIELDS, 0..) |field, i| @field(self, field) = target[i];
         self.pose();
@@ -716,19 +731,12 @@ pub const Ogre = struct {
     fn enter(self: *Ogre, s: State) void {
         self.state = s;
         self.t = 0;
-        switch (s) {
-            .slam, .swipe, .backswipe, .drive => {
-                self.slammed = false;
-                self.heroLatch = false;
-                self.blowKind = switch (s) {
-                    .slam => .slam,
-                    .swipe => .swipe,
-                    .backswipe => .backswipe,
-                    .drive => .drive,
-                    else => unreachable,
-                };
-            },
-            else => {},
+        if (blowOf(s)) |bk| {
+            self.slammed = false;
+            self.heroLatch = false;
+            self.blowKind = bk;
+            sfx.world(.ogre_heave, self.pos);
+            self.plantBurst();
         }
         if (s == .windup) {
             self.windHold = if (self.aiRng.float() < 0.4) 0 else self.aiRng.range(0.12, 0.55);
@@ -736,13 +744,6 @@ pub const Ogre = struct {
         }
         if (s == .drivewind) sfx.world(.ogre_roar, self.pos);
         if (s == .swipewind or s == .backwind) sfx.world(.ogre_swipe, self.pos);
-        switch (s) {
-            .slam, .swipe, .backswipe, .drive => {
-                sfx.world(.ogre_heave, self.pos);
-                self.plantBurst();
-            },
-            else => {},
-        }
     }
     fn enterIdle(self: *Ogre) void {
         self.state = .idle;
@@ -873,7 +874,7 @@ pub const Ogre = struct {
 
     fn takeParry(self: *Ogre) void {
         const reach = self.parryable() orelse self.parry.reach() orelse return;
-        const swinging = self.state == .slam or self.state == .swipe or self.state == .backswipe or self.state == .drive;
+        const swinging = blowOf(self.state) != null;
         if (!foe.caught(self, reach, self.toImpact(), swinging and self.t > 0.03 and self.clubReaches(self.parry.at))) return;
         self.judder = 1.0;
         if (self.slamMove()) {
@@ -1241,11 +1242,14 @@ pub const Ogre = struct {
         const drop = -0.24 * H * hstun;
         const collapse = lerpF(hipY, 0.32 * H, dk1);
         const pelvY = if (dead) collapse else hipY + bob + catchDip + braceSink + drop;
-        wx[ROOT] = mul(scaleM(fs, fs, fs), mul3(
-            mul3(rz(rollZ), rx(leanX), ry(prot)),
-            mul(tr((sway + idleSway) * fs, pelvY * fs + sink, 0), ry(facingDeg)),
-            heromod.rootAt(self.pos),
-        ));
+        wx[ROOT] = heromod.rootChain(fs, .{
+            .roll = rollZ,
+            .pitch = leanX,
+            .prot = prot,
+            .sway = sway + idleSway,
+            .pelvY = pelvY,
+            .lift = sink,
+        }, facingDeg, self.pos);
 
         if (!dead) {
             if (self.moving > 0.25) {

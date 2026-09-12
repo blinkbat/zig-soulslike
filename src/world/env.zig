@@ -4639,7 +4639,6 @@ fn buildSolids(e: *Env) void {
             if (e.nwards >= MAX_WARDS) @panic("env: MAX_WARDS exceeded — raise the cap");
             e.wardProps[e.nwards] = @intCast(pi);
             e.wardSolid0[e.nwards] = @intCast(e.nsolids);
-            e.wardSolidN[e.nwards] = @intCast(parts.len);
             e.nwards += 1;
             ward = @intCast(e.nwards);
         }
@@ -4649,11 +4648,11 @@ fn buildSolids(e: *Env) void {
             if (e.nillusions >= MAX_ILLUSIONS) @panic("env: MAX_ILLUSIONS exceeded — raise the cap");
             e.illusionProps[e.nillusions] = @intCast(pi);
             e.illusionSolid0[e.nillusions] = @intCast(e.nsolids);
-            e.illusionSolidN[e.nillusions] = @intCast(parts.len);
             e.nillusions += 1;
             illusion = @intCast(e.nillusions);
         }
         pr.illusion = illusion;
+        const solid0 = e.nsolids;
         const cut = cliffseat.cutOf(.{ .env = e }, pr);
         for (parts) |whole| {
             if (e.nsolids >= MAX_SOLIDS) @panic("env: MAX_SOLIDS exceeded — raise the cap");
@@ -4681,6 +4680,11 @@ fn buildSolids(e: *Env) void {
             e.solid_buf[e.nsolids] = sol;
             e.nsolids += 1;
         }
+        // The SPAN IS WHAT THE LOOP WROTE, not what the kind could have written: a seated part is dropped
+        // (`seatedPart` returns null), and a length taken off `parts.len` would run on into the next prop's solids.
+        const wrote: u8 = @intCast(e.nsolids - solid0);
+        if (ward != 0) e.wardSolidN[ward - 1] = wrote;
+        if (illusion != 0) e.illusionSolidN[illusion - 1] = wrote;
     }
     for (e.cliffSolids[0..e.ncliffSolids]) |s| {
         if (e.nsolids >= MAX_SOLIDS) @panic("env: MAX_SOLIDS exceeded by the cliff stamps — raise the cap");

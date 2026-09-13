@@ -115,6 +115,8 @@ const M_AGGRO = 22.0;
 const M_SPIT_MIN = 4.6;
 const M_SPIT_MAX = 19.0;
 const M_BITE_R = 2.3;
+/// How many of her own bite bands clear of him she lays at.
+const M_LAY_CLEAR = 1.6;
 const M_GUARD_R = 7.5;
 
 const SPIT_WINDUP = 1.05;
@@ -233,13 +235,10 @@ comptime {
 }
 
 pub fn roleOf(k: wf.FoeKind) ?Role {
-    const lo = @intFromEnum(wf.FoeKind.brood_mother);
-    const i = @intFromEnum(k);
-    if (i < lo or i >= lo + @typeInfo(Role).@"enum".fields.len) return null;
-    return @enumFromInt(i - lo);
+    return foe.roleInRun(Role, .brood_mother, k);
 }
 pub fn kindOf(r: Role) wf.FoeKind {
-    return @enumFromInt(@intFromEnum(wf.FoeKind.brood_mother) + @intFromEnum(r));
+    return foe.kindInRun(Role, .brood_mother, r);
 }
 
 const Spec = struct {
@@ -269,10 +268,13 @@ fn spec(r: Role) Spec {
 
 const MChoice = enum { hold, close, spit, bite, lay, shirk };
 fn classifyMother(dist: f32, scale: f32, tether: f32, spitReady: bool, biteReady: bool, layWanted: bool, shy: bool) MChoice {
+    const bite = foe.triggerBand(M_BITE_R, M_SCALE, scale);
     if (dist > M_AGGRO) return .hold;
-    if (dist <= foe.triggerBand(M_BITE_R, M_SCALE, scale)) return if (biteReady) .bite else .hold;
+    if (dist <= bite) return if (biteReady) .bite else .hold;
     if (shy) return if (spitReady and dist >= M_SPIT_MIN) .spit else .shirk;
-    if (layWanted and dist > M_BITE_R * 1.6) return .lay;
+    // Well clear of her OWN bite, so the gate is that band and not the authored metre: past a map `scale=` of
+    // 1.79 the raw 3.68 m sat INSIDE the band, and `.lay` then took every stand outside it and starved the spit.
+    if (layWanted and dist > bite * M_LAY_CLEAR) return .lay;
     if (dist <= M_SPIT_MAX and dist >= M_SPIT_MIN) return if (spitReady) .spit else .hold;
     if (dist < M_SPIT_MIN) return .close;
     if (tether >= M_GUARD_R) return .hold;

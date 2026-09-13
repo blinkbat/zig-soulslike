@@ -1302,6 +1302,22 @@ pub fn fmt(comptime f: []const u8, args: anytype) [:0]const u8 {
     return std.fmt.bufPrintZ(&scratch[scratchAt], f, args) catch "?";
 }
 
+/// TEXT INTO A FIXED BUFFER, TRUNCATED RATHER THAN REFUSED, and this file is where the rule lives because it is
+/// the only path to draw text. Returns the bytes taken; one byte is always held back for a terminator, so a
+/// caller that keeps a LENGTH and one that keeps a `[:0]` are the same call.
+pub fn copyInto(buf: []u8, s: []const u8) usize {
+    const n = @min(s.len, buf.len - 1);
+    @memcpy(buf[0..n], s[0..n]);
+    return n;
+}
+
+/// The same copy, NUL-terminated in place — what raylib wants and what `text` takes.
+pub fn zterm(buf: []u8, s: []const u8) [:0]const u8 {
+    const n = copyInto(buf, s);
+    buf[n] = 0;
+    return buf[0..n :0];
+}
+
 const PROSE_LINES = 8;
 const PROSE_BUF = 768;
 var proseLines: [PROSE_LINES][:0]const u8 = undefined;

@@ -110,25 +110,17 @@ const KIT_R = [SPEC.len]f32{ MACE_FLANGE, GS_HALF_W };
 pub const Role = enum { shieldman, greatsword };
 
 comptime {
-        // …and a SPEC ROW PER ROLE: `roleOf` measures the run with `SPEC.len`, so a role added without a row returns null for its own kind and `spec()` walks off the end.
+    // …and a SPEC ROW PER ROLE, since `spec()` indexes it by the role's own ordinal and would walk off the end.
     if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("warrior: a Role with no spec row");
-    for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
-        const fk: wf.FoeKind = @enumFromInt(@intFromEnum(wf.FoeKind.shieldman) + i);
-        if (!std.mem.eql(u8, f.name, @tagName(fk))) {
-            @compileError("warrior: wf.FoeKind." ++ @tagName(fk) ++ " is not in the warriors' contiguous run");
-        }
-    }
+    foe.pinRun("warrior", Role, .shieldman, 0);
 }
 
 pub fn roleOf(k: wf.FoeKind) ?Role {
-    const lo = @intFromEnum(wf.FoeKind.shieldman);
-    const i = @intFromEnum(k);
-    if (i < lo or i >= lo + SPEC.len) return null;
-    return @enumFromInt(i - lo);
+    return foe.roleInRun(Role, .shieldman, k);
 }
 
 pub fn kindOf(r: Role) wf.FoeKind {
-    return @enumFromInt(@intFromEnum(wf.FoeKind.shieldman) + @intFromEnum(r));
+    return foe.kindInRun(Role, .shieldman, r);
 }
 
 const Style = enum { mace, slam, lunge, sweep };
@@ -1445,7 +1437,7 @@ pub const Warrior = struct {
         const hipY = self.rest[ROOT].y;
 
         const dead = self.state == .dead;
-        const dk = if (dead) mathx.smoothstep(0, 0.45, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
+        const dk = foe.deathK(dead, self.t, DEATH_DUR, 0.45);
         const stun = self.stunAmount();
         const kn = self.kneelAmount();
 

@@ -649,7 +649,7 @@ pub const Mimic = struct {
         const facingDeg = mathx.degrees(self.facing);
         const up = self.rise;
         const dead = self.state == .dead;
-        const dk = if (dead) mathx.smoothstep(0, 0.5, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
+        const dk = foe.deathK(dead, self.t, DEATH_DUR, 0.5);
         const stun = self.stunAmount();
         const bite = self.biteAmt();
         const swing = self.swingAmt();

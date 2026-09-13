@@ -2070,9 +2070,49 @@ pub fn envGroundAt(e: *const envmod.Env, x: f32, z: f32) f32 {
     return e.groundAt(x, z);
 }
 
+/// A wall is indexed into every cell its radius touches, so the gather is the boom's whole reach in one pass
+/// instead of a grid walk per probe sample. **IT IS `MAX_NEAR` AND NOTHING SMALLER**: the box is 2 x `camReach`
+/// wide against a 16 m cell, so the walk covers THREE cells a side where `arrowCover`'s covers two, and a solid is
+/// taken once per cell it is indexed into. At 128 the densest stand on the shipped map handed back 316 and
+/// `gatherSolids` DROPPED THE REST SILENTLY — the boom stopped shortening exactly where the masonry is thickest.
+pub const CamWalls = [envmod.MAX_NEAR]collision.Solid;
+
+// THE EYE'S CLEARANCE IS THE NEAR PLANE'S, NOT A PICKED NUMBER — the plane's CORNER is what enters the stone
+// first, so the bar is its half-diagonal at `CLIP_NEAR`, and that is a function of the lens AND the window's
+// aspect. Both live here; `camera.zig` cannot see either, so the assert does.
+comptime {
+    std.debug.assert(cameramod.EYE_R >= eyeRFor(@as(f32, SCREEN_W) / @as(f32, SCREEN_H)));
+}
+
+fn eyeRFor(aspect: f32) f32 {
+    const halfH = CLIP_NEAR * @tan(std.math.degreesToRadians(cameramod.FOVY * 0.5));
+    const halfW = halfH * aspect;
+    return @sqrt(halfH * halfH + halfW * halfW);
+}
+
+/// The widest panel the clearance is claimed to cover — 32:9, which is as wide as a monitor is sold.
+const WIDEST_ASPECT: f32 = 32.0 / 9.0;
+
+/// **AND THE ASPECT IS THE LIVE ONE, NOT `SCREEN_W`/`SCREEN_H`** — the window is resizable and Alt+Enter puts it
+/// borderless at the monitor's own shape, so the constant solved for 1280x800 leaves the plane's corner 34 mm
+/// inside the stone at 16:9 and 177 mm at 21:9. `EYE_R` stays the floor, so the authored window is unchanged.
+fn eyeR() f32 {
+    const h = @max(rl.getScreenHeight(), 1);
+    const aspect = @as(f32, @floatFromInt(@max(rl.getScreenWidth(), 1))) / @as(f32, @floatFromInt(h));
+    return mathx.maxF(cameramod.EYE_R, eyeRFor(aspect));
+}
+
+/// Metres of world the eye can stand from his feet: the boom off a shoulder-offset target, plus its own clearance.
+pub fn camReach(g: *const Game, clearance: f32) f32 {
+    return g.rig.dist + cameramod.SHOULDER + clearance;
+}
+
 pub const CamFloor = struct {
     e: *const envmod.Env,
     footY: f32,
+    walls: []const collision.Solid,
+    /// Solved once a frame in `camFloor`, because `wall` is asked once a march rung.
+    eyeR: f32 = cameramod.EYE_R,
 
     pub fn at(c: CamFloor, x: f32, z: f32) f32 {
         return c.e.standAt(x, z, c.footY);
@@ -2081,10 +2121,100 @@ pub const CamFloor = struct {
     pub fn roof(c: CamFloor, x: f32, z: f32) ?f32 {
         return c.e.ceilingAt(x, z, c.footY);
     }
+
+    pub fn wall(c: CamFloor, p: rl.Vector3) bool {
+        return collision.blockedBy(p, c.eyeR, c.walls);
+    }
 };
 
+/// `arrow_cover_buf`'s law: the gather is spent inside the one call that asked for it, so the buffer is the file's
+/// and neither caller carries it. It is also a `MAX_NEAR` array — a frame-loop local is 22 KB of stack a frame.
+var cam_walls_buf: CamWalls = undefined;
+
 pub fn camFloor(g: *const Game) CamFloor {
-    return .{ .e = &g.env, .footY = g.hero.pos.y };
+    const clearance = eyeR();
+    return .{
+        .e = &g.env,
+        .footY = g.hero.pos.y,
+        .walls = g.env.wallsNear(g.hero.pos, camReach(g, clearance), &cam_walls_buf),
+        .eyeR = clearance,
+    };
+}
+
+test "THE EYE'S CLEARANCE FOLLOWS THE WINDOW — a wider panel puts the near plane's corner further out, and it is not `EYE_R`" {
+    const wide = [_]f32{ @as(f32, SCREEN_W) / @as(f32, SCREEN_H), 16.0 / 9.0, 21.0 / 9.0, WIDEST_ASPECT };
+    for (wide) |a| {
+        const want = eyeRFor(a);
+        const got = mathx.maxF(cameramod.EYE_R, want);
+        std.debug.print(
+            "\n  {d:.3}:1 — near plane half-diagonal {d:.3} m, eye keeps {d:.3} m off masonry",
+            .{ a, want, got },
+        );
+        try std.testing.expect(got >= want);
+    }
+    std.debug.print("\n", .{});
+    // The authored window is the FLOOR and nothing wider is, so the live solve never shortens what shipped.
+    try std.testing.expect(eyeRFor(@as(f32, SCREEN_W) / @as(f32, SCREEN_H)) <= cameramod.EYE_R);
+    try std.testing.expect(eyeRFor(16.0 / 9.0) > cameramod.EYE_R);
+}
+
+test "THE BOOM'S OWN GATHER CANNOT OVERFLOW — it drops the rest SILENTLY, and what it drops is the wall behind him" {
+    const m = try std.testing.allocator.create(worldfmt.Map);
+    defer std.testing.allocator.destroy(m);
+    var ln: usize = 0;
+    try worldfmt.loadForTest(worldfmt.START_MAP, m, &ln);
+    const e = try std.testing.allocator.create(envmod.Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.adoptHeight(m);
+    e.materialize(m);
+
+    // The player's own zoom on the widest panel, so the widest box the boom ever asks for.
+    const reach = cameramod.MAX_DIST + cameramod.SHOULDER + eyeRFor(WIDEST_ASPECT);
+    var buf: CamWalls = undefined;
+    var worst: usize = 0;
+    var at = mathx.zero3;
+    // Four metres, which is finer than a solid-grid cell, so no dense pocket is stepped over.
+    const step: f32 = 4.0;
+    const half = m.half;
+    var z: f32 = -half;
+    while (z <= half) : (z += step) {
+        var x: f32 = -half;
+        while (x <= half) : (x += step) {
+            const n = e.wallsNear(v3(x, 0, z), reach, &buf).len;
+            if (n > worst) {
+                worst = n;
+                at = v3(x, 0, z);
+            }
+        }
+    }
+    std.debug.print(
+        "\n  the boom's {d:.1} m masonry gather: worst stand on the shipped map holds {d} of {d}, at {d:.0} {d:.0}\n",
+        .{ reach, worst, buf.len, at.x, at.z },
+    );
+    try std.testing.expect(worst > 0);
+    try std.testing.expect(worst < buf.len);
+
+    // WHAT THE WHOLE RIG COSTS AT THAT STAND, which is the worst one there is — the gather is 0.43 us of it and the
+    // MARCH is the rest: the fully-zoomed boom walks (MAX_DIST - MIN_DIST) / GROUND_PROBE rungs and each rung scans
+    // every wall the gather handed back, so the shape is rungs x walls. At the 316-wall stand that is 7.8 us a frame
+    // in ReleaseFast (70 in Debug, which is what this line prints). Culling the list against the boom's own segment
+    // once a frame would make it rungs + walls; at 0.047% of a frame it is not worth the second pass.
+    const foot = e.groundAt(at.x, at.z);
+    const shoulder = v3(at.x, foot + 1.4, at.z);
+    var rig = cameramod.CamRig{ .cam = undefined, .yaw = 0, .pitch = cameramod.DEFAULT_PITCH, .dist = cameramod.MAX_DIST };
+    rig.solveFresh();
+    const FRAMES = 2000;
+    var timer = try std.time.Timer.start();
+    for (0..FRAMES) |_| {
+        const look = CamFloor{ .e = e, .footY = foot, .walls = e.wallsNear(at, reach, &cam_walls_buf) };
+        rig.followRoofed(shoulder, look, 1.0 / 60.0);
+    }
+    const us = @as(f64, @floatFromInt(timer.read())) / 1000.0 / @as(f64, FRAMES);
+    std.debug.print(
+        "  gather + march at that stand: {d:.2} us a frame — {d:.3}% of a 16.7 ms frame\n",
+        .{ us, us / 16700.0 * 100.0 },
+    );
 }
 
 fn snapshotPos(foes: anytype, out: []rl.Vector3) void {
@@ -3011,7 +3141,7 @@ const Mantle = struct {
 };
 
 fn syncLensLift(g: *Game) void {
-    if (@abs(g.hero.pos.y - g.lensGroundY) > GROUND_SNAP * 0.5) g.rig.lift = liftShare(&g.hero) * g.hero.lift;
+    if (@abs(g.hero.pos.y - g.lensGroundY) > GROUND_SNAP * 0.5) g.rig.snapLift(liftShare(&g.hero) * g.hero.lift);
     g.lensGroundY = g.hero.pos.y;
 }
 
@@ -6173,7 +6303,7 @@ pub fn run(mode: Mode) void {
         g.rig.tickShake(rawDt);
         g.rig.aimB = g.hero.aimB;
         g.rig.tickLift(g.hero.lift, liftShare(&g.hero), dt);
-        g.rig.followRoofed(g.hero.shoulderPoint(), camFloor(g), CamFloor.at, CamFloor.roof, dt);
+        g.rig.followRoofed(g.hero.shoulderPoint(), camFloor(g), dt);
         sfx.listen(g.rig.cam.position, g.rig.rightXZ());
         sfx.ambience(rawDt);
         footsteps(g, &lastPhase);

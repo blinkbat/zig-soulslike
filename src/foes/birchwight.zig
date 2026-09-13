@@ -512,7 +512,7 @@ pub const Wight = struct {
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
         const dead = self.state == .dead;
-        const dk = if (dead) mathx.smoothstep(0, 0.6, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
+        const dk = foe.deathK(dead, self.t, DEATH_DUR, 0.6);
         const stun = self.motion.reaction;
         const m = self.moving * (1.0 - dk);
         const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);

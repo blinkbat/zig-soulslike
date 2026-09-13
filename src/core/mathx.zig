@@ -287,6 +287,68 @@ pub fn approach(cur: f32, target: f32, maxStep: f32) f32 {
     return cur + std.math.sign(d) * maxStep;
 }
 
+/// A CRITICALLY DAMPED SPRING, stable at any `dt` and never overshooting. `secs` is roughly the time to close the
+/// gap, `cap` a ceiling in units a second (0 for none), and `vel` the carried velocity — which is the whole point:
+/// `approach` starts and stops at full speed, so a target that steps puts a step in the MOTION too.
+pub fn smoothCD(cur: f32, target: f32, vel: *f32, secs: f32, cap: f32, dt: f32) f32 {
+    if (dt <= 0) return cur;
+    if (secs <= 1e-4) {
+        vel.* = 0;
+        return target;
+    }
+    const omega = 2.0 / secs;
+    const decay = @exp(-omega * dt);
+    var gap = cur - target;
+    if (cap > 0) gap = clampF(gap, -cap * secs, cap * secs);
+    const to = cur - gap;
+    const carry = (vel.* + omega * gap) * dt;
+    vel.* = (vel.* - omega * carry) * decay;
+    const out = to + (gap + carry) * decay;
+    if ((target - cur > 0) == (out > target)) {
+        vel.* = 0;
+        return target;
+    }
+    return out;
+}
+
+pub fn smoothCDV(cur: rl.Vector3, target: rl.Vector3, vel: *rl.Vector3, secs: rl.Vector3, cap: f32, dt: f32) rl.Vector3 {
+    return v3(
+        smoothCD(cur.x, target.x, &vel.x, secs.x, cap, dt),
+        smoothCD(cur.y, target.y, &vel.y, secs.y, cap, dt),
+        smoothCD(cur.z, target.z, &vel.z, secs.z, cap, dt),
+    );
+}
+
+test "a spring closes the gap without overshooting it, and carries its own speed across the arrival" {
+    var v: f32 = 0;
+    var x: f32 = 0;
+    var peak: f32 = 0;
+    var i: usize = 0;
+    while (i < 120) : (i += 1) {
+        const was = x;
+        x = smoothCD(x, 1.0, &v, 0.2, 0, 1.0 / 60.0);
+        peak = maxF(peak, (x - was) * 60.0);
+        try std.testing.expect(x <= 1.0 + 1e-5);
+    }
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), x, 1e-3);
+    // A linear approach would take the first frame at full speed; the spring's first step is a fraction of its peak.
+    var v2: f32 = 0;
+    const first = smoothCD(0, 1.0, &v2, 0.2, 0, 1.0 / 60.0) * 60.0;
+    try std.testing.expect(first < peak * 0.35);
+}
+
+test "a capped spring holds the speed ceiling it was given" {
+    var v: f32 = 0;
+    var x: f32 = 0;
+    var i: usize = 0;
+    while (i < 200) : (i += 1) {
+        const was = x;
+        x = smoothCD(x, 40.0, &v, 0.25, 6.0, 1.0 / 60.0);
+        try std.testing.expect((x - was) * 60.0 <= 6.0 + 1e-3);
+    }
+    try std.testing.expect(x > 18.0);
+}
+
 pub fn approachV(cur: rl.Vector3, target: rl.Vector3, maxStep: f32) rl.Vector3 {
     const dx = target.x - cur.x;
     const dy = target.y - cur.y;

@@ -1128,19 +1128,13 @@ const fmt = hud.fmt;
 var saysBuf: [256]u8 = undefined;
 
 fn saysOwn(s: []const u8) [:0]const u8 {
-    const n = @min(s.len, saysBuf.len - 1);
-    @memcpy(saysBuf[0..n], s[0..n]);
-    saysBuf[n] = 0;
-    return saysBuf[0..n :0];
+    return hud.zterm(&saysBuf, s);
 }
 
 var heldBuf: [256]u8 = undefined;
 
 fn saysHeld(s: []const u8) [:0]const u8 {
-    const n = @min(s.len, heldBuf.len - 1);
-    @memcpy(heldBuf[0..n], s[0..n]);
-    heldBuf[n] = 0;
-    return heldBuf[0..n :0];
+    return hud.zterm(&heldBuf, s);
 }
 
 /// **THE PURSE IS A MIRROR, NOT A STACK.** Gold is a `u32` on the hero and `item.Bag`'s counts are `u16`, so it

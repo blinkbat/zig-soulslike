@@ -311,6 +311,7 @@ pub const sceneFS =
     \\uniform mat4 lightVP;     // sun's ortho view-projection (captured in the depth pass)
     \\uniform sampler2D shadowMap;
     \\uniform int shadowMapResolution;
+    \\uniform vec2 shadowBias;
     \\uniform vec3 lightPos[16];  // MAX_LIGHTS point lights: the nearest world fires, plus any CARRIED one
     \\uniform vec3 lightCol[16];  // colour * intensity (pre-gamma)
     \\uniform float lightRad[16];
@@ -839,8 +840,9 @@ pub const sceneFS =
     \\  p.xyz /= p.w;
     \\  p.xyz = p.xyz*0.5 + 0.5;
     \\  if (p.z > 1.0 || p.z < 0.0 || p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) return 0.0;
-    \\  // Bias is in NDC, so it costs bias*(far-near) WORLD units — the slab widened with the box, so these came DOWN to keep the real offset near 0.22 m.
-    \\  float bias = max(0.0013*(1.0 - ndl), 0.00032);
+    \\  // IN METRES, then divided into the slab — as an NDC constant it cost bias*(far-near) world units, so the editor's 1024 m box peter-panned every shadow by 2 m.
+    \\  // shadowBias = (1/slab, two texels in metres): the slope term is the tuned offset, the texel term is what the box's own coarseness needs.
+    \\  float bias = (max(0.219*(1.0 - ndl), 0.055) + shadowBias.y)*shadowBias.x;
     \\  float texel = 1.0/float(shadowMapResolution);
     \\  float sc = 0.0;
     \\  for (int x = -1; x <= 1; x++)

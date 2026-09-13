@@ -125,6 +125,34 @@ pub fn traitsOf(k: wf.FoeKind) Traits {
     };
 }
 
+/// SEVERAL KINDS OF ONE CREATURE ARE A CONTIGUOUS RUN IN `wf.FoeKind`, and this is the one place that run is
+/// walked: the role's ordinal is its offset from the kind the run starts at. Each warband wrote both halves out
+/// by hand, and the bound was `SPEC.len` in three of them and the enum's own field count in the fourth.
+pub fn roleInRun(comptime Role: type, first: wf.FoeKind, k: wf.FoeKind) ?Role {
+    const lo = @intFromEnum(first);
+    const i = @intFromEnum(k);
+    if (i < lo or i >= lo + @typeInfo(Role).@"enum".fields.len) return null;
+    return @enumFromInt(i - lo);
+}
+
+pub fn kindInRun(comptime Role: type, first: wf.FoeKind, r: Role) wf.FoeKind {
+    return @enumFromInt(@intFromEnum(first) + @intFromEnum(r));
+}
+
+/// **AND THE RUN IS PINNED WHERE IT IS WALKED** — the same offset arithmetic, asked at comptime, so a kind INSERTED
+/// into `wf.FoeKind` is a compile error rather than a warband whose roles have all slid one along. `trim` is the
+/// prefix the KIND names carry and the role names do not (the shoal's `fish_`). A creature whose names do not track
+/// its kinds at all pins its own list instead — the brood, whose `mother` is `brood_mother` and whose `broodling`
+/// is `broodling`.
+pub fn pinRun(comptime who: []const u8, comptime Role: type, comptime first: wf.FoeKind, comptime trim: usize) void {
+    for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
+        const fk = kindInRun(Role, first, @as(Role, @enumFromInt(i)));
+        if (!std.mem.eql(u8, f.name, @tagName(fk)[trim..])) {
+            @compileError(who ++ ": wf.FoeKind." ++ @tagName(fk) ++ " is not in the run `" ++ @typeName(Role) ++ "` walks");
+        }
+    }
+}
+
 pub fn homeOf(k: wf.FoeKind) props.Biome {
     return switch (k) {
         .leechfly, .blinkbat => .any,
@@ -1854,6 +1882,14 @@ pub fn rigScale(scale: f32, fade: f32) f32 {
 
 pub fn rigSink(depth: f32, scale: f32, fade: f32) f32 {
     return -depth * scale * fade;
+}
+
+/// THE COLLAPSE'S OWN BLEND, 0 standing to 1 folded — `dissipate`'s law one level down: the DURATION and the SHARE
+/// of it the fold takes are the creature's, the SHAPE is the game's. Nineteen bodies wrote the smoothstep out and
+/// the knight wrote it a second way, so nothing said it was one shape and a change to it had nineteen places to miss.
+pub fn deathK(dead: bool, t: f32, dur: f32, share: f32) f32 {
+    if (!dead) return 0;
+    return mathx.smoothstep(0, share, mathx.clampF(t / dur, 0, 1));
 }
 
 pub const SINK_HUMANOID: f32 = 0.55;

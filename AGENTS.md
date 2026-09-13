@@ -101,7 +101,7 @@ contents change together is fine.
 | `main.zig` · `shots.zig` | entry · the headless `--shot` harness (never in context while working on the loop) |
 | `play/hero.zig` | THE HERO — FK skeleton, every animation, swept blade capsule, guard, bow, wand. Start here |
 | `core/anim.zig` | THE KEYED-POSE KERNEL — `Ease`/`Key`/`keyAt`, `Spring`/`SpringBank`, `anim.Pose(P)` |
-| `core/camera.zig` | orbit rig, ground basis, trauma shake (live-loop only, so `--shot` stays deterministic) |
+| `core/camera.zig` | orbit rig, ground basis, boom probe, focus spring, trauma shake (live-loop only, so `--shot` stays deterministic) |
 | `core/collision.zig` · `mathx.zig` | XZ capsule/circle push-out, `blocksSight`, `box` · angles, seeded `Rng`, `gutter`, `turnToward` |
 | `core/audio.zig` · `rumble.zig` · `bake.zig` | ~206 synthesized voices through one tape `master` · XInput directly · the one-way door that emitted the first map |
 | `gfx/gfx.zig` · `shaders.zig` | `Builder`, scene shader, depth pass, `Sky`, `Vignette`, `Mat` · every line of GLSL and nothing else |
@@ -1195,7 +1195,7 @@ Conditions: `always`, `never`, `flag N=0|1`, `counter N <cmp> n`, `timer N=done|
   because a disc cannot say which part of a rectangle to take.
 - **THE DECOR LAYER IS NOT PLANTS** — it is `props.Info.flora`, which holds cobbles, shards and scree too.
 - **THE MINIMAP IS FIVE THINGS** (owner) — walls, water, trees subtly, fires, red for the foes. **A wall is
-  whatever the camera will not thin** (`Info.solid`), the same set the hero cannot walk through, so the map's
+  whatever the camera will not thin but pulls in for** (`Info.solid`), the same set the hero cannot walk through, so the map's
   barriers and the world's cannot drift apart. **Read off `env.placed()`, never off the ops**: a belt of a hundred
   trees is ONE op, and an op walk drew one tree where there is a wood.
 - **A PANEL MAY NOT SPEND A DRAW CALL PER OP** (`blitMinimap`, `miniGen`) — it issued **16,510 immediate-mode
@@ -1341,10 +1341,27 @@ seam.
 - **`pos.y` IS THE GROUND UNDER AN ACTOR**, written in ONE place (`game.groundActor`), EASED not snapped because
   the camera rides the shoulder; past `GROUND_SNAP` it plants. **EVERY WORLD POINT ON AN ACTOR IS MEASURED FROM
   `pos.y`.**
-- **THE CAMERA SHORTENS ITS BOOM RATHER THAN BURYING THE EYE** (`camera.followClear`) — **but it gives way to
-  terrain only, never to its own pitch.** An up-tilt puts the eye LOW on purpose. Only ground standing PROUD of
-  the hero's level is worth paying distance for. **THE BOOM IS SHORTENED AT ONCE AND GIVEN BACK AT A RATE**
-  (`CLEAR_REGAIN`); the shot harness solves fresh, because a shot has no previous frame.
+- **THE CAMERA SHORTENS ITS BOOM RATHER THAN BURYING THE EYE** (`camera.followRoofed`) — **but it gives way to
+  terrain and MASONRY only, never to its own pitch.** An up-tilt puts the eye LOW on purpose. Only ground standing
+  PROUD of the hero's level is worth paying distance for. **THE BOOM IS SHORTENED AT ONCE AND GIVEN BACK AT A
+  RATE** (`CLEAR_REGAIN`, on a spring so the give-back has no onset step); `rig.solveFresh` drops every eased term,
+  because a shot has no previous frame.
+- **WHAT THE CAMERA WILL NOT THIN, IT PULLS IN FOR** (`collision.Solid.arch`) — architecture stays at full alpha, so
+  the boom stops at its near face instead. **ONE PREDICATE ANSWERS BOTH HALVES** (`env.masonry`, plus the cliff
+  stamps): `markOccluders` skips exactly what `buildSolids` stamps `arch`, or the two fight on the prop that is in
+  both. A TREE IS NOT IN THAT SET, and NEITHER IS THE FOG GATE — its collider IS the sheet, and the sheet is the one
+  solid that thins (`veilThins`). `env.wallsNear` gathers the masonry within the boom's reach ONCE a frame and the
+  probe reads that list, never the grid; the buffer is `MAX_NEAR` because the box is THREE cells a side and the
+  densest stand on the shipped map hands back 316.
+- **THE BOOM IS MARCHED OUT, NOT IN** — it stops at the NEAREST thing in the way, so a wall is never jumped for the
+  open ground behind it, and the `GROUND_PROBE` step it stopped on is HALVED down (`PROBE_HALVINGS`) to a length
+  within 8 mm of the face. A boom quantised to the rung walks in visible 0.25 m jerks.
+- **THE EYE DOES NOT INHERIT THE STAIR** (`camera.focusOn`) — the boom hangs off a point that walks to his shoulder
+  on a critically damped spring, the rise damped far harder than the flat axes (`FOCUS_RISE` / `FOCUS_FLAT`), so a
+  flight of treads reads as a ramp: 0.18 m treads arriving whole ten frames apart move the eye 21 mm in its worst
+  frame. Past `FOCUS_SNAP` the footing did not change, the world did — a fall, a load, a level — and it goes at once.
+- **EVERY EASED TERM IN THE RIG IS A SPRING, NOT A RATE** (`mathx.smoothCD`) — focus, boom give-back and the jump
+  lift. `approach` starts and stops at full speed, so a target that steps puts a step in the MOTION too.
 - **THE HERO LEANS INTO THE HILL** (0.55 of the slope capped at 16°) through the SAME `rx(bodyPitch)` term as the
   run lean.
 - **THE TERRAIN CASTS FROM ITS FAR SIDE ONLY** (`env.drawGroundCasters`, FRONT faces culled) — drawn whole, a
@@ -1689,7 +1706,10 @@ about the LAND.
   `collision.box`): the solid is the capsule's bounding rectangle in the segment's frame, so a wall, block, plinth
   or house has corners, and a degenerate segment with `flat` is a SQUARE of side `2r`. Round ends left a 7.7 m
   keep's corners 2 m in the open. Rings and posts stay round — a polygon of round-ended segments joins without
-  gaps. **Choosing wrong is most of the audit's `LOOK` lines.**
+  gaps. **Choosing wrong is most of the audit's `LOOK` lines.** **AND A TURNED SQUARE END DOES NOT FIT IN `r`** —
+  its corner stands `r*(|ux| + |uz|)` outside the segment's own box, so every broad phase asks `collision.padXZ`:
+  sized to `s.r`, `blocksSight` threw away a look that clips a diagonal wall and `env.SolidCells` indexed one into
+  too few grid cells, which is a walk-through at the corner of a turned keep.
 
 **A LADDER IS THE ONE PROP YOU GET ON** (`Info.climb`, `game.Climb`). Its local **+Z is the open side** he mounts
 from and stands off; local −Z is the wall it leans on.

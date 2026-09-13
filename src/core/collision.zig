@@ -22,6 +22,10 @@ pub const Solid = struct {
     illusion: u8 = 0,
     /// SQUARE ENDS: the solid is the capsule's bounding rectangle in the segment's frame — `r` across, the segment plus `r` each way along.
     flat: bool = false,
+    /// MASONRY — `env.masonry` (`Info.solid`, less the one veil that thins) and the cliff stamps, the set the camera
+    /// will not thin. The boom shortens on these and on nothing else, because everything else answers the lens by
+    /// going thin (`env.markOccluders`), and a boom that shortened for one of those would fight it.
+    arch: bool = false,
 };
 
 pub fn circle(x: f32, z: f32, r: f32) Solid {
@@ -46,6 +50,16 @@ pub fn frameOf(s: Solid) Frame {
     const ux: f32 = if (l > 1e-5) dx / l else 1.0;
     const uz: f32 = if (l > 1e-5) dz / l else 0.0;
     return .{ .cx = (s.a.x + s.b.x) * 0.5, .cz = (s.a.z + s.b.z) * 0.5, .ux = ux, .uz = uz, .hl = l * 0.5 + s.r };
+}
+
+/// **THE BOX ROUND A SOLID, AND A SQUARE END DOES NOT FIT IN `r`** — the rectangle is turned with the segment, so
+/// its corner stands `r*(|ux| + |uz|)` outside the segment's own box, up to `r*sqrt2` at 45 deg. Every broad phase
+/// asks this: a look was rejected against a diagonal wall it clips, and `env.SolidCells` indexed one into too few
+/// cells, so the corner of a turned keep was a walk-through.
+pub fn padXZ(s: Solid) f32 {
+    if (!s.flat) return s.r;
+    const f = frameOf(s);
+    return s.r * (@abs(f.ux) + @abs(f.uz));
 }
 
 const Gap = struct { d: f32, nx: f32, nz: f32 };
@@ -159,8 +173,9 @@ fn segsCrossXZ(a0: rl.Vector3, a1: rl.Vector3, b0: rl.Vector3, b1: rl.Vector3) b
 pub fn blocksSight(a: rl.Vector3, b: rl.Vector3, s: Solid) bool {
     if (@min(a.y, b.y) >= s.h) return false;
     if (@max(a.y, b.y) < s.y0) return false;
-    if (@min(s.a.x, s.b.x) - s.r > @max(a.x, b.x) or @max(s.a.x, s.b.x) + s.r < @min(a.x, b.x)) return false;
-    if (@min(s.a.z, s.b.z) - s.r > @max(a.z, b.z) or @max(s.a.z, s.b.z) + s.r < @min(a.z, b.z)) return false;
+    const pad = padXZ(s);
+    if (@min(s.a.x, s.b.x) - pad > @max(a.x, b.x) or @max(s.a.x, s.b.x) + pad < @min(a.x, b.x)) return false;
+    if (@min(s.a.z, s.b.z) - pad > @max(a.z, b.z) or @max(s.a.z, s.b.z) + pad < @min(a.z, b.z)) return false;
     if (s.flat) {
         if (rectGap(a, s).d < 0) return true;
         const f = frameOf(s);
@@ -189,6 +204,41 @@ test "A FLAT SOLID HAS CORNERS — a body reaches the corner of a wall a round e
     try std.testing.expect(blocksSight(v3(3.35, 1, -3), v3(3.35, 1, 3), wall));
     try std.testing.expect(!blocksSight(v3(3.45, 1, -3), v3(3.45, 1, 3), wall));
     try std.testing.expect(gap(v3(0, 0, 0), wall) < 0 and gap(v3(0, 0, 1), wall) > 0.59);
+}
+
+test "A TURNED SQUARE END STANDS OUTSIDE THE SEGMENT'S OWN BOX — the broad phase is padded to the corner, not to `r`" {
+    const half: f32 = 3.85; // the 7.7 m keep AGENTS sizes `flat` off
+    var worst: f32 = 0;
+    var worstDeg: f32 = 0;
+    var deg: f32 = 0;
+    while (deg <= 90.0) : (deg += 0.5) {
+        const a = mathx.radians(deg);
+        const wall = box(-half * @cos(a), -half * @sin(a), half * @cos(a), half * @sin(a), 1.2);
+        const f = frameOf(wall);
+        var reach: f32 = 0;
+        for ([_][2]f32{ .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 } }) |k| {
+            const cx = f.ux * f.hl * k[0] - f.uz * wall.r * k[1];
+            const cz = f.uz * f.hl * k[0] + f.ux * wall.r * k[1];
+            reach = @max(reach, @max(@abs(cx) - half * @abs(@cos(a)), @abs(cz) - half * @abs(@sin(a))));
+        }
+        const over = reach - wall.r;
+        if (over > worst) {
+            worst = over;
+            worstDeg = deg;
+        }
+        try std.testing.expect(padXZ(wall) >= reach - 1e-4);
+        // A look that clips the corner is a look the prefilter may not throw away.
+        const at = f.ux * f.hl - f.uz * wall.r * 0.999;
+        const az = f.uz * f.hl + f.ux * wall.r * 0.999;
+        try std.testing.expect(blocksSight(v3(at, 1, az - 4), v3(at, 1, az + 4), wall));
+    }
+    std.debug.print(
+        "\n  a {d:.1} m square-ended wall of r {d:.2}: its corner stands {d:.3} m past the segment's box at {d:.0} deg — the pad now covers it\n",
+        .{ half * 2, @as(f32, 1.2), worst, worstDeg },
+    );
+    try std.testing.expect(worst > 0.4);
+    // A round end never leaves its own radius, so nothing there moves.
+    try std.testing.expectEqual(@as(f32, 0.4), padXZ(capsule(-3, -3, 3, 3, 0.4)));
 }
 
 test "a look is stopped by what stands in it and by nothing else" {

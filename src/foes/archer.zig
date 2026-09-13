@@ -1064,7 +1064,7 @@ pub const Archer = struct {
         const hipY = self.rest[ROOT].y;
 
         const dead = self.state == .dead;
-        const dk = if (dead) mathx.smoothstep(0, 0.45, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
+        const dk = foe.deathK(dead, self.t, DEATH_DUR, 0.45);
         const stunAmt = self.stunAmount();
 
         const m = self.moving * (1.0 - dk);

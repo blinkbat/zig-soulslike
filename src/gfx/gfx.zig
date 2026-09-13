@@ -437,6 +437,7 @@ pub const Scene = struct {
     lightVP: rl.Matrix,
     loc_ground: i32,
     loc_lightVP: i32,
+    loc_shadowBias: i32,
     loc_camPos: i32,
     loc_windAmt: i32,
     loc_time: i32,
@@ -537,6 +538,7 @@ pub const Scene = struct {
             .lightVP = rl.math.matrixIdentity(),
             .loc_ground = rl.getShaderLocation(shader, "groundMode"),
             .loc_lightVP = rl.getShaderLocation(shader, "lightVP"),
+            .loc_shadowBias = rl.getShaderLocation(shader, "shadowBias"),
             .loc_camPos = rl.getShaderLocation(shader, "camPos"),
             .loc_windAmt = rl.getShaderLocation(shader, "windAmt"),
             .loc_time = rl.getShaderLocation(shader, "uTime"),
@@ -623,6 +625,9 @@ pub const Scene = struct {
         rl.gl.rlActiveTextureSlot(0);
         self.bindSoil();
         rl.setShaderValueMatrix(self.shader, self.loc_lightVP, self.lightVP);
+        // The shader's bias is in METRES; hand it the slab to divide by and the box's own texel, both of which open with the span.
+        var bias = [2]f32{ 1.0 / (shadowSpan * SHADOW_DEPTH * 2.0), 2.0 * shadowSpan / @as(f32, SHADOWMAP_RES) };
+        rl.setShaderValue(self.shader, self.loc_shadowBias, &bias, .vec2);
         var cp = camPos;
         rl.setShaderValue(self.shader, self.loc_camPos, &cp, .vec3);
         var t: f32 = @floatCast(rl.getTime());

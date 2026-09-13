@@ -931,6 +931,7 @@ pub const Info = struct {
     view: f32,
     flora: bool = false,
     interact: bool = false,
+    /// Masonry: it never thins for the lens, so the CAMERA PULLS IN for it instead (`collision.Solid.arch`).
     solid: bool = false,
     occl: []const Blocker = &.{},
     casts: bool = true,

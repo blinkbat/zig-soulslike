@@ -624,7 +624,7 @@ pub const Druidess = struct {
         return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
     }
     pub fn airborne(self: *const Druidess) bool {
-        return self.hop > 0.02;
+        return self.hop > foe.AIRBORNE_LIFT;
     }
     pub fn flashFrac(self: *const Druidess) f32 {
         return foe.flashFrac(self.flash);
@@ -1356,7 +1356,7 @@ pub const Druidess = struct {
         const hipY = self.rest[ROOT].y;
 
         const dead = self.state == .dead;
-        const dk = if (dead) mathx.smoothstep(0, 0.45, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
+        const dk = foe.deathK(dead, self.t, DEATH_DUR, 0.45);
         const stun = self.stunAmount();
 
         const m = self.moving * (1.0 - dk);

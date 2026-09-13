@@ -1469,7 +1469,7 @@ pub fn fallClock() FallClock {
     return .{ .wind = FALL_WIND_DUR, .drop = FALL_DUR, .down = DOWN_DUR, .roll = ROLL_DUR, .rise = RISE_DUR };
 }
 pub fn slamClock() foe.Clock {
-    return .{ .wind = SLAM.windDur, .strike = SLAM.strikeDur, .recover = SLAM.recoverDur };
+    return foe.moveClock(SLAM);
 }
 pub fn chargeClock() foe.Clock {
     return .{ .wind = CHARGE.windDur, .strike = CHARGE.range / CHARGE.speed, .recover = CHARGE.brakeDur + CHARGE.recoverDur };
@@ -3298,7 +3298,7 @@ pub const Knight = struct {
         const rest = self.rest;
         const wonk = (self.seed - 0.5) * 5.0;
         const waist = bodyPitch * (1.0 - PELVIS_SHARE);
-        const dk = if (dead) mathx.smoothstep(0, DEATH_DUR * 0.5, self.t) else 0;
+        const dk = foe.deathK(dead, self.t, DEATH_DUR, 0.5);
         const rise = if (self.state == .rise) mathx.pulse(self.t / RISE_DUR, 0.18, 0.52, 0.70, 1.0) else 0;
 
         setLocal(wx, SPINE, rest, mul3(rx(waist * 0.44), ry(-0.35 * prot + self.twist * 0.40), rz(wonk * 0.5)));

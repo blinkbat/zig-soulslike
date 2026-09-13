@@ -97,6 +97,10 @@ var undoAt: usize = 0;
 var reachMark: [caves.CELLS]u8 = undefined;
 var reachQueue: [caves.CELLS]u32 = undefined;
 
+/// Every cursor march the process has run. One increment on a walk of the heightfield, and it is what lets a test
+/// say the draw pass costs a SECOND one — the kind of regression neither the picture nor a timing line shows.
+var marches: usize = 0;
+
 fn undoSlot(i: usize) *wf.Map {
     return &undoRing[(undoBase + i) % UNDO_CAP];
 }
@@ -1111,9 +1115,11 @@ pub const Editor = struct {
     caveOrphans: usize = 0,
     orphanOps: [MAX_ORPHAN_MARKS]u32 = undefined,
     nOrphanOps: usize = 0,
-    /// Bumped once at the top of `update`; `resolveCursorOnce` is the only reader.
-    frame: u64 = 0,
-    cursorAt: u64 = std.math.maxInt(u64),
+    /// Set by `resolveCursor` and SPENT by `resolveCursorOnce` — a token, not a frame number. As a frame counter
+    /// bumped in `update` it said "already done" for the whole of a `--shot` run, since the harness drives the
+    /// overlay without ever calling `update`, and every editor shot after the first would have drawn the first
+    /// one's cursor. The token is spent by the draw, so a second draw off the same resolve marches again.
+    cursorFresh: bool = false,
     cursorWorld: ?*const envmod.Env = null,
     /// An entry inherits a world `game` already built, so the survey owes one pass that no stroke asked for.
     caveSurveyDue: bool = true,
@@ -1338,9 +1344,7 @@ pub const Editor = struct {
     }
 
     pub fn say(self: *Editor, msg: []const u8) void {
-        const n = @min(msg.len, self.status.len - 1);
-        @memcpy(self.status[0..n], msg[0..n]);
-        self.statusLen = n;
+        self.statusLen = hud.copyInto(&self.status, msg);
         self.statusT = 5.0;
     }
 
@@ -1670,8 +1674,9 @@ pub const Editor = struct {
     }
 
     fn resolveCursor(self: *Editor) void {
+        marches +%= 1;
         if (self.world) |w| envmod.Env.setCutaway(self.under, w);
-        self.cursorAt = self.frame;
+        self.cursorFresh = true;
         self.cursorWorld = self.world;
         self.cursor = self.traceGround();
     }
@@ -1681,11 +1686,13 @@ pub const Editor = struct {
     /// `setCutaway` still runs every time — the draw pass reads it — and a world arriving for the first time forces
     /// the ray, since `update` resolved against nothing.
     fn resolveCursorOnce(self: *Editor) void {
-        if (self.cursorAt == self.frame and self.cursorWorld == self.world) {
+        if (self.cursorFresh and self.cursorWorld == self.world) {
             if (self.world) |w| envmod.Env.setCutaway(self.under, w);
+            self.cursorFresh = false;
             return;
         }
         self.resolveCursor();
+        self.cursorFresh = false;
     }
 
     /// A STROKE RIDES THE PLANE IT STARTED ON: once a carve or a cliff drag is down, the cursor is the ray against a
@@ -2000,7 +2007,6 @@ pub const Editor = struct {
     }
 
     pub fn update(self: *Editor, m: *wf.Map, env: *envmod.Env, day: *daynight.Clock, dt: f32) Action {
-        self.frame +%= 1;
         self.world = env;
         self.hasCave = env.caveAny;
         if (self.caveSurveyDue) {
@@ -2222,8 +2228,7 @@ pub const Editor = struct {
     /// THE CAP COMES OFF THE BUFFER: four selectors wrote this out, each with its own `NAME_CAP - 1`, and one of them holds an `ID_CAP` field.
     fn loadField(buf: []u8, len: *usize, s: []const u8) void {
         @memset(buf, 0);
-        len.* = @min(s.len, buf.len - 1);
-        @memcpy(buf[0..len.*], s[0..len.*]);
+        len.* = hud.copyInto(buf, s);
     }
 
     fn selectZone(self: *Editor, m: *const wf.Map, i: usize) void {
@@ -8516,6 +8521,34 @@ test "SAVE AS RENAMES THE MAP BEFORE IT WRITES — the file's own `name:` and th
     var line: usize = 0;
     try wf.load(kept, back, &line);
     try std.testing.expectEqualStrings(want, back.label());
+}
+
+test "THE CURSOR IS MARCHED ONCE A DRAW, AND A DRAW WITH NO RESOLVE BEHIND IT STILL MARCHES" {
+    var ed = Editor{};
+    ed.applyCam();
+
+    // The live loop: `update` resolves, the draw spends what it left. One march between them.
+    const a = marches;
+    ed.resolveCursor();
+    ed.resolveCursorOnce();
+    try std.testing.expectEqual(@as(usize, 1), marches - a);
+
+    // The shot harness never calls `update`, so the second draw has nothing banked and must march again. Keyed on a
+    // frame counter only `update` bumped, this said "already done" for the whole run.
+    const b = marches;
+    ed.resolveCursorOnce();
+    ed.resolveCursorOnce();
+    try std.testing.expectEqual(@as(usize, 2), marches - b);
+
+    // A world arriving after the resolve is a different answer, so the token does not cover it.
+    const c = marches;
+    ed.resolveCursor();
+    const world = try testEnv(std.testing.allocator);
+    defer std.testing.allocator.destroy(world);
+    ed.world = world;
+    ed.resolveCursorOnce();
+    try std.testing.expectEqual(@as(usize, 2), marches - c);
+    std.debug.print("\n  editor cursor: one march a draw, and {d} over the whole protocol\n", .{marches - a});
 }
 
 test "THE MINIMAP'S HELD FACE IS REPAINTED BY EVERY HAND THAT MOVES IT" {

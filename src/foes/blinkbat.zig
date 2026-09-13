@@ -789,7 +789,7 @@ pub const Bat = struct {
         const fs = foe.rigScale(self.scale, self.fade);
         const facingDeg = mathx.degrees(self.facing);
         const dead = self.state == .dead;
-        const dk = if (dead) mathx.smoothstep(0, 0.62, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
+        const dk = foe.deathK(dead, self.t, DEATH_DUR, 0.62);
         const stun = self.motion.reaction;
         const hipY = self.rest[ROOT].y;
 
@@ -809,8 +809,7 @@ pub const Bat = struct {
         wx[ROOT] = heromod.rootChain(fs, .{
             .roll = 24.0 * dk,
             .pitch = leanX * (1.0 - furl) + 180.0 * furl,
-            .pelvY = hipY,
-            .lift = bob,
+            .pelvY = hipY + bob,
         }, facingDeg, v3(self.pos.x, self.pos.y + self.lift(), self.pos.z));
 
         setLocal(&wx, SPINE, self.rest, rx(waist * 0.55));

@@ -917,7 +917,7 @@ pub const Necro = struct {
         const hipY = self.rest[ROOT].y;
 
         const dead = self.state == .dead;
-        const dk = if (dead) mathx.smoothstep(0, 0.45, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
+        const dk = foe.deathK(dead, self.t, DEATH_DUR, 0.45);
 
                 // A braced body walks less: `legChain` only solves the knee under a pelvis it believes is STANDING and applies that solve by `1 - m`. Left at a walking `m` the half-applied solve put the soles 2.4 cm under.
         const m = self.moving * (1.0 - dk) * (1.0 - mathx.clampF(self.crouch * 1.7, 0, 1));

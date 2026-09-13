@@ -265,8 +265,8 @@ fn shootClear(g: *Game, name: [:0]const u8, yaw: f32, pitch: f32, dist: f32) voi
     g.rig.yaw = mathx.radians(yaw);
     g.rig.pitch = pitch;
     g.rig.dist = dist;
-    g.rig.eased = -1;
-    g.rig.followRoofed(g.hero.shoulderPoint(), game.camFloor(g), game.CamFloor.at, game.CamFloor.roof, 0);
+    g.rig.solveFresh();
+    g.rig.followRoofed(g.hero.shoulderPoint(), game.camFloor(g), 0);
     shoot(g, name);
 }
 

@@ -134,23 +134,15 @@ fn spec(r: Role) *const Spec {
 
 comptime {
     if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("kobold: a Role with no spec row");
-    for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
-        const fk: wf.FoeKind = @enumFromInt(@intFromEnum(wf.FoeKind.berserker) + i);
-        if (!std.mem.eql(u8, f.name, @tagName(fk))) {
-            @compileError("kobold: wf.FoeKind." ++ @tagName(fk) ++ " is not in the warband's contiguous run");
-        }
-    }
+    foe.pinRun("kobold", Role, .berserker, 0);
 }
 
 pub fn roleOf(k: wf.FoeKind) ?Role {
-    const lo = @intFromEnum(wf.FoeKind.berserker);
-    const i = @intFromEnum(k);
-    if (i < lo or i >= lo + SPEC.len) return null;
-    return @enumFromInt(i - lo);
+    return foe.roleInRun(Role, .berserker, k);
 }
 
 pub fn kindOf(r: Role) wf.FoeKind {
-    return @enumFromInt(@intFromEnum(wf.FoeKind.berserker) + @intFromEnum(r));
+    return foe.kindInRun(Role, .berserker, r);
 }
 
 pub var AGGRO_R: f32 = 16.0;
@@ -912,7 +904,7 @@ pub const Kobold = struct {
         const hipY = self.rest[ROOT].y;
 
         const dead = self.state == .dead;
-        const dk = if (dead) mathx.smoothstep(0, 0.5, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
+        const dk = foe.deathK(dead, self.t, DEATH_DUR, 0.5);
         const stunAmt = self.stunAmount();
 
         const m = self.moving * (1.0 - dk);

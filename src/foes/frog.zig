@@ -705,7 +705,7 @@ pub const Frog = struct {
     }
     fn resolveDeath(self: *Frog) void {
         self.base();
-        const k = mathx.smoothstep(0, 0.4, mathx.clampF(self.t / DEATH_DUR, 0, 1));
+        const k = foe.deathK(true, self.t, DEATH_DUR, 0.4);
         self.lift = 0;
         self.sy = mathx.lerpF(1.0, 0.30, k);
         self.sxz = mathx.lerpF(1.0, 1.40, k);

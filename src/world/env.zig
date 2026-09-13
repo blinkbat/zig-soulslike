@@ -85,6 +85,10 @@ fn shadowBox() f32 {
 
 const LIGHT_REACH: f32 = 90.0;
 
+/// Metres of alpha ramp inside EVERY distance cull, so nothing cuts in. 1.4 s of sprint, and the last metres of a
+/// reach where the haze has already eaten most of the thing: at a tuft's 85 m it fades 0 → 31% of the sky.
+const FADE_BAND: f32 = 7.0;
+
 pub const OCCL_MAX = 64;
 const OCCL_IN: f32 = 0.16;
 const OCCL_OUT: f32 = 0.34;
@@ -448,6 +452,17 @@ pub const View = struct {
             inward(right, dt, fwd),
             inward(right, db, fwd),
         } };
+    }
+
+    /// 1 solid, 0 AT THE CULL EDGE — the ramp `visible` would otherwise cut. Off the same `far`, so it reaches zero
+    /// exactly where the draw stops and a body never appears at an alpha it did not walk up to.
+    pub fn nearness(self: *const View, c: rl.Vector3, rad: f32, maxDist: f32) f32 {
+        const far = mathx.maxF(maxDist, self.floor) + rad;
+        const inner = far - FADE_BAND;
+        const d = mathx.subV(c, self.pos);
+        const d2 = d.x * d.x + d.y * d.y + d.z * d.z;
+        if (d2 <= inner * inner) return 1;
+        return 1.0 - mathx.smoothstep(inner, far, @sqrt(d2));
     }
 
     pub fn visible(self: *const View, c: rl.Vector3, rad: f32, maxDist: f32) bool {
@@ -1207,7 +1222,9 @@ pub const Env = struct {
         self.tileH[i] = yHi - yLo;
         for (stamps.buf[0..stamps.n]) |s| {
             if (self.ncliffSolids >= MAX_CLIFF_SOLIDS) @panic("env: MAX_CLIFF_SOLIDS exceeded — raise the cap");
-            self.cliffSolids[self.ncliffSolids] = s;
+            var stamp = s;
+            stamp.arch = true;
+            self.cliffSolids[self.ncliffSolids] = stamp;
             self.cliffSolidTile[self.ncliffSolids] = @intCast(i);
             self.ncliffSolids += 1;
         }
@@ -1610,7 +1627,7 @@ pub const Env = struct {
             const pr = &self.props[pi];
             if (pr.gone) continue;
             const nfo = props.info(pr.kind);
-            if (nfo.solid and !veilThins(nfo)) continue;
+            if (masonry(nfo)) continue;
             if (nfo.flora and nfo.top * pr.scale < OCCL_TALL) continue;
             const thin = thinFor(pr, nfo, eye, at);
             if (thin <= 0) continue;
@@ -1755,11 +1772,12 @@ pub const Env = struct {
         }
     }
 
-    pub fn nearSolids(self: *const Env, p: rl.Vector3, r: f32, out: []collision.Solid) []const collision.Solid {
+    fn gatherSolids(self: *const Env, p: rl.Vector3, r: f32, out: []collision.Solid, comptime archOnly: bool) []const collision.Solid {
         const Take = struct {
             out: []collision.Solid,
             n: usize = 0,
             fn one(c: *@This(), s: collision.Solid) bool {
+                if (archOnly and !s.arch) return true;
                 if (c.n >= c.out.len) return false;
                 c.out[c.n] = s;
                 c.n += 1;
@@ -1769,6 +1787,16 @@ pub const Env = struct {
         var take = Take{ .out = out };
         self.eachSolid(p.x - r, p.z - r, p.x + r, p.z + r, &take, Take.one);
         return out[0..take.n];
+    }
+
+    pub fn nearSolids(self: *const Env, p: rl.Vector3, r: f32, out: []collision.Solid) []const collision.Solid {
+        return self.gatherSolids(p, r, out, false);
+    }
+
+    /// THE MASONRY NEAR A POINT and nothing else: a tree's collider is in the same index, but a tree answers the lens
+    /// by THINNING (`markOccluders`), and a boom that also shortened for one would fight that.
+    pub fn wallsNear(self: *const Env, p: rl.Vector3, r: f32, out: []collision.Solid) []const collision.Solid {
+        return self.gatherSolids(p, r, out, true);
     }
 
     pub fn sees(self: *const Env, from: rl.Vector3, to: rl.Vector3) bool {
@@ -2672,12 +2700,23 @@ pub const Env = struct {
             if (self.floats(pr)) continue;
             const nfo = props.info(pr.kind);
             const bound = reachOf(pr, nfo);
+            var near: f32 = 1;
             switch (cull) {
-                .view => |*vw| if (!vw.visible(pr.pos, bound, nfo.view)) continue,
+                .view => |*vw| {
+                    if (!vw.visible(pr.pos, bound, nfo.view)) continue;
+                    near = vw.nearness(pr.pos, bound, nfo.view);
+                },
                 .sun => |focus| if (!castsInto(focus, pr.pos, bound, runOf(pr, nfo))) continue,
             }
             const sc = v3(pr.scale, pr.scale, pr.scale);
+            const fading = near < 1.0;
+            if (fading) {
+                if (self.scene) |s| s.beginFade(near);
+            }
             rl.drawModelEx(mdl, pr.pos, v3(0, 1, 0), pr.yaw, sc, rl.Color.white);
+            if (fading) {
+                if (self.scene) |s| s.endFade();
+            }
         }
     }
 
@@ -2753,10 +2792,11 @@ pub const Env = struct {
             if (pr.gone or self.floats(pr)) continue;
             const mdl = self.veils[@intFromEnum(pr.kind)] orelse continue;
             const nfo = props.info(pr.kind);
-            if (!view.visible(pr.pos, reachOf(pr, nfo), nfo.view)) continue;
+            const bound = reachOf(pr, nfo);
+            if (!view.visible(pr.pos, bound, nfo.view)) continue;
             self.stat_draws += 1;
             const sc = v3(pr.scale, pr.scale, pr.scale);
-            const alpha = pr.shrink * pr.fade;
+            const alpha = pr.shrink * pr.fade * view.nearness(pr.pos, bound, nfo.view);
             const fading = alpha < 1.0;
             if (fading) {
                 if (self.scene) |sn| sn.beginFade(alpha);
@@ -2790,9 +2830,11 @@ pub const Env = struct {
                 const nfo = props.info(pr.kind);
                 if (casters_only and !nfo.casts) continue;
                 const bound = reachOf(pr, nfo);
+                var near: f32 = 1;
                 switch (cull) {
                     .view => |*vw| {
                         if (!vw.visible(pr.pos, bound, nfo.view)) continue;
+                        near = vw.nearness(pr.pos, bound, nfo.view);
                     },
                     .sun => |focus| {
                         if (!castsInto(focus, pr.pos, bound, runOf(pr, nfo))) continue;
@@ -2800,7 +2842,7 @@ pub const Env = struct {
                 }
                 if (!casters_only and pr.fade < FADE_SOLID and !veilThins(nfo)) continue;
                 self.stat_draws += 1;
-                const alpha = pr.shrink * (1.0 - pr.dissolve);
+                const alpha = pr.shrink * (1.0 - pr.dissolve) * near;
                 if (!casters_only and alpha < 1.0) {
                     if (self.scene) |s| s.beginFade(alpha);
                     self.drawProp(pr);
@@ -2932,7 +2974,8 @@ pub const Env = struct {
         var n: usize = 0;
         for (self.lights[0..self.nlights]) |wl| {
             if (!view.visible(wl.base.pos, wl.base.radius, LIGHT_REACH)) continue;
-            const lit = self.lightOf(wl, t) orelse continue;
+            var lit = self.lightOf(wl, t) orelse continue;
+            lit.col = mathx.scaleV(lit.col, view.nearness(wl.base.pos, wl.base.radius, LIGHT_REACH));
             const d2 = mathx.dist2XZ(wl.base.pos, view.pos);
             if (n < cap) {
                 picked[n] = lit;
@@ -4319,6 +4362,13 @@ fn veilThins(nfo: *const props.Info) bool {
     return nfo.ward;
 }
 
+/// WHAT THE LENS WILL NOT THIN, AND SO WHAT THE BOOM PULLS IN FOR (`collision.Solid.arch`) — ONE predicate, read by
+/// `markOccluders` and stamped onto the collider in `buildSolids`. The fog gate is why it is not just `Info.solid`:
+/// its collider IS the sheet, the sheet is the thing that thins, and a boom shortening for it would fight that.
+fn masonry(nfo: *const props.Info) bool {
+    return nfo.solid and !veilThins(nfo);
+}
+
 /// 0 (solid) .. 1 (as thin as it gets). A conifer's collider is a 1.48 m cylinder against boughs that block the view at 3.8 m.
 fn thinFor(pr: *const Prop, nfo: *const props.Info, eye: rl.Vector3, at: rl.Vector3) f32 {
     var thin: f32 = 0;
@@ -4665,6 +4715,7 @@ fn buildSolids(e: *Env) void {
             if (cut) |ct| sol.h = @min(sol.h, ct.lip);
             if (part.y0 > 0) sol.y0 = pr.pos.y + part.y0 * s;
             sol.surf = nfo.surf;
+            sol.arch = masonry(nfo);
             sol.ward = ward;
             sol.illusion = illusion;
             if (pr.lean != 0) {
@@ -4742,13 +4793,14 @@ const SolidCells = struct {
     cz: usize,
 
     fn init(s: collision.Solid) SolidCells {
-        const x0 = cellCoord(@min(s.a.x, s.b.x) - s.r);
-        const z0 = cellCoord(@min(s.a.z, s.b.z) - s.r);
+        const pad = collision.padXZ(s);
+        const x0 = cellCoord(@min(s.a.x, s.b.x) - pad);
+        const z0 = cellCoord(@min(s.a.z, s.b.z) - pad);
         return .{
             .x0 = x0,
-            .x1 = cellCoord(@max(s.a.x, s.b.x) + s.r),
+            .x1 = cellCoord(@max(s.a.x, s.b.x) + pad),
             .z0 = z0,
-            .z1 = cellCoord(@max(s.a.z, s.b.z) + s.r),
+            .z1 = cellCoord(@max(s.a.z, s.b.z) + pad),
             .cx = x0,
             .cz = z0,
         };
@@ -4946,6 +4998,25 @@ test "the view culler keeps what is ahead and rejects what is behind or wide" {
         const wide = mathx.addV(ahead, mathx.scaleV(mathx.normV(cross(h, v3(0, 1, 0))), 30));
         try std.testing.expect(!vw.visible(wide, 0.5, 100));
         try std.testing.expect(vw.visible(wide, 26.0, 100));
+    }
+}
+
+test "NOTHING CUTS IN — the ramp reaches zero exactly where the cull drops the draw" {
+    const vw = viewLooking(v3(0, 0, 0), v3(0, 0, 1));
+    const density = gfx.hazeDensityOf(0, 1, 0, 0, 0);
+    std.debug.print("\n  a {d:.0} m ramp inside every reach:\n", .{FADE_BAND});
+    for ([_]f32{ 58, 85, 130, 240, 320 }) |reach| {
+        const rad: f32 = 1.0;
+        const far = reach + rad;
+        const edge = vw.nearness(v3(0, 0, far), rad, reach);
+        const half = vw.nearness(v3(0, 0, far - FADE_BAND * 0.5), rad, reach);
+        const inner = vw.nearness(v3(0, 0, far - FADE_BAND), rad, reach);
+        std.debug.print("    reach {d:>3.0} m: 0 at {d:.0} m, {d:.2} at {d:.0} m, solid by {d:.0} m — the cut it replaces showed {d:.0}% through the haze\n", .{ reach, far, half, far - FADE_BAND * 0.5, far - FADE_BAND, 100.0 * @exp(-density * far) });
+        try std.testing.expectApproxEqAbs(@as(f32, 0), edge, 1e-6);
+        try std.testing.expectEqual(@as(f32, 1), inner);
+        try std.testing.expect(half > 0.4 and half < 0.6);
+        try std.testing.expect(vw.visible(v3(0, 0, far - 0.01), rad, reach));
+        try std.testing.expect(!vw.visible(v3(0, 0, far + 0.01), rad, reach));
     }
 }
 
@@ -5256,6 +5327,36 @@ test "a solid's blocking height is a WORLD height, so cover still works up a ban
     const up = e.nearSolids(v3(60, 12, 0), 1.0, &buf);
     try std.testing.expect(collision.blockedBy(v3(60, 12 + top - 0.5, 0), 0.04, up));
     try std.testing.expect(!collision.blockedBy(v3(60, 12 + top + 0.5, 0), 0.04, up));
+}
+
+test "THE BOOM GATHERS MASONRY AND NOTHING ELSE — a tree's collider is in the same index and is not one" {
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    e.props[0] = .{ .kind = .wall, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
+    e.props[1] = .{ .kind = .conifer, .pos = v3(3, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
+    // SOLID **AND** A VEIL: its collider is the sheet, `markOccluders` thins the sheet, so the boom may not pull in
+    // for it — the two would fight on the one prop the whole `veilThins` split exists for.
+    e.props[2] = .{ .kind = .foggate, .pos = v3(-3, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
+    e.nprops = 3;
+    buildSolids(e);
+    e.wardLife[0] = 1;
+    var buf: [MAX_NEAR]collision.Solid = undefined;
+    const all = e.nearSolids(v3(0, 0, 0), 6.0, &buf);
+    var walls: [MAX_NEAR]collision.Solid = undefined;
+    const arch = e.wallsNear(v3(0, 0, 0), 6.0, &walls);
+    try std.testing.expect(all.len > arch.len);
+    try std.testing.expect(arch.len > 0);
+    for (arch) |s| try std.testing.expect(s.arch and s.ward == 0);
+    var thinner = false;
+    var veil = false;
+    for (all) |s| {
+        if (!s.arch) thinner = true;
+        if (s.ward != 0) veil = true;
+    }
+    try std.testing.expect(thinner);
+    try std.testing.expect(veil);
+    try std.testing.expect(masonry(props.info(.wall)) and !masonry(props.info(.foggate)) and !masonry(props.info(.conifer)));
 }
 
 test "A WALL STOPS A LOOK, and the grid is walked far enough out to find one at range" {
@@ -7082,4 +7183,3 @@ test "EVERY FIELD ON `Env` IS ASSIGNED — `Game` is `alloc.create`d and `Env` s
     try std.testing.expectEqual(@as(usize, 0), missing);
     std.debug.print("\n  all {d} of Env's fields assigned — {d} carry a default that never runs\n", .{ @typeInfo(Env).@"struct".fields.len, defaulted });
 }
-

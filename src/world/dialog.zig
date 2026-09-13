@@ -235,7 +235,7 @@ pub const Session = struct {
         const halfW = @divTrunc(innerW, 2);
 
         if (who.len > 0) {
-            hud.engraved(zterm(&nameBuf, who), innerX, cy, hud.BODY, NAME);
+            hud.engraved(hud.zterm(&nameBuf, who), innerX, cy, hud.BODY, NAME);
             cy += bodyH + RULE_GAP;
             uiart.divider(midX, cy, halfW, a);
             cy += RULE_GAP;
@@ -264,7 +264,7 @@ pub const Session = struct {
                 var out: [LABEL_CAP]u8 = undefined;
                 const label = m.spanText(c.label);
                 const numbered = std.fmt.bufPrint(&out, "{d}. {s}", .{ row + 1, label }) catch label;
-                hud.text(zterm(&lb, numbered), innerX + (if (on) @as(i32, 10) else 0), cy, hud.BODY, if (on) uiart.HOT else TEXT_OFF);
+                hud.text(hud.zterm(&lb, numbered), innerX + (if (on) @as(i32, 10) else 0), cy, hud.BODY, if (on) uiart.HOT else TEXT_OFF);
                 cy += rowStep;
             }
         }
@@ -304,13 +304,6 @@ pub fn drawPortrait(p: Portrait, dx: i32, dy: i32, dw: i32, dh: i32) void {
     rl.drawRectangleGradientH(dx, dy, side, dh, rgba(0, 0, 0, 160), rgba(0, 0, 0, 0));
     rl.drawRectangleGradientH(dx + dw - side, dy, side, dh, rgba(0, 0, 0, 0), rgba(0, 0, 0, 160));
     rl.drawRectangleLinesEx(dst, 1, mathx.withAlpha(uiart.GILT_DIM, 95));
-}
-
-fn zterm(buf: []u8, s: []const u8) [:0]const u8 {
-    const n = @min(s.len, buf.len - 1);
-    @memcpy(buf[0..n], s[0..n]);
-    buf[n] = 0;
-    return buf[0..n :0];
 }
 
 

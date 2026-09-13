@@ -133,9 +133,7 @@ pub const Ctx = struct {
     }
 
     pub fn setTip(ctx: *Ctx, text: []const u8) void {
-        const n = @min(text.len, ctx.tipBuf.len - 1);
-        @memcpy(ctx.tipBuf[0..n], text[0..n]);
-        ctx.tipLen = n;
+        ctx.tipLen = hud.copyInto(&ctx.tipBuf, text);
     }
 };
 

@@ -1655,7 +1655,7 @@ fn poseBody(self: anytype, deathDur: f32) void {
     const hipY = self.rest[ROOT].y;
 
     const dead = self.state == .dead;
-    const dk = if (dead) mathx.smoothstep(0, 0.5, mathx.clampF(self.t / deathDur, 0, 1)) else 0;
+    const dk = foe.deathK(dead, self.t, deathDur, 0.5);
     const stun = self.stunAmount();
     const m = self.moving * (1.0 - dk);
     const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);

@@ -122,12 +122,7 @@ fn spec(r: Role) *const Spec {
 
 comptime {
     if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("fishman: a Role with no spec row");
-    for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
-        const fk: wf.FoeKind = @enumFromInt(@intFromEnum(wf.FoeKind.fish_spearman) + i);
-        if (!std.mem.eql(u8, f.name, @tagName(fk)[5..])) {
-            @compileError("fishman: wf.FoeKind." ++ @tagName(fk) ++ " is not in the shoal's contiguous run");
-        }
-    }
+    foe.pinRun("fishman", Role, .fish_spearman, "fish_".len);
     // Read through `spec` and not by ordinal: the run above pins the ORDER, and a bare `SPEC[2]` names no role.
     std.debug.assert(spec(.shaman).souls > spec(.spearman).souls and spec(.shaman).hp < spec(.spearman).hp);
     std.debug.assert(spec(.spearman).size > spec(.shaman).size and spec(.netter).size > spec(.shaman).size);
@@ -137,14 +132,11 @@ comptime {
 }
 
 pub fn roleOf(k: wf.FoeKind) ?Role {
-    const lo = @intFromEnum(wf.FoeKind.fish_spearman);
-    const i = @intFromEnum(k);
-    if (i < lo or i >= lo + SPEC.len) return null;
-    return @enumFromInt(i - lo);
+    return foe.roleInRun(Role, .fish_spearman, k);
 }
 
 pub fn kindOf(r: Role) wf.FoeKind {
-    return @enumFromInt(@intFromEnum(wf.FoeKind.fish_spearman) + @intFromEnum(r));
+    return foe.kindInRun(Role, .fish_spearman, r);
 }
 
 pub var AGGRO_R: f32 = 16.0;
@@ -738,7 +730,7 @@ pub const Fishman = struct {
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
         const dead = self.state == .dead;
-        const dk = if (dead) mathx.smoothstep(0, 0.5, mathx.clampF(self.t / DEATH_DUR, 0, 1)) else 0;
+        const dk = foe.deathK(dead, self.t, DEATH_DUR, 0.5);
         const stun = self.motion.reaction;
         const m = self.moving * (1.0 - dk);
         const pel = heromod.pelvisChannels(self.phase, m, self.fwdB, self.latB, A_PROT);

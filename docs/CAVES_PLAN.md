@@ -21,7 +21,7 @@ Runtime digging, destructible terrain, independent underground liquid levels, ne
 | src/world/env.zig | standAt takes the maximum of terrain and an eligible deck. A cave floor below terrain cannot work through this function unchanged. |
 | src/world/env.zig | Terrain uses tiled meshes and partial sculpt rebuilds. replay, adoptHeight, heightStale, sculptHeight, and buildTile jointly own synchronization. |
 | src/core/collision.zig | Solids have an XZ shape and a vertical interval. Actor push-out is lateral; this does not supply a general ceiling solver. |
-| src/core/camera.zig | followClear samples ground along the camera boom and clamps above a floor. It does not sweep against cave walls or ceilings. |
+| src/core/camera.zig | followRoofed marches the boom out against floor, ceiling and masonry, and clamps the eye between floor and lid. Cave WALLS are still only whatever masonry stands in them. |
 | src/game.zig | Many effects and projectiles call groundAt directly. CamFloor calls standAt. Movement, grounding, and world-space attacks need separate auditing. |
 | src/foes/foe.zig | Shared spawn/reset paths derive home heights from Map.heightAt. Underground placement must survive these paths and respawn. |
 | worldfmt.zig and game.zig | Weather locations are XZ rectangles; weather levels blend globally around the hero. A surface and a cave underneath share the same location lookup. |

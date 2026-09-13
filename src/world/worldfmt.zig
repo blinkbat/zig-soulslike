@@ -1753,28 +1753,21 @@ pub const Map = struct {
         @memcpy(self.name[0..n], s[0..n]);
     }
 
+    /// EVERYTHING BUT WHERE AND WHAT THE FILE IS. Written out field by field it was a list to forget one from, and
+    /// it had: `nlocations` went in with the `location:` row and never reached here, so a cleared map kept the
+    /// old one's weather bands. Taken off the struct's OWN defaults — which is also the one place the grids'
+    /// datums are written (`@memset(.., 0)` on `height` would drop the ground to `HEIGHT_MIN`) — a field added
+    /// tomorrow is cleared by having a default, and the four kept below are the whole of the exception.
     pub fn clear(self: *Map) void {
-        self.nops = 0;
-        self.nscats = 0;
-        self.nzones = 0;
-        self.nlocations = 0;
-        self.nclearings = 0;
-        self.narenas = 0;
-        self.nfoes = 0;
-        self.clearScript();
-        self.soil = [_]u8{0} ** SOIL_CELLS;
-        self.soilCov = [_]u8{COV_FULL} ** SOIL_CELLS;
-        self.soilEdge = [_]u8{@intFromEnum(Edge.natural)} ** SOIL_CELLS;
-        self.water = [_]u8{0} ** WATER_CELLS;
-        self.waterEdge = [_]u8{@intFromEnum(Edge.natural)} ** WATER_CELLS;
-        self.waterKind = [_]u8{@intFromEnum(Liquid.water)} ** WATER_CELLS;
-        self.waterBase = [_]Hgt{HEIGHT_ZERO} ** WATER_CELLS;
-        // To the DATUM, not to zero: `@memset(.., 0)` here would drop the ground to HEIGHT_MIN.
-        self.height = [_]Hgt{HEIGHT_ZERO} ** HEIGHT_CELLS;
-        self.cliff = [_]u8{CLIFF_NONE} ** HEIGHT_CELLS;
-        self.caveCov = [_]u8{0} ** CAVE_CELLS;
-        self.caveFloor = [_]u8{CAVE_H_ZERO} ** CAVE_CELLS;
-        self.caveRoof = [_]u8{CAVE_H_ZERO} ** CAVE_CELLS;
+        const name = self.name;
+        const half = self.half;
+        const runway = self.runway;
+        const start = self.start;
+        self.* = .{};
+        self.name = name;
+        self.half = half;
+        self.runway = runway;
+        self.start = start;
     }
 
     pub fn blank(self: *Map, name: []const u8) void {
@@ -4061,13 +4054,28 @@ test "clear empties the script layer with the world" {
     var ln: usize = 0;
     try parse(SCRIPT_ALL, m, &ln);
     try std.testing.expect(m.ntrigs > 0 and m.ndtext > 0);
+    m.half = 220.0;
+    m.setName("kept");
+    m.start = .{ .x = 3, .z = -4, .yaw = 1.5 };
     m.clear();
-    try std.testing.expectEqual(@as(usize, 0), m.ntrigs);
-    try std.testing.expectEqual(@as(usize, 0), m.nnpcs);
-    try std.testing.expectEqual(@as(usize, 0), m.ndialogs);
-    try std.testing.expectEqual(@as(usize, 0), m.nnodes);
-    try std.testing.expectEqual(@as(u32, 0), m.ndtext);
-    try std.testing.expectEqual(@as(usize, 0), m.nflags);
+
+    // EVERY COUNTER, not the six somebody remembered: `nlocations` was the one that went missing.
+    var counters: usize = 0;
+    inline for (@typeInfo(Map).@"struct".fields) |f| {
+        if (comptime f.name.len > 1 and f.name[0] == 'n' and std.ascii.isLower(f.name[1]) and @typeInfo(f.type) == .int) {
+            counters += 1;
+            try std.testing.expectEqual(@as(f.type, 0), @field(m, f.name));
+        }
+    }
+    std.debug.print("\n  clear: all {d} of Map's counters back to 0, and the file's own name, half and start kept\n", .{counters});
+    try std.testing.expect(counters >= 15);
+
+    // What a clear is NOT: the map is still the same file, the same size and the same way in.
+    try std.testing.expectEqualStrings("kept", m.label());
+    try std.testing.expectEqual(@as(f32, 220.0), m.half);
+    try std.testing.expectEqual(@as(f32, 3), m.start.x);
+    try std.testing.expectEqual(HEIGHT_ZERO, m.height[0]);
+    try std.testing.expectEqual(COV_FULL, m.soilCov[0]);
 }
 
 test "AN ID TOO LONG TO STORE IS REFUSED, not quietly clipped into a second flag" {

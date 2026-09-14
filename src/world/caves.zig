@@ -927,10 +927,24 @@ pub const wfcave = struct {
         bench.stroke(m, .{ l.faceX + 4.0, 0 }, l.chamber, PASSAGE_R, FLOOR, HEAD);
         bench.stroke(m, l.chamber, l.chamber, CHAMBER_R, FLOOR, HEAD);
         bench.stroke(m, l.northIn, l.northOut, PASSAGE_R, FLOOR, HEAD);
-        _ = m.add(.{ .op = .at, .kind = .vines, .x = l.vines[0], .z = l.vines[1], .yaw = 270 }) catch {};
-        _ = m.add(.{ .op = .at, .kind = .cracked_wall, .x = l.wall[0], .z = l.wall[1], .yaw = 0 }) catch {};
+        // A breach hangs in the MOUTH, so it is placed on the chamber floor: `homeY` without this returns the plateau
+        // top 7 m over it, and `Solid.y0` defaulting to 0 leaves the collider where a body meets it either way.
+        _ = m.add(.{ .op = .at, .kind = .vines, .x = l.vines[0], .z = l.vines[1], .yaw = 270, .under = true }) catch {};
+        _ = m.add(.{ .op = .at, .kind = .cracked_wall, .x = l.wall[0], .z = l.wall[1], .yaw = 0, .under = true }) catch {};
         _ = m.add(.{ .op = .at, .kind = .brazier, .x = l.chamber[0] + 3, .z = l.chamber[1] - 2, .under = true }) catch {};
         _ = m.add(.{ .op = .at, .kind = .campfire_lit, .x = l.start[0] + 3, .z = l.start[1] + 5 }) catch {};
+        // THE BURST KEY IS IN REACH OF THE SPAWN, or the north wall can only be opened by a test: a lob of either
+        // lands as `.crock` or `.clump`, the two shots `game.planted` bills as a burst.
+        var throws = wf.defaults(.at);
+        throws.kind = .pickup;
+        throws.x = l.start[0] + 2;
+        throws.z = l.start[1] - 3;
+        throws.loot[0] = .thundercrock;
+        throws.loot[1] = .thundercrock;
+        throws.loot[2] = .ember_candle;
+        throws.loot[3] = .ember_candle;
+        throws.nloot = 4;
+        _ = m.add(throws) catch {};
         m.start = .{ .x = l.start[0], .z = l.start[1], .yaw = 90 };
         return l;
     }

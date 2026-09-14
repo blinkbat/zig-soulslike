@@ -1427,6 +1427,12 @@ LOAD ERROR on a build that does not know it — which is what `wf.VERSION` 3 bou
   moved, so a forty-metre run costs EIGHT built meshes. **Adding a rock is one seed in `FACE_ROCK_SEEDS`.**
   Everything before this tried to make the sheet itself into rock, and then to scale a whole cliff prop down to
   the drop; the first read as plates pasted on a wall, the second as one boulder per stamp.
+- **A MOUTH IS DRESSED FROM ITS LINTEL UP, NOT SKIPPED.** A chord with a chamber behind it used to return before
+  any dressing ran, which left every cave mouth a clean rectangle punched in a sheet. `faceStamp` now takes a
+  `sill` — the lowest bed a column may use — and a mouth chord passes the room's own roof, so the rows stand on
+  the lintel and the head of the opening stays clear. **A SILL-LIFTED COLUMN IS FOOTED INTO NOTHING AND STANDS NO
+  COLLIDER** (`Station.lifted`): it hangs over the doorway a body walks through. The brow stands BEHIND A FALL too,
+  where the rim rubble still does not — the sheet passes in front of a brow and would pour through scattered stone.
 - **THE SHEET'S SHADING BUMP IS 0.10 m** (`FACE_BUMP`); at 0.45 the relief noise tilted its normals past 45°.
 - **A CUT EDGE SHARED WITH ANOTHER CUTTING CELL GETS NO SKIRT** (`nbCut`) — `edgeOther` reads a neighbour as the
   line through the two corners they share, which across a cut is a ramp, and the skirt stood a fin HALF THE DROP
@@ -1686,6 +1692,11 @@ the map places it like any prop.
   once while the face thins in place (`Prop.dissolve`, alpha only — never `shrink`, which would sink it).
 - **THE BOOKKEEPING IS THE FOG GATE'S** — a slot PLUS ONE on both `Prop.breach` and `Solid.breach`. Walls come back
   with the map (`restoreBreaches` beside every `openWards`) and NOT at a bonfire.
+- **A BREACH IN A MOUTH IS PLACED `.under`, AND NO TEST WILL TELL YOU OTHERWISE** — `caves.homeY` off an op without
+  it answers the LAND, so the wfcave's curtain was authored onto the plateau 7 m over the mouth it seals. Every
+  mechanical test still passed: `Solid.y0` defaults to 0, so `buildSolids` leaves the capsule blocking from the
+  ground up whatever height the mesh was placed at. **The hold and the cut are not evidence the thing is where you
+  put it** — only `--shot-land` is.
 
 **A DECK IS THE FIRST WALKABLE SURFACE THAT IS NOT THE LAND** (`Info.decks`, `env.deckAt`/`standAt`) —
 `game.groundActor` asks `standAt`, so `pos.y` is the deck where there is one and `groundAt` stays the question

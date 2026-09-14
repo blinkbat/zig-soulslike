@@ -3639,7 +3639,9 @@ fn faceStep(f: Face, px: f32, pz: f32, nx: f32, nz: f32, out: f32) struct { drop
 /// Why a station along a run stood no stone, counted since the last whole-terrain rebuild; `--shot-land` prints it.
 pub var faceTally = struct { chords: u32 = 0, flat: u32 = 0, oblique: u32 = 0, tried: u32 = 0, shallow: u32 = 0, climb: u32 = 0, piece: u32 = 0, crest: u32 = 0, stood: u32 = 0 }{};
 
-fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi: f32, len: f32, cell: f32) void {
+/// `sill` is the lowest bed a column may take — `-inf` for a cut that stands off the ground, a mouth's lintel for
+/// the brow over it, where the rows start ON the sill rather than footed into it.
+fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi: f32, len: f32, cell: f32, sill: f32) void {
     faceTally.chords += 1;
     const drop = hi - lo;
     if (drop < FACE_ROCK_MIN_DROP) {
@@ -3666,8 +3668,9 @@ fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi
         const pz = u[1] + az * t;
         const land = faceStep(f, px, pz, nx, nz, cell * 0.8);
         const useDrop = mathx.minF(drop, land.drop);
+        const bed0 = mathx.maxF(land.lo, sill);
         faceTally.tried += 1;
-        if (useDrop < FACE_ROCK_MIN_DROP) {
+        if (land.lo + useDrop - bed0 < FACE_ROCK_MIN_DROP) {
             faceTally.shallow += 1;
             continue;
         }
@@ -3682,12 +3685,13 @@ fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi
             }
         }
         const lip = land.lo + useDrop;
-        const at = Station{ .px = px, .pz = pz, .nx = nx, .nz = nz, .alongX = alongX, .alongZ = alongZ, .lo = land.lo };
+        const lifted = bed0 > land.lo;
+        const at = Station{ .px = px, .pz = pz, .nx = nx, .nz = nz, .alongX = alongX, .alongZ = alongZ, .lo = land.lo, .lifted = lifted };
         var row: u32 = 0;
-        var y = land.lo;
+        var y = bed0;
         while (row < FACE_ROCK_ROWS) : (row += 1) {
             const rk = rockStand(ck ^ (row *% 0x9E3779B9), yaw) orelse break;
-            const bed = if (row == 0) y - rk.tall * FACE_ROCK_FOOT else y;
+            const bed = if (row == 0 and !lifted) y - rk.tall * FACE_ROCK_FOOT else y;
             if (bed + rk.tall > lip + FACE_ROCK_CREST) {
                 faceTally.crest += 1;
                 break;
@@ -3700,13 +3704,13 @@ fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi
         if (rockStand(ck ^ 0xCA9, yaw)) |rk| {
             const bed = lip - rk.tall;
             // No deeper than the bottom row is bedded, or a drop shorter than the rock plants a whole boulder in the grass.
-            if (bed > land.lo - rk.tall * FACE_ROCK_FOOT) standRock(f, rk, at, bed);
+            if (bed > bed0 - rk.tall * FACE_ROCK_FOOT) standRock(f, rk, at, bed);
         }
     }
 }
 
 /// A point on the cut and the frame there: the outward normal, the along-run direction and the floor on the low side.
-const Station = struct { px: f32, pz: f32, nx: f32, nz: f32, alongX: f32, alongZ: f32, lo: f32 };
+const Station = struct { px: f32, pz: f32, nx: f32, nz: f32, alongX: f32, alongZ: f32, lo: f32, lifted: bool = false };
 
 /// WHAT ONE HASH KEY STANDS: which rock, at what size, how far it sinks into the wall, and its two jitters. Null when the prototype carries no stone.
 const RockStand = struct { proto: *const gfx.Builder, mass: *const proprock.Masses, sc: f32, tall: f32, sink: f32, turn: f32, drift: f32 };
@@ -3736,7 +3740,8 @@ fn standRock(f: Face, rk: RockStand, at: Station, bed: f32) void {
     f.b.stamp(rk.proto, v3(ox, bed, oz), rk.turn, v3(rk.sc, rk.sc, rk.sc));
     f.cast(mark);
     if (f.solids) |sl| {
-        if (bed - at.lo < FACE_ROCK_SOLID_H) stampSolids(sl, rk.mass, ox, oz, rk.turn, rk.sc, bed, at);
+        // A LIFTED COLUMN IS A MOUTH'S BROW — it hangs over the doorway a body walks through, so it stands no collider.
+        if (!at.lifted and bed - at.lo < FACE_ROCK_SOLID_H) stampSolids(sl, rk.mass, ox, oz, rk.turn, rk.sc, bed, at);
     }
 }
 
@@ -4200,14 +4205,21 @@ fn cliffWall(f: Face, ch: Chord, loEnd: [2]f32, hiEnd: [2]f32, highRef: [2]f32, 
         }
     }
 
-    if (!f.dress or f.env == null or f.fall != null) return;
+    if (!f.dress or f.env == null) return;
     const room = caves.sampleAt(f.env.?.caveFields(), mx, mz);
-    if (room.hollow() and room.floor <= lo + wf.STEP_UP and room.roof > lo) return;
+    if (room.hollow() and room.floor <= lo + wf.STEP_UP and room.roof > lo) {
+        // A MOUTH LEFT BARE IS A RECTANGLE PUNCHED IN A SHEET. The band over the opening is dressed like any other
+        // cut, bedded on the lintel so the head stays clear — behind a fall too, where the sheet passes in front of
+        // the brow. The rim rubble below is not: it would scatter stone across the doorway.
+        faceStamp(f, u, ex / len, ez / len, nx, nz, lo, hi, len, cell, room.roof);
+        return;
+    }
+    if (f.fall != null) return;
     const hx = -nx;
     const hz = -nz;
     const dropK = mathx.clampF(drop / 6.0, 0, 1);
 
-    faceStamp(f, u, ex / len, ez / len, nx, nz, lo, hi, len, cell);
+    faceStamp(f, u, ex / len, ez / len, nx, nz, lo, hi, len, cell, -std.math.inf(f32));
 
     {
         const nRim: usize = @intFromFloat(@round(len * (0.5 + 1.0 * rng.float()) * (0.5 + 0.5 * dropK)));

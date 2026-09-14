@@ -6,10 +6,11 @@ start: -12.00 0.00 90.0
 
 zone: plain -4000.0 -4000.0 4000.0 4000.0 0.700 grasstall,grasstall,patch,tuft,clover,moss,wildflowers
 
-at: vines 1.19998 0 270 1
-at: cracked_wall 19.99998 21.65013 0 1
+at: vines 1.19998 0 270 1 under=1
+at: cracked_wall 19.99998 21.65013 0 1 under=1
 at: brazier 16.99998 -2 0 1 under=1
 at: campfire_lit -9.00002 5 0 1
+at: pickup -10.00002 -3 0 1 loot=thundercrock,thundercrock,ember_candle,ember_candle
 
 water: 0x79002 1x3 0x396 1x5 0x395 1x5 0x395 1x5 0x395 1x5 0x396 1x3 0x78995
 wlvl: 4096x79002 4123x3 4096x396 4123x5 4096x395 4123x5 4096x395 4123x5 4096x395 4123x5 4096x396 4123x3 4096x78995

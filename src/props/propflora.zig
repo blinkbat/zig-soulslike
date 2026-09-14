@@ -633,7 +633,7 @@ pub const VINE_H: f32 = 3.2;
 pub fn vineCurtainMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(0xA1E5);
-    const N_STRANDS: i32 = 26;
+    const N_STRANDS: i32 = 30;
     const SEGS: i32 = 8;
     var s: i32 = 0;
     while (s < N_STRANDS) : (s += 1) {
@@ -641,12 +641,12 @@ pub fn vineCurtainMesh(shader: rl.Shader) rl.Model {
         const x0 = -VINE_W * 0.5 + (fs + 0.5) / @as(f32, N_STRANDS) * VINE_W + rng.signed() * 0.07;
         const z0 = rng.signed() * 0.10;
         const top = VINE_H + rng.range(0.0, 0.25);
-        const drop = VINE_H * (if (rng.float() < 0.72) rng.range(0.88, 1.06) else rng.range(0.40, 0.78));
+        const drop = VINE_H * (if (rng.float() < 0.72) rng.range(0.92, 1.08) else rng.range(0.78, 0.90));
         const segLen = drop / @as(f32, SEGS);
         var theta = rng.range(0.03, 0.16);
         var phi = rng.angle();
         const curlTheta = rng.range(-0.02, 0.07);
-        const curlPhi = rng.signed() * 0.55;
+        const curlPhi = rng.signed() * 0.20;
         const r0 = rng.range(0.014, 0.030);
         var from = v3(x0, top, z0);
         var i: i32 = 0;
@@ -658,16 +658,19 @@ pub fn vineCurtainMesh(shader: rl.Shader) rl.Model {
             b.addCapsule(from, to, r0 * (1.0 - 0.6 * t0), r0 * (1.0 - 0.6 * t1), 4, if (rng.float() < 0.3) BARK else BARK_DK);
             const leafy = t1 < 0.8 or rng.float() < 0.4;
             if (leafy) {
-                const nl: i32 = if (t1 < 0.45) 2 else 1;
+                const nl: i32 = if (t1 < 0.55) 3 else 2;
                 var l: i32 = 0;
                 while (l < nl) : (l += 1) {
                     const u = rng.range(0.15, 0.85);
                     const c = mathx.lerpV(from, to, u);
                     const side: f32 = if (@mod(i + l, 2) == 0) 1.0 else -1.0;
-                    const lr = rng.range(0.040, 0.085);
+                    const lr = rng.range(0.078, 0.145);
                     const gold = rng.float() < 0.07;
                     b.setMat(.plant);
-                    b.addBlob(v3(c.x + side * lr * 0.9 + rng.signed() * 0.02, c.y - lr * 0.35, c.z + rng.signed() * lr * 0.6), v3(lr, lr * 0.28, lr * 0.8), 3, 5, if (gold) LEAF_GOLD else if (rng.float() < 0.35) LEAF_DK else if (rng.float() < 0.5) IVY_GRN else LEAF);
+                    // FLAT IN Z, the open side: flat in Y instead, the same leaves covered 9% of the 3.0x3.2 m face and
+                    // the curtain read as bare canes. 540 at this size raise it to 85%. THREE BANDS, NOT TWO — a
+                    // two-band blob is a bipyramid, and face-on through the mouth every leaf read as a hard diamond.
+                    b.addBlob(v3(c.x + side * lr * 0.9 + rng.signed() * 0.02, c.y - lr * 0.35, c.z + rng.signed() * lr * 0.35), v3(lr, lr * 0.85, lr * 0.30), 3, 4, if (gold) LEAF_GOLD else if (rng.float() < 0.35) LEAF_DK else if (rng.float() < 0.5) IVY_GRN else LEAF);
                 }
             }
             theta = mathx.clampF(theta + curlTheta + rng.signed() * 0.02, 0.0, 0.55);

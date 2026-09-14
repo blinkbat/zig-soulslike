@@ -114,20 +114,27 @@ pub fn headingXZ(v: rl.Vector3) f32 {
 
 pub const SegNear = struct { t: f32, d: f32 };
 
-/// WHERE A POINT SITS AGAINST A SEGMENT IN XZ: the clamped parameter and the distance to it. Every swept brush asks it.
-pub fn segNearXZ(p: [2]f32, a: [2]f32, b: [2]f32) SegNear {
+/// THE CLAMPED PARAMETER ALONE, which is all a caller after the POINT needs — `segNearXZ` takes a square root for its
+/// distance on top, and every push-out, sight test and swept blade threw that root away.
+pub fn segParamXZ(p: [2]f32, a: [2]f32, b: [2]f32) f32 {
     const abx = b[0] - a[0];
     const abz = b[1] - a[1];
     const denom = abx * abx + abz * abz;
-    const t = if (denom < 1e-10) 0 else clampF(((p[0] - a[0]) * abx + (p[1] - a[1]) * abz) / denom, 0, 1);
-    const ex = p[0] - (a[0] + abx * t);
-    const ez = p[1] - (a[1] + abz * t);
+    if (denom < 1e-10) return 0;
+    return clampF(((p[0] - a[0]) * abx + (p[1] - a[1]) * abz) / denom, 0, 1);
+}
+
+/// WHERE A POINT SITS AGAINST A SEGMENT IN XZ: the clamped parameter and the distance to it. Every swept brush asks it.
+pub fn segNearXZ(p: [2]f32, a: [2]f32, b: [2]f32) SegNear {
+    const t = segParamXZ(p, a, b);
+    const ex = p[0] - (a[0] + (b[0] - a[0]) * t);
+    const ez = p[1] - (a[1] + (b[1] - a[1]) * t);
     return .{ .t = t, .d = @sqrt(ex * ex + ez * ez) };
 }
 
 /// Closest point on segment a-b to p, measured in the XZ plane (returned with Y = 0).
 pub fn closestOnSegXZ(p: rl.Vector3, a: rl.Vector3, b: rl.Vector3) rl.Vector3 {
-    const t = segNearXZ(.{ p.x, p.z }, .{ a.x, a.z }, .{ b.x, b.z }).t;
+    const t = segParamXZ(.{ p.x, p.z }, .{ a.x, a.z }, .{ b.x, b.z });
     return v3(a.x + (b.x - a.x) * t, 0, a.z + (b.z - a.z) * t);
 }
 

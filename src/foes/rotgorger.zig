@@ -229,7 +229,7 @@ pub const Gorger = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Gorger) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn airborne(_: *const Gorger) bool {
         return false;
@@ -270,8 +270,7 @@ pub const Gorger = struct {
     }
 
     fn stunAmount(self: *const Gorger) f32 {
-        if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.recoilPose(self.t, self.state == .stunheavy);
+        return foe.stunShape(self, foe.recoilPose);
     }
 
     pub const Smelled = struct { at: rl.Vector3, i: usize, d: f32 };
@@ -408,11 +407,7 @@ pub const Gorger = struct {
     }
 
     fn tryBite(self: *Gorger, quarry: rl.Vector3) void {
-        if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, quarry, foe.hurtReach(BITE_R, self.scale), BITE_FRONT_DOT)) return;
-        self.heroHit = BITE_HIT;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        _ = foe.billFront(self, quarry, foe.hurtReach(BITE_R, self.scale), BITE_FRONT_DOT, BITE_HIT);
     }
 
     pub fn tryHit(self: *Gorger, blade: foe.Blade) void {
@@ -684,11 +679,7 @@ pub const Gorge = struct {
 };
 
 fn segLen(i: usize) f32 {
-    const rest = restPose();
-    for (0..N) |c| {
-        if (wolf.PARENT[c] == @as(i32, @intCast(i))) return mathx.lenV(mathx.subV(rest[i], rest[c])) / W;
-    }
-    return 0;
+    return wolf.segLen(restPose(), i, W);
 }
 
 fn buildBones() [N]rl.Mesh {

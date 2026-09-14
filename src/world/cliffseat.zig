@@ -606,7 +606,7 @@ fn benchMap() !*wf.Map {
 
 fn benchEnv(m: *const wf.Map) !*Env {
     const e = try std.testing.allocator.create(Env);
-    e.* = .{ .ground = undefined, .models = undefined };
+    envmod.blankForTest(e);
     e.adoptHeight(m);
     e.materialize(m);
     return e;

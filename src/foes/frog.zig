@@ -298,7 +298,7 @@ pub const Frog = struct {
         return !self.gone;
     }
     pub fn staggered(self: *const Frog) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn dying(self: *const Frog) bool {
         return self.state == .dead;
@@ -395,17 +395,11 @@ pub const Frog = struct {
         if (self.heroLatch) return;
         if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(BITE_EDGE_Z + BITE_PAD, self.scale), CHOMP_FRONT_DOT)) return;
         if (!foe.weaponReaches(was, self.biteEdge(), hero, foe.hurtReach(BITE_PAD, self.scale))) return;
-        self.heroHit = CHOMP_HIT;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        foe.bill(self, CHOMP_HIT);
     }
 
     fn tryImpact(self: *Frog, hero: rl.Vector3, h: combat.Hit) void {
-        if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(LUNGE_IMPACT_OWN, self.scale), LUNGE_FRONT_DOT)) return;
-        self.heroHit = h;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        _ = foe.billFront(self, hero, foe.hurtReach(LUNGE_IMPACT_OWN, self.scale), LUNGE_FRONT_DOT, h);
     }
 
     pub fn update(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {

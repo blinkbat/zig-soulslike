@@ -15,6 +15,11 @@ const soulsmod = @import("play/souls.zig");
 const trigmod = @import("world/trigger.zig");
 const wf = @import("world/worldfmt.zig");
 
+/// THIS FILE, for the tests that read their own SOURCE to pin a declaration against its use. Named because a
+/// stale copy does not fail — `readForTest` turns a missing path into `error.SkipZigTest` and the invariant
+/// goes unchecked in silence. `foe.DIR`'s rule.
+const SRC = "src/save.zig";
+
 pub const VERSION: u32 = 1;
 
 pub const SLOTS: usize = 3;
@@ -812,7 +817,7 @@ fn sample() Data {
 test "THE ROUND TRIP IS ONLY WORTH WHAT `sample` FILLS — a field left at its default proves nothing" {
     // Three had already fallen off it (`crimsonMax`, `flaskTotal`, and the whole explored chart), so the writer
     // could have dropped any of them and the round-trip test would still have come back green.
-    const src = try wf.readForTest(testing.allocator, "src/save.zig", 1 << 22);
+    const src = try wf.readForTest(testing.allocator, SRC, wf.SRC_CAP);
     defer testing.allocator.free(src);
     const head = std.mem.indexOf(u8, src, "fn sample() Data {").?;
     const tail = std.mem.indexOfPos(u8, src, head, "\n}\n").?;

@@ -82,6 +82,12 @@ const SEG_UPARM = heromod.SEG_UPARM;
 const SEG_FOREARM = heromod.SEG_FOREARM;
 
 pub const SCALE: f32 = 1.12;
+/// HIS FIST IN THE WRIST'S OWN FRAME, as a share of stature: the bone family's drop (`foe.FIST_YF`) on a shorter
+/// reach forward, since every haft he holds is gripped closer in than a skeleton's. Ten sites wrote it out.
+const GRIP_ZF: f32 = 0.006;
+fn gripAt(s: f32) rl.Vector3 {
+    return v3(0, foe.FIST_YF * s, GRIP_ZF * s);
+}
 const HIP_HALF = 0.096;
 const SHOULDER_HALF = 0.168;
 const RIB_HALF = SHOULDER_HALF - 0.018;
@@ -261,6 +267,17 @@ pub const Act = union(enum) {
     healed: void,
 };
 
+/// HIS OWN SHAPE, in the stun's time — one rebound whatever caught him, where the bone family's hangs longer on a heavy.
+fn recoil(t: f32, heavy: bool) f32 {
+    return anim.keyAt(&.{
+        .{ .t = 0, .v = 0 },
+        .{ .t = 0.12, .v = 1, .ease = .decel },
+        .{ .t = 0.48, .v = 0.92 },
+        .{ .t = 0.84, .v = -0.12 },
+        .{ .t = 1, .v = 0 },
+    }, t / combat.foeStunDur(heavy));
+}
+
 pub const Kobold = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
@@ -367,7 +384,7 @@ pub const Kobold = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Kobold) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     /// OFF THE GROUND only during the berserker's dash, and only for the FLIGHT of it — measured off the same `hop` the pelvis rides, against the threshold the toad and the archer share.
     pub fn airborne(self: *const Kobold) bool {
@@ -416,7 +433,7 @@ pub const Kobold = struct {
     }
 
     fn slingFrame(self: *const Kobold) rl.Matrix {
-        const grip = v3(0, -0.05 * H, 0.006 * H);
+        const grip = gripAt(H);
         const held = foe.markOn(self.xf[WRR], grip);
         const fs = foe.rigScale(self.scale, self.fade);
         const turn = mul3(scaleM(fs, fs, fs), rx(-self.slingSpin.v), ry(mathx.degrees(self.facing)));
@@ -955,7 +972,7 @@ pub const Kobold = struct {
             self.axeWas = self.axeIs orelse edges;
             self.axeIs = edges;
         } else if (self.role == .priest) {
-            const grip = v3(0, -0.05 * H, 0.006 * H);
+            const grip = gripAt(H);
             const turn = mul3(tr(-grip.x, -grip.y, -grip.z), rx(mathx.lerpF(24, 156, self.priestCast.v)), tr(grip.x, grip.y, grip.z));
             self.xf[KIT] = mul(turn, self.xf[WRR]);
         }
@@ -1028,7 +1045,7 @@ pub const Kobold = struct {
     }
 
     fn axeFrame(self: *const Kobold, left: bool) rl.Matrix {
-        const grip = v3(0, -0.05 * H, 0.006 * H);
+        const grip = gripAt(H);
         const tilt = self.zerkArms[if (left) 4 else 5];
         const turn = mul3(tr(-grip.x, -grip.y, -grip.z), rx(tilt), tr(grip.x, grip.y, grip.z));
         return mul(turn, self.xf[if (left) WRL else WRR]);
@@ -1048,8 +1065,7 @@ pub const Kobold = struct {
     }
 
     fn stunAmountTarget(self: *const Kobold) f32 {
-        if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return anim.keyAt(&.{ .{ .t = 0, .v = 0 }, .{ .t = 0.12, .v = 1, .ease = .decel }, .{ .t = 0.48, .v = 0.92 }, .{ .t = 0.84, .v = -0.12 }, .{ .t = 1, .v = 0 } }, self.t / combat.foeStunDur(self.state == .stunheavy));
+        return foe.stunShape(self, recoil);
     }
     fn heaveAmtTarget(self: *const Kobold) f32 {
         if (self.state != .heave) return 0;
@@ -1538,7 +1554,7 @@ fn axeMesh(seed: u64, side: f32) rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(seed);
     const s = H;
-    const grip = v3(0, -0.05 * s, 0.006 * s);
+    const grip = gripAt(s);
     const headY = grip.y + AXE_HAFT * s;
     b.addCylinder(v3(grip.x, grip.y - 0.048 * s, grip.z), v3(grip.x, headY, grip.z + 0.020 * s), 0.0145 * s, 0.0120 * s, 8, HAFT);
     b.addDome(v3(grip.x, grip.y - 0.048 * s, grip.z), v3(0, -1, 0), 0.0145 * s, 8, HAFT);
@@ -1576,7 +1592,7 @@ fn staffMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x57AFF);
     const s = H;
-    const grip = v3(0, -0.05 * s, 0.006 * s);
+    const grip = gripAt(s);
     var prev = v3(grip.x, grip.y - 0.115 * s, grip.z);
     var i: i32 = 0;
     while (i < 6) : (i += 1) {
@@ -1606,13 +1622,13 @@ fn staffMesh() rl.Mesh {
 }
 
 fn slingPouch() rl.Vector3 {
-    return v3(0, -0.05 * H, (0.006 + SLING_LEN) * H);
+    return v3(0, foe.FIST_YF * H, (GRIP_ZF + SLING_LEN) * H);
 }
 
 fn slingMesh(loaded: bool) rl.Mesh {
     var b = Builder.init();
     const s = H;
-    const grip = v3(0, -0.05 * s, 0.006 * s);
+    const grip = gripAt(s);
     const pouch = slingPouch();
     for ([_]f32{ -1, 1 }) |side| {
         b.addCapsule(
@@ -2054,7 +2070,7 @@ test "berserker interrupts keep both axe grips continuous" {
     _ = k.update(0, v3(0, 0, 1.7), 200, .{});
     for (before, [_]bool{ true, false }) |edge, left| {
         for (edge, k.axeEdge(left)) |a, b| try std.testing.expect(mathx.lenV(mathx.subV(a, b)) < 0.001);
-        const grip = v3(0, -0.05 * H, 0.006 * H);
+        const grip = gripAt(H);
         try std.testing.expect(mathx.lenV(mathx.subV(foe.markOn(k.axeFrame(left), grip), foe.markOn(k.xf[if (left) WRL else WRR], grip))) < 0.001);
     }
 }
@@ -2088,7 +2104,7 @@ test "priest staff stays seated and upright through cast and interrupts" {
             k.castCd = 10;
             for (0..@as(usize, @intFromFloat(hz * 1.6))) |_| {
                 _ = k.update(1 / hz, v3(0, 0, 90), 200, .{});
-                const grip = v3(0, -0.05 * H, 0.006 * H);
+                const grip = gripAt(H);
                 const held = foe.markOn(k.xf[KIT], grip);
                 const hand = foe.markOn(k.xf[WRR], grip);
                 try std.testing.expect(mathx.lenV(mathx.subV(held, hand)) < 0.001);
@@ -2148,7 +2164,7 @@ test "slinger release comes from the held pouch and interrupts stay continuous" 
             var released = false;
             for (0..200) |_| {
                 const act = k.update(1 / hz, v3(0, 0, 8), 200, .{});
-                const grip = v3(0, -0.05 * H, 0.006 * H);
+                const grip = gripAt(H);
                 try std.testing.expect(mathx.lenV(mathx.subV(foe.markOn(k.xf[KIT], grip), foe.markOn(k.xf[WRR], grip))) < 0.001);
                 switch (act) {
                     .sling => |from| {

@@ -246,7 +246,7 @@ pub const Shroom = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Shroom) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn airborne(self: *const Shroom) bool {
         return self.lift > foe.AIRBORNE_LIFT;

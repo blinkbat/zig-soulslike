@@ -240,7 +240,7 @@ pub const Husk = struct {
         return self.state == .bursting or self.state == .dead;
     }
     pub fn staggered(self: *const Husk) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.dying();
+        return foe.inStun(self) or self.dying();
     }
     pub fn airborne(_: *const Husk) bool {
         return false;
@@ -275,8 +275,7 @@ pub const Husk = struct {
     }
 
     fn stunAmount(self: *const Husk) f32 {
-        if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.recoilPose(self.t, self.state == .stunheavy);
+        return foe.stunShape(self, foe.recoilPose);
     }
 
     pub fn update(self: *Husk, dt: f32, quarry: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
@@ -368,11 +367,7 @@ pub const Husk = struct {
     }
 
     fn tryClout(self: *Husk, quarry: rl.Vector3) void {
-        if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, quarry, foe.hurtReach(CLOUT_R, self.scale), CLOUT_FRONT_DOT)) return;
-        self.heroHit = CLOUT_HIT;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        _ = foe.billFront(self, quarry, foe.hurtReach(CLOUT_R, self.scale), CLOUT_FRONT_DOT, CLOUT_HIT);
     }
 
     pub fn tryHit(self: *Husk, blade: foe.Blade) void {

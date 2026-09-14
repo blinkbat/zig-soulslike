@@ -361,7 +361,7 @@ pub const Bat = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Bat) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .repelled or self.state == .dead;
+        return foe.inStun(self) or self.state == .repelled or self.state == .dead;
     }
     pub fn warped(self: *const Bat) bool {
         return self.warp;
@@ -621,12 +621,8 @@ pub const Bat = struct {
     }
 
     fn tryBite(self: *Bat, quarry: rl.Vector3) void {
-        if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, quarry, foe.hurtReach(BITE_R, self.scale), BITE_FRONT_DOT)) return;
-        self.heroHit = BITE_HIT;
-        self.heroLatch = true;
+        if (!foe.billFront(self, quarry, foe.hurtReach(BITE_R, self.scale), BITE_FRONT_DOT, BITE_HIT)) return;
         self.bit = true;
-        self.leash.noteCombat();
     }
 
     pub fn fedOn(self: *Bat, landed: bool) void {
@@ -866,8 +862,7 @@ pub const Bat = struct {
 
     fn stunAmount(self: *const Bat) f32 {
         if (self.state == .repelled) return 0.6 * (1.0 - mathx.smoothstep(0, BITE_WIND, self.t));
-        if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.recoilPose(self.t, self.state == .stunheavy);
+        return foe.stunShape(self, foe.recoilPose);
     }
 };
 

@@ -635,11 +635,7 @@ pub const Lurker = struct {
     }
 
     fn tryLash(self: *Lurker, hero: rl.Vector3) void {
-        if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, hero, lashBand(self.scale), LASH_FRONT_DOT)) return;
-        self.heroHit = LASH_HIT;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        _ = foe.billFront(self, hero, lashBand(self.scale), LASH_FRONT_DOT, LASH_HIT);
     }
 
         /// Swept segment, so it bills where the edge crosses him — and the segment is the WHOLE shaft, jaw to tip, not the pad.
@@ -652,10 +648,8 @@ pub const Lurker = struct {
             if (foe.weaponReaches(.{ was[k], was[k + 1] }, .{ now[k], now[k + 1] }, hero, r)) caught = true;
         }
         if (!caught) return;
-        self.heroHit = TONGUE_HIT;
+        foe.bill(self, TONGUE_HIT);
         self.pull = TONGUE_PULL * self.scale;
-        self.heroLatch = true;
-        self.leash.noteCombat();
         self.splash(self.tipPoint(), 7);
     }
 

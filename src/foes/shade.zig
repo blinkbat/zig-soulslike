@@ -450,7 +450,7 @@ pub const Shade = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Shade) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn warped(self: *const Shade) bool {
         return self.warp;

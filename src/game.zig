@@ -7,6 +7,7 @@ const envmod = @import("world/env.zig");
 const caves = @import("world/caves.zig");
 const propsmod = @import("props/props.zig");
 const worldfmt = @import("world/worldfmt.zig");
+
 const editormod = @import("ui/editor.zig");
 const objviewmod = @import("ui/objview.zig");
 const heromod = @import("play/hero.zig");
@@ -72,6 +73,11 @@ const weathermod = @import("world/weather.zig");
 const savemod = @import("save.zig");
 const tune = @import("play/tune.zig");
 const sfx = @import("core/audio.zig");
+
+/// THIS FILE, for the tests that read their own SOURCE to pin a declaration against its use. Named because a
+/// stale copy does not fail — `readForTest` turns a missing path into `error.SkipZigTest` and the invariant
+/// goes unchecked in silence. `foe.DIR`'s rule.
+const SRC = "src/game.zig";
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -878,7 +884,7 @@ comptime {
 }
 
 test "EVERY FOE_GROUPS ROW IS ACTUALLY UPDATED BY `run` — a row nothing drives is a creature standing still" {
-    const src = try worldfmt.readForTest(std.testing.allocator, "src/game.zig", 1 << 22);
+    const src = try worldfmt.readForTest(std.testing.allocator, SRC, worldfmt.SRC_CAP);
     defer std.testing.allocator.free(src);
     var missing: usize = 0;
     inline for (FOE_GROUPS) |gr| {
@@ -904,7 +910,7 @@ fn foeFileOf(comptime T: type) []const u8 {
     const lastDot = std.mem.lastIndexOfScalar(u8, tn, '.') orelse return "";
     const rest = tn[0..lastDot];
     const name = if (std.mem.lastIndexOfScalar(u8, rest, '.')) |p| rest[p + 1 ..] else rest;
-    return "src/foes/" ++ name ++ ".zig";
+    return foemod.DIR ++ "/" ++ name ++ ".zig";
 }
 
 test "EVERY CREATURE'S RIG IS CULLABLE — `foe.posed` at the head of its `pose`, or a reason in NO_POSE_CULL" {
@@ -917,7 +923,7 @@ test "EVERY CREATURE'S RIG IS CULLABLE — `foe.posed` at the head of its `pose`
         }
         if (!excused) {
             const path = comptime foeFileOf(memberOf(gr.field));
-            const src = try worldfmt.readForTest(std.testing.allocator, path, 1 << 22);
+            const src = try worldfmt.readForTest(std.testing.allocator, path, worldfmt.SRC_CAP);
             defer std.testing.allocator.free(src);
             if (std.mem.indexOf(u8, src, "foe.posed(") == null) {
                 std.debug.print("  `{s}` ({s}) never asks `foe.posed` — its rig runs its whole chain for a body nothing can see or touch\n", .{ gr.field, path });
@@ -932,7 +938,7 @@ test "EVERY CREATURE'S RIG IS CULLABLE — `foe.posed` at the head of its `pose`
 test "EVERY GROUP IS DRIVEN — placement, draw, gate and settle come free off the fold, and the UPDATE does not" {
     // The `inline for (FOE_GROUPS)` folds spawn a new group, draw it, gate its feet and shoulder it apart, so a row
     // added without a hand-written update is a cohort that stands on the map and never moves. Nothing but this says so.
-    const src = try worldfmt.readForTest(std.testing.allocator, "src/game.zig", 1 << 22);
+    const src = try worldfmt.readForTest(std.testing.allocator, SRC, worldfmt.SRC_CAP);
     defer std.testing.allocator.free(src);
     var missing: usize = 0;
     var bespoke: usize = 0;
@@ -969,7 +975,7 @@ comptime {
 
 test "EVERY FIELD ON `Game` IS ASSIGNED — `= .{}` never runs on an `alloc.create`, and a field nothing names is the fill byte" {
     // It has bitten twice: `pack.n` came up as the fill byte, and `g.day` was never assigned (rate 0 is a held clock, and a NaN hour renders as the anchor hour).
-    const src = try worldfmt.readForTest(std.testing.allocator, "src/game.zig", 1 << 22);
+    const src = try worldfmt.readForTest(std.testing.allocator, SRC, worldfmt.SRC_CAP);
     defer std.testing.allocator.free(src);
     var defaulted: usize = 0;
     var grouped: usize = 0;
@@ -1172,6 +1178,16 @@ comptime {
         const B = memberOf(gr.field);
         if (@hasDecl(B, "lockParts") != @hasDecl(B, "lockPointAt")) @compileError("game: `" ++ gr.field ++
             "` has one of `lockParts`/`lockPointAt` and not the other — the extra lock points are dead either way");
+    }
+    // A RAISABLE BODY IS THREE THINGS OR NONE. `rekindle` writes `heldOpen`, so `raisable` without the field is a
+    // compile error already; the field WITHOUT `raisable` is the silent half — `foe.dissipate` opts in on it, and
+    // `markVigil` never reaches the body to clear it, so a corpse nobody can raise is held open for ever.
+    for (FOE_GROUPS) |gr| {
+        const B = memberOf(gr.field);
+        if (@hasField(B, "heldOpen") != @hasDecl(B, "raisable")) @compileError("game: `" ++ gr.field ++
+            "` has one of the `heldOpen` field / `raisable` method and not the other — the corpse is held open by nothing");
+        if (@hasDecl(B, "raisable") != @hasDecl(B, "reraise")) @compileError("game: `" ++ gr.field ++
+            "` has one of `raisable`/`reraise` and not the other — `applyRaises` picks a body it cannot stand up");
     }
 }
 
@@ -1556,7 +1572,7 @@ fn leaveSpar(g: *Game) bool {
 }
 
 test "THE KIT COMES OFF AT THE SAME DOOR THE MAP DOES — nothing reaches `endSpar` except `leaveSpar`" {
-    const src = try worldfmt.readForTest(std.testing.allocator, "src/game.zig", 1 << 22);
+    const src = try worldfmt.readForTest(std.testing.allocator, SRC, worldfmt.SRC_CAP);
     defer std.testing.allocator.free(src);
     // Spelled in halves so this test's own line is not one of the doors it counts.
     const door = "editor.end" ++ "Spar(";
@@ -1621,7 +1637,7 @@ fn gateEntered(e: *const envmod.Env, m: *const worldfmt.Map, k: FoeKind) ?bool {
 test "A BOSS BAR BELONGS TO ITS FOG GATE, and a boss no gate names keeps the ring it always had" {
     const e = try std.testing.allocator.create(envmod.Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    envmod.blankForTest(e);
     const m = try std.testing.allocator.create(worldfmt.Map);
     defer std.testing.allocator.destroy(m);
     m.blank("Gate");
@@ -2200,7 +2216,7 @@ test "THE BOOM'S OWN GATHER CANNOT OVERFLOW — it drops the rest SILENTLY, and 
     try worldfmt.loadForTest(worldfmt.START_MAP, m, &ln);
     const e = try std.testing.allocator.create(envmod.Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    envmod.blankForTest(e);
     e.adoptHeight(m);
     e.materialize(m);
 
@@ -2381,7 +2397,7 @@ test "EVERY LADDER ON THE BENCH TOPS OUT WHERE IT WAS AUTHORED TO, AND THE THREE
     try worldfmt.loadForTest(worldfmt.DIR ++ "/test_ladder" ++ worldfmt.EXT, m, &ln);
     const e = try std.testing.allocator.create(envmod.Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    envmod.blankForTest(e);
     e.adoptHeight(m);
     e.materialize(m);
 
@@ -2432,7 +2448,7 @@ test "EVERY LADDER ON THE BENCH TOPS OUT WHERE IT WAS AUTHORED TO, AND THE THREE
 test "THE ROLL OBEYS THE GROUND — a committed move may not take him up what a walk refuses" {
     const e = try std.testing.allocator.create(envmod.Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    envmod.blankForTest(e);
     e.heightAny = true;
     e.heightHalf = 100.0;
     const pitch = e.lattice();
@@ -3075,7 +3091,7 @@ test "A REACH IS REFUSED THROUGH A FLOOR, AND NEVER REFUSED ACROSS THE LAND" {
     try worldfmt.loadForTest(worldfmt.START_MAP, m, &ln);
     const e = try std.testing.allocator.create(envmod.Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    envmod.blankForTest(e);
     e.adoptHeight(m);
     e.materialize(m);
 
@@ -3733,7 +3749,7 @@ test "A CLIFF TURNS THE ANVIL INTO A HINT — the ring carries in the open and i
     defer std.testing.allocator.destroy(m);
     const e = try std.testing.allocator.create(envmod.Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    envmod.blankForTest(e);
     e.materialize(m);
 
     const ear = v3(0, foemod.HERO_EYE, 0);
@@ -7512,7 +7528,7 @@ test "WHAT THE WAY-FINDING COSTS A FRAME — every placed body asking the prop g
     defer ta.destroy(e);
     var line: usize = 0;
     try worldfmt.loadForTest(worldfmt.START_MAP, m, &line);
-    e.* = .{ .ground = undefined, .models = undefined };
+    envmod.blankForTest(e);
     e.materialize(m);
 
     const BODY_R: f32 = 0.42;

@@ -252,7 +252,11 @@ pick against strings and fingers against neck.
   (hit count, flash, shove — returning whether the BLOW was heavy, which is what blood and chips are sized off,
   never the REACTION). Damage and the reaction live in `foe.strike` under `reached`.
 - **Shared points:** `foe.bodyPoint` for a height on the creature's own axis, `foe.markOn` for the reticle (which
-  rides the POSE), `foe.stunCurve` for the one reaction shape in the game.
+  rides the POSE), and `foe.billFront` for the ordinary frontal bill — the cone, the one-hit latch and the leash
+  stamp, so only the creature's own flag is left at the call site.
+- **THREE REACTION SHAPES AND ONE GUARD** — `foe.stunCurve` (a rise and a fall), `foe.recoilPose` (a snap that
+  hangs, keyed in SECONDS) and `foe.boneRecoil` (the skeletons', keyed in the stun's OWN time). A creature names
+  its shape and nothing else: `foe.stunShape(self, shape)` is which stun is running and how far into it.
 - **Group + register.** A `Group` exposes `anyDied`/`totalHits`/`aliveCount`, and its `reset` and `draw` are
   ONE-LINE DELEGATES to `foe.resetGroup`/`drawGroup` — the draw's `setFlash(0)` tail is what a fourth copy would
   forget. A multi-kind group has `kind = null` and each member exposes `kind()`; a group with anything else on the

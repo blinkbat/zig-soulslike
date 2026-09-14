@@ -239,7 +239,7 @@ pub const Cinder = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Cinder) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn airborne(_: *const Cinder) bool {
         return false;
@@ -267,8 +267,7 @@ pub const Cinder = struct {
     }
 
     fn stunAmount(self: *const Cinder) f32 {
-        if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.recoilPose(self.t, self.state == .stunheavy);
+        return foe.stunShape(self, foe.recoilPose);
     }
 
     pub fn update(self: *Cinder, dt: f32, quarry: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
@@ -367,11 +366,7 @@ pub const Cinder = struct {
     }
 
     fn tryRake(self: *Cinder, quarry: rl.Vector3) void {
-        if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, quarry, foe.hurtReach(RAKE_R, self.scale), RAKE_FRONT_DOT)) return;
-        self.heroHit = RAKE_HIT;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        _ = foe.billFront(self, quarry, foe.hurtReach(RAKE_R, self.scale), RAKE_FRONT_DOT, RAKE_HIT);
     }
 
     pub fn tryHit(self: *Cinder, blade: foe.Blade) void {

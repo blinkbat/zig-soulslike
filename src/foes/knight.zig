@@ -1448,8 +1448,8 @@ fn crushLen(scale: f32) f32 {
     return foe.hurtReach(FALL_LEN, scale);
 }
 
-const FIST_Y = -0.05 * H;
-const FIST_Z = 0.02 * H;
+const FIST_Y = foe.FIST_YF * H;
+const FIST_Z = foe.FIST_ZF * H;
 const SW_GUARD = 0.130 * H;
 const SW_BLADE = 0.57 * H;
 const SW_HALF_W = 0.019 * H;

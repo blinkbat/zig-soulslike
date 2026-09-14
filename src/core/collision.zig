@@ -147,12 +147,14 @@ pub fn blockerAt(p: rl.Vector3, margin: f32, solids: []const Solid) ?Surface {
 
 // A LOOK IS A SEGMENT, TESTED EXACTLY: sampling means a step that costs real time over 20 m, or one a fence post fits through.
 
-fn segDistXZ(a0: rl.Vector3, a1: rl.Vector3, b0: rl.Vector3, b1: rl.Vector3) f32 {
+/// SQUARED, because its one caller compares against a radius: the four ends each cost a root otherwise, and `env.sees`
+/// asks this of every solid along a 20 m line.
+fn segDist2XZ(a0: rl.Vector3, a1: rl.Vector3, b0: rl.Vector3, b1: rl.Vector3) f32 {
     if (segsCrossXZ(a0, a1, b0, b1)) return 0;
-    var best = mathx.distXZ(a0, mathx.closestOnSegXZ(a0, b0, b1));
-    best = @min(best, mathx.distXZ(a1, mathx.closestOnSegXZ(a1, b0, b1)));
-    best = @min(best, mathx.distXZ(b0, mathx.closestOnSegXZ(b0, a0, a1)));
-    return @min(best, mathx.distXZ(b1, mathx.closestOnSegXZ(b1, a0, a1)));
+    var best = mathx.dist2XZ(a0, mathx.closestOnSegXZ(a0, b0, b1));
+    best = @min(best, mathx.dist2XZ(a1, mathx.closestOnSegXZ(a1, b0, b1)));
+    best = @min(best, mathx.dist2XZ(b0, mathx.closestOnSegXZ(b0, a0, a1)));
+    return @min(best, mathx.dist2XZ(b1, mathx.closestOnSegXZ(b1, a0, a1)));
 }
 
 fn crossXZ(o: rl.Vector3, p: rl.Vector3, q: rl.Vector3) f32 {
@@ -185,7 +187,7 @@ pub fn blocksSight(a: rl.Vector3, b: rl.Vector3, s: Solid) bool {
         }
         return false;
     }
-    return segDistXZ(a, b, s.a, s.b) < s.r;
+    return segDist2XZ(a, b, s.a, s.b) < s.r * s.r;
 }
 
 test "A FLAT SOLID HAS CORNERS — a body reaches the corner of a wall a round end cut off, and a look through it is stopped" {

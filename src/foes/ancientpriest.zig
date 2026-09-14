@@ -246,8 +246,8 @@ const MUZZLE_DROP: f32 = 0.030 * H;
 
 const STAFF_UP = 0.72 * H;
 const STAFF_DOWN = 0.44 * H;
-const FIST_Y = -0.05 * H;
-const FIST_Z = 0.02 * H;
+const FIST_Y = foe.FIST_YF * H;
+const FIST_Z = foe.FIST_ZF * H;
 
 pub const Ancient = struct {
     pos: rl.Vector3 = mathx.zero3,
@@ -350,7 +350,7 @@ pub const Ancient = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Ancient) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn airborne(_: *const Ancient) bool {
         return false;
@@ -692,11 +692,7 @@ pub const Ancient = struct {
     }
 
     fn stunAmount(self: *const Ancient) f32 {
-        return switch (self.state) {
-            .stunlight => foe.stunCurve(self.t, false),
-            .stunheavy => foe.stunCurve(self.t, true),
-            else => 0,
-        };
+        return foe.stunShape(self, foe.stunCurve);
     }
 
     pub fn pose(self: *Ancient) void {

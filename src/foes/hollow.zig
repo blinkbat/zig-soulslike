@@ -421,7 +421,7 @@ pub const Hollow = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Hollow) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn airborne(_: *const Hollow) bool {
         return false;
@@ -698,12 +698,8 @@ pub const Hollow = struct {
     }
 
     fn tryBite(self: *Hollow, hero: rl.Vector3) void {
-        if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(BITE_R, self.scale), BITE_FRONT_DOT)) return;
-        self.heroHit = BITE_HIT;
-        self.heroLatch = true;
+        if (!foe.billFront(self, hero, foe.hurtReach(BITE_R, self.scale), BITE_FRONT_DOT, BITE_HIT)) return;
         self.snapped = true;
-        self.leash.noteCombat();
     }
 
     pub fn tryHit(self: *Hollow, blade: foe.Blade) void {
@@ -792,11 +788,7 @@ pub const Hollow = struct {
     }
 
     fn stunAmount(self: *const Hollow) f32 {
-        return switch (self.state) {
-            .stunlight => foe.stunCurve(self.t, false),
-            .stunheavy => foe.stunCurve(self.t, true),
-            else => 0,
-        };
+        return foe.stunShape(self, foe.stunCurve);
     }
 
     /// -1 fully cocked back, +1 fully through: the bite's ONE clock, so the gape and the snap cannot tell different stories. Zero outside the move.

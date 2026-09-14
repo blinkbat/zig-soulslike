@@ -402,7 +402,7 @@ pub const Fishman = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Fishman) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn airborne(_: *const Fishman) bool {
         return false;
@@ -434,8 +434,7 @@ pub const Fishman = struct {
     }
 
     fn stunAmount(self: *const Fishman) f32 {
-        if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.recoilPose(self.t, self.state == .stunheavy);
+        return foe.stunShape(self, foe.recoilPose);
     }
 
     pub fn netMat(self: *const Fishman) rl.Matrix {
@@ -582,11 +581,7 @@ pub const Fishman = struct {
     }
 
     fn tryThrust(self: *Fishman, quarry: rl.Vector3) void {
-        if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, quarry, foe.hurtReach(THRUST_R, self.rigSize()), THRUST_FRONT_DOT)) return;
-        self.heroHit = THRUST_HIT;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        _ = foe.billFront(self, quarry, foe.hurtReach(THRUST_R, self.rigSize()), THRUST_FRONT_DOT, THRUST_HIT);
     }
 
     fn loose(self: *Fishman, quarry: rl.Vector3) void {

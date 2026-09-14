@@ -79,8 +79,8 @@ const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 const setLocal = heromod.setHumanoid;
 
-const FIST_Y = -0.05 * H;
-const FIST_Z = 0.02 * H;
+const FIST_Y = foe.FIST_YF * H;
+const FIST_Z = foe.FIST_ZF * H;
 
 const wpnFit = heromod.staffFit;
 
@@ -571,7 +571,7 @@ pub const Warrior = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Warrior) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .guardbreak or self.state == .dead;
+        return foe.inStun(self) or self.state == .guardbreak or self.state == .dead;
     }
     pub fn flashFrac(self: *const Warrior) f32 {
         return foe.flashFrac(self.flash);
@@ -1403,17 +1403,8 @@ pub const Warrior = struct {
     }
 
     fn stunAmount(self: *const Warrior) f32 {
-        if (self.state == .stunlight or self.state == .stunheavy) {
-            const heavy = self.state == .stunheavy;
-            return anim.keyAt(&.{
-                .{ .t = 0, .v = 0 },
-                .{ .t = if (heavy) 0.14 else 0.18, .v = 1, .ease = .decel },
-                .{ .t = if (heavy) 0.55 else 0.36, .v = 0.92 },
-                .{ .t = if (heavy) 0.86 else 0.78, .v = -0.14 },
-                .{ .t = 1, .v = 0 },
-            }, self.t / combat.foeStunDur(heavy));
-        }
-        return if (self.state == .guardbreak) foe.stunCurve(self.t, true) else 0;
+        if (self.state == .guardbreak) return foe.stunCurve(self.t, true);
+        return foe.stunShape(self, foe.boneRecoil);
     }
 
     fn kneelAmount(self: *const Warrior) f32 {

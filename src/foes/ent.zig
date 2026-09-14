@@ -295,7 +295,7 @@ pub const Ent = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Ent) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn airborne(_: *const Ent) bool {
         return false;
@@ -352,8 +352,7 @@ pub const Ent = struct {
     }
 
     fn stunAmount(self: *const Ent) f32 {
-        if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.recoilPose(self.t, self.state == .stunheavy);
+        return foe.stunShape(self, foe.recoilPose);
     }
 
     pub fn update(self: *Ent, dt: f32, quarry: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
@@ -486,9 +485,7 @@ pub const Ent = struct {
         const mid = self.hand * SWIPE_ARC_MID;
         const slack = combat.subtendedArc(foe.HERO_REACH, mathx.maxF(d, 0.6));
         if (@abs(mathx.wrapDeg(foe.bearingDeg(self.pos, self.facing, quarry) - mid)) > SWIPE_ARC * 0.5 + slack) return;
-        self.heroHit = if (self.state == .ret) RET_HIT else SWIPE_HIT;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        foe.bill(self, if (self.state == .ret) RET_HIT else SWIPE_HIT);
     }
 
     fn letGo(self: *Ent, quarry: rl.Vector3) void {

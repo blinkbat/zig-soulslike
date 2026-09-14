@@ -324,8 +324,7 @@ const HEM_DRAG = 13.0;
 const HEM_EASE = 6.0;
 const HEM_SETTLE = 3.2;
 const HEM_SWAY = 2.0;
-const HEM_STIFF: f32 = HEM_EASE * HEM_SETTLE;
-const HEM_ZETA: f32 = HEM_EASE / (2.0 * @sqrt(HEM_EASE * HEM_SETTLE));
+const HEM_RATE = anim.Rate.eased(HEM_EASE, HEM_SETTLE);
 
 const ORB_AT = v3(0, -0.062 * H, 0.052 * H);
 const ORB_R = 0.052 * H;
@@ -542,8 +541,7 @@ pub const Druidess = struct {
     hemLean: f32 = 0,
     hemSpring: anim.Spring = .{},
     trailDrag: f32 = 0,
-    trailYaw: [TRAIL_N]f32 = [_]f32{0} ** TRAIL_N,
-    trailVel: [TRAIL_N]f32 = [_]f32{0} ** TRAIL_N,
+    trailSpring: [TRAIL_N]anim.Spring = [_]anim.Spring{.{}} ** TRAIL_N,
 
     phase: f32 = 0,
     moving: f32 = 0,
@@ -586,7 +584,7 @@ pub const Druidess = struct {
         d.aiRng = foe.fxStream(seed, 30931.0, 0xD9);
         d.vineCd = 0.6 + seed * 0.8;
         d.whipCd = 1.8 + seed * 0.6;
-        for (&d.trailYaw) |*y| y.* = faceYaw;
+        for (&d.trailSpring) |*s| s.set(faceYaw);
         d.pose();
         return d;
     }
@@ -619,7 +617,7 @@ pub const Druidess = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Druidess) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn airborne(self: *const Druidess) bool {
         return self.hop > foe.AIRBORNE_LIFT;
@@ -896,11 +894,7 @@ pub const Druidess = struct {
 
     /// A FRONTAL ANIMATION BILLS A FRONTAL CONE, once, from the frame the hand actually arrives.
     fn trySlash(self: *Druidess, hero: rl.Vector3) void {
-        if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(SLASH_R, self.scale), SLASH_FRONT_DOT)) return;
-        self.heroHit = SLASH_HIT;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        if (!foe.billFront(self, hero, foe.hurtReach(SLASH_R, self.scale), SLASH_FRONT_DOT, SLASH_HIT)) return;
         self.chips(self.clawWorld(), mathx.dirXZ(self.pos, hero), 7, 3.2);
     }
 
@@ -1328,27 +1322,23 @@ pub const Druidess = struct {
         // THE SAME SPRING `necro.tickHem` is on: a hand-rolled `1 - HEM_EASE * dt` goes negative past 167 ms a
         // frame, and under-integrates the overshoot differently at every rate — 1.4% at 30 Hz against 4.3% at 144.
         const want = HEM_DRAG * mathx.clampF(speed / WALK_SPEED, 0, 1);
-        self.hemLean = self.hemSpring.step(want, HEM_STIFF, HEM_ZETA, dt);
+        self.hemLean = self.hemSpring.stepAt(want, HEM_RATE, dt);
     }
 
         /// THREE SPRINGS ON HER HEADING: each tail chases her facing through its own stiffness and rings past it.
     fn tickTrails(self: *Druidess, dt: f32, speed: f32) void {
         const drag = TRAIL_DRAG * mathx.clampF(speed / WALK_SPEED, 0, 1) - TRAIL_FLARE * mathx.clampF(self.hop / LEAP_ARC.up, 0, 1);
         self.trailDrag = easeTo(self.trailDrag, drag, dt * 5.0);
-        for (0..TRAIL_N) |i| {
-            const err = mathx.wrapPi(self.facing - self.trailYaw[i]);
-            const damp = 2.0 * TRAIL_ZETA * @sqrt(TRAIL_STIFF[i]);
-            self.trailVel[i] += (TRAIL_STIFF[i] * err - damp * self.trailVel[i]) * dt;
-            self.trailYaw[i] += self.trailVel[i] * dt;
+        // THE HEM'S SPRING, not a second one written out beside it: hand-rolled, this took ONE frame-sized Euler
+        // step, so the ring differed at 30 and at 144 and a hitch past 295 ms detonated it. The target is the
+        // facing carried into each tail's own branch, because the error is the wrapped one and the state is not.
+        for (&self.trailSpring, TRAIL_STIFF) |*s, stiff| {
+            _ = s.step(s.v + mathx.wrapPi(self.facing - s.v), stiff, TRAIL_ZETA, dt);
         }
     }
 
     fn stunAmount(self: *const Druidess) f32 {
-        return switch (self.state) {
-            .stunlight => foe.stunCurve(self.t, false),
-            .stunheavy => foe.stunCurve(self.t, true),
-            else => 0,
-        };
+        return foe.stunShape(self, foe.stunCurve);
     }
 
     pub fn pose(self: *Druidess) void {
@@ -1393,7 +1383,7 @@ pub const Druidess = struct {
     fn chainTrails(self: *Druidess, fs: f32) void {
         const at = foe.markOn(self.xf[ROOT], mathx.zero3);
         for (0..TRAIL_N) |i| {
-            const yaw = mathx.degrees(self.trailYaw[i]) + TRAIL_OFF[i];
+            const yaw = mathx.degrees(self.trailSpring[i].v) + TRAIL_OFF[i];
             self.trailMat[i] = mul(mul(scaleM(fs, fs, fs), mul(rx(self.trailDrag + self.hemLean * 0.5), ry(yaw))), heromod.rootAt(at));
         }
     }
@@ -2794,11 +2784,11 @@ test "THE TANGLE RINGS PAST HER TURN AND SETTLES ON IT — springs, not eases" {
     var t: f32 = 0;
     while (t < 3.0) : (t += dt) {
         d.tickTrails(dt, 0);
-        for (d.trailYaw) |y| over = @max(over, y - d.facing);
+        for (d.trailSpring) |s| over = @max(over, s.v - d.facing);
     }
-    std.debug.print("\n  druidess tangle: overshot the turn by {d:.1} deg, settled within {d:.2} deg\n", .{ mathx.degrees(over), mathx.degrees(@abs(d.trailYaw[1] - d.facing)) });
+    std.debug.print("\n  druidess tangle: overshot the turn by {d:.1} deg, settled within {d:.2} deg\n", .{ mathx.degrees(over), mathx.degrees(@abs(d.trailSpring[1].v - d.facing)) });
     try std.testing.expect(over > mathx.radians(3.0));
-    for (d.trailYaw) |y| try std.testing.expect(@abs(y - d.facing) < mathx.radians(1.5));
+    for (d.trailSpring) |s| try std.testing.expect(@abs(s.v - d.facing) < mathx.radians(1.5));
 }
 
 test "A STROKE ON THE RELEASE FRAME CANCELS THE CAST — the blade is billed inside `update`, before the coven reads what she let go" {

@@ -213,6 +213,15 @@ pub fn legs(
     }
 }
 
+/// HOW LONG BONE `i`'s SEGMENT IS, in stature units — the gap to its one child down `PARENT`, 0 at a tip. The
+/// walk is the scaffold's, so a mesh is cut to the rest pose it is actually posed on; two quadrupeds had it twice.
+pub fn segLen(rest: [N]rl.Vector3, i: usize, w: f32) f32 {
+    for (0..N) |c| {
+        if (PARENT[c] == @as(i32, @intCast(i))) return mathx.lenV(mathx.subV(rest[i], rest[c])) / w;
+    }
+    return 0;
+}
+
 pub fn limbChain(a: f32, b: f32, dy: f32, dz: f32, bend: f32) struct { upper: f32, lower: f32 } {
     const want = @sqrt(dy * dy + dz * dz);
     const d = mathx.clampF(want, @abs(a - b) + 1e-4, a + b - 1e-4);

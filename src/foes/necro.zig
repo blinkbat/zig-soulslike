@@ -78,8 +78,8 @@ const scaleM = mathx.scaleM;
 const lerpF = mathx.lerpF;
 const setLocal = heromod.setHumanoid;
 
-const FIST_Y = -0.05 * H;
-const FIST_Z = 0.02 * H;
+const FIST_Y = foe.FIST_YF * H;
+const FIST_Z = foe.FIST_ZF * H;
 const GRIP = v3(0, FIST_Y, FIST_Z);
 
 pub var AGGRO_R: f32 = 26.0;
@@ -299,8 +299,7 @@ const TUCK_SIDE = [2]f32{ 1.0, 0.82 };
 /// The arc's own gravity, so a hop cut short in mid-air falls at the rate the authored hop was already falling at.
 const LEAP_GRAV: f32 = 8.0 * LEAP_UP / (LEAP_DUR * LEAP_DUR);
 
-const HEM_STIFF: f32 = HEM_EASE * HEM_SETTLE;
-const HEM_ZETA: f32 = HEM_EASE / (2.0 * @sqrt(HEM_EASE * HEM_SETTLE));
+const HEM_RATE = anim.Rate.eased(HEM_EASE, HEM_SETTLE);
 
 
 const HOP = P{ .lean = -4, .twist = 4, .staffSh = -30, .castSh = -20, .headPitch = -6, .headYaw = 2, .staffEl = 40, .castEl = 34, .staffAbd = 15, .castAbd = 13, .staffTilt = 161.5 };
@@ -552,7 +551,7 @@ pub const Necro = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Necro) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn flashFrac(self: *const Necro) f32 {
         return foe.flashFrac(self.flash);
@@ -887,7 +886,7 @@ pub const Necro = struct {
     fn tickHem(self: *Necro, dt: f32, speed: f32) void {
         // THE SAME SPRING, not a hand-rolled Euler step: `1 - HEM_EASE * dt` went negative past 154 ms a frame and the cloth flipped. Cloth is the LAST thing to move, so its stiffness sits far under the body's.
         const want = HEM_DRAG * mathx.clampF(speed / (heromod.WALK_SPEED_BANK * SPEED), 0, 1);
-        self.hemLean = self.hemSpring.step(want, HEM_STIFF, HEM_ZETA, dt);
+        self.hemLean = self.hemSpring.stepAt(want, HEM_RATE, dt);
     }
 
     pub fn hemXf(self: *const Necro) rl.Matrix {
@@ -2456,7 +2455,7 @@ test "THE HEM IS THE LAST THING TO MOVE, and it moves the same at 30, 60 and 144
         deepest = mathx.minF(deepest, least);
         try std.testing.expect(@abs(k.hemLean) < 1.0);
     }
-    try std.testing.expect(HEM_STIFF < POSE_STIFF * std.math.pow(f32, POSE_FALL, CH - 1) * 0.2);
+    try std.testing.expect(HEM_RATE.stiff < POSE_STIFF * std.math.pow(f32, POSE_FALL, CH - 1) * 0.2);
     std.debug.print("  necro hem: settles at {d:.2} deg, overshoots to {d:.2} on the stop\n", .{ settled, deepest });
 }
 

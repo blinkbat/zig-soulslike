@@ -2978,6 +2978,11 @@ pub const Editor = struct {
                     if (m.zoneAt((z.x + z.x1) * 0.5, (z.z + z.z1) * 0.5)) |src| {
                         z.mix = src.mix;
                         z.nmix = src.nmix;
+                    } else {
+                        // `zoneAt` is null only on the FIRST zone of a map, and `parseZone` refuses an empty mix, so
+                        // left at none that zone saved a file the editor could no longer open. `mixRemove`'s rule.
+                        z.mix[0] = props.FLORA_KINDS[0];
+                        z.nmix = 1;
                     }
                     std.mem.copyBackwards(wf.Zone, m.zones[1 .. m.nzones + 1], m.zones[0..m.nzones]);
                     m.zones[0] = z;
@@ -8073,7 +8078,7 @@ fn drawContextMenu(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx) void
 
 fn testEnv(alloc: std.mem.Allocator) !*envmod.Env {
     const e = try alloc.create(envmod.Env);
-    e.* = .{ .ground = undefined, .models = undefined };
+    envmod.blankForTest(e);
     return e;
 }
 
@@ -8272,6 +8277,38 @@ test "A ZONE KEEPS ITS LAST KIND — an empty mix writes a file `parseZone` refu
     mixRemove(&z, .bush);
     try std.testing.expectEqual(@as(u8, 1), z.nmix);
     try std.testing.expectEqual(Kind.bush, z.mix[0]);
+}
+
+test "…AND SO DOES THE FIRST ZONE DRAWN ON A MAP THAT HAS NONE — nothing to copy a mix off wrote a file `parseZone` refuses" {
+    undoReset();
+    const alloc = std.testing.allocator;
+    const m = try alloc.create(wf.Map);
+    defer alloc.destroy(m);
+    const env = try testEnv(alloc);
+    defer alloc.destroy(env);
+    // `blank` seeds a zone and every shipped map carries one, so the hole is a file with no `zone:` row at all.
+    m.* = .{};
+    m.setName("zoneless");
+    try std.testing.expectEqual(@as(usize, 0), m.nzones);
+
+    var ed = Editor{};
+    ed.layer = .locations;
+    ed.setBrush(@intFromEnum(LocationBrush.zone));
+    ed.dragFrom = v3(-20, 0, -20);
+    ed.dragTo = v3(20, 0, 20);
+    ed.commitDrag(m, env);
+    try std.testing.expectEqual(@as(usize, 1), m.nzones);
+    try std.testing.expect(m.zones[0].nmix > 0);
+
+    var buf: [1 << 16]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try wf.write(m, fbs.writer());
+    const back = try alloc.create(wf.Map);
+    defer alloc.destroy(back);
+    var line: usize = 0;
+    try wf.parse(fbs.getWritten(), back, &line);
+    try std.testing.expectEqual(m.nzones, back.nzones);
+    try std.testing.expectEqual(m.zones[0].nmix, back.zones[0].nmix);
 }
 
 test "THE UNITS PALETTE SPLITS AT `NFOE_KIND` — a creature on one side, a body that talks on the other" {

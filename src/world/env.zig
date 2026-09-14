@@ -10,12 +10,18 @@ const propfx = @import("../props/propfx.zig");
 const art = @import("../props/propart.zig");
 const proprock = @import("../props/proprock.zig");
 const wf = @import("worldfmt.zig");
+
 const caves = @import("caves.zig");
 const cliffseat = @import("cliffseat.zig");
 const chestmod = @import("../play/chest.zig");
 const pickupmod = @import("../play/pickup.zig");
 const restmod = @import("../play/rest.zig");
 const foemod = @import("../foes/foe.zig");
+
+/// THIS FILE, for the tests that read their own SOURCE to pin a declaration against its use. Named because a
+/// stale copy does not fail — `readForTest` turns a missing path into `error.SkipZigTest` and the invariant
+/// goes unchecked in silence. `foe.DIR`'s rule.
+const SRC = "src/world/env.zig";
 
 const v3 = mathx.v3;
 const Kind = props.Kind;
@@ -524,6 +530,13 @@ pub fn soilBuildCount() usize {
 
 pub fn waterBuildCount() usize {
     return waterBuilds;
+}
+
+/// AN `Env` WITH NO GPU IN IT, for the tests that stand one up headless: `ground` and `models` are the only two
+/// fields with no default, and sixty-four sites named both by hand. A third such field is a compile error at every
+/// one of them, which is why this is the door rather than a rule in a comment.
+pub fn blankForTest(e: *Env) void {
+    e.* = .{ .ground = undefined, .models = undefined };
 }
 
 pub const Env = struct {
@@ -3845,7 +3858,7 @@ test "terrain editor: cave lighting uses the same ghost roof heights as the mesh
     defer alloc.destroy(m);
     const e = try alloc.create(Env);
     defer alloc.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     var span: [4]usize = undefined;
     _ = caves.carve(caves.gridsOf(m), .{ .px = 0, .pz = 0, .r = 6, .floor = -10, .roof = -6 }, &span);
     e.adoptCave(m);
@@ -3867,7 +3880,7 @@ test "terrain editor: cliff faces leave a real opening through the cave air" {
     defer std.testing.allocator.destroy(m);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     var span: [4]usize = undefined;
     _ = caves.carve(caves.gridsOf(m), .{ .px = 0, .pz = 0, .r = 8, .floor = -1, .roof = 3 }, &span);
     e.adoptCave(m);
@@ -5109,7 +5122,7 @@ test "A LIGHT TAKING A SLOT ARRIVES AT ZERO, AND THE ONE IT PUSHES OUT LEAVES AT
     const ta = std.testing.allocator;
     const e = try ta.create(Env);
     defer ta.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     const SPAN = 22;
     const STRIDE: f32 = 9.0;
     for (0..SPAN) |i| {
@@ -5186,7 +5199,7 @@ test "the culler accepts the full width of the screen, not just the axis" {
 test "A CANOPY HIDES HIM AND THE TRUNK IT HANGS OFF DOES NOT — the occluder volume is not the collider" {
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.props[0] = .{ .kind = .conifer, .pos = v3(2.6, 0, 0), .yaw = 0, .scale = 1 };
     e.nprops = 1;
     fillIndex(e, &e.stx, false);
@@ -5237,7 +5250,7 @@ test "GROUND COVER THINS FROM HIS WAIST UP — a thicket in the way does, a tuft
         var any = false;
         var t: f32 = 0.05;
         while (t < 1.0) : (t += 0.05) {
-            e.* = .{ .ground = undefined, .models = undefined };
+            blankForTest(e);
             e.props[0] = .{ .kind = row.k, .pos = v3(0, 0, mathx.lerpF(eye.z, at.z, t)), .yaw = 0, .scale = row.sc };
             e.nprops = 1;
             indexProps(e);
@@ -5251,7 +5264,7 @@ test "GROUND COVER THINS FROM HIS WAIST UP — a thicket in the way does, a tuft
 test "a FULL occluder list gives its slots to what hides him most, not to what the cell walk reached first" {
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     for (0..OCCL_MAX) |i| {
         e.props[i] = .{ .kind = .snag, .pos = v3(@floatFromInt(i), 0, 0), .yaw = 0, .scale = 1 };
         e.wantFade(@intCast(i), 0.98);
@@ -5274,7 +5287,7 @@ test "a FULL occluder list gives its slots to what hides him most, not to what t
 test "NOTHING MID-TRAVEL IS DROPPED — a full list refuses the ask rather than snap a tree back to solid" {
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     for (0..OCCL_MAX) |i| {
         e.props[i] = .{ .kind = .snag, .pos = v3(@floatFromInt(i), 0, 0), .yaw = 0, .scale = 1 };
         e.wantFade(@intCast(i), 0.98);
@@ -5291,7 +5304,7 @@ test "NOTHING MID-TRAVEL IS DROPPED — a full list refuses the ask rather than 
 test "A GLOW TAKEN OUT OF THE WORLD TAKES ITS FADE SLOT AND ITS LIGHT WITH IT" {
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.stageOne(.pickup);
     try std.testing.expectEqual(@as(usize, 1), e.lightCount());
 
@@ -5336,7 +5349,7 @@ test "grid cells round-trip a world position" {
 test "the sight line thins the tree standing in it, and only that tree" {
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.props[0] = .{ .kind = .bigtree, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1 };
     e.props[1] = .{ .kind = .cottage, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1 };
     e.props[2] = .{ .kind = .bigtree, .pos = v3(0, 0, 40), .yaw = 0, .scale = 1 };
@@ -5359,7 +5372,7 @@ test "the sight line thins the tree standing in it, and only that tree" {
 test "THE FOG GATE THINS LIKE ANYTHING ELSE STANDING IN THE SIGHT LINE — the sheet does, the arch it hangs in does not" {
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.props[0] = .{ .kind = .foggate, .pos = v3(0, 0, 0), .yaw = 90, .scale = 1 };
     e.props[1] = .{ .kind = .cottage, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1 };
     e.nprops = 2;
@@ -5383,7 +5396,7 @@ test "THE FOG GATE THINS LIKE ANYTHING ELSE STANDING IN THE SIGHT LINE — the s
 test "THE FADE TAKES TIME, both ways, and never overshoots either end" {
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.props[0] = .{ .kind = .bigtree, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1 };
     e.nprops = 1;
     fillIndex(e, &e.stx, false);
@@ -5469,7 +5482,7 @@ test "a solid's cell iterator covers its whole footprint" {
 test "a solid's blocking height is a WORLD height, so cover still works up a bank" {
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     const top = props.info(.wall).parts[0].h;
     e.props[0] = .{ .kind = .wall, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
     e.props[1] = .{ .kind = .wall, .pos = v3(60, 12, 0), .yaw = 0, .scale = 1, .op = 0 };
@@ -5487,7 +5500,7 @@ test "a solid's blocking height is a WORLD height, so cover still works up a ban
 test "THE BOOM GATHERS MASONRY AND NOTHING ELSE — a tree's collider is in the same index and is not one" {
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.props[0] = .{ .kind = .wall, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
     e.props[1] = .{ .kind = .conifer, .pos = v3(3, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
     // SOLID **AND** A VEIL: its collider is the sheet, `markOccluders` thins the sheet, so the boom may not pull in
@@ -5517,7 +5530,7 @@ test "THE BOOM GATHERS MASONRY AND NOTHING ELSE — a tree's collider is in the 
 test "A WALL STOPS A LOOK, and the grid is walked far enough out to find one at range" {
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.props[0] = .{ .kind = .wall, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
     e.nprops = 1;
     buildSolids(e);
@@ -5534,7 +5547,7 @@ test "A WALL STOPS A LOOK, and the grid is walked far enough out to find one at 
 test "THE SIGHT WALK FINDS EVERY WALL THE BOX SCAN FOUND, over a fraction of the solids" {
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     var rng = mathx.Rng.init(0x5EE1);
     const NW = 240;
     for (0..NW) |i| {
@@ -5584,7 +5597,7 @@ test "THE SIGHT WALK FINDS EVERY WALL THE BOX SCAN FOUND, over a fraction of the
 
 fn envWithFogGate() !*Env {
     const e = try std.testing.allocator.create(Env);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.props[0] = .{ .kind = .foggate, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
     e.nprops = 1;
     buildSolids(e);
@@ -5677,7 +5690,7 @@ test "A SHUT GATE IS A WALL TO HIM TOO, and an open one is not" {
 
 fn envWithIllusion() !*Env {
     const e = try std.testing.allocator.create(Env);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.props[0] = .{ .kind = .illusory, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
     e.nprops = 1;
     buildSolids(e);
@@ -5725,7 +5738,7 @@ test "AN ILLUSORY WALL IS A WALL UNTIL IT IS TOUCHED — then a look and a step 
 
 fn envWithRamp(rise: f32) !*Env {
     const e = try std.testing.allocator.create(Env);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.heightHalf = wf.DEFAULT_HALF;
     e.heightAny = true;
     const step = e.lattice();
@@ -5786,7 +5799,7 @@ test "THE STEP RULE IS FRAME-RATE INDEPENDENT — a wall cannot be ratcheted up 
 test "flyStep: a jump crosses what it is OVER, and a cliff is a wall at any altitude" {
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.heightHalf = wf.DEFAULT_HALF;
     e.heightAny = true;
     const mid = wf.HEIGHT_N / 2;
@@ -5815,7 +5828,7 @@ test "A JUMP CLEARS A LOW COLLIDER AND A WALL IS STILL A WALL — the push-out r
     const HR = HERO_R_PIN;
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
 
     e.props[0] = .{ .kind = .log, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
     e.nprops = 1;
@@ -5840,7 +5853,7 @@ test "A JUMP CLEARS A LOW COLLIDER AND A WALL IS STILL A WALL — the push-out r
 test "a SLIGHT STEP is always taken, however steep the face carrying it" {
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.heightHalf = wf.DEFAULT_HALF;
     e.heightAny = true;
     const mid = wf.HEIGHT_N / 2;
@@ -5931,7 +5944,7 @@ test "DEEP WATER READS DEEP — the sheet is darkened by the DIG, not by the sho
 
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.uploadWater(m);
     const RIM = v3(56, 0, 0);
     const flat = e.paintedDepth(RIM.x, RIM.z);
@@ -5963,7 +5976,7 @@ test "env's ground agrees with the MAP's to the millimetre" {
 
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.adoptHeight(m);
     for ([_][2]f32{ .{ -30, 40 }, .{ 20, -20 }, .{ 0, 0 }, .{ -117.3, 88.6 }, .{ 279, -279 } }) |p| {
         try std.testing.expectApproxEqAbs(m.heightAt(p[0], p[1]) + GROUND_Y, e.groundAt(p[0], p[1]), 1e-5);
@@ -6056,7 +6069,7 @@ test "A PROP PLACED CANNOT MOVE THE GROUND — an unchanged height field is not 
     defer std.testing.allocator.destroy(m);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.heightHalf = 0; // `build`'s job, and this Env never had one
 
     const first = terrainBuildCount();
@@ -6080,7 +6093,7 @@ test "PAINTING NO SOIL UPLOADS NO SOIL — the third field skips on an unchanged
     defer std.testing.allocator.destroy(m);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
 
     const first = soilBuildCount();
     e.uploadSoil(m);
@@ -6110,7 +6123,7 @@ test "THE COAST IS DERIVED ONLY WHEN SOMETHING IT READS MOVED — the DIG is one
     defer std.testing.allocator.destroy(m);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
 
     const first = waterBuildCount();
     e.uploadWater(m);
@@ -6133,7 +6146,7 @@ test "A FLOOR IS A FLOOR AND ITS HATCH IS A HOLE, and neither is anything to a b
     defer std.testing.allocator.destroy(m);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.materialize(m);
     const mid = propbuild.WATCH_DECK_TOP;
     const roof = propbuild.WATCH_ROOF_TOP;
@@ -6181,7 +6194,7 @@ test "A LADDER IS FOUND BY ITS CLIMBING LINE, from the foot of the run and from 
     defer std.testing.allocator.destroy(m);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.materialize(m);
     const r = e.ladderNear(v3(3.7, 0, 0), 0, 1.5) orelse return error.TestUnexpectedResult;
     try std.testing.expectApproxEqAbs(@as(f32, 7.2), r.run, 1e-4);
@@ -6313,7 +6326,7 @@ test "THE FLOOR DRAWN IS THE FLOOR WALKED — a cliff cell's floors against `wf.
 
 fn envWithSculptedLip(drop: f32, lipRow: usize, bandCells: usize) !*Env {
     const e = try std.testing.allocator.create(Env);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.heightHalf = wf.DEFAULT_HALF;
     e.heightAny = true;
     for (0..wf.HEIGHT_N) |iz| {
@@ -6417,7 +6430,7 @@ test "A PAINTED CLIFF IS A WALL AND A LIP — the bench's three faces, in metres
     try wf.loadForTest(wf.DIR ++ "/test_cliff" ++ wf.EXT, m, &ln);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.adoptHeight(m);
 
     const cell = m.heightStep();
@@ -6494,7 +6507,7 @@ test "WHAT THE CLIMB PROMPT COSTS A FRAME — `ladderNear` on the shipped map, t
     try wf.loadForTest(wf.START_MAP, m, &ln);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.materialize(m);
     var beside = v3(0, 0, 4);
     for (e.props[0..e.nprops]) |pr| {
@@ -6531,7 +6544,7 @@ test "BREAKING A GROUP APART DOES NOT MOVE THE WORLD" {
     m.ops[0].gold = 7;
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.materialize(m);
     const props0 = e.propCount();
     const solids0 = e.solidCount();
@@ -6560,7 +6573,7 @@ test "a group with nothing left standing leaves no op behind" {
     defer std.testing.allocator.destroy(m);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.materialize(m);
     try std.testing.expectEqual(@as(usize, 1), e.propCount());
 
@@ -6576,7 +6589,7 @@ test "A FLIGHT IS WALKED TO THE SHELF, AND ITS HEAD IS NOT A LIP" {
     try wf.loadForTest(wf.DIR ++ "/test_cliff" ++ wf.EXT, m, &ln);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.adoptHeight(m);
     e.materialize(m);
 
@@ -6643,7 +6656,7 @@ test "replaying the SHIPPED map produces a stable world" {
     try wf.loadForTest(wf.START_MAP, m, &line);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
 
     e.materialize(m);
     const props0 = e.propCount();
@@ -6676,7 +6689,7 @@ test "A FEN LURKER IS POSTED IN WATER IT CAN ACTUALLY HIDE IN" {
     try wf.loadForTest(wf.DIR ++ "/test_fenlurker" ++ wf.EXT, m, &line);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.adoptHeight(m);
     e.uploadWater(m);
     e.materialize(m);
@@ -6714,7 +6727,7 @@ test "EVERY SHIPPED MAP LOADS AND MATERIALIZES, not just the one the game starts
             std.debug.print("{s} failed to load at line {d}\n", .{ path, line });
             return err;
         };
-        e.* = .{ .ground = undefined, .models = undefined };
+        blankForTest(e);
         e.materialize(m);
         if (e.propCount() == 0) std.debug.print("{s} materialized ZERO props\n", .{path});
         try std.testing.expect(e.propCount() > 0);
@@ -6735,7 +6748,7 @@ test "EVERY SHIPPED MAP LOADS AND MATERIALIZES, not just the one the game starts
     try std.testing.expect(shields >= 2 and blades >= 2);
     try std.testing.expectEqual(m.nfoes, shields + blades);
 
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.materialize(m);
     var sites: [restmod.CAP]restmod.Site = undefined;
     try std.testing.expectEqual(@as(usize, 2), e.restSites(&sites));
@@ -6754,7 +6767,7 @@ test "no grid query can overflow MAX_NEAR, which is the one cap here that drops 
     try wf.loadForTest(wf.START_MAP, m, &line);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.materialize(m);
     var worst: u32 = 0;
     for (0..GRID_N - 1) |cz| {
@@ -6800,7 +6813,7 @@ test "the map's half drives the world, not a constant in this file" {
 test "A BLOCKED PROBE AND A MOVED PUSH-OUT ARE ONE PREDICATE — what `game.wayClear` swapped to" {
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.props[0] = .{ .kind = .wall, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
     e.props[1] = .{ .kind = .pillar, .pos = v3(7.5, 0, -3.0), .yaw = 0, .scale = 1, .op = 0 };
     e.nprops = 2;
@@ -6835,7 +6848,7 @@ test "AN OP MAY NOT SPIN — the rebuild's cost is the map's size, never a numbe
     const e = try ta.create(Env);
     defer ta.destroy(e);
     m.* = .{};
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
 
     _ = try m.addScat(
         .{ .op = .line, .kind = .block, .x = -200, .z = 0 },
@@ -6871,7 +6884,7 @@ test "…AND NO HONEST OP IN THE SHIPPING MAP IS TRUNCATED BY IT" {
     defer ta.free(text);
     var line: usize = 0;
     try wf.parse(text, m, &line);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     var t = try std.time.Timer.start();
     e.materialize(m);
     std.debug.print("  {s}: {d} ops built {d} props in {d:.1} ms, {d} capped\n", .{ wf.START_MAP, m.nops, e.nprops, @as(f64, @floatFromInt(t.read())) / 1e6, e.opsCapped });
@@ -6914,7 +6927,7 @@ test "THE GIZMO PASS WALKS WHAT IS IN FRAME, NOT THE WHOLE MAP — and the owned
     defer ta.free(text);
     var line: usize = 0;
     try wf.parse(text, m, &line);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.materialize(m);
 
     const view = viewLooking(v3(0, 26, -34), v3(0, 0, 0));
@@ -6950,7 +6963,7 @@ test "THE CURSOR PICK ANSWERS THE SAME PROP OFF THE INDEX AS OFF THE WHOLE LIST 
     defer ta.free(text);
     var line: usize = 0;
     try wf.parse(text, m, &line);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.materialize(m);
 
     const Any = struct {
@@ -7016,7 +7029,7 @@ test "THE BAKED WATER FIELD CARRIES NO SHAPE — the coast is the shader's, so t
     defer ta.destroy(m);
     const e = try ta.create(Env);
     defer ta.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
 
     var first: [wf.WATER_CELLS]u8 = undefined;
     inline for (@typeInfo(wf.Edge).@"enum".fields, 0..) |f, k| {
@@ -7061,7 +7074,7 @@ test "THE COAST YOU SEE IS THE COAST YOU WADE INTO — one warp, evaluated on bo
     defer ta.destroy(m);
     const e = try ta.create(Env);
     defer ta.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
 
     try std.testing.expectEqual(@as(usize, wf.Edge.N), glsl.EDGE_K.len);
     try std.testing.expectEqual(@as(usize, @intFromEnum(wf.Edge.scallop)), glsl.SCALLOP);
@@ -7146,7 +7159,7 @@ test "THE FOOTING READS THE LIQUID THE SHADER PAINTED - every pool on the bench 
     try wf.loadForTest(wf.DIR ++ "/test_liquids" ++ wf.EXT, m, &line);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.uploadSoil(m);
     e.uploadWater(m);
     e.uploadHeight(m);
@@ -7170,7 +7183,7 @@ test "DIGGING A POOL puts the dweller's floor at the dweller depth and leaves th
     _ = m.paintWater(0, 0, 15, true, .speckle, .water);
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     const dryBefore = m.heightAt(30, 0);
     const moved = Env.digPools(m, 5.0);
     try std.testing.expect(moved > 0);
@@ -7207,7 +7220,7 @@ test "EVERY BODY OF WATER CARRIES ITS OWN LEVEL — a pond on a plateau wades at
 
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.adoptHeight(m);
     e.uploadWater(m);
     const lowDepth = e.wadeDepth(-30, 0);
@@ -7268,7 +7281,7 @@ test "A MAP WITH NO `wlvl:` ROW IS THE ONE SHEET IT ALWAYS HAD — every pool on
     try std.testing.expect(!m.anyWaterBase());
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    blankForTest(e);
     e.adoptHeight(m);
     e.uploadWater(m);
     var worst: f32 = 0;
@@ -7308,7 +7321,7 @@ test "A FEN LURKER IS SUBMERGED WHEREVER IT IS POSTED, on every map but the benc
             if (f.kind == .fen_lurker) any = true;
         }
         if (!any) continue;
-        e.* = .{ .ground = undefined, .models = undefined };
+        blankForTest(e);
         e.adoptHeight(m);
         e.uploadWater(m);
         e.materialize(m);
@@ -7325,7 +7338,7 @@ test "A FEN LURKER IS SUBMERGED WHEREVER IT IS POSTED, on every map but the benc
 }
 
 test "EVERY FIELD ON `Env` IS ASSIGNED — `Game` is `alloc.create`d and `Env` sits inside it, so `= .{}` never runs here either" {
-    const src = try wf.readForTest(std.testing.allocator, "src/world/env.zig", 1 << 22);
+    const src = try wf.readForTest(std.testing.allocator, SRC, wf.SRC_CAP);
     defer std.testing.allocator.free(src);
     var defaulted: usize = 0;
     var missing: usize = 0;
@@ -7347,7 +7360,7 @@ test "EVERY FIELD ON `Env` IS ASSIGNED — `Game` is `alloc.create`d and `Env` s
 }
 
 test "AN EXPLODE CARRIES EVERY `Op` FIELD IT CLASSIFIES — a field added and never copied is silent data loss in the file" {
-    const src = try wf.readForTest(std.testing.allocator, "src/world/env.zig", 1 << 22);
+    const src = try wf.readForTest(std.testing.allocator, SRC, wf.SRC_CAP);
     defer std.testing.allocator.free(src);
     const head = std.mem.indexOf(u8, src, "pub fn explodeOp(").?;
     const tail = std.mem.indexOfPos(u8, src, head, "pub fn stageOne(").?;

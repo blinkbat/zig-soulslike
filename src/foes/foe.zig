@@ -14,6 +14,10 @@ const anim = @import("../core/anim.zig");
 const v3 = mathx.v3;
 
 
+/// WHERE THE CREATURES LIVE, for the tests that read the SOURCE to pin a field against its method. Named because
+/// a stale copy does not fail — `openDir` misses and the test SKIPS, so the invariant goes unchecked in silence.
+pub const DIR = "src/foes";
+
 pub const FLASH_DUR: f32 = 0.20;
 pub const FLASH_GAIN: f32 = 0.85;
 pub const FROST_GAIN: f32 = 0.55;
@@ -342,6 +346,11 @@ pub const PARRY_LEAD: f32 = 0.18;
 /// The share of a strike run when the kit ARRIVES, for families whose stroke is one plain swing through `catchMelee`.
 /// Per-move fractions stay per-move (the ogre's slam, the mastodon's tail); this is ONE number, so a retune moves them together.
 pub const MELEE_IMPACT_K: f32 = 0.68;
+
+/// THE BONE FAMILY'S FIST IN THE WRIST'S OWN FRAME, as a share of stature — one source for the four skeletons that
+/// each restated it. The HERO's grip is his own (`hero`'s Z is 0.005) and deliberately not this.
+pub const FIST_YF: f32 = -0.05;
+pub const FIST_ZF: f32 = 0.02;
 
 pub fn inParryWindow(left: f32) bool {
     return left >= 0 and left <= PARRY_LEAD;
@@ -912,6 +921,54 @@ pub fn recoilPose(t: f32, heavy: bool) f32 {
     return anim.keyAt(&keys, t);
 }
 
+/// THE BONE FAMILY'S, in the stun's OWN time rather than in seconds: the heavy hangs at the top twice as long as
+/// the light before it drops through and rebounds. Two skeletons had it keyed out side by side.
+pub fn boneRecoil(t: f32, heavy: bool) f32 {
+    const keys = [_]anim.Key{
+        .{ .t = 0, .v = 0 },
+        .{ .t = if (heavy) 0.14 else 0.18, .v = 1, .ease = .decel },
+        .{ .t = if (heavy) 0.55 else 0.36, .v = 0.92 },
+        .{ .t = if (heavy) 0.86 else 0.78, .v = -0.14 },
+        .{ .t = 1, .v = 0 },
+    };
+    return anim.keyAt(&keys, t / combat.foeStunDur(heavy));
+}
+
+/// WHICH STUN IS RUNNING AND HOW FAR INTO IT — the three lines every `stunAmount` opened with, so a body names only
+/// its SHAPE. The shape is per-creature (`stunCurve`, `recoilPose`, `boneRecoil`); the guard never was.
+pub fn stunShape(self: anytype, comptime shape: fn (f32, bool) f32) f32 {
+    return switch (self.state) {
+        .stunlight => shape(self.t, false),
+        .stunheavy => shape(self.t, true),
+        else => 0,
+    };
+}
+
+/// `stunShape`'s GUARD ON ITS OWN, which is what every `staggered` is built out of: twenty-three wrote the same
+/// pair out verbatim and five more wrote it with one state of their own added on. The EXTRA state stays the
+/// creature's (the bat's `.repelled`, the shieldman's `.guardbreak`), and so does whether death staggers at all.
+pub fn inStun(self: anytype) bool {
+    return self.state == .stunlight or self.state == .stunheavy;
+}
+
+/// A BLOW ON THE MAN IS THE SAME THREE LINES WHATEVER SHAPE CAUGHT HIM — the blow, the one-hit latch, and the
+/// leash stamp. The GATE is the move's own (a cone, a swept segment, a rear arc, a charge line).
+pub fn bill(self: anytype, hit: combat.Hit) void {
+    self.heroHit = hit;
+    self.heroLatch = true;
+    self.leash.noteCombat();
+}
+
+/// …AND THE ORDINARY GATE IS A FRONTAL CONE, which fifteen animations each wrote out around their own band.
+/// `reach` is measured from the quarry's HIDE (`hurtReach`), so how a scaled body's band tracks it stays the
+/// creature's own statement. Hands back whether it billed, which is all the creature's own flag needs.
+pub fn billFront(self: anytype, quarry: rl.Vector3, reach: f32, frontDot: f32, hit: combat.Hit) bool {
+    if (self.heroLatch) return false;
+    if (!inFront(self.pos, self.facing, quarry, reach, frontDot)) return false;
+    bill(self, hit);
+    return true;
+}
+
 /// WHAT A CAUGHT BLOW COSTS, in ONE place: whether the catch BROKE THE STANCE. `combat.PARRY_HIT` is stance and
 /// nothing else — `raw()` and `poise` are both pinned at 0 in `combat` — so a catch can never resolve as a death,
 /// and the only question left is which stun the creature enters in its own vocabulary.
@@ -1258,7 +1315,7 @@ test "A CREATURE THAT NEVER SEES WATER IS DRY BY CONSTRUCTION, and a wading one 
 }
 
 test "THE WATER GATE IS BOTH HALVES OR NEITHER — the field alone stamps a fact nothing reads, and the call alone answers DRY forever" {
-    var dir = std.fs.cwd().openDir("src/foes", .{ .iterate = true }) catch return error.SkipZigTest;
+    var dir = std.fs.cwd().openDir(DIR, .{ .iterate = true }) catch return error.SkipZigTest;
     defer dir.close();
     var carriers: usize = 0;
     var it = dir.iterate();
@@ -1266,8 +1323,8 @@ test "THE WATER GATE IS BOTH HALVES OR NEITHER — the field alone stamps a fact
         if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, ".zig")) continue;
         if (std.mem.eql(u8, ent.name, "foe.zig")) continue;
         var buf: [128]u8 = undefined;
-        const path = try std.fmt.bufPrint(&buf, "src/foes/{s}", .{ent.name});
-        const src = try wf.readForTest(std.testing.allocator, path, 1 << 22);
+        const path = try std.fmt.bufPrint(&buf, DIR ++ "/{s}", .{ent.name});
+        const src = try wf.readForTest(std.testing.allocator, path, wf.SRC_CAP);
         defer std.testing.allocator.free(src);
         const field = std.mem.indexOf(u8, src, "wade: foe.Wade") != null;
         const asks = std.mem.indexOf(u8, src, "onDryGround(self)") != null or

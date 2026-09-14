@@ -616,6 +616,15 @@ pub fn setId(dst: *Id, s: []const u8) !void {
     @memcpy(dst[0..s.len], s);
 }
 
+/// `#` STARTS A COMMENT AND THE FORMAT HAS NO ESCAPE, so an authored byte that would truncate its own line on the
+/// next load is turned here — at the two doors every authored string goes through — rather than at each field.
+pub const COMMENT = '#';
+fn uncomment(dst: []u8) void {
+    for (dst) |*c| {
+        if (c.* == COMMENT) c.* = '_';
+    }
+}
+
 /// THE EDITOR'S POLICY, where `setId` is the PARSER'S: a name too long is cut, not refused, and the cap comes off
 /// the destination so an `Id` cell and a `NAME_CAP` cell take the same call. One byte is always held back for the
 /// terminator `nameText` reads.
@@ -623,6 +632,7 @@ pub fn setNameIn(dst: []u8, s: []const u8) void {
     @memset(dst, 0);
     const n = @min(s.len, dst.len - 1);
     @memcpy(dst[0..n], s[0..n]);
+    uncomment(dst[0..n]);
 }
 
 pub fn nameText(src: []const u8) []const u8 {
@@ -1910,6 +1920,7 @@ pub const Map = struct {
         if (s.len > 0xFFFF or self.ndtext + s.len > DTEXT_CAP) return ParseError.TextFull;
         const at = self.ndtext;
         @memcpy(self.dtext[at .. at + s.len], s);
+        uncomment(self.dtext[at .. at + s.len]);
         self.ndtext += @intCast(s.len);
         return .{ .at = at, .len = @intCast(s.len) };
     }
@@ -3652,6 +3663,11 @@ pub fn loadForTest(path: []const u8, m: *Map, lineOut: *usize) !void {
     };
 }
 
+/// The cap for the OTHER thing `readForTest` is pointed at — a `.zig` file, read by the tests that pin a
+/// declaration against its use. `TEXT_CAP` is solved from the format; this one only has to clear the biggest
+/// source in the tree, and eight call sites each wrote it out.
+pub const SRC_CAP: usize = 1 << 22;
+
 pub fn readForTest(alloc: std.mem.Allocator, path: []const u8, cap: usize) ![]u8 {
     return std.fs.cwd().readFileAlloc(alloc, path, cap) catch |e| {
         if (e == error.FileNotFound) return error.SkipZigTest;
@@ -3869,7 +3885,7 @@ fn nextInt(it: *std.mem.TokenIterator(u8, .any)) !u32 {
 }
 
 fn stripComment(s: []const u8) []const u8 {
-    return if (std.mem.indexOfScalar(u8, s, '#')) |i| s[0..i] else s;
+    return if (std.mem.indexOfScalar(u8, s, COMMENT)) |i| s[0..i] else s;
 }
 
 fn trim(s: []const u8) []const u8 {
@@ -5366,6 +5382,36 @@ test "RE-SAYING A GREETING DOES NOT FILL THE TEXT ARENA — the editor commits o
     try parse(fbs.getWritten(), &back, &bl);
     try std.testing.expectEqualStrings(t.line(), readTalk(&back, 0).?.line());
     try std.testing.expectEqual(@as(u16, 0), back.npcs[0].dlg);
+}
+
+test "A `#` IS TURNED AT THE DOOR — the editor's fields take every printable byte, and one of them ends the line" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, TEST_HEAD ++
+        \\npc: merchant 4.00 2.00 180.0 1.00 0.20 dlg=wares
+        \\dlg: wares
+        \\  node: root
+        \\  say: Salt and iron.
+        \\
+    );
+    defer alloc.destroy(m);
+
+    m.nodes[0].text = try m.addText("Rule #1: pay the toll.");
+    m.nodes[0].who = try m.addText("#");
+    m.setName("bone#court");
+    m.zones[0].setName("fen#edge");
+    try std.testing.expectEqualStrings("Rule _1: pay the toll.", m.spanText(m.nodes[0].text));
+    try std.testing.expectEqualStrings("bone_court", m.label());
+
+    var buf: [8192]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    var back: Map = undefined;
+    var bl: usize = 0;
+    try parse(fbs.getWritten(), &back, &bl);
+    try std.testing.expectEqualStrings("Rule _1: pay the toll.", back.spanText(back.nodes[0].text));
+    try std.testing.expectEqualStrings("_", back.spanText(back.nodes[0].who));
+    try std.testing.expectEqualStrings("bone_court", back.label());
+    try std.testing.expectEqualStrings("fen_edge", back.zones[0].label());
 }
 
 test "DELETING A BODY KEEPS EVERY `near` POINTING AT THE BODY IT MEANT — and the map still loads" {

@@ -152,19 +152,17 @@ pub const Hit = struct {
         return out;
     }
 
+    /// THE MAGNITUDES SCALE AND THE REST RIDES ALONG — written as a COPY, not a fresh literal, so a field added to
+    /// `Hit` comes through a scaled blow instead of coming out at its default with nothing saying so.
     pub fn scaled(self: Hit, k: f32) Hit {
-        return .{
-            .dmg = self.dmg * k,
-            .poise = self.poise * k,
-            .stance = self.stance * k,
-            .elem = self.elem.scaled(k),
-            .fp = self.fp * k,
-            .launch = self.launch,
-            .dose = self.dose,
-            .gore = self.gore * k,
-            .venom = self.venom,
-            .shove = self.shove,
-        };
+        var out = self;
+        out.dmg *= k;
+        out.poise *= k;
+        out.stance *= k;
+        out.elem = self.elem.scaled(k);
+        out.fp *= k;
+        out.gore *= k;
+        return out;
     }
 };
 

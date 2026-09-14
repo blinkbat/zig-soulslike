@@ -1156,7 +1156,7 @@ pub const Spider = struct {
         return !self.gone;
     }
     pub fn staggered(self: *const Spider) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn dying(self: *const Spider) bool {
         return self.state == .dead;
@@ -1582,18 +1582,14 @@ pub const Spider = struct {
         if (self.heroLatch) return;
         if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(range, self.scale), BITE_FRONT_DOT)) return;
         if (!self.clawsTouch(hero)) return;
-        self.heroHit = h;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        foe.bill(self, h);
     }
 
     fn tryImpact(self: *Spider, hero: rl.Vector3, h: combat.Hit) void {
         if (self.heroLatch) return;
         if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(B_LEAP_IMPACT_OWN, self.scale), B_LEAP_FRONT_DOT)) return;
         if (!self.clawsTouch(hero) and !foe.weaponReaches(self.bodyWas, self.bodyIs orelse return, hero, foe.HERO_R + 0.26 * self.scale)) return;
-        self.heroHit = h;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        foe.bill(self, h);
     }
 
     pub fn tryHit(self: *Spider, blade: foe.Blade) void {

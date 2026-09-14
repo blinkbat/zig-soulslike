@@ -321,7 +321,7 @@ pub const Owlbear = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Owlbear) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn airborne(self: *const Owlbear) bool {
         return self.hop > foe.AIRBORNE_LIFT;
@@ -383,8 +383,7 @@ pub const Owlbear = struct {
     }
 
     fn stunAmount(self: *const Owlbear) f32 {
-        if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.recoilPose(self.t, self.state == .stunheavy);
+        return foe.stunShape(self, foe.recoilPose);
     }
 
     fn toImpact(self: *const Owlbear) ?f32 {
@@ -580,11 +579,7 @@ pub const Owlbear = struct {
     }
 
     fn tryStroke(self: *Owlbear, quarry: rl.Vector3, mv: Attack) void {
-        if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, quarry, foe.hurtReach(mv.maxR, self.scale), mv.frontDot)) return;
-        self.heroHit = mv.hit;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        _ = foe.billFront(self, quarry, foe.hurtReach(mv.maxR, self.scale), mv.frontDot, mv.hit);
     }
 
     pub fn tryHit(self: *Owlbear, blade: foe.Blade) void {

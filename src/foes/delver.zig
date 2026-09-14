@@ -400,7 +400,7 @@ pub const Delver = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Delver) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn airborne(self: *const Delver) bool {
         return self.depth > foe.AIRBORNE_LIFT;
@@ -534,11 +534,7 @@ pub const Delver = struct {
             else => null,
         };
         if (swung) |h| {
-            if (!self.heroLatch and self.clawTouches(self.clawWas, hero)) {
-                self.heroLatch = true;
-                self.heroHit = h;
-                self.leash.noteCombat();
-            }
+            if (!self.heroLatch and self.clawTouches(self.clawWas, hero)) foe.bill(self, h);
         }
         self.takeParry(swung != null and self.clawTouches(self.clawWas, self.parry.at));
         self.clawWas = now;
@@ -739,9 +735,7 @@ pub const Delver = struct {
         self.emitSpray(dt, 24.0);
         // **THE FURROW IS A SWEPT SEGMENT.** At nine metres a second it covers fifteen centimetres a frame, and a point test against a body 0.36 m across steps straight over him about half the time.
         if (!self.heroLatch and self.furrowed(was, hero)) {
-            self.heroLatch = true;
-            self.heroHit = PLOUGH_HIT;
-            self.leash.noteCombat();
+            foe.bill(self, PLOUGH_HIT);
             self.dirtBurst(v3(hero.x, self.pos.y + 0.08, hero.z), PLOUGH_CLODS, 3.0, 0.20);
         }
         if (u >= 1.0) {

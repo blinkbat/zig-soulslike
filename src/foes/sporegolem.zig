@@ -212,7 +212,7 @@ pub const Golem = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Golem) bool {
-        return self.state == .stunlight or self.state == .stunheavy;
+        return foe.inStun(self);
     }
     pub fn draw(self: *const Golem, model: *const Model) void {
         model.draw(self);

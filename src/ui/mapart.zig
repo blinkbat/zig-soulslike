@@ -837,7 +837,7 @@ test "AND THE LOOK IS PAID FOR ONCE A CELL, so the cold disc is the whole bill" 
     defer ta.free(text);
     var line: usize = 0;
     try wf.parse(text, m, &line);
-    e.* = .{ .ground = undefined, .models = undefined };
+    envmod.blankForTest(e);
     e.materialize(m);
 
     var seen = Seen{};

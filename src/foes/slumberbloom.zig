@@ -216,7 +216,7 @@ pub const Bloom = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Bloom) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn airborne(self: *const Bloom) bool {
         _ = self;

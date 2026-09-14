@@ -88,9 +88,24 @@ pub const Spring = struct {
         }
         return self.v;
     }
+    pub fn stepAt(self: *Spring, target: f32, r: Rate, dt: f32) f32 {
+        return self.step(target, r.stiff, r.zeta, dt);
+    }
     pub fn set(self: *Spring, value: f32) void {
         self.v = value;
         self.vel = 0;
+    }
+};
+
+/// THE PAIR A HAND-ROLLED `ease`/`settle` DAMPER MEANT, converted in ONE place: `stiff` is their product and `zeta`
+/// the damping ratio that follows. Two cloths derived it beside themselves off the same two lines.
+pub const Rate = struct {
+    stiff: f32,
+    zeta: f32,
+
+    pub fn eased(ease: f32, settle: f32) Rate {
+        const stiff = ease * settle;
+        return .{ .stiff = stiff, .zeta = ease / (2.0 * @sqrt(stiff)) };
     }
 };
 

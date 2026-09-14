@@ -242,7 +242,7 @@ pub const Wight = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Wight) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn airborne(_: *const Wight) bool {
         return false;
@@ -297,8 +297,7 @@ pub const Wight = struct {
     }
 
     fn stunAmount(self: *const Wight) f32 {
-        if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.recoilPose(self.t, self.state == .stunheavy);
+        return foe.stunShape(self, foe.recoilPose);
     }
 
     pub fn update(self: *Wight, dt: f32, quarry: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
@@ -398,11 +397,7 @@ pub const Wight = struct {
     }
 
     fn tryBough(self: *Wight, quarry: rl.Vector3) void {
-        if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, quarry, foe.hurtReach(BOUGH_R, self.scale), BOUGH_FRONT_DOT)) return;
-        self.heroHit = self.boughHit();
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        _ = foe.billFront(self, quarry, foe.hurtReach(BOUGH_R, self.scale), BOUGH_FRONT_DOT, self.boughHit());
     }
 
     pub fn tryHit(self: *Wight, blade: foe.Blade) void {

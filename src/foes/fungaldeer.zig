@@ -666,12 +666,8 @@ pub const Deer = struct {
     }
 
     fn tryButt(self: *Deer, hero: rl.Vector3) void {
-        if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(BUTT_R, self.scale), BUTT_FRONT_DOT)) return;
-        self.heroHit = BUTT_HIT;
-        self.heroLatch = true;
+        if (!foe.billFront(self, hero, foe.hurtReach(BUTT_R, self.scale), BUTT_FRONT_DOT, BUTT_HIT)) return;
         self.gored = true;
-        self.leash.noteCombat();
     }
 
     fn settle(self: *Deer, dt: f32) void {

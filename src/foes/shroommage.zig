@@ -637,12 +637,8 @@ pub const Mage = struct {
     }
 
     fn tryFlick(self: *Mage, hero: rl.Vector3) void {
-        if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(FLICK_R, self.scale), FLICK_FRONT_DOT)) return;
-        self.heroHit = FLICK_HIT;
-        self.heroLatch = true;
+        if (!foe.billFront(self, hero, foe.hurtReach(FLICK_R, self.scale), FLICK_FRONT_DOT, FLICK_HIT)) return;
         self.flamed = true;
-        self.leash.noteCombat();
     }
 
     fn burstCup(self: *Mage) void {
@@ -714,11 +710,7 @@ pub const Mage = struct {
     }
 
     fn stunAmount(self: *const Mage) f32 {
-        return switch (self.state) {
-            .stunlight => foe.stunCurve(self.t, false),
-            .stunheavy => foe.stunCurve(self.t, true),
-            else => 0,
-        };
+        return foe.stunShape(self, foe.stunCurve);
     }
 
     pub fn pose(self: *Mage) void {

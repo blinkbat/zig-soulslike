@@ -145,7 +145,7 @@ fn runFixLurkers(alloc: std.mem.Allocator, path: []const u8) !void {
     try wf.load(path, m, &line);
     const e = try alloc.create(env.Env);
     defer alloc.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    env.blankForTest(e);
     const moved = env.Env.digPools(m, 5.0);
     e.uploadWater(m);
     e.adoptHeight(m);
@@ -164,7 +164,7 @@ fn runExplode(alloc: std.mem.Allocator, path: []const u8) !void {
     try wf.load(path, m, &line);
     const e = try alloc.create(env.Env);
     defer alloc.destroy(e);
-    e.* = .{ .ground = undefined, .models = undefined };
+    env.blankForTest(e);
 
     e.uploadWater(m);
     e.materialize(m);

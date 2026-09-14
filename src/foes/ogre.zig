@@ -369,6 +369,17 @@ pub const Model = struct {
     }
 };
 
+/// HIS OWN SHAPE, in the stun's time — one rebound whatever caught him, where the bone family's hangs longer on a heavy.
+fn recoil(t: f32, heavy: bool) f32 {
+    return anim.keyAt(&.{
+        .{ .t = 0, .v = 0 },
+        .{ .t = 0.14, .v = 1, .ease = .decel },
+        .{ .t = 0.48, .v = 0.94 },
+        .{ .t = 0.86, .v = -0.12 },
+        .{ .t = 1, .v = 0 },
+    }, t / combat.foeStunDur(heavy));
+}
+
 pub const Ogre = struct {
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
@@ -491,7 +502,7 @@ pub const Ogre = struct {
         return !self.gone;
     }
     pub fn staggered(self: *const Ogre) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn dying(self: *const Ogre) bool {
         return self.state == .dead;
@@ -823,9 +834,7 @@ pub const Ogre = struct {
         if (axial < -0.2 or axial > self.slamReach()) return;
         if (lateral > foe.hurtReach(SLAM_HALF_W, self.scale)) return;
         if (!self.clubReaches(hero)) return;
-        self.heroHit = h;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        foe.bill(self, h);
     }
 
     /// The swipe's hurt test, shared with the RETURN — each passes its own measured sector.
@@ -836,9 +845,7 @@ pub const Ogre = struct {
         const slack = combat.subtendedArc(HERO_REACH, mathx.maxF(SWIPE_SLACK_MIN_D, d));
         if (@abs(mathx.wrapDeg(self.bearingTo(hero) - mid)) > arc * 0.5 + slack) return;
         if (!self.clubReaches(hero)) return;
-        self.heroHit = h;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        foe.bill(self, h);
     }
     fn trySwipe(self: *Ogre, hero: rl.Vector3, h: combat.Hit) void {
         self.trySweep(hero, h, SWIPE_ARC_MID, SWIPE_ARC);
@@ -1191,14 +1198,7 @@ pub const Ogre = struct {
     }
 
     fn stunAmount(self: *const Ogre) f32 {
-        if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return anim.keyAt(&.{
-            .{ .t = 0, .v = 0 },
-            .{ .t = 0.14, .v = 1, .ease = .decel },
-            .{ .t = 0.48, .v = 0.94 },
-            .{ .t = 0.86, .v = -0.12 },
-            .{ .t = 1, .v = 0 },
-        }, self.t / combat.foeStunDur(self.state == .stunheavy));
+        return foe.stunShape(self, recoil);
     }
 
     pub fn pose(self: *Ogre) void {

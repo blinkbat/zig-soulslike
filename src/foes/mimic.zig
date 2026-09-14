@@ -294,7 +294,7 @@ pub const Mimic = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Mimic) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn airborne(_: *const Mimic) bool {
         return false;
@@ -509,12 +509,8 @@ pub const Mimic = struct {
     }
 
     fn tryBite(self: *Mimic, hero: rl.Vector3) void {
-        if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(BITE_R, self.scale), BITE_FRONT_DOT)) return;
-        self.heroHit = BITE_HIT;
-        self.heroLatch = true;
+        if (!foe.billFront(self, hero, foe.hurtReach(BITE_R, self.scale), BITE_FRONT_DOT, BITE_HIT)) return;
         self.snapped = true;
-        self.leash.noteCombat();
     }
 
     /// The head goes ROUND: one full turn of the sweep over `SWING_DUR`, and it bills the man once as it passes his bearing.
@@ -524,10 +520,8 @@ pub const Mimic = struct {
         const sweep = self.sweepBearing();
         const bearing = self.bearingTo(hero);
         if (@abs(mathx.degrees(mathx.wrapPi(mathx.radians(sweep - bearing)))) > SWING_SLOT) return;
-        self.heroHit = SWING_HIT;
-        self.heroLatch = true;
+        foe.bill(self, SWING_HIT);
         self.swept = true;
-        self.leash.noteCombat();
     }
 
     /// Degrees off her facing the head is at through the swing: starts behind her on the side he is NOT on, comes round the front and on past.
@@ -630,8 +624,7 @@ pub const Mimic = struct {
         return 1.0 - mathx.smoothstep(SWING_DUR, SWING_DUR + SWING_RECOVER * 0.8, s);
     }
     fn stunAmount(self: *const Mimic) f32 {
-        if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.stunCurve(self.t, self.state == .stunheavy);
+        return foe.stunShape(self, foe.stunCurve);
     }
 
     pub fn drawFx(self: *const Mimic) void {

@@ -77,12 +77,12 @@ const scaleM = mathx.scaleM;
 
 const setLocal = heromod.setHumanoid;
 
-const BOW_FY = -0.05 * H;
-const BOW_FZ = 0.02 * H;
+const BOW_FY = foe.FIST_YF * H;
+const BOW_FZ = foe.FIST_ZF * H;
 const TIP_UP = 0.40 * H;
 const TIP_DN = 0.37 * H;
 const TIP_Z = 0.06 * H;
-const FIST_L = v3(0, -0.05 * H, 0.02 * H);
+const FIST_L = v3(0, BOW_FY, BOW_FZ);
 
 pub const BowPose = struct {
     string: [2]rl.Matrix,
@@ -681,7 +681,7 @@ pub const Archer = struct {
         return !self.gone;
     }
     pub fn staggered(self: *const Archer) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn dying(self: *const Archer) bool {
         return self.state == .dead;
@@ -977,9 +977,7 @@ pub const Archer = struct {
         if (self.heroLatch) return;
         if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(BUTT_R, self.scale), BUTT_FRONT_DOT)) return;
         if (!foe.weaponReaches(was, self.bowEdge(), hero, foe.hurtReach(0.035, self.scale))) return;
-        self.heroHit = BUTT_HIT;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        foe.bill(self, BUTT_HIT);
         sfx.world(.bone_hurt, self.pos);
     }
 
@@ -1147,15 +1145,7 @@ pub const Archer = struct {
     }
 
     fn stunAmount(self: *const Archer) f32 {
-        if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        const heavy = self.state == .stunheavy;
-        return anim.keyAt(&.{
-            .{ .t = 0, .v = 0 },
-            .{ .t = if (heavy) 0.14 else 0.18, .v = 1, .ease = .decel },
-            .{ .t = if (heavy) 0.55 else 0.36, .v = 0.92 },
-            .{ .t = if (heavy) 0.86 else 0.78, .v = -0.14 },
-            .{ .t = 1, .v = 0 },
-        }, self.t / combat.foeStunDur(heavy));
+        return foe.stunShape(self, foe.boneRecoil);
     }
 
     fn poseUpper(self: *Archer, wx: *[N]rl.Matrix, dk: f32, stun: f32, dead: bool, prot: f32) void {

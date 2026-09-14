@@ -759,7 +759,7 @@ pub const Swordsman = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Swordsman) bool {
-        return self.state == .stunlight or self.state == .stunheavy;
+        return foe.inStun(self);
     }
     pub fn airborne(self: *const Swordsman) bool {
         return self.hop > foe.AIRBORNE_LIFT;
@@ -1100,11 +1100,7 @@ pub const Swordsman = struct {
     }
 
     fn stunAmount(self: *const Swordsman) f32 {
-        return switch (self.state) {
-            .stunlight => foe.stunCurve(self.t, false),
-            .stunheavy => foe.stunCurve(self.t, true),
-            else => 0,
-        };
+        return foe.stunShape(self, foe.stunCurve);
     }
 
     pub fn pose(self: *Swordsman) void {
@@ -1269,7 +1265,7 @@ pub const Magus = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Magus) bool {
-        return self.state == .stunlight or self.state == .stunheavy;
+        return foe.inStun(self);
     }
     pub fn warped(self: *const Magus) bool {
         return self.warp;
@@ -1635,11 +1631,7 @@ pub const Magus = struct {
     }
 
     fn stunAmount(self: *const Magus) f32 {
-        return switch (self.state) {
-            .stunlight => foe.stunCurve(self.t, false),
-            .stunheavy => foe.stunCurve(self.t, true),
-            else => 0,
-        };
+        return foe.stunShape(self, foe.stunCurve);
     }
 
     pub fn pose(self: *Magus) void {

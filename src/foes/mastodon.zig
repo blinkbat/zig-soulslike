@@ -334,7 +334,7 @@ pub const Mastodon = struct {
         return self.state == .dead;
     }
     pub fn staggered(self: *const Mastodon) bool {
-        return self.state == .stunlight or self.state == .stunheavy or self.state == .dead;
+        return foe.inStun(self) or self.state == .dead;
     }
     pub fn airborne(self: *const Mastodon) bool {
         return self.lift > foe.AIRBORNE_LIFT;
@@ -631,11 +631,7 @@ pub const Mastodon = struct {
     }
 
     fn tryFront(self: *Mastodon, hero: rl.Vector3, hit: combat.Hit, r: f32, dot: f32) void {
-        if (self.heroLatch) return;
-        if (!foe.inFront(self.pos, self.facing, hero, foe.hurtReach(r, self.scale), dot)) return;
-        self.heroHit = hit;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        _ = foe.billFront(self, hero, foe.hurtReach(r, self.scale), dot, hit);
     }
 
     /// The horns meet him: a strip `CHARGE_HALF_W` either side of the line, from the body out to the nose.
@@ -645,9 +641,7 @@ pub const Mastodon = struct {
         const nose = v3(self.pos.x + f.x * CHARGE_NOSE * self.scale, self.pos.y, self.pos.z + f.z * CHARGE_NOSE * self.scale);
         const q = mathx.closestOnSegV(v3(hero.x, self.pos.y, hero.z), self.pos, nose);
         if (mathx.distXZ(q, hero) > CHARGE_HALF_W * self.scale + foe.HERO_R) return;
-        self.heroHit = CHARGE_HIT;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        foe.bill(self, CHARGE_HIT);
     }
 
     fn tryTail(self: *Mastodon, hero: rl.Vector3) void {
@@ -657,9 +651,7 @@ pub const Mastodon = struct {
         const back = mathx.wrapPi(self.turnFrom + std.math.pi);
         const to = mathx.dirXZ(self.pos, hero);
         if (mathx.lenXZ(to) > 1e-4 and !combat.withinArc(mathx.headingXZ(to), back, TAIL_ARC)) return;
-        self.heroHit = TAIL_HIT;
-        self.heroLatch = true;
-        self.leash.noteCombat();
+        foe.bill(self, TAIL_HIT);
     }
 
     pub fn tryHit(self: *Mastodon, blade: foe.Blade) void {
@@ -762,8 +754,7 @@ pub const Mastodon = struct {
     }
 
     fn stunAmount(self: *const Mastodon) f32 {
-        if (self.state != .stunlight and self.state != .stunheavy) return 0;
-        return foe.stunCurve(self.t, self.state == .stunheavy);
+        return foe.stunShape(self, foe.stunCurve);
     }
     /// -1 the head drawn back, +1 driven through: the butt's one clock.
     fn buttAmt(self: *const Mastodon) f32 {
@@ -940,11 +931,7 @@ pub const Drove = struct {
 };
 
 fn segLen(i: usize) f32 {
-    const rest = restPose();
-    for (0..N) |c| {
-        if (wolf.PARENT[c] == @as(i32, @intCast(i))) return mathx.lenV(mathx.subV(rest[i], rest[c])) / W;
-    }
-    return 0;
+    return wolf.segLen(restPose(), i, W);
 }
 
 fn buildBones() [N]rl.Mesh {

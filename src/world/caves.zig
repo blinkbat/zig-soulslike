@@ -1,6 +1,7 @@
 const std = @import("std");
 const mathx = @import("../core/mathx.zig");
 const wf = @import("worldfmt.zig");
+const cliffseat = @import("cliffseat.zig");
 const NL = "\n";
 
 /// Where the cave bench is written; `wf.save` panics under `is_test` on anything but `worlds/test_*.world`.
@@ -860,6 +861,78 @@ pub const bench = struct {
         _ = m.add(.{ .op = .at, .kind = .boulder, .x = MOUTH[0] + 2, .z = MOUTH[1] - 5 }) catch {};
 
         m.start = .{ .x = MOUTH[0] + 6, .z = MOUTH[1], .yaw = 270 };
+    }
+};
+
+/// A WATERFALL CAVE: a plateau whose WEST face wears the fall, a mouth through that face behind the water with a vine
+/// curtain across it, one chamber under the plateau and its pond, and a second mouth on the NORTH face sealed by a
+/// cracked wall — `props.Breach` and `wf.CLIFF_FALL` on one bench. `worlds/test_wfcave.world` is written by its test in
+/// `env.zig` when missing. West-facing on purpose: the anchor sun lights a face that looks toward `shots.LIT_YAW`.
+pub const wfcave = struct {
+    pub const NAME = "test wfcave";
+    pub const TOP: f32 = 7.0;
+    pub const X0: f32 = 0;
+    pub const X1: f32 = 40;
+    pub const Z0: f32 = -20;
+    pub const Z1: f32 = 20;
+    pub const FLOOR: f32 = -ENTRANCE_SINK;
+    pub const HEAD: f32 = 3.0;
+    /// The mouth is cut to the curtain's own width so nothing can be walked round it; the chamber and the north way are wider.
+    pub const MOUTH_R: f32 = 1.6;
+    pub const PASSAGE_R: f32 = 2.6;
+    pub const CHAMBER_R: f32 = 8.0;
+    pub const FALL_HALF: f32 = 6.0;
+    /// Wide enough that the coast warp cannot read its middle as shore.
+    pub const POND_R: f32 = 7.0;
+    pub const POND_DIG: f32 = 1.0;
+
+    pub const Laid = struct { faceX: f32, northZ: f32, chamber: [2]f32, pond: [2]f32, vines: [2]f32, wall: [2]f32, start: [2]f32, northIn: [2]f32, northOut: [2]f32 };
+
+    /// Where the lattice actually draws the west face: the cut crosses its rim cell at the midpoint, half a cell west of the first lattice column inside the rectangle (`cliffseat.terrace`'s own line).
+    pub fn faceX(m: *const wf.Map) f32 {
+        const step = m.heightStep();
+        return -m.half + @ceil((X0 + m.half) / step) * step - step * 0.5;
+    }
+    pub fn northZ(m: *const wf.Map) f32 {
+        const step = m.heightStep();
+        return -m.half + @floor((Z1 + m.half) / step) * step + step * 0.5;
+    }
+    pub fn layout(m: *const wf.Map) Laid {
+        const fx = faceX(m);
+        const nz = northZ(m);
+        return .{
+            .faceX = fx,
+            .northZ = nz,
+            .chamber = .{ fx + 14, 0 },
+            .pond = .{ fx + 9, 0 },
+            // Just INSIDE the cut, behind the water: the fall sheet stands off the face and would slice through a curtain hung outside it.
+            .vines = .{ fx + 1.2, 0 },
+            .wall = .{ fx + 20, nz + 1.6 },
+            .start = .{ fx - 12, 0 },
+            .northIn = .{ fx + 20, 0 },
+            .northOut = .{ fx + 20, nz + 3.5 },
+        };
+    }
+
+    pub fn author(m: *wf.Map) Laid {
+        m.blank(NAME);
+        var span: [4]usize = wf.EMPTY_SPAN;
+        _ = cliffseat.terrace(m, .{ .x0 = X0, .z0 = Z0, .x1 = X1, .z1 = Z1 }, TOP, &span);
+        const l = layout(m);
+        const cell = m.heightStep();
+        _ = cliffseat.waterfall(m, .{ l.faceX, -FALL_HALF }, .{ l.faceX, FALL_HALF }, cell * 0.6, true, &span);
+        _ = m.sculpt(l.pond[0], l.pond[1], POND_R + 1.5, .lower, POND_DIG, &span);
+        _ = m.paintWater(l.pond[0], l.pond[1], POND_R, true, null, null);
+        bench.stroke(m, .{ l.faceX - 3.5, 0 }, .{ l.faceX + 4.0, 0 }, MOUTH_R, FLOOR, HEAD);
+        bench.stroke(m, .{ l.faceX + 4.0, 0 }, l.chamber, PASSAGE_R, FLOOR, HEAD);
+        bench.stroke(m, l.chamber, l.chamber, CHAMBER_R, FLOOR, HEAD);
+        bench.stroke(m, l.northIn, l.northOut, PASSAGE_R, FLOOR, HEAD);
+        _ = m.add(.{ .op = .at, .kind = .vines, .x = l.vines[0], .z = l.vines[1], .yaw = 270 }) catch {};
+        _ = m.add(.{ .op = .at, .kind = .cracked_wall, .x = l.wall[0], .z = l.wall[1], .yaw = 0 }) catch {};
+        _ = m.add(.{ .op = .at, .kind = .brazier, .x = l.chamber[0] + 3, .z = l.chamber[1] - 2, .under = true }) catch {};
+        _ = m.add(.{ .op = .at, .kind = .campfire_lit, .x = l.start[0] + 3, .z = l.start[1] + 5 }) catch {};
+        m.start = .{ .x = l.start[0], .z = l.start[1], .yaw = 90 };
+        return l;
     }
 };
 

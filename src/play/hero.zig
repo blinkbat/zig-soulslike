@@ -327,7 +327,7 @@ const AL_LAG = 0.03;
 const AL_RECOV_A = 0.62;
 const AL_HIT_A = 0.32;
 const AL_HIT_B = 0.56;
-const AL_LUNGE = 0.55;
+const AL_LUNGE = 0.80;
 const AL_CHAIN = 0.80;
 const AH_WIND_B = 0.34;
 const AH_STRIKE_A = 0.38;
@@ -336,7 +336,7 @@ const AH_LAG = 0.025;
 const AH_RECOV_A = 0.72;
 const AH_HIT_A = 0.40;
 const AH_HIT_B = 0.58;
-const AH_LUNGE = 1.05;
+const AH_LUNGE = 1.35;
 const AH_CHAIN = 0.86;
 const ATK_RETRACK = 9.0;
 const AL_BODY_YAW = 26.0;
@@ -1065,15 +1065,15 @@ const MOVES = [3][2]Move{
     },
     .{
         // 0.413 s, live 0.083; 0.67 m of reach.
-        .{ .stroke = .flick, .t = .{ .dur = 0.53, .hitA = 0.30, .hitB = 0.50, .travelA = 0.26, .travelB = 0.46, .recovA = 0.60, .chain = 0.74, .lunge = 0.35 } },
-        // 0.671 s; the step is 1.35 m.
-        .{ .stroke = .thrust, .t = .{ .dur = 0.86, .hitA = 0.40, .hitB = 0.60, .travelA = 0.34, .travelB = 0.58, .recovA = 0.66, .chain = 0.82, .lunge = 1.35 } },
+        .{ .stroke = .flick, .t = .{ .dur = 0.53, .hitA = 0.30, .hitB = 0.50, .travelA = 0.26, .travelB = 0.46, .recovA = 0.60, .chain = 0.74, .lunge = 0.50 } },
+        // 0.671 s; the step is 1.55 m.
+        .{ .stroke = .thrust, .t = .{ .dur = 0.86, .hitA = 0.40, .hitB = 0.60, .travelA = 0.34, .travelB = 0.58, .recovA = 0.66, .chain = 0.82, .lunge = 1.55 } },
     },
     .{
         // 0.884 s, live 0.283 — the longest live window in the kit.
-        .{ .stroke = .sweep, .t = .{ .dur = 0.66, .hitA = 0.34, .hitB = 0.66, .travelA = 0.30, .travelB = 0.62, .recovA = 0.70, .chain = 0.86, .lunge = 0.60 } },
+        .{ .stroke = .sweep, .t = .{ .dur = 0.66, .hitA = 0.34, .hitB = 0.66, .travelA = 0.30, .travelB = 0.62, .recovA = 0.70, .chain = 0.86, .lunge = 0.85 } },
         // 1.447 s; the blow arrives at 0.695 of it, after the `.hold`.
-        .{ .stroke = .smash, .t = .{ .dur = 1.08, .hitA = 0.48, .hitB = 0.66, .travelA = 0.44, .travelB = 0.64, .recovA = 0.72, .chain = 0.90, .lunge = 0.85 } },
+        .{ .stroke = .smash, .t = .{ .dur = 1.08, .hitA = 0.48, .hitB = 0.66, .travelA = 0.44, .travelB = 0.64, .recovA = 0.72, .chain = 0.90, .lunge = 1.10 } },
     },
 };
 
@@ -4843,6 +4843,15 @@ pub fn gripShift(targets: [2]rl.Vector3, shoulders: [2]rl.Vector3, near: f32, re
 
 /// TWO-BONE ARM SOLVE, in the world. The bones' lengths are the rest chain's, so nothing stretches.
 pub fn armTo(wx: anytype, rest: anytype, sh: usize, el: usize, wr: usize, target: rl.Vector3, elbowHint: rl.Vector3, handDown: rl.Vector3, palm: rl.Vector3) void {
+    chainTo(wx, rest, sh, el, wr, target, elbowHint, handDown, palm, 1.0);
+}
+
+/// The same solve for a LEG. The scaffold's knee folds toward the thigh's -Z (`rx(POSITIVE)`, the elbow's mirror), so the bend normal is the arm's negated; `armTo` on a leg turned the shin's frame about its own axis.
+pub fn legTo(wx: anytype, rest: anytype, hip: usize, knee: usize, ankle: usize, target: rl.Vector3, kneeHint: rl.Vector3, footDown: rl.Vector3, toe: rl.Vector3) void {
+    chainTo(wx, rest, hip, knee, ankle, target, kneeHint, footDown, toe, -1.0);
+}
+
+fn chainTo(wx: anytype, rest: anytype, sh: usize, el: usize, wr: usize, target: rl.Vector3, elbowHint: rl.Vector3, handDown: rl.Vector3, palm: rl.Vector3, fold: f32) void {
     const parent: usize = @intCast(PARENT[sh]);
     const shoulder = rl.math.vector3Transform(mathx.subV(rest[sh], rest[parent]), wx[parent]);
     const root = wx[parent];
@@ -4855,8 +4864,8 @@ pub fn armTo(wx: anytype, rest: anytype, sh: usize, el: usize, wr: usize, target
     const wrist = solved.end;
     const a = mathx.normV(mathx.subV(elbow, shoulder));
     const f = mathx.normV(mathx.subV(wrist, elbow));
-    // Each bone hangs down its own -Y; its X is the bend normal, so the forearm folds in the plane the elbow chose.
-    const bend = mathx.normV(mathx.crossV(a, f));
+    // Each bone hangs down its own -Y and folds toward its own +Z on an arm (the scaffold's `rx(NEGATIVE)`), -Z on a leg; built the other way every solved arm read as bent behind the back.
+    const bend = mathx.normV(mathx.scaleV(mathx.crossV(f, a), fold));
     const upperY = mathx.scaleV(a, -1.0);
     wx[sh] = mul3(size, axesM(bend, upperY, mathx.crossV(bend, upperY)), tr(shoulder.x, shoulder.y, shoulder.z));
     const foreY = mathx.scaleV(f, -1.0);

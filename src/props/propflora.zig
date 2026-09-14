@@ -627,6 +627,71 @@ pub fn wildflowersMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
+/// A CURTAIN OF VINES ACROSS A MOUTH — nothing is built at the top, it hangs off whatever the map stands it under. `VINE_W` wide, `VINE_H` tall, local +Z the open side. Every strand is one CURL applied segment by segment (a slow lean off plumb and a slower turn round it, so it sags into an arc rather than standing as a pole), tapering to a whip, ragged at the hem, leaves alternating down it and thinning toward the ground, the odd one gone gold. A blade cuts it (`props.Breach.vines`).
+pub const VINE_W: f32 = 3.0;
+pub const VINE_H: f32 = 3.2;
+pub fn vineCurtainMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0xA1E5);
+    const N_STRANDS: i32 = 26;
+    const SEGS: i32 = 8;
+    var s: i32 = 0;
+    while (s < N_STRANDS) : (s += 1) {
+        const fs = @as(f32, @floatFromInt(s));
+        const x0 = -VINE_W * 0.5 + (fs + 0.5) / @as(f32, N_STRANDS) * VINE_W + rng.signed() * 0.07;
+        const z0 = rng.signed() * 0.10;
+        const top = VINE_H + rng.range(0.0, 0.25);
+        const drop = VINE_H * (if (rng.float() < 0.72) rng.range(0.88, 1.06) else rng.range(0.40, 0.78));
+        const segLen = drop / @as(f32, SEGS);
+        var theta = rng.range(0.03, 0.16);
+        var phi = rng.angle();
+        const curlTheta = rng.range(-0.02, 0.07);
+        const curlPhi = rng.signed() * 0.55;
+        const r0 = rng.range(0.014, 0.030);
+        var from = v3(x0, top, z0);
+        var i: i32 = 0;
+        while (i < SEGS) : (i += 1) {
+            const t0 = @as(f32, @floatFromInt(i)) / @as(f32, SEGS);
+            const t1 = @as(f32, @floatFromInt(i + 1)) / @as(f32, SEGS);
+            const to = v3(from.x + mathx.sinf(theta) * mathx.cosf(phi) * segLen, from.y - mathx.cosf(theta) * segLen, from.z + mathx.sinf(theta) * mathx.sinf(phi) * segLen);
+            b.setMat(.bark);
+            b.addCapsule(from, to, r0 * (1.0 - 0.6 * t0), r0 * (1.0 - 0.6 * t1), 4, if (rng.float() < 0.3) BARK else BARK_DK);
+            const leafy = t1 < 0.8 or rng.float() < 0.4;
+            if (leafy) {
+                const nl: i32 = if (t1 < 0.45) 2 else 1;
+                var l: i32 = 0;
+                while (l < nl) : (l += 1) {
+                    const u = rng.range(0.15, 0.85);
+                    const c = mathx.lerpV(from, to, u);
+                    const side: f32 = if (@mod(i + l, 2) == 0) 1.0 else -1.0;
+                    const lr = rng.range(0.040, 0.085);
+                    const gold = rng.float() < 0.07;
+                    b.setMat(.plant);
+                    b.addBlob(v3(c.x + side * lr * 0.9 + rng.signed() * 0.02, c.y - lr * 0.35, c.z + rng.signed() * lr * 0.6), v3(lr, lr * 0.28, lr * 0.8), 3, 5, if (gold) LEAF_GOLD else if (rng.float() < 0.35) LEAF_DK else if (rng.float() < 0.5) IVY_GRN else LEAF);
+                }
+            }
+            theta = mathx.clampF(theta + curlTheta + rng.signed() * 0.02, 0.0, 0.55);
+            phi += curlPhi + rng.signed() * 0.15;
+            from = to;
+        }
+    }
+    // A few tendrils looped between neighbours near the top, sagging between their ends, so the curtain reads as one growth and not a row.
+    var c: i32 = 0;
+    while (c < 7) : (c += 1) {
+        const xa = rng.range(-VINE_W * 0.5 + 0.2, VINE_W * 0.5 - 0.6);
+        const xb = xa + rng.range(0.25, 0.65);
+        const ya = VINE_H - rng.range(0.15, 1.3);
+        const yb = ya - rng.range(0.05, 0.35);
+        const sag = rng.range(0.12, 0.30);
+        const za = rng.signed() * 0.08;
+        const mid = v3((xa + xb) * 0.5, @min(ya, yb) - sag, za + rng.signed() * 0.06);
+        b.setMat(.bark);
+        b.addCapsule(v3(xa, ya, za), mid, 0.011, 0.009, 4, BARK_DK);
+        b.addCapsule(mid, v3(xb, yb, za), 0.009, 0.011, 4, BARK_DK);
+    }
+    return b.toModel(shader);
+}
+
 pub fn ivyMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(3015);

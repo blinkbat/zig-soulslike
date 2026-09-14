@@ -18,8 +18,8 @@ pub const Solid = struct {
     /// The gate's slot in `env.wardProps` PLUS ONE, so 0 is an ordinary solid. A wall to every BODY but the hero's
     /// own side, in both directions, and to every LOOK without exception; only `env.resolveHeroSide` opens one.
     ward: u8 = 0,
-    /// An illusory wall's slot in `env.illusionProps` PLUS ONE; `env.eachSolid` drops it the frame the wall is struck.
-    illusion: u8 = 0,
+    /// A breach's slot in `env.breachProps` PLUS ONE (an illusory wall, a cracked wall, a vine curtain); `env.eachSolid` drops it the frame it is opened.
+    breach: u8 = 0,
     /// SQUARE ENDS: the solid is the capsule's bounding rectangle in the segment's frame — `r` across, the segment plus `r` each way along.
     flat: bool = false,
     /// MASONRY — `env.masonry` (`Info.solid`, less the one veil that thins) and the cliff stamps. The boom shortens

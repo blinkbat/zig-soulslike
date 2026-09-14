@@ -842,6 +842,20 @@ pub fn markOn(bone: rl.Matrix, at: rl.Vector3) rl.Vector3 {
     return rl.math.vector3Transform(at, bone);
 }
 
+/// AN ELBOW BENDS ONE WAY, read off the POSED bones rather than the constants: the forearm's lean out of the upper
+/// arm's own line toward that frame's +Z, which is the body's front. +1 is folded fully forward, 0 straight, and
+/// anything negative is an arm bent BEHIND the back — the failure the sign law exists for.
+pub fn elbowForward(xf: []const rl.Matrix, sh: usize, el: usize, wr: usize) f32 {
+    const s = markOn(xf[sh], mathx.zero3);
+    const e = markOn(xf[el], mathx.zero3);
+    const w = markOn(xf[wr], mathx.zero3);
+    const front = mathx.normVOr(mathx.subV(markOn(xf[sh], v3(0, 0, 1)), s), v3(0, 0, 1));
+    const fore = mathx.subV(w, e);
+    const len = mathx.lenV(fore);
+    if (len < 1e-5) return 0;
+    return mathx.dotV(fore, front) / len;
+}
+
 pub fn swingCurve(u: f32) f32 {
     return std.math.pow(f32, mathx.smoothstep(0, 1, u), 1.35);
 }
@@ -2494,6 +2508,26 @@ pub fn postAmble(
     moveYaw.* = w;
     self.facing = mathx.approachAngle(self.facing, w, turn * dt);
     return true;
+}
+
+/// A STROKE THAT CANNOT FOLLOW YOU CARRIES THE BODY AT YOU. Across the STRIKE the body drives `dist` world metres
+/// down its facing on the knight's decelerating ease, so the kit arrives with the mass behind it instead of at arm's
+/// length from where the wind ended. Never during the wind: that is when the body is still coming round onto him, and
+/// a drive taken off a facing still turning lands short of the band it promised. `now`/`was` are the stroke's own
+/// clock this frame and last, so a creature whose wind and strike are two states hands over one continuous clock.
+pub fn strokeStep(self: anytype, bounds: f32, dist: f32, now: f32, was: f32, windDur: f32, strikeDur: f32) f32 {
+    if (dist <= 0) return 0;
+    const moved = dist * (stepEase(mathx.clampF((now - windDur) / strikeDur, 0, 1)) - stepEase(mathx.clampF((was - windDur) / strikeDur, 0, 1)));
+    if (moved <= 0) return 0;
+    mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), moved, bounds);
+    return moved;
+}
+fn stepEase(k: f32) f32 {
+    return 1.0 - (1.0 - k) * (1.0 - k);
+}
+/// The share of a `strokeStep` already covered when the blow bills at `impactK` of the strike — what a choose band may be widened by, since the rest of the drive lands after the kit has crossed him.
+pub fn stepLanded(impactK: f32) f32 {
+    return stepEase(impactK);
 }
 
 pub fn stride(self: anytype, dt: f32, bounds: f32, movedDist: *f32, moveSpeed: *f32, moveYaw: *?f32) void {

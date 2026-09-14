@@ -323,6 +323,8 @@ const THRUST = Attack{
     .bearing = 54.0,
     .track = 4.40,
     .step = 0.16,
+    // The point is in him at the impact frame; the drive's ease has landed 1 - (1 - 0.55)^2 = 0.80 of the step by then.
+    .stepLands = 0.78,
     .reachIn = 0.90,
 };
 
@@ -3258,7 +3260,7 @@ pub const Knight = struct {
                 if (m < 0.02 and self.air <= 0) {
                     const local = v3(self.rest[leg[0]].x * fs, (sole.drop + 0.002) * fs, 0);
                     ankle = mathx.addV(self.pos, rl.math.vector3Transform(local, ry(facingDeg)));
-                    heromod.armTo(&wx, self.rest, leg[0], leg[1], leg[2], ankle, forward, v3(0, -1, 0), forward);
+                    heromod.legTo(&wx, self.rest, leg[0], leg[1], leg[2], ankle, forward, v3(0, -1, 0), forward);
                 } else {
                     var bottom: f32 = 1e9;
                     for ([_]f32{ -sole.halfW, sole.halfW }) |x| {
@@ -3266,7 +3268,7 @@ pub const Knight = struct {
                     }
                     if (bottom < self.pos.y) {
                         ankle.y += self.pos.y - bottom + 0.002 * fs;
-                        heromod.armTo(&wx, self.rest, leg[0], leg[1], leg[2], ankle, forward,
+                        heromod.legTo(&wx, self.rest, leg[0], leg[1], leg[2], ankle, forward,
                             mathx.normV(v3(-foot.m4, -foot.m5, -foot.m6)), mathx.normV(v3(foot.m8, foot.m9, foot.m10)));
                     }
                 }

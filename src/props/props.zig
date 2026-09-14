@@ -197,6 +197,8 @@ pub const Kind = enum(u8) {
     stairflight,
     illusory,
     illusory_wall,
+    cracked_wall,
+    vines,
     emberrock,
     emberrocks,
     burningrock,
@@ -465,6 +467,8 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .stairflight => "Stair Flight",
         .illusory => "Illusory Cliff",
         .illusory_wall => "Illusory Wall",
+        .cracked_wall => "Cracked Wall",
+        .vines => "Vine Curtain",
         .emberrock => "Ember Boulder",
         .emberrocks => "Ember Rock Cluster",
         .burningrock => "Burning Rock",
@@ -519,6 +523,7 @@ pub fn group(k: Kind) Group {
         .arch,
         .wall,
         .illusory_wall,
+        .cracked_wall,
         .statue,
         .monolith,
         .paving,
@@ -568,7 +573,7 @@ pub fn group(k: Kind) Group {
         .water => .water,
         .tuft, .patch, .grasstall, .clover, .moss => .grass,
         .flowers, .wildflowers, .foxglove, .thistle, .glow => .flowers,
-        .shrub, .bush, .bramble, .thicket, .gorse, .heather, .nettles, .ivy => .brush,
+        .shrub, .bush, .bramble, .thicket, .gorse, .heather, .nettles, .ivy, .vines => .brush,
         .fern, .bracken => .ferns,
         .reeds, .cattails, .lilypads => .wetland,
         .mushrooms, .capgiant, .capgiant2, .capgiant3, .capcolossal, .captower, .hyphaarch, .glowcluster, .lampstalk, .fleshfold, .sporevent, .glowvein, .capcluster, .bracket, .glowcap, .sporepod, .tubecoral, .tubespire, .fancoral, .antlercoral, .floatsac, .floatshoal, .hangcurtain, .puffballs, .deadfingers, .crustfungus, .shelfstack, .brainknot, .pipeclutch, .coralcrust => .fungus,
@@ -626,6 +631,8 @@ pub fn biome(k: Kind) Biome {
         .stairflight,
         .illusory,
         .illusory_wall,
+        .cracked_wall,
+        .vines,
         .torch,
         .brazier,
         .campfire,
@@ -921,6 +928,16 @@ pub const LightSpec = struct {
     flicker: f32 = 0.18,
 };
 
+/// WHAT KIND OF NOT-A-WALL, which is to say WHAT OPENS IT (`env.opens`). One bookkeeping table in `env` serves all three; only the key, the fade and the burst differ.
+pub const Breach = enum {
+    /// Steel, a roll or a planted arrow — anything of his that touches it.
+    illusion,
+    /// Masonry a BURST brings down: a thrown candle or crock landing on it. Steel scratches it.
+    cracked,
+    /// A curtain a BLADE cuts, and nothing else does.
+    vines,
+};
+
 pub const Info = struct {
     kind: Kind, // self-check: must equal its own row index (see the comptime block below)
     build: *const fn (rl.Shader) rl.Model,
@@ -936,8 +953,8 @@ pub const Info = struct {
     occl: []const Blocker = &.{},
     casts: bool = true,
     ward: bool = false,
-    /// A wall that is not there: solid and sight-blocking until the hero's blade, roll or planted arrow touches it, then gone (`env.dispelIllusion`).
-    illusion: bool = false,
+    /// A barrier that is not really a wall: solid and sight-blocking until the hero opens it with the one KEY its kind answers, then gone (`env.openBreach`).
+    breach: ?Breach = null,
     parts: []const Part = &.{},
     /// **METRES OF LOCAL HEIGHT ONE COPY OF THE MESH SPANS**, or 0 for everything else — one mesh, one draw.
     stack: f32 = 0,
@@ -1086,6 +1103,7 @@ const WALL_BOUND: f32 = 5.0;
 const WALL_TOP: f32 = 3.6;
 const WALL_VIEW: f32 = 220;
 const wallParts = [_]Part{.{ .ax = -3.55, .az = -0.01, .bx = 3.25, .bz = -0.01, .r = 0.37, .h = 3.0, .flat = true }};
+const vineParts = [_]Part{.{ .ax = -flora.VINE_W * 0.5 + 0.05, .az = 0, .bx = flora.VINE_W * 0.5 - 0.05, .bz = 0, .r = 0.24, .h = flora.VINE_H - 0.1, .flat = true }};
 /// A coarse pair that keeps the rows' comptime checks honest; `partsOf` hands out the set fitted off the rock itself.
 const cliffParts = [_]Part{
     .{ .ax = -5.4, .bx = 5.4, .r = 2.9, .h = 15.5 },
@@ -1661,7 +1679,7 @@ pub const INFO = [NK]Info{
 
     .{ .kind = .pickup, .build = fx.pickupMesh, .bound = 1.9, .top = fx.PICKUP_TOP, .view = 190, .interact = true, .casts = false, .light = .{ .y = 0.30, .col = v3(0.86, 0.82, 0.58), .radius = 5.4, .flicker = 0.03 } },
     .{ .kind = .foggate, .build = fx.fogGateStoneMesh, .veil = fx.fogGateMesh, .bound = 5.4, .top = fx.FOG_H, .view = 320, .solid = true, .interact = true, .casts = false, .ward = true, .parts = &.{.{ .ax = -fx.FOG_W * 0.5, .bx = fx.FOG_W * 0.5, .r = fx.FOG_WARD_R, .h = fx.FOG_H }} },
-    .{ .kind = .ladder, .build = build.ladderMesh, .bound = build.LADDER_SEG + 0.2, .top = build.LADDER_SEG, .view = 210, .stack = build.LADDER_SEG, .climb = true, .surf = .wood },
+    .{ .kind = .ladder, .build = build.ladderMesh, .bound = build.LADDER_SEG + 0.2, .top = build.LADDER_SEG, .view = 210, .stack = build.LADDER_SEG, .climb = true, .interact = true, .surf = .wood },
     .{ .kind = .anvil, .build = forge.anvilMesh, .bound = forge.ANVIL_R + 0.3, .top = forge.ANVIL_TOP, .view = 190, .parts = circleParts(forge.STUMP_R + 0.01, forge.ANVIL_TOP), .surf = .stone },
     .{ .kind = .forge, .build = forge.forgeMesh, .bound = forge.FORGE_R + 1.3, .top = forge.FORGE_TOP, .view = 300, .solid = true, .parts = &.{
         .{ .ax = -0.50, .az = -0.20, .bx = 0.45, .bz = -0.20, .r = 0.48, .h = 1.10, .flat = true },
@@ -1669,9 +1687,11 @@ pub const INFO = [NK]Info{
     .{ .kind = .quenchtrough, .build = forge.quenchMesh, .bound = forge.QUENCH_R + 0.2, .top = forge.QUENCH_TOP, .view = 170, .parts = &.{.{ .ax = -0.62, .bx = 0.62, .r = 0.30, .h = forge.QUENCH_TOP }}, .surf = .wood },
     .{ .kind = .toolrack, .build = forge.toolRackMesh, .bound = forge.RACK_TOP + 0.6, .top = forge.RACK_TOP, .view = 220, .parts = &.{.{ .ax = -forge.RACK_HW, .bx = forge.RACK_HW, .r = 0.22, .h = forge.RACK_TOP * 0.9 }}, .surf = .wood },
     .{ .kind = .stairflight, .build = build.stairMesh, .bound = build.STAIR_RUN + 0.4, .top = build.STAIR_SEG, .view = 240, .stack = build.STAIR_SEG, .flight = .{ .run = build.STAIR_RUN, .halfW = build.STAIR_HALF, .treads = build.STAIR_TREADS }, .surf = .stone },
-    .{ .kind = .illusory, .build = rock.illusoryMesh, .bound = CLIFF2_BOUND, .top = CLIFF2_TOP, .view = FAR, .interact = true, .solid = true, .illusion = true, .parts = &cliffParts },
+    .{ .kind = .illusory, .build = rock.illusoryMesh, .bound = CLIFF2_BOUND, .top = CLIFF2_TOP, .view = FAR, .interact = true, .solid = true, .breach = .illusion, .parts = &cliffParts },
     // The masonry twin: `ruins.wallMesh`'s own courses and the same collider, so it reads as one more length of the wall it stands in.
-    .{ .kind = .illusory_wall, .build = ruins.illusoryWallMesh, .bound = WALL_BOUND, .top = WALL_TOP, .view = WALL_VIEW, .interact = true, .solid = true, .illusion = true, .parts = &wallParts },
+    .{ .kind = .illusory_wall, .build = ruins.illusoryWallMesh, .bound = WALL_BOUND, .top = WALL_TOP, .view = WALL_VIEW, .interact = true, .solid = true, .breach = .illusion, .parts = &wallParts },
+    .{ .kind = .cracked_wall, .build = ruins.crackedWallMesh, .bound = WALL_BOUND, .top = WALL_TOP, .view = WALL_VIEW, .interact = true, .solid = true, .breach = .cracked, .parts = &wallParts },
+    .{ .kind = .vines, .build = flora.vineCurtainMesh, .bound = flora.VINE_H + 0.2, .top = flora.VINE_H, .view = WALL_VIEW, .interact = true, .solid = true, .breach = .vines, .parts = &vineParts },
     .{ .kind = .emberrock, .build = ember.emberRockMesh, .bound = ember.ROCK_R * 1.9, .top = ember.ROCK_TOP + 0.15, .view = 240, .parts = circleParts(ember.ROCK_R * 0.92, ember.ROCK_TOP * 0.90), .surf = .stone },
     .{ .kind = .emberrocks, .build = ember.emberRocksMesh, .bound = 2.3, .top = 0.95, .view = 170, .surf = .stone },
     .{ .kind = .burningrock, .build = ember.burningRockMesh, .bound = 2.7, .top = ember.BURN_TOP, .view = 260, .parts = circleParts(0.95, 1.30), .light = .{ .y = ember.BURN_LIGHT_Y, .col = v3(1.05, 0.50, 0.16), .radius = 9.0, .flicker = 0.18 }, .surf = .stone },
@@ -1763,7 +1783,7 @@ comptime {
         if (row.veil != null or row.stow != null) std.debug.assert(row.solid);
         std.debug.assert(!(row.solid and row.occl.len > 0));
         if (row.ward) std.debug.assert(row.parts.len > 0);
-        if (row.illusion) std.debug.assert(row.solid and row.parts.len > 0);
+        if (row.breach != null) std.debug.assert(row.solid and row.parts.len > 0);
         for (row.occl) |bl| {
             std.debug.assert(bl.y1 > bl.y0);
             std.debug.assert(bl.y1 <= row.top + 0.001);

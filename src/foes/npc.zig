@@ -1824,3 +1824,32 @@ test "A BECKON WAVES IN FRONT OF THE BODY — the arm rises FORWARD and the elbo
     try std.testing.expect(pointSh > 0);
     std.debug.print("\n  folk arm: rest {d:.0}/{d:.0}, beckon {d:.0}/{d:.0}, point {d:.0} (shoulder/elbow, forward)\n", .{ FREE_SH, FREE_EL, beckonSh, beckonEl, pointSh });
 }
+
+test "AN ELBOW BENDS ONE WAY ON EVERY FOLK — the walk, the beckon, the point, the bow and the hammer, read off the posed bones" {
+    const dt: f32 = 1.0 / 60.0;
+    const HYPER: f32 = 0.10;
+    var backwards: usize = 0;
+    std.debug.print("\n", .{});
+    inline for (@typeInfo(wf.NpcKind).@"enum".fields) |kf| {
+        const kind: wf.NpcKind = @enumFromInt(kf.value);
+        var p = Wanderer.spawnAs(kind, 0, mathx.zero3, 0, 1.0, 0.31, 6.0);
+        var worst = [2]f32{ 1, 1 };
+        var most = [2]f32{ -1, -1 };
+        var t: f32 = 0;
+        while (t < 16.0) : (t += dt) {
+            const hero = if (t < 7.0) v3(0, 0, 40) else v3(0, 0, 3.0);
+            if (t >= 7.0 and t - dt < 7.0) p.greet();
+            if (t >= 10.0 and t - dt < 10.0) p.begin(.point);
+            if (t >= 12.0 and t - dt < 12.0) p.farewell();
+            p.update(dt, hero, 400.0);
+            const l = foe.elbowForward(&p.xf, SHL, ELL, WRL);
+            const r = foe.elbowForward(&p.xf, SHR, ELR, WRR);
+            worst = .{ @min(worst[0], l), @min(worst[1], r) };
+            most = .{ @max(most[0], l), @max(most[1], r) };
+        }
+        const bad = worst[0] < -HYPER or worst[1] < -HYPER;
+        if (bad) backwards += 1;
+        std.debug.print("  {s: <9} elbows L {d: >5.2}..{d: >4.2}  R {d: >5.2}..{d: >4.2}{s}\n", .{ @tagName(kind), worst[0], most[0], worst[1], most[1], if (bad) "  BACKWARDS" else "" });
+    }
+    try std.testing.expectEqual(@as(usize, 0), backwards);
+}

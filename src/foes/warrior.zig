@@ -297,7 +297,7 @@ const MACE_HIT_SWEEP = 14.0;
 const MACE_HIT_LEAN = 30.0;
 const MACE_END_ATT = 45.0;
 const MACE_WIND_ATT = MACE_WIND_SH + MACE_WIND_TILT + 360.0;
-const MACE_STEP = 0.44; // metres of ground the swing carries him forward, pre-scale
+const MACE_STEP = 0.66; // metres of ground the swing carries him forward, pre-scale
 
 const GS_WIND_SH = -146.0;
 const GS_WIND_EL = -50.0;
@@ -330,7 +330,7 @@ const SWEEP_HIT_TWIST = 48.0;
 const SWEEP_HIT_LEAN = 15.0;
 const SWEEP_HIT_SWEEP = 84.0;
 const SWEEP_END_ATT = 74.0;
-const SWEEP_STEP = 0.52; // metres the stroke carries him forward, pre-scale
+const SWEEP_STEP = 0.78; // metres the stroke carries him forward, pre-scale
 const SWEEP_WIND_TILT = SWEEP_WIND_ATT - SWEEP_WIND_SH + SWEEP_WIND_EL;
 const SWEEP_END_TILT = SWEEP_END_ATT - SWEEP_HIT_SH + SWEEP_HIT_EL;
 
@@ -1530,8 +1530,8 @@ pub const Warrior = struct {
             const forward = mathx.headingDir(self.facing);
             const lead = foe.markOn(body, v3(rest[HIPL].x, rest[ANKL].y, 0.30 * H * kn));
             const trail = foe.markOn(body, v3(rest[HIPR].x, rest[ANKR].y, -0.30 * H * kn));
-            heromod.armTo(wx, rest, HIPL, KNEEL, ANKL, lead, forward, v3(0, -1, 0), forward);
-            heromod.armTo(wx, rest, HIPR, KNEER, ANKR, trail, v3(0, -1, 0), v3(0, -1, 0), forward);
+            heromod.legTo(wx, rest, HIPL, KNEEL, ANKL, lead, forward, v3(0, -1, 0), forward);
+            heromod.legTo(wx, rest, HIPR, KNEER, ANKR, trail, v3(0, -1, 0), v3(0, -1, 0), forward);
         } else if (self.leaping()) {
             const u = mathx.clampF(self.t / self.move().swingDur, 0, 1);
             const air = mathx.sinf(u * std.math.pi);
@@ -1541,8 +1541,8 @@ pub const Warrior = struct {
             const lift = self.hop / fs + 0.15 * H * air;
             const lead = foe.markOn(body, v3(rest[HIPL].x, rest[ANKL].y + lift, 0.22 * H * air));
             const trail = foe.markOn(body, v3(rest[HIPR].x, rest[ANKR].y + lift, -0.20 * H * air));
-            heromod.armTo(wx, rest, HIPL, KNEEL, ANKL, lead, forward, v3(0, -1, 0), forward);
-            heromod.armTo(wx, rest, HIPR, KNEER, ANKR, trail, forward, v3(0, -1, 0), forward);
+            heromod.legTo(wx, rest, HIPL, KNEEL, ANKL, lead, forward, v3(0, -1, 0), forward);
+            heromod.legTo(wx, rest, HIPR, KNEER, ANKR, trail, forward, v3(0, -1, 0), forward);
         }
 
         const armStun = -66.0 * stun;

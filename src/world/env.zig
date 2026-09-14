@@ -53,9 +53,24 @@ const MAX_PROPS = 24576;
 /// PROPS AND CLIFF STAMPS SHARE THIS. `MAX_CLIFF_SOLIDS` of face rock is appended after the props, so the cap has to clear both or a heavily cut map panics in `buildSolids`.
 const MAX_SOLIDS = 16384;
 pub const MAX_WARDS = 64;
-pub const MAX_ILLUSIONS = 32;
-/// Seconds an illusory wall takes to thin to nothing once struck; it stops being a wall on the first frame.
-pub const ILLUSION_FADE: f32 = 0.7;
+pub const MAX_BREACHES = 32;
+/// Seconds a breach takes to thin to nothing once opened; it stops being a wall on the first frame.
+pub fn breachFade(b: props.Breach) f32 {
+    return switch (b) {
+        .illusion => 0.7,
+        .cracked => 0.45,
+        .vines => 0.6,
+    };
+}
+/// WHAT OPENS A BREACH — all of them the hero's; a foe opens nothing. Which key a kind answers is `props.Breach`'s whole definition.
+pub const Key = enum { blade, roll, arrow, burst };
+pub fn opens(b: props.Breach, key: Key) bool {
+    return switch (b) {
+        .illusion => key != .burst,
+        .cracked => key == .burst,
+        .vines => key == .blade,
+    };
+}
 /// Metres past a fog gate a crossing puts him down — clear of the sheet AND of the prompt's own reach; `game.zig` asserts the second half.
 pub const WARD_CLEAR: f32 = 1.30;
 const MAX_SOLID_REFS = 4 * MAX_SOLIDS;
@@ -280,8 +295,8 @@ pub const Prop = struct {
     op: u16 = 0,
     /// Its slot in `wardProps` PLUS ONE, 0 for everything else — the same number `collision.Solid.ward` carries.
     ward: u8 = 0,
-    /// Its slot in `illusionProps` PLUS ONE, 0 for everything else.
-    illusion: u8 = 0,
+    /// Its slot in `breachProps` PLUS ONE, 0 for everything else.
+    breach: u8 = 0,
     fade: f32 = 1,
     fadeTo: f32 = 1,
     gone: bool = false,
@@ -576,13 +591,13 @@ pub const Env = struct {
     wardShut: [MAX_WARDS]bool = [_]bool{false} ** MAX_WARDS,
     /// 1 while it stands, running to 0 once the fight it sealed is over. At 0 the gate is GONE, and `eachSolid` is where that is enforced.
     wardLife: [MAX_WARDS]f32 = [_]f32{1} ** MAX_WARDS,
-    /// THE ILLUSORY WALLS, in the order `buildSolids` met them; `collision.Solid.illusion` is a slot here PLUS ONE.
-    illusionProps: [MAX_ILLUSIONS]u32 = undefined,
-    illusionSolid0: [MAX_ILLUSIONS]u32 = undefined,
-    illusionSolidN: [MAX_ILLUSIONS]u8 = [_]u8{0} ** MAX_ILLUSIONS,
-    nillusions: usize = 0,
+    /// THE BREACHES — illusory walls, cracked walls, vine curtains — in the order `buildSolids` met them; `collision.Solid.breach` is a slot here PLUS ONE.
+    breachProps: [MAX_BREACHES]u32 = undefined,
+    breachSolid0: [MAX_BREACHES]u32 = undefined,
+    breachSolidN: [MAX_BREACHES]u8 = [_]u8{0} ** MAX_BREACHES,
+    nbreaches: usize = 0,
     /// 1 while it stands; anything under 1 is no longer a wall, and at 0 it is not drawn.
-    illusionLife: [MAX_ILLUSIONS]f32 = [_]f32{1} ** MAX_ILLUSIONS,
+    breachLife: [MAX_BREACHES]f32 = [_]f32{1} ** MAX_BREACHES,
     stx: Index = .{},
     flx: Index = .{},
     occl: [OCCL_MAX]u32 = undefined,
@@ -1334,7 +1349,7 @@ pub const Env = struct {
 
     /// Clamped to the CELL range, not the point range: `caseAt` names a cell by its low corner, so `HEIGHT_N - 1` is a
     /// phantom column and a point in the map's last cell would read `CLIFF_NONE` off it.
-    fn caseAtWorld(self: *const Env, x: f32, z: f32) u8 {
+    pub fn caseAtWorld(self: *const Env, x: f32, z: f32) u8 {
         const step = self.lattice();
         const last: f32 = @floatFromInt(wf.HEIGHT_N - 2);
         const ix: usize = @intFromFloat(mathx.clampF(@floor((x + self.heightHalf) / step), 0, last));
@@ -1553,9 +1568,9 @@ pub const Env = struct {
         self.lightsCapped = 0;
         self.nsolids = 0;
         self.nwards = 0;
-        self.nillusions = 0;
+        self.nbreaches = 0;
         self.openWards();
-        self.restoreIllusions();
+        self.restoreBreaches();
         self.nlights = 0;
         self.npools = 0;
         self.noccl = 0;
@@ -1662,7 +1677,7 @@ pub const Env = struct {
         }
         buildSolids(self);
         self.openWards();
-        self.restoreIllusions();
+        self.restoreBreaches();
         indexProps(self);
     }
 
@@ -1766,7 +1781,7 @@ pub const Env = struct {
         while (k < self.sgrid_start[c + 1]) : (k += 1) {
             const sol = self.solid_buf[self.sgrid_items[k]];
             if (sol.ward > 0 and self.wardLife[sol.ward - 1] <= 0) continue;
-            if (sol.illusion > 0 and self.illusionLife[sol.illusion - 1] < 1) continue;
+            if (sol.breach > 0 and self.breachLife[sol.breach - 1] < 1) continue;
             if (!visit(ctx, sol)) return false;
         }
         return true;
@@ -1975,20 +1990,24 @@ pub const Env = struct {
         }
     }
 
-    pub fn illusionSolids(self: *const Env, i: u8) []const collision.Solid {
-        if (i >= self.nillusions) return &.{};
-        const a = self.illusionSolid0[i];
-        return self.solid_buf[a .. a + self.illusionSolidN[i]];
+    pub fn breachSolids(self: *const Env, i: u8) []const collision.Solid {
+        if (i >= self.nbreaches) return &.{};
+        const a = self.breachSolid0[i];
+        return self.solid_buf[a .. a + self.breachSolidN[i]];
     }
 
-    pub fn illusionStands(self: *const Env, i: u8) bool {
-        return i < self.nillusions and self.illusionLife[i] >= 1;
+    pub fn breachStands(self: *const Env, i: u8) bool {
+        return i < self.nbreaches and self.breachLife[i] >= 1;
     }
 
-    pub fn illusionStruck(self: *const Env, a: rl.Vector3, b: rl.Vector3, r: f32) ?u8 {
-        for (0..self.nillusions) |i| {
-            if (self.illusionLife[i] < 1) continue;
-            for (self.illusionSolids(@intCast(i))) |s| {
+    pub fn breachKind(self: *const Env, i: u8) props.Breach {
+        return props.info(self.props[self.breachProps[i]].kind).breach.?;
+    }
+
+    pub fn breachStruck(self: *const Env, a: rl.Vector3, b: rl.Vector3, r: f32, key: Key) ?u8 {
+        for (0..self.nbreaches) |i| {
+            if (self.breachLife[i] < 1 or !opens(self.breachKind(@intCast(i)), key)) continue;
+            for (self.breachSolids(@intCast(i))) |s| {
                 var wide = s;
                 wide.r += r;
                 if (collision.blocksSight(a, b, wide)) return @intCast(i);
@@ -1997,36 +2016,36 @@ pub const Env = struct {
         return null;
     }
 
-    pub fn illusionTouched(self: *const Env, p: rl.Vector3, margin: f32) ?u8 {
-        for (0..self.nillusions) |i| {
-            if (self.illusionLife[i] < 1) continue;
-            for (self.illusionSolids(@intCast(i))) |s| {
+    pub fn breachTouched(self: *const Env, p: rl.Vector3, margin: f32, key: Key) ?u8 {
+        for (0..self.nbreaches) |i| {
+            if (self.breachLife[i] < 1 or !opens(self.breachKind(@intCast(i)), key)) continue;
+            for (self.breachSolids(@intCast(i))) |s| {
                 if (collision.blocksPoint(p, margin, s)) return @intCast(i);
             }
         }
         return null;
     }
 
-    /// Stops being a wall THIS frame; `tickIllusions` thins the face over `ILLUSION_FADE`. False if it was already going.
-    pub fn dispelIllusion(self: *Env, i: u8) bool {
-        if (!self.illusionStands(i)) return false;
-        self.illusionLife[i] = 1.0 - 1e-4;
+    /// Stops being a wall THIS frame; `tickBreaches` thins the face over its kind's `breachFade`. False if it was already going.
+    pub fn openBreach(self: *Env, i: u8) bool {
+        if (!self.breachStands(i)) return false;
+        self.breachLife[i] = 1.0 - 1e-4;
         return true;
     }
 
-    pub fn tickIllusions(self: *Env, dt: f32) void {
-        for (0..self.nillusions) |i| {
-            if (self.illusionLife[i] >= 1 or self.illusionLife[i] <= 0) continue;
-            self.illusionLife[i] = mathx.maxF(0, self.illusionLife[i] - dt / ILLUSION_FADE);
-            const pr = &self.props[self.illusionProps[i]];
-            pr.dissolve = 1.0 - self.illusionLife[i];
-            pr.gone = self.illusionLife[i] <= 0;
+    pub fn tickBreaches(self: *Env, dt: f32) void {
+        for (0..self.nbreaches) |i| {
+            if (self.breachLife[i] >= 1 or self.breachLife[i] <= 0) continue;
+            self.breachLife[i] = mathx.maxF(0, self.breachLife[i] - dt / breachFade(self.breachKind(@intCast(i))));
+            const pr = &self.props[self.breachProps[i]];
+            pr.dissolve = 1.0 - self.breachLife[i];
+            pr.gone = self.breachLife[i] <= 0;
         }
     }
 
-    pub fn restoreIllusions(self: *Env) void {
-        self.illusionLife = [_]f32{1} ** MAX_ILLUSIONS;
-        for (self.illusionProps[0..self.nillusions]) |pi| {
+    pub fn restoreBreaches(self: *Env) void {
+        self.breachLife = [_]f32{1} ** MAX_BREACHES;
+        for (self.breachProps[0..self.nbreaches]) |pi| {
             self.props[pi].dissolve = 0;
             self.props[pi].gone = false;
         }
@@ -3913,6 +3932,87 @@ test "terrain editor: cliff faces leave a real opening through the cave air" {
     }
 }
 
+const WFCAVE_BENCH = wf.DIR ++ "/test_wfcave" ++ wf.EXT;
+
+/// Walks a hero-sized body `dir`-ward the way `game` does — the terrain gate, the push-out and the level under his feet — until it stalls or has covered `limit`.
+fn walkUntilStalled(e: *const Env, from: rl.Vector3, dir: rl.Vector3, heroR: f32, limit: f32) rl.Vector3 {
+    var p = from;
+    var steps: usize = 0;
+    while (steps < 6000) : (steps += 1) {
+        const q = e.walkStep(p, dir, 0.05);
+        const r = e.resolveHeroSide(q, heroR, p.y);
+        const moved = mathx.distXZ(r, p);
+        p = v3(r.x, e.standAt(r.x, r.z, p.y), r.z);
+        if (moved < 1e-4) break;
+        if (dir.x * (p.x - from.x) + dir.z * (p.z - from.z) >= limit) break;
+    }
+    return p;
+}
+
+test "THE WATERFALL CAVE: in through the fall, the vines hold him until cut, the chamber sits under the pond, and the north wall opens to a burst alone" {
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    m.* = .{};
+    const l = caves.wfcave.author(m);
+    std.fs.cwd().access(WFCAVE_BENCH, .{}) catch |err| {
+        if (err != error.FileNotFound) return err;
+        try wf.save(WFCAVE_BENCH, m);
+    };
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    blankForTest(e);
+    e.uploadWater(m);
+    e.adoptHeight(m);
+    e.adoptCave(m);
+    e.materialize(m);
+    const heroR: f32 = 0.36;
+    const W = caves.wfcave;
+
+    try std.testing.expectEqual(wf.CLIFF_FALL, e.caseAtWorld(l.faceX, 0));
+    try std.testing.expectEqual(wf.CLIFF_FALL, e.caseAtWorld(l.faceX, -W.FALL_HALF + 0.5));
+    try std.testing.expectEqual(wf.CLIFF_FACE, e.caseAtWorld(l.faceX, W.FALL_HALF + 5.0));
+    const top = e.groundAt(l.faceX + 30, -10);
+    try std.testing.expectApproxEqAbs(W.TOP, top, 0.02);
+    const overChamber = e.groundAt(l.chamber[0], l.chamber[1]);
+
+    const start = v3(l.start[0], e.standAt(l.start[0], l.start[1], 0), l.start[1]);
+    const east = v3(1, 0, 0);
+    const held = walkUntilStalled(e, start, east, heroR, 60);
+    const vinesX = l.vines[0];
+    std.debug.print("\n  wfcave: face at x {d:.2}; the walk in stops at x {d:.2} against the curtain at {d:.2} (it is {d:.2} m thick, he is {d:.2})\n", .{
+        l.faceX, held.x, vinesX, props.partsOf(.vines)[0].r * 2, heroR * 2,
+    });
+    try std.testing.expect(held.x < vinesX and held.x > vinesX - 1.2);
+    try std.testing.expect(held.x > l.faceX);
+    const cut = e.breachStruck(v3(vinesX, 1.2, -0.5), v3(vinesX, 1.2, 0.5), 0.05, .blade) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(props.Breach.vines, e.breachKind(cut));
+    try std.testing.expect(e.openBreach(cut));
+    const inside = walkUntilStalled(e, held, east, heroR, l.chamber[0] - held.x);
+    const roofOver = e.caveRoofAt(l.chamber[0], l.chamber[1]);
+    const floorIn = e.caveFloorAt(l.chamber[0], l.chamber[1]);
+    const pondDepth = e.wadeDepth(l.pond[0], l.pond[1]);
+    std.debug.print("  cut, he walks on to x {d:.2} (chamber at {d:.2}) standing {d:.2} m up on a {d:.2} m floor; roof {d:.2} m, {d:.2} m of rock up to the pond's bed at {d:.2}, pond {d:.2} m deep in the middle\n", .{
+        inside.x, l.chamber[0], inside.y, floorIn, roofOver, overChamber - roofOver, overChamber, pondDepth,
+    });
+    try std.testing.expect(inside.x >= l.chamber[0] - 0.5);
+    try std.testing.expect(inside.y < 0.5 and inside.y > floorIn - 0.1);
+    try std.testing.expect(overChamber - roofOver > caves.ROOF_MIN);
+    try std.testing.expect(pondDepth > 0.3);
+
+    const north = v3(0, 0, 1);
+    const atWall = walkUntilStalled(e, v3(l.northIn[0], inside.y, l.northIn[1] + 0.5), north, heroR, 60);
+    try std.testing.expect(atWall.z < l.wall[1] and atWall.z > l.wall[1] - 1.2);
+    try std.testing.expectEqual(@as(?u8, null), e.breachStruck(v3(l.wall[0], 1.2, l.wall[1] - 1), v3(l.wall[0], 1.2, l.wall[1] + 1), 0.05, .blade));
+    try std.testing.expectEqual(@as(?u8, null), e.breachTouched(v3(l.wall[0], 0.8, l.wall[1] - 0.7), 0.9, .roll));
+    const blown = e.breachTouched(v3(l.wall[0], 0.8, l.wall[1] - 0.7), 0.9, .burst) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(props.Breach.cracked, e.breachKind(blown));
+    try std.testing.expect(e.openBreach(blown));
+    const out = walkUntilStalled(e, atWall, north, heroR, 8);
+    std.debug.print("  north: held at z {d:.2} by the wall at {d:.2}; blown, he walks out to z {d:.2} onto ground {d:.2} m up (the plateau rim is at z {d:.2})\n", .{ atWall.z, l.wall[1], out.z, out.y, l.northZ });
+    try std.testing.expect(out.z > l.northZ + 2.5);
+    try std.testing.expect(out.y < 0.5);
+}
+
 fn waterfallInto(b: *gfx.Builder, env: ?*const Env, ch: Chord, low: [2]f32, high: [2]f32, normal: rl.Vector3) void {
     const length = ch.len();
     const a2 = ch.along();
@@ -4769,7 +4869,7 @@ pub fn coverField(x: f32, z: f32) f32 {
 fn buildSolids(e: *Env) void {
     e.nsolids = 0;
     e.nwards = 0;
-    e.nillusions = 0;
+    e.nbreaches = 0;
     for (e.props[0..e.nprops], 0..) |*pr, pi| {
         const nfo = props.info(pr.kind);
         const parts = props.partsOf(pr.kind);
@@ -4784,15 +4884,15 @@ fn buildSolids(e: *Env) void {
             ward = @intCast(e.nwards);
         }
         pr.ward = ward;
-        var illusion: u8 = 0;
-        if (nfo.illusion) {
-            if (e.nillusions >= MAX_ILLUSIONS) @panic("env: MAX_ILLUSIONS exceeded — raise the cap");
-            e.illusionProps[e.nillusions] = @intCast(pi);
-            e.illusionSolid0[e.nillusions] = @intCast(e.nsolids);
-            e.nillusions += 1;
-            illusion = @intCast(e.nillusions);
+        var breach: u8 = 0;
+        if (nfo.breach != null) {
+            if (e.nbreaches >= MAX_BREACHES) @panic("env: MAX_BREACHES exceeded — raise the cap");
+            e.breachProps[e.nbreaches] = @intCast(pi);
+            e.breachSolid0[e.nbreaches] = @intCast(e.nsolids);
+            e.nbreaches += 1;
+            breach = @intCast(e.nbreaches);
         }
-        pr.illusion = illusion;
+        pr.breach = breach;
         const solid0 = e.nsolids;
         const cut = cliffseat.cutOf(.{ .env = e }, pr);
         for (parts) |whole| {
@@ -4808,7 +4908,7 @@ fn buildSolids(e: *Env) void {
             sol.surf = nfo.surf;
             sol.arch = masonry(nfo);
             sol.ward = ward;
-            sol.illusion = illusion;
+            sol.breach = breach;
             if (pr.lean != 0) {
                 var off = leanSwing(pr, part.h * s * 0.5);
                 const lim = part.r * s;
@@ -4826,7 +4926,7 @@ fn buildSolids(e: *Env) void {
         // (`seatedPart` returns null), and a length taken off `parts.len` would run on into the next prop's solids.
         const wrote: u8 = @intCast(e.nsolids - solid0);
         if (ward != 0) e.wardSolidN[ward - 1] = wrote;
-        if (illusion != 0) e.illusionSolidN[illusion - 1] = wrote;
+        if (breach != 0) e.breachSolidN[breach - 1] = wrote;
     }
     for (e.cliffSolids[0..e.ncliffSolids]) |s| {
         if (e.nsolids >= MAX_SOLIDS) @panic("env: MAX_SOLIDS exceeded by the cliff stamps — raise the cap");
@@ -5688,7 +5788,7 @@ test "A SHUT GATE IS A WALL TO HIM TOO, and an open one is not" {
     try std.testing.expect(e.wardClear(0, v3(0, 0, 4), R));
 }
 
-fn envWithIllusion() !*Env {
+fn envWithBreach() !*Env {
     const e = try std.testing.allocator.create(Env);
     blankForTest(e);
     e.props[0] = .{ .kind = .illusory, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
@@ -5698,9 +5798,9 @@ fn envWithIllusion() !*Env {
 }
 
 test "AN ILLUSORY WALL IS A WALL UNTIL IT IS TOUCHED — then a look and a step pass it the same frame while the face thins" {
-    const e = try envWithIllusion();
+    const e = try envWithBreach();
     defer std.testing.allocator.destroy(e);
-    try std.testing.expectEqual(@as(usize, 1), e.nillusions);
+    try std.testing.expectEqual(@as(usize, 1), e.nbreaches);
     const eye = v3(0, 1.3, -9);
     const far = v3(0, 1.3, 9);
     try std.testing.expect(!e.sees(eye, far));
@@ -5714,26 +5814,62 @@ test "AN ILLUSORY WALL IS A WALL UNTIL IT IS TOUCHED — then a look and a step 
         if (lo - p.r <= 0.7 and hi + p.r >= -0.7) front = @max(front, -@min(p.az, p.bz) + p.r);
     }
     try std.testing.expect(face > 1.0 and front >= face);
-    try std.testing.expectEqual(@as(?u8, null), e.illusionStruck(v3(-0.6, 1.0, -front - 1.0), v3(0.6, 1.0, -front - 1.0), 0.2));
-    try std.testing.expectEqual(@as(?u8, 0), e.illusionStruck(v3(-0.6, 1.0, -face - 0.1), v3(0.6, 1.0, -face - 0.1), 0.2));
-    try std.testing.expectEqual(@as(?u8, null), e.illusionTouched(v3(0, 0, -front - 1.0), 0.42));
-    try std.testing.expectEqual(@as(?u8, 0), e.illusionTouched(v3(0, 0, -face - 0.2), 0.42));
+    try std.testing.expectEqual(@as(?u8, null), e.breachStruck(v3(-0.6, 1.0, -front - 1.0), v3(0.6, 1.0, -front - 1.0), 0.2, .blade));
+    try std.testing.expectEqual(@as(?u8, 0), e.breachStruck(v3(-0.6, 1.0, -face - 0.1), v3(0.6, 1.0, -face - 0.1), 0.2, .blade));
+    try std.testing.expectEqual(@as(?u8, null), e.breachTouched(v3(0, 0, -front - 1.0), 0.42, .roll));
+    try std.testing.expectEqual(@as(?u8, 0), e.breachTouched(v3(0, 0, -face - 0.2), 0.42, .roll));
     var buf: [8]collision.Solid = undefined;
     try std.testing.expect(e.nearSolids(v3(0, 0, 0), 1.0, &buf).len > 0);
 
-    try std.testing.expect(e.dispelIllusion(0));
-    try std.testing.expect(!e.dispelIllusion(0));
+    try std.testing.expect(e.openBreach(0));
+    try std.testing.expect(!e.openBreach(0));
     try std.testing.expect(e.sees(eye, far));
     try std.testing.expectEqual(@as(usize, 0), e.nearSolids(v3(0, 0, 0), 1.0, &buf).len);
-    try std.testing.expectEqual(@as(?u8, null), e.illusionTouched(v3(0, 0, -face - 0.2), 0.42));
-    e.tickIllusions(ILLUSION_FADE * 0.5);
+    try std.testing.expectEqual(@as(?u8, null), e.breachTouched(v3(0, 0, -face - 0.2), 0.42, .roll));
+    e.tickBreaches(breachFade(.illusion) * 0.5);
     try std.testing.expect(e.props[0].dissolve > 0.45 and e.props[0].dissolve < 0.55);
     try std.testing.expect(!e.props[0].gone);
-    e.tickIllusions(ILLUSION_FADE);
+    e.tickBreaches(breachFade(.illusion));
     try std.testing.expect(e.props[0].gone);
-    e.restoreIllusions();
+    e.restoreBreaches();
     try std.testing.expect(!e.sees(eye, far));
     try std.testing.expect(!e.props[0].gone and e.props[0].dissolve == 0);
+}
+
+fn envWithBreaches() !*Env {
+    const e = try std.testing.allocator.create(Env);
+    blankForTest(e);
+    e.props[0] = .{ .kind = .illusory, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
+    e.props[1] = .{ .kind = .cracked_wall, .pos = v3(30, 0, 0), .yaw = 0, .scale = 1, .op = 1 };
+    e.props[2] = .{ .kind = .vines, .pos = v3(60, 0, 0), .yaw = 0, .scale = 1, .op = 2 };
+    e.nprops = 3;
+    buildSolids(e);
+    return e;
+}
+
+test "THREE BREACHES, THREE KEYS — steel opens the illusion and the vines, only a burst the cracked wall, and nothing opens the wrong one" {
+    const e = try envWithBreaches();
+    defer std.testing.allocator.destroy(e);
+    try std.testing.expectEqual(@as(usize, 3), e.nbreaches);
+    try std.testing.expectEqual(props.Breach.cracked, e.breachKind(1));
+    try std.testing.expectEqual(props.Breach.vines, e.breachKind(2));
+    const wall = v3(30, 0, 0);
+    const curtain = v3(60, 0, 0);
+    try std.testing.expectEqual(@as(?u8, 1), e.breachTouched(wall, 0.3, .burst));
+    for ([_]Key{ .blade, .roll, .arrow }) |k| try std.testing.expectEqual(@as(?u8, null), e.breachTouched(wall, 0.3, k));
+    try std.testing.expectEqual(@as(?u8, null), e.breachStruck(v3(30, 1.2, -1), v3(30, 1.2, 1), 0.1, .blade));
+    try std.testing.expectEqual(@as(?u8, 2), e.breachStruck(v3(60, 1.2, -1), v3(60, 1.2, 1), 0.1, .blade));
+    for ([_]Key{ .burst, .roll, .arrow }) |k| try std.testing.expectEqual(@as(?u8, null), e.breachStruck(v3(60, 1.2, -1), v3(60, 1.2, 1), 0.1, k));
+    try std.testing.expectEqual(@as(?u8, null), e.breachTouched(curtain, 0.3, .burst));
+    try std.testing.expect(!e.sees(v3(60, 1.3, -6), v3(60, 1.3, 6)));
+    try std.testing.expect(e.openBreach(2));
+    try std.testing.expect(e.sees(v3(60, 1.3, -6), v3(60, 1.3, 6)));
+    try std.testing.expect(!e.sees(v3(30, 1.3, -6), v3(30, 1.3, 6)));
+    e.tickBreaches(breachFade(.vines) + 0.01);
+    try std.testing.expect(e.props[2].gone and !e.props[1].gone);
+    std.debug.print("\n  breaches: illusion fades {d:.2} s, cracked {d:.2}, vines {d:.2}; a cracked wall stands {d:.2} m thick, a curtain {d:.2}\n", .{
+        breachFade(.illusion), breachFade(.cracked), breachFade(.vines), props.partsOf(.cracked_wall)[0].r * 2, props.partsOf(.vines)[0].r * 2,
+    });
 }
 
 fn envWithRamp(rise: f32) !*Env {

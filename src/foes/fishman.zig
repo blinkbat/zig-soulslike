@@ -158,6 +158,8 @@ const THRUST_WIND: f32 = 0.52;
 const THRUST_STRIKE: f32 = 0.16;
 const THRUST_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const THRUST_RECOVER: f32 = 0.86;
+/// Metres pre-size the thrust carries the body in (`foe.strokeStep`); the band is widened by the share landed at impact.
+const THRUST_STEP: f32 = 0.55;
 const THRUST_CD: f32 = 2.6;
 pub const THRUST_HIT = combat.Hit{ .dmg = 32, .poise = 26, .stance = 16 };
 
@@ -211,11 +213,15 @@ const State = enum { idle, walk, roll, thrust, cast, rite, stunlight, stunheavy,
 
 const Choice = enum { rest, hold, close, back, roll, thrust, net, rite };
 
+fn thrustBand(size: f32) f32 {
+    return foe.hurtReach(THRUST_R + THRUST_STEP * foe.stepLanded(THRUST_IMPACT_K), size);
+}
+
 fn classify(role: Role, gap: f32, sensed: f32, homeGap: f32, scale: f32, ready: bool, wounded: bool, rooted: bool, rollReady: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     const s = spec(role);
     switch (role) {
-        .spearman => if (sensed <= foe.hurtReach(THRUST_R, scale * s.size) and ready) return .thrust,
+        .spearman => if (sensed <= thrustBand(scale * s.size) and ready) return .thrust,
         .netter => if (ready and gap <= NET_R and gap >= NET_MIN) return .net,
         .shaman => if (ready and wounded) return .rite,
     }
@@ -503,6 +509,7 @@ pub const Fishman = struct {
             .thrust => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t < THRUST_WIND) self.faceToward(quarry, dt);
+                _ = foe.strokeStep(self, bounds, THRUST_STEP * self.rigSize(), self.t, self.t - dt, THRUST_WIND, THRUST_STRIKE);
 
                 if (self.t >= THRUST_WIND + THRUST_STRIKE + THRUST_RECOVER) {
                     self.heroLatch = false;
@@ -814,7 +821,7 @@ pub const Fishman = struct {
                 setLocal(wx, SHR, rest, mul3(rx(-14.0 + haul - throw_ + armStun - 18.0 * dk), ry(0), rz(-10.0 - 18.0 * self.motion.load)));
                 setLocal(wx, ELR, rest, rx(-(40.0 + 40.0 * self.motion.load - 30.0 * self.motion.drive)));
                 setLocal(wx, WRR, rest, rz(-6.0));
-                setLocal(wx, SHL, rest, mul3(rx(-(8.0 - swing) + armStun - 18.0 * dk), ry(0), rz(14.0)));
+                setLocal(wx, SHL, rest, mul3(rx(-(8.0 + swing) + armStun - 18.0 * dk), ry(0), rz(14.0)));
                 setLocal(wx, ELL, rest, rx(-26.0));
                 setLocal(wx, WRL, rest, rz(6.0));
             },
@@ -1508,7 +1515,7 @@ test "THE TRIDENT LANDS ON THE MAN WHERE HE STANDS — thrown for real, anywhere
             if (classify(.spearman, g, mid, 0, scale, true, false, false, false) == Choice.thrust) lo = mid else hi = mid;
         }
         const far = lo;
-        widest = @max(widest, far - foe.hurtReach(THRUST_R, probe.rigSize()));
+        widest = @max(widest, far - thrustBand(probe.rigSize()));
         for ([_]f32{ 0, 30, 55 }) |deg| {
             for ([_]f32{ 0.0, 0.34, 0.67, 0.92, 1.0 }) |u| {
                 const stand = lerpF(apart + 0.05, far - 0.002, u);

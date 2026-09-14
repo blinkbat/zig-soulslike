@@ -87,6 +87,8 @@ const CLOUT_WIND: f32 = 0.42;
 const CLOUT_STRIKE: f32 = 0.18;
 const CLOUT_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const CLOUT_RECOVER: f32 = 0.66;
+/// Metres pre-scale the clout carries the body in (`foe.strokeStep`); the band is widened by the share landed at impact.
+const CLOUT_STEP: f32 = 0.45;
 const CLOUT_CD: f32 = 2.2;
 pub var CLOUT_HIT = combat.Hit{ .dmg = 9, .poise = 8 };
 
@@ -133,10 +135,14 @@ const State = enum { idle, walk, clout, bursting, stunlight, stunheavy, dead };
 
 const Choice = enum { rest, hold, close, clout };
 
+fn cloutBand(scale: f32) f32 {
+    return foe.hurtReach(CLOUT_R + CLOUT_STEP * foe.stepLanded(CLOUT_IMPACT_K), scale);
+}
+
 /// Measured edge to edge against a centre-to-centre bill, the band ran 0.21 m past the reach at scale 1 and 0.87 m at `wf.FOE_SCALE_LO`.
 fn classify(sensed: f32, homeGap: f32, scale: f32, cloutReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
-    if (sensed <= foe.hurtReach(CLOUT_R, scale) and cloutReady) return .clout;
+    if (sensed <= cloutBand(scale) and cloutReady) return .clout;
     if (rooted) return .rest;
     return .close;
 }
@@ -319,6 +325,7 @@ pub const Husk = struct {
             .clout => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t < CLOUT_WIND) self.faceToward(quarry, dt);
+                _ = foe.strokeStep(self, bounds, CLOUT_STEP * self.scale, self.t, self.t - dt, CLOUT_WIND, CLOUT_STRIKE);
 
                 if (self.t >= CLOUT_WIND + CLOUT_STRIKE + CLOUT_RECOVER) {
                     self.heroLatch = false;
@@ -963,7 +970,7 @@ test "THE BLOW LANDS ON THE MAN WHERE HE STANDS — thrown for real, anywhere it
             if (classify(mid, 0, scale, true, false) == Choice.clout) lo = mid else hi = mid;
         }
         const far = lo;
-        widest = @max(widest, far - foe.hurtReach(CLOUT_R, scale));
+        widest = @max(widest, far - cloutBand(scale));
         for ([_]f32{ 0, 30, 55 }) |deg| {
             for ([_]f32{ 0.0, 0.34, 0.67, 0.92, 1.0 }) |u| {
                 const stand = lerpF(apart + 0.05, far - 0.002, u);

@@ -321,6 +321,27 @@ pub fn illusoryWallMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
+/// The same wall, CRACKED THROUGH — deep fissures on both faces running down through the middle course, a spill of rubble at its foot, dusted toward dead mortar (`art.CRACKED_WASH`). A burst brings it down (`props.Breach.cracked`).
+pub fn crackedWallBuild() Builder {
+    var b = wallBuild();
+    var rng = mathx.Rng.init(4811);
+    const th: f32 = 0.40;
+    const runs = [_][4]f32{ .{ -0.55, 2.55, 0.30, -0.95 }, .{ 0.45, 2.85, -0.22, -0.90 }, .{ -1.85, 1.85, 0.55, -0.75 }, .{ 1.30, 1.30, -0.45, -0.80 }, .{ -0.10, 1.45, 0.92, -0.30 } };
+    for (runs) |r| {
+        const dir = mathx.normV(v3(r[2] + rng.signed() * 0.12, r[3], 0));
+        crackInto(&b, v3(r[0], r[1], th * 1.02), dir, v3(1, 0, 0), rng.range(1.1, 2.0), 0.032, 0.06);
+        crackInto(&b, v3(r[0] + rng.signed() * 0.25, r[1] - rng.range(0, 0.2), -th * 1.02), dir, v3(-1, 0, 0), rng.range(0.8, 1.6), 0.028, 0.06);
+    }
+    chipsInto(&b, &rng, -0.4, 0.75, 1.9, 0.12, 0.30, 7);
+    chipsInto(&b, &rng, 0.6, -0.7, 1.6, 0.10, 0.26, 6);
+    b.wash(art.CRACKED_WASH, art.CRACKED_WASH_T);
+    return b;
+}
+pub fn crackedWallMesh(shader: rl.Shader) rl.Model {
+    var b = crackedWallBuild();
+    return b.toModel(shader);
+}
+
 pub fn wallBuild() Builder {
     var b = Builder.init();
     var rng = mathx.Rng.init(4805);

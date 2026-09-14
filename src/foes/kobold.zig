@@ -170,7 +170,7 @@ pub const CHOP_HIT_A = 0.53;
 const ZERK_CHOP = CHOP_DUR;
 const ZERK_HIT_A = CHOP_HIT_A;
 const ZERK_HIT_B = 0.78;
-const ZERK_STEP = 0.42;
+const ZERK_STEP = 0.62;
 
 const DASH_CD = 6.5;
 const DASH_R_MIN = 2.3;
@@ -992,7 +992,7 @@ pub const Kobold = struct {
         for ([_][3]usize{ .{ HIPL, KNEEL, ANKL }, .{ HIPR, KNEER, ANKR } }, 0..) |leg, side| {
             const lead = (side == 0) == self.dashLeadIsLeft();
             const ankle = foe.markOn(body, v3(self.rest[leg[0]].x, solePatches[side].drop + self.hop / @max(fs, 0.001) + 0.12 * H * fly, (if (lead) @as(f32, 0.22) else -0.20) * H * fly));
-            heromod.armTo(wx, self.rest, leg[0], leg[1], leg[2], ankle, forward, v3(0, -1, 0), forward);
+            heromod.legTo(wx, self.rest, leg[0], leg[1], leg[2], ankle, forward, v3(0, -1, 0), forward);
         }
     }
 

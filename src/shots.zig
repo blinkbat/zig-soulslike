@@ -49,6 +49,7 @@ const savemod = @import("save.zig"); // for the boot screen's shelf — staged, 
 const sfx = @import("core/audio.zig");
 const worldfmt = @import("world/worldfmt.zig");
 const env = @import("world/env.zig");
+const caves = @import("world/caves.zig");
 const tunemod = @import("play/tune.zig");
 
 const Game = game.Game;
@@ -661,6 +662,66 @@ pub fn runLandShots(g: *Game) void {
                 .{ q.tag, land, floor, roof, roof - floor, land - roof },
             );
         }
+    }
+    if (std.mem.startsWith(u8, stem, "test_wfcave")) {
+        const CAM_CLEAR: f32 = 0.45;
+        const l = caves.wfcave.layout(&g.map);
+        const fx = l.faceX;
+        const views = [_]struct { tag: []const u8, hx: f32, hz: f32, under: bool, ax: f32, az: f32, up: f32, yaw: f32, pitch: f32, dist: f32 }{
+            .{ .tag = "fall", .hx = fx - 9, .hz = 3, .under = false, .ax = fx, .az = 0, .up = 3.5, .yaw = 72, .pitch = 0.06, .dist = 18.0 },
+            .{ .tag = "mouth", .hx = fx - 4.5, .hz = 0.8, .under = false, .ax = fx - 1.3, .az = 0, .up = 1.5, .yaw = 90, .pitch = 0.04, .dist = 7.0 },
+            .{ .tag = "lookingout", .hx = fx + 5, .hz = 0, .under = true, .ax = fx - 1, .az = 0, .up = 1.4, .yaw = 270, .pitch = 0.02, .dist = 7.0 },
+            .{ .tag = "chamber", .hx = l.chamber[0], .hz = l.chamber[1], .under = true, .ax = l.chamber[0], .az = l.chamber[1], .up = 1.0, .yaw = 40, .pitch = 0.14, .dist = 12.0 },
+            .{ .tag = "northwall", .hx = l.wall[0], .hz = l.wall[1] + 7, .under = false, .ax = l.wall[0], .az = l.wall[1], .up = 1.6, .yaw = 165, .pitch = 0.05, .dist = 9.0 },
+            .{ .tag = "overhead", .hx = fx - 6, .hz = 0, .under = false, .ax = fx + 8, .az = 0, .up = 7.0, .yaw = 250, .pitch = 1.05, .dist = 60.0 },
+        };
+        for (views, 0..) |f, i| {
+            standHero(g, f.hx, f.hz, std.math.pi);
+            const foot: f32 = if (f.under) g.env.caveFloorAt(f.hx, f.hz) else g.env.groundAt(f.hx, f.hz);
+            g.hero.pos.y = g.env.standAt(f.hx, f.hz, foot);
+            g.hero.pose();
+            game.pinSkyForShot(g);
+            const aimFoot: f32 = if (f.under) g.env.caveFloorAt(f.ax, f.az) else g.env.groundAt(f.ax, f.az);
+            const name = std.fmt.bufPrintZ(&buf, DIR_LAND ++ "/{s}_{d:0>2}_{s}.png", .{ stem, i + 10, f.tag }) catch unreachable;
+            const aimY = g.env.standAt(f.ax, f.az, aimFoot) + f.up;
+            var pitch = f.pitch;
+            if (f.under) {
+                const head = g.env.caveRoofAt(f.ax, f.az) - CAM_CLEAR - aimY;
+                pitch = mathx.clampF(head / f.dist, -0.4, f.pitch);
+            }
+            shootAt(g, name, v3(f.ax, aimY, f.az), f.yaw, pitch, f.dist);
+        }
+        frames += views.len;
+        // The walk in, against the real solids — the stamped face rock included — held by the curtain, then cut through it.
+        var w = mathx.ground(fx - 8, 0);
+        w.y = g.env.standAt(w.x, w.z, 0);
+        var k: usize = 0;
+        while (k < 2000) : (k += 1) {
+            const q = g.env.walkStep(w, v3(1, 0, 0), 0.05);
+            const r = g.env.resolveHeroSide(q, foemod.HERO_R, w.y);
+            const moved = mathx.distXZ(r, w);
+            w = v3(r.x, g.env.standAt(r.x, r.z, w.y), r.z);
+            if (moved < 1e-4) break;
+        }
+        const heldX = w.x;
+        if (g.env.breachStruck(v3(l.vines[0], 1.2, -0.5), v3(l.vines[0], 1.2, 0.5), 0.05, .blade)) |i| _ = g.env.openBreach(i);
+        k = 0;
+        while (k < 2000 and w.x < l.chamber[0]) : (k += 1) {
+            const q = g.env.walkStep(w, v3(1, 0, 0), 0.05);
+            const r = g.env.resolveHeroSide(q, foemod.HERO_R, w.y);
+            const moved = mathx.distXZ(r, w);
+            w = v3(r.x, g.env.standAt(r.x, r.z, w.y), r.z);
+            if (moved < 1e-4) break;
+        }
+        std.debug.print("  wfcave walk-in: held at x {d:.2} by the curtain at {d:.2}; cut, he reaches x {d:.2} (chamber {d:.2}) at {d:.2} m up\n", .{ heldX, l.vines[0], w.x, l.chamber[0], w.y });
+        g.env.tickBreaches(2.0);
+        standHero(g, fx + 5, 0, std.math.pi);
+        g.hero.pos.y = g.env.standAt(fx + 5, 0, g.env.caveFloorAt(fx + 5, 0));
+        g.hero.pose();
+        game.pinSkyForShot(g);
+        const cutName = std.fmt.bufPrintZ(&buf, DIR_LAND ++ "/{s}_{d:0>2}_cut.png", .{ stem, views.len + 10 }) catch unreachable;
+        shootAt(g, cutName, v3(fx - 1, g.env.standAt(fx - 1, 0, g.env.caveFloorAt(fx - 1, 0)) + 1.4, 0), 270, 0.02, 7.0);
+        frames += 1;
     }
     if (std.mem.startsWith(u8, stem, "01_")) {
         const basin = [_]struct { tag: []const u8, hx: f32, hz: f32, ax: f32, az: f32, up: f32, yaw: f32, pitch: f32, dist: f32 }{

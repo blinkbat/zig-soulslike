@@ -90,6 +90,8 @@ const BOUGH_WIND: f32 = 0.86;
 const BOUGH_STRIKE: f32 = 0.22;
 const BOUGH_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const BOUGH_RECOVER: f32 = 0.95;
+/// Metres pre-scale the bough carries the body in (`foe.strokeStep`); the band is widened by the share landed at impact.
+const BOUGH_STEP: f32 = 0.50;
 const BOUGH_CD: f32 = 3.0;
 pub var BOUGH_HIT = combat.Hit{ .dmg = 22, .poise = 22, .stance = 14 };
 pub const LIT_FIRE: f32 = 14.0;
@@ -133,10 +135,14 @@ const State = enum { idle, walk, bough, stunlight, stunheavy, dead };
 
 const Choice = enum { rest, hold, close, bough };
 
+fn boughBand(scale: f32) f32 {
+    return foe.hurtReach(BOUGH_R + BOUGH_STEP * foe.stepLanded(BOUGH_IMPACT_K), scale);
+}
+
 /// Measured edge to edge against a centre-to-centre bill, the band ran 0.19 m past the reach at scale 1 and 1.15 m at `wf.FOE_SCALE_LO`.
 fn classify(sensed: f32, homeGap: f32, scale: f32, boughReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
-    if (sensed <= foe.hurtReach(BOUGH_R, scale) and boughReady) return .bough;
+    if (sensed <= boughBand(scale) and boughReady) return .bough;
     if (rooted) return .rest;
     return .close;
 }
@@ -338,6 +344,7 @@ pub const Wight = struct {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 const wind = self.windDur();
                 if (self.t < wind) self.faceToward(quarry, dt);
+                _ = foe.strokeStep(self, bounds, BOUGH_STEP * self.scale, self.t, self.t - dt, wind, self.strikeDur());
 
                 if (self.t >= wind + self.strikeDur() + self.recoverDur()) {
                     self.heroLatch = false;
@@ -929,7 +936,7 @@ test "THE BLOW LANDS ON THE MAN WHERE HE STANDS — thrown for real, anywhere it
             if (classify(mid, 0, scale, true, false) == Choice.bough) lo = mid else hi = mid;
         }
         const far = lo;
-        widest = @max(widest, far - foe.hurtReach(BOUGH_R, scale));
+        widest = @max(widest, far - boughBand(scale));
         for ([_]f32{ 0, 30, 55 }) |deg| {
             for ([_]f32{ 0.0, 0.34, 0.67, 0.92, 1.0 }) |u| {
                 const stand = lerpF(apart + 0.05, far - 0.002, u);

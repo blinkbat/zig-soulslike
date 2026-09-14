@@ -90,6 +90,8 @@ const RAKE_WIND: f32 = 0.44;
 const RAKE_STRIKE: f32 = 0.20;
 const RAKE_IMPACT_K: f32 = foe.MELEE_IMPACT_K;
 const RAKE_RECOVER: f32 = 0.72;
+/// Metres pre-scale the rake carries the body in (`foe.strokeStep`); the band is widened by the share landed at impact.
+const RAKE_STEP: f32 = 0.50;
 const RAKE_CD: f32 = 2.4;
 pub var RAKE_HIT = combat.Hit{ .dmg = 13, .poise = 12, .stance = 9, .elem = combat.elems(.{ .fire = 11 }) };
 
@@ -131,10 +133,14 @@ const State = enum { idle, walk, rake, stunlight, stunheavy, dead };
 
 const Choice = enum { rest, hold, close, rake };
 
+fn rakeBand(scale: f32) f32 {
+    return foe.hurtReach(RAKE_R + RAKE_STEP * foe.stepLanded(RAKE_IMPACT_K), scale);
+}
+
 /// Measured edge to edge against a centre-to-centre bill, the band ran 0.24 m past the reach at scale 1 and 1.00 m at `wf.FOE_SCALE_LO`.
 fn classify(sensed: f32, homeGap: f32, scale: f32, rakeReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
-    if (sensed <= foe.hurtReach(RAKE_R, scale) and rakeReady) return .rake;
+    if (sensed <= rakeBand(scale) and rakeReady) return .rake;
     if (rooted) return .rest;
     return .close;
 }
@@ -306,6 +312,7 @@ pub const Cinder = struct {
             .rake => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t < RAKE_WIND) self.faceToward(quarry, dt);
+                _ = foe.strokeStep(self, bounds, RAKE_STEP * self.scale, self.t, self.t - dt, RAKE_WIND, RAKE_STRIKE);
 
                 if (self.t >= RAKE_WIND + RAKE_STRIKE + RAKE_RECOVER) {
                     self.heroLatch = false;
@@ -1027,7 +1034,7 @@ test "THE BLOW LANDS ON THE MAN WHERE HE STANDS — thrown for real, anywhere it
             if (classify(mid, 0, scale, true, false) == Choice.rake) lo = mid else hi = mid;
         }
         const far = lo;
-        widest = @max(widest, far - foe.hurtReach(RAKE_R, scale));
+        widest = @max(widest, far - rakeBand(scale));
         for ([_]f32{ 0, 30, 55 }) |deg| {
             for ([_]f32{ 0.0, 0.34, 0.67, 0.92, 1.0 }) |u| {
                 const stand = lerpF(apart + 0.05, far - 0.002, u);

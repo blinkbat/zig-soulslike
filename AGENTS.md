@@ -186,7 +186,11 @@ contents change together is fine.
   or it is authored negative and passed raw — **never both**, which is how it broke three times (the folk waved
   behind their own backs; every `ancientpriest` posture; all eight of `necro`'s `*_EL`). Gesture DELTAS carry the
   sign too, and each file pins its own signs in a test. **A POSE AUTHORED AROUND THE BUG DOES NOT SURVIVE THE
-  FIX**: `staffFit` counter-rotates exactly, so the ANGLE never moves and the HEIGHT does.
+  FIX**: `staffFit` counter-rotates exactly, so the ANGLE never moves and the HEIGHT does. **AND IT IS READ OFF THE
+  POSED BONES, NOT THE CONSTANTS** (`foe.elbowForward`) — `game`'s test drives every humanoid through a walk and a
+  fight and `npc`'s every folk, and the walk also has to swing each arm AGAINST its own leg. **A TWO-BONE SOLVE
+  FOLDS TOWARD ITS OWN +Z ON AN ARM AND −Z ON A LEG** (`hero.armTo` / `hero.legTo`): built the other way every
+  solved arm read as bent behind the back.
 - **AN ATTACK IS KEY POSES CHASED BY SPRINGS, NEVER TWO CONSTANTS AND A LERP** (`anim.Key`/`keyAt`/`Spring`/
   `SpringBank`; Overgrowth's model). A→B has nowhere to put a gather, a hang, a snap, a follow-through or a
   recoil, so it reads STIFF however it is tuned. **No dial fixes that.**
@@ -357,8 +361,11 @@ pick against strings and fingers against neck.
   (`stepLands`); the rest of the lunge is reach the far stand never saw.
 - **HOW HARD A STROKE FOLLOWS YOU IS A PROPERTY OF THE STROKE** (`Attack.track`), not one global rate — HEAVY rows
   stay under `TURN_RATE`, because commitment has to cost tracking or there is no window. **A STROKE THAT CANNOT
-  FOLLOW YOU CARRIES THE BODY AT YOU** (`Attack.step`). **AND A SWING IS ONLY AS ACCURATE AS THE THING ON THE END
-  IS WIDE**: a swing-bearing allowance may never exceed the kit's own subtended half-angle.
+  FOLLOW YOU CARRIES THE BODY AT YOU** (`Attack.step`; the shared drive is `foe.strokeStep`) — **OVER THE STRIKE,
+  NEVER THE WIND**: a body still coming round drives off its bearing and lands short of the band it promised, and a
+  band widened by the step takes only the share landed at impact (`foe.stepLanded`). **AND A SWING IS ONLY AS
+  ACCURATE AS THE THING ON THE END IS WIDE**: a swing-bearing allowance may never exceed the kit's own subtended
+  half-angle.
 - **A COMMITTED LINE IS COMMITTED AT THE LAUNCH** — a charge's wind may aim past the turn rate, because what you
   dodge there is the travel, and the travel then steers not at all.
 - **DENYING MOVEMENT IS A POST-STEP GATE, NOT A GUARD AT EACH MOVER** (`foe.grip` + `defer grip.hold`,
@@ -1573,7 +1580,7 @@ representable; that needs a different representation, not another brush.
   a chamber dropped (`cutFaces`/`cutFaceCut`); a tile whose every plate is over one draws none.
 - **CAVE LIGHTING INCLUDES THE WALL RELIEF** — the GPU roof texture uses canonical ghost heights and lattice-centred UVs; shelter extends one cave cell into rock, or recessed walls leak triangular patches of sunlight.
 - **CAVE ROOFS ARE SEPARATE MESHES** — Inside hides ceilings as well as overlying terrain; floor and wall meshes stay visible.
-- **WATERFALL IS A CLIFF STYLE, NOT A DIFFERENT CUT** (`CLIFF_FALL`, `wf.cliffFace`) — persistence and ground sampling retain the cliff topology; its transparent curtain draws after opaque bodies, never blocks a cave mouth or casts an opaque shadow.
+- **WATERFALL IS A CLIFF STYLE, NOT A DIFFERENT CUT** (`CLIFF_FALL`, `wf.cliffFace`) — persistence and ground sampling retain the cliff topology; its transparent curtain draws after opaque bodies, never blocks a cave mouth or casts an opaque shadow. Bench: `worlds/test_wfcave.world` (`caves.wfcave`), a mouth through the fall.
 - **THE EDITOR WORKS ON ONE LEVEL AT A TIME** (`Editor.under`, the bar's Surface/Underground button, `U`) —
   Underground takes the hill off every chamber (`Env.cutaway`), the cursor lands on the chamber floor through the
   hole (`caves.pickUnder`: the land where it still stands, the floor where it does not, rock met from inside a
@@ -1668,12 +1675,17 @@ one at a glance, and as the odd one to someone who looks. SOLID and BLOCKS SIGHT
 the map places it like any prop.
 
 - **THREE THINGS BRING IT DOWN, ALL THE HERO'S** — a blade that reaches the stone (the blade's own radius inflating
-  the face), a ROLL pressed against it, or an arrow planted in it. **A foe cannot dispel one.**
-- **IT STOPS BEING A WALL THE FRAME IT IS STRUCK**, and only LOOKS like one for `ILLUSION_FADE` (0.7 s):
-  `eachSolid` drops every solid whose `illusionLife` is under 1, so look, step, arrow and roll all pass at once
-  while the face thins in place (`Prop.dissolve`, alpha only — never `shrink`, which would sink it).
-- **THE BOOKKEEPING IS THE FOG GATE'S** — a slot PLUS ONE on both `Prop.illusion` and `Solid.illusion`. Walls come
-  back with the map (`restoreIllusions` beside every `openWards`) and NOT at a bonfire.
+  the face), a ROLL pressed against it, or an arrow planted in it. **A foe opens none of them.**
+- **IT IS ONE OF THREE BREACHES, AND EACH HAS ITS OWN KEY** (`props.Breach`, `env.opens`) — the ILLUSION opens to
+  any of the three above, the CRACKED WALL (`cracked_wall`) to a BURST alone (a thrown candle or crock landing on
+  it; steel scratches it), the VINE CURTAIN (`vines`) to a BLADE alone. One table in `env` (`breach*`) serves all
+  three; only the key, `breachFade` and the puff differ. Bench: `worlds/test_wfcave.world` — the curtain across a
+  mouth behind a fall, the cracked wall sealing the chamber's second mouth.
+- **IT STOPS BEING A WALL THE FRAME IT IS OPENED**, and only LOOKS like one for its `breachFade` (0.7 s for the
+  illusion): `eachSolid` drops every solid whose `breachLife` is under 1, so look, step, arrow and roll all pass at
+  once while the face thins in place (`Prop.dissolve`, alpha only — never `shrink`, which would sink it).
+- **THE BOOKKEEPING IS THE FOG GATE'S** — a slot PLUS ONE on both `Prop.breach` and `Solid.breach`. Walls come back
+  with the map (`restoreBreaches` beside every `openWards`) and NOT at a bonfire.
 
 **A DECK IS THE FIRST WALKABLE SURFACE THAT IS NOT THE LAND** (`Info.decks`, `env.deckAt`/`standAt`) —
 `game.groundActor` asks `standAt`, so `pos.y` is the deck where there is one and `groundAt` stays the question

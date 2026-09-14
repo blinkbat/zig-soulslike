@@ -358,9 +358,9 @@ pub const Game = struct {
     boltGas: [BOLT_GAS_CAP]knightmod.Gas = undefined,
     boltGasHead: usize = 0,
     boltGasT: f32 = 0,
-    illusionMotes: [ILLUSION_MOTES]foemod.Particle = [_]foemod.Particle{.{}} ** ILLUSION_MOTES,
-    illusionHead: usize = 0,
-    illusionRng: mathx.Rng = mathx.Rng.init(0x1117A11),
+    breachMotes: [BREACH_MOTES]foemod.Particle = [_]foemod.Particle{.{}} ** BREACH_MOTES,
+    breachHead: usize = 0,
+    breachRng: mathx.Rng = mathx.Rng.init(0x1117A11),
     liquidSoak: foemod.Soak = .{},
     popT: [worldfmt.Liquid.N]f32 = [_]f32{0} ** worldfmt.Liquid.N,
     searT: f32 = 0,
@@ -458,9 +458,9 @@ pub const Game = struct {
         g.boltGas = [_]knightmod.Gas{.{}} ** BOLT_GAS_CAP;
         g.boltGasHead = 0;
         g.boltGasT = 0;
-        g.illusionMotes = [_]foemod.Particle{.{}} ** ILLUSION_MOTES;
-        g.illusionHead = 0;
-        g.illusionRng = mathx.Rng.init(0x1117A11);
+        g.breachMotes = [_]foemod.Particle{.{}} ** BREACH_MOTES;
+        g.breachHead = 0;
+        g.breachRng = mathx.Rng.init(0x1117A11);
         g.dropRng = mathx.Rng.init(0xD0DEC0DE);
         g.bossBits = NO_BOSSES;
         g.seenMap = .{};
@@ -1061,6 +1061,133 @@ fn callUpdate(f: anytype, dt: f32, hero: rl.Vector3, bounds: f32) void {
         _ = f.update(dt, hero, bounds, .{}, if (P[5].type.? == bool) false else null);
     }
 }
+
+/// Eighteen bones that are NOT the hero's scaffold, so the arm indices mean nothing on them.
+const NOT_ON_SCAFFOLD = [_]struct { field: []const u8, why: []const u8 }{
+    .{ .field = "clatter", .why = "the skitterer walks on its ribs — a keel and six rib pairs happen to make eighteen" },
+};
+
+fn onScaffold(comptime field: []const u8) bool {
+    for (NOT_ON_SCAFFOLD) |x| {
+        if (std.mem.eql(u8, x.field, field)) return false;
+    }
+    const T = memberOf(field);
+    return @hasField(T, "xf") and @typeInfo(@FieldType(T, "xf")).array.len == heromod.N and @hasDecl(T, "update");
+}
+
+// Every humanoid on the shared scaffold, driven through its REAL update, with both elbows read off the posed bones every frame: the constants a file pins can agree with themselves and still fold an arm behind the back through a negation the pose forgot.
+test "AN ELBOW BENDS ONE WAY ON EVERY HUMANOID — read off the posed bones through a walk and a fight, never off the constants" {
+    const dt: f32 = 1.0 / 60.0;
+    // Hyperextension a few degrees past straight is a real elbow; past this it is folded the wrong way.
+    const HYPER: f32 = 0.10;
+    var backwards: usize = 0;
+    var inStep: usize = 0;
+    var bodies: usize = 0;
+    std.debug.print("\n", .{});
+    inline for (FOE_GROUPS) |gr| {
+        const T = memberOf(gr.field);
+        if (comptime onScaffold(gr.field)) {
+            const Roles = if (comptime @hasDecl(T, "spawnAs")) @typeInfo(@TypeOf(T.spawnAs)).@"fn".params[0].type.? else void;
+            const nroles = if (Roles == void) 1 else @typeInfo(Roles).@"enum".fields.len;
+            inline for (0..nroles) |ri| {
+                var f = if (Roles == void) T.spawn(mathx.zero3, 0, 1.0, 0.37) else T.spawnAs(@as(Roles, @enumFromInt(ri)), mathx.zero3, 0, 1.0, 0.37);
+                const name: []const u8 = if (Roles == void) gr.field else @tagName(@as(Roles, @enumFromInt(ri)));
+                const hero = mathx.ground(0, @min(gr.aggro() * 0.6, 9.0));
+                var worst = [2]f32{ 1, 1 };
+                var most = [2]f32{ -1, -1 };
+                var swing = Swing{};
+                var chords = [2]Chord{ .{}, .{} };
+                var prev = f.pos;
+                var t: f32 = 0;
+                while (t < 9.0) : (t += dt) {
+                    callUpdate(&f, dt, hero, 400.0);
+                    const l = foemod.elbowForward(&f.xf, heromod.SHL, heromod.ELL, heromod.WRL);
+                    const r = foemod.elbowForward(&f.xf, heromod.SHR, heromod.ELR, heromod.WRR);
+                    worst = .{ @min(worst[0], l), @min(worst[1], r) };
+                    most = .{ @max(most[0], l), @max(most[1], r) };
+                    chords[0].add(&f.xf, f.facing, heromod.SHL, heromod.ELL, heromod.WRL, -1.0);
+                    chords[1].add(&f.xf, f.facing, heromod.SHR, heromod.ELR, heromod.WRR, 1.0);
+                    if (mathx.distXZ(f.pos, prev) > 0.002) swing.add(&f.xf, f.facing);
+                    prev = f.pos;
+                }
+                bodies += 1;
+                const bad = worst[0] < -HYPER or worst[1] < -HYPER;
+                if (bad) backwards += 1;
+                const sw = swing.verdict();
+                if (sw == .with) inStep += 1;
+                std.debug.print("  {s: <17} elbows L {d: >5.2}..{d: >4.2}  R {d: >5.2}..{d: >4.2}{s}  left arm swings {s: <8} elbow off chord L {s} R {s} cm\n", .{
+                    name, worst[0], most[0], worst[1], most[1], if (bad) "  BACKWARDS" else "", @tagName(sw), chords[0].words(), chords[1].words(),
+                });
+            }
+        }
+    }
+    std.debug.print("  {d} humanoid bodies; {d} fold an elbow behind the back, {d} swing an arm with its own leg\n", .{ bodies, backwards, inStep });
+    try std.testing.expectEqual(@as(usize, 0), backwards);
+    try std.testing.expectEqual(@as(usize, 0), inStep);
+}
+
+/// Where the elbow sits off the shoulder-wrist chord in the body's frame (out from the body, up, forward), averaged — the side a two-bone solve was hinted onto, which the fold sign cannot see once `armTo` has built the frame round it.
+const Chord = struct {
+    n: f32 = 0,
+    out: f32 = 0,
+    up: f32 = 0,
+    fwd: f32 = 0,
+    buf: [32]u8 = undefined,
+    fn add(self: *Chord, xf: []const rl.Matrix, facing: f32, sh: usize, el: usize, wr: usize, side: f32) void {
+        const s = foemod.markOn(xf[sh], mathx.zero3);
+        const e = foemod.markOn(xf[el], mathx.zero3);
+        const w = foemod.markOn(xf[wr], mathx.zero3);
+        const d = mathx.subV(e, mathx.scaleV(mathx.addV(s, w), 0.5));
+        const f = mathx.headingDir(facing);
+        self.n += 1;
+        self.out += side * (d.x * -f.z + d.z * f.x);
+        self.up += d.y;
+        self.fwd += d.x * f.x + d.z * f.z;
+    }
+    fn words(self: *Chord) []const u8 {
+        const n = @max(self.n, 1);
+        return std.fmt.bufPrint(&self.buf, "{d: >3.0}/{d: >3.0}/{d: >3.0}", .{ self.out / n * 100, self.up / n * 100, self.fwd / n * 100 }) catch "?";
+    }
+};
+
+/// Contralateral or not: the left wrist's travel along the facing against the left ankle's, correlated over every walking frame. An arm carried still (a shield, a spear) has no amplitude to judge and reads `held`.
+const Swing = struct {
+    n: f32 = 0,
+    sa: f32 = 0,
+    sw: f32 = 0,
+    saw: f32 = 0,
+    saa: f32 = 0,
+    sww: f32 = 0,
+    wLo: f32 = 1e9,
+    wHi: f32 = -1e9,
+    const Verdict = enum { held, against, with, unwalked };
+    fn add(self: *Swing, xf: []const rl.Matrix, facing: f32) void {
+        const fwd = mathx.headingDir(facing);
+        const pelvis = foemod.markOn(xf[heromod.ROOT], mathx.zero3);
+        const ankle = foemod.markOn(xf[heromod.ANKL], mathx.zero3);
+        const sh = foemod.markOn(xf[heromod.SHL], mathx.zero3);
+        const wr = foemod.markOn(xf[heromod.WRL], mathx.zero3);
+        const a = (ankle.x - pelvis.x) * fwd.x + (ankle.z - pelvis.z) * fwd.z;
+        const w = (wr.x - sh.x) * fwd.x + (wr.z - sh.z) * fwd.z;
+        self.n += 1;
+        self.sa += a;
+        self.sw += w;
+        self.saw += a * w;
+        self.saa += a * a;
+        self.sww += w * w;
+        self.wLo = @min(self.wLo, w);
+        self.wHi = @max(self.wHi, w);
+    }
+    fn verdict(self: *const Swing) Verdict {
+        if (self.n < 30) return .unwalked;
+        if (self.wHi - self.wLo < 0.06) return .held;
+        const cov = self.saw / self.n - (self.sa / self.n) * (self.sw / self.n);
+        const va = self.saa / self.n - (self.sa / self.n) * (self.sa / self.n);
+        const vw = self.sww / self.n - (self.sw / self.n) * (self.sw / self.n);
+        if (va < 1e-6 or vw < 1e-6) return .held;
+        return if (cov / @sqrt(va * vw) > 0.3) .with else .against;
+    }
+};
 
 test "SEVEN MELEE FAMILIES KEEP THEIR SWING UNTIL THE PARRY CONTACT" {
     var c = cindermod.Cinder.spawn(mathx.zero3, 0, 1, 0.37);
@@ -4883,7 +5010,9 @@ fn planted(g: *Game, ar: *const archermod.Arrow, his: bool) void {
     if (!justLanded(ar)) return;
     if (ar.shot != .venom) sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
     if (his) {
-        if (g.env.illusionTouched(ar.pos, ILLUSION_ARROW_R)) |i| dispelIllusion(g, i, ar.pos);
+        // A pot is a BURST where it lands; everything else of his that plants is a point.
+        const burst = ar.shot == .crock or ar.shot == .clump;
+        if (g.env.breachTouched(ar.pos, if (burst) BREACH_BURST_R else BREACH_ARROW_R, if (burst) .burst else .arrow)) |i| openBreach(g, i, ar.pos);
     }
     splashOf(g, ar);
 }
@@ -5207,7 +5336,7 @@ pub fn drawScene(g: *Game) void {
     g.souls.draw();
     drawDrops(g);
     for (&g.boltGas) |*c| c.drawFx();
-    foemod.drawParticles(&g.illusionMotes);
+    foemod.drawParticles(&g.breachMotes);
     if (shows(g, .props)) g.env.drawThinned(&view);
     if (g.menu.wireframe) rl.gl.rlDisableWireMode();
     if (shows(g, .interact)) g.env.drawVeils(&view);
@@ -6039,7 +6168,7 @@ pub fn run(mode: Mode) void {
         markVigil(g);
         markFlock(g);
         const bladeNow = heroBlade(g);
-        revealIllusions(g, bladeNow);
+        revealBreaches(g, bladeNow);
         _ = billGroup(g, "warren", dt, bladeNow);
         _ = billGroup(g, "grief", dt, bladeNow);
         for (g.line.live()) |*a| {
@@ -6240,7 +6369,7 @@ pub fn run(mode: Mode) void {
             if (m.justDied) sfx.world(.ogre_die, m.pos);
         }
         tickBoltGas(g, dt);
-        tickIllusions(g, dt);
+        tickBreaches(g, dt);
         if (g.vigil.gasDose(dt, g.hero.pos)) |b| {
             _ = heroTakes(g, b, false, false);
             sfx.play(.acid_burn);
@@ -6946,50 +7075,68 @@ pub fn heroBlade(g: *const Game) foemod.Blade {
     };
 }
 
-/// One reveal is the worst frame: every solid of the face puffed on a `ILLUSION_PUFF_COLS` x `ILLUSION_PUFF_ROWS` grid, `ILLUSION_PUFF_N` motes a puff. The ring is that arithmetic, not a round number.
-const ILLUSION_PUFF_COLS: usize = 5;
-const ILLUSION_PUFF_ROWS: usize = 4;
-const ILLUSION_PUFF_N: i32 = 6;
-const ILLUSION_MOTES: usize = propsmod.FIT_CAP * ILLUSION_PUFF_COLS * ILLUSION_PUFF_ROWS * @as(usize, @intCast(ILLUSION_PUFF_N));
-/// A roll that brushes the face counts, as does an arrow planted in it; a blade has to reach the stone.
-const ILLUSION_ROLL_REACH: f32 = 0.35;
-const ILLUSION_ARROW_R: f32 = 0.30;
+/// One opening is the worst frame: every solid of the face puffed on a `BREACH_PUFF_COLS` x `BREACH_PUFF_ROWS` grid, `BREACH_PUFF_N` motes a puff. The ring is that arithmetic, not a round number.
+const BREACH_PUFF_COLS: usize = 5;
+const BREACH_PUFF_ROWS: usize = 4;
+const BREACH_PUFF_N: i32 = 6;
+const BREACH_MOTES: usize = propsmod.FIT_CAP * BREACH_PUFF_COLS * BREACH_PUFF_ROWS * @as(usize, @intCast(BREACH_PUFF_N));
+/// A roll that brushes the face counts, as does an arrow planted in it; a blade has to reach the stone. A pot bursts wider than it lands.
+const BREACH_ROLL_REACH: f32 = 0.35;
+const BREACH_ARROW_R: f32 = 0.30;
+const BREACH_BURST_R: f32 = 0.90;
 const VEIL_MOTE = mathx.rgba(168, 176, 214, 200);
 const VEIL_MOTE_THIN = mathx.rgba(214, 220, 244, 0);
 const VEIL_PUFF = foemod.Puff{ .blast = foemod.Blast.of(foemod.DUST_DRAG, 0.7, 1.4), .spdLo = 0.35, .upLo = 0.6, .upHi = 1.8, .rLo = 0.08, .rHi = 0.20, .col = VEIL_MOTE, .col1 = VEIL_MOTE_THIN };
+const RUBBLE_PUFF = foemod.Puff{ .blast = foemod.Blast.of(foemod.DUST_DRAG, 0.9, 1.7), .spdLo = 0.5, .upLo = 0.2, .upHi = 1.3, .rLo = 0.10, .rHi = 0.26, .col = foemod.DUST, .col1 = foemod.DUST_THIN };
+const LEAF_MOTE = mathx.rgba(74, 104, 52, 210);
+const LEAF_MOTE_THIN = mathx.rgba(110, 138, 84, 0);
+const LEAF_PUFF = foemod.Puff{ .blast = foemod.Blast.of(foemod.DUST_DRAG, 0.5, 1.0), .spdLo = 0.3, .upLo = -0.5, .upHi = 0.7, .rLo = 0.05, .rHi = 0.14, .col = LEAF_MOTE, .col1 = LEAF_MOTE_THIN };
 
-fn revealIllusions(g: *Game, blade: foemod.Blade) void {
+fn revealBreaches(g: *Game, blade: foemod.Blade) void {
     if (blade.active) {
-        if (g.env.illusionStruck(blade.a, blade.b, blade.r)) |i| dispelIllusion(g, i, mathx.scaleV(mathx.addV(blade.a, blade.b), 0.5));
+        if (g.env.breachStruck(blade.a, blade.b, blade.r, .blade)) |i| openBreach(g, i, mathx.scaleV(mathx.addV(blade.a, blade.b), 0.5));
     }
     if (g.hero.rolling) {
-        if (g.env.illusionTouched(g.hero.pos, HERO_R + ILLUSION_ROLL_REACH)) |i| dispelIllusion(g, i, g.hero.pos);
+        if (g.env.breachTouched(g.hero.pos, HERO_R + BREACH_ROLL_REACH, .roll)) |i| openBreach(g, i, g.hero.pos);
     }
 }
 
-fn dispelIllusion(g: *Game, i: u8, at: rl.Vector3) void {
-    if (!g.env.dispelIllusion(i)) return;
-    sfx.world(.veil_break, at);
-    for (g.env.illusionSolids(i)) |s| {
+fn openBreach(g: *Game, i: u8, at: rl.Vector3) void {
+    if (!g.env.openBreach(i)) return;
+    const kind = g.env.breachKind(i);
+    switch (kind) {
+        .illusion => sfx.world(.veil_break, at),
+        .cracked => {
+            sfx.world(.stone_loose, at);
+            g.rig.addShake(SHAKE_HIT_LIGHT);
+        },
+        .vines => sfx.world(.wood_hit, at),
+    }
+    const spec: foemod.Puff = switch (kind) {
+        .illusion => VEIL_PUFF,
+        .cracked => RUBBLE_PUFF,
+        .vines => LEAF_PUFF,
+    };
+    for (g.env.breachSolids(i)) |s| {
         var k: usize = 0;
-        while (k < ILLUSION_PUFF_COLS) : (k += 1) {
-            const t = (@as(f32, @floatFromInt(k)) + 0.5) / @as(f32, @floatFromInt(ILLUSION_PUFF_COLS));
+        while (k < BREACH_PUFF_COLS) : (k += 1) {
+            const t = (@as(f32, @floatFromInt(k)) + 0.5) / @as(f32, @floatFromInt(BREACH_PUFF_COLS));
             const x = mathx.lerpF(s.a.x, s.b.x, t);
             const z = mathx.lerpF(s.a.z, s.b.z, t);
             const base = g.env.groundAt(x, z);
             const top = @min(s.h, base + 6.5);
             var j: usize = 0;
-            while (j < ILLUSION_PUFF_ROWS) : (j += 1) {
-                const y = mathx.lerpF(base + 0.5, top, (@as(f32, @floatFromInt(j)) + 0.5) / @as(f32, @floatFromInt(ILLUSION_PUFF_ROWS)));
-                foemod.puff(&g.illusionMotes, &g.illusionHead, &g.illusionRng, v3(x, y, z), ILLUSION_PUFF_N, 1.4, 0.9, 1.0, VEIL_PUFF);
+            while (j < BREACH_PUFF_ROWS) : (j += 1) {
+                const y = mathx.lerpF(base + 0.5, top, (@as(f32, @floatFromInt(j)) + 0.5) / @as(f32, @floatFromInt(BREACH_PUFF_ROWS)));
+                foemod.puff(&g.breachMotes, &g.breachHead, &g.breachRng, v3(x, y, z), BREACH_PUFF_N, 1.4, 0.9, 1.0, spec);
             }
         }
     }
 }
 
-fn tickIllusions(g: *Game, dt: f32) void {
-    g.env.tickIllusions(dt);
-    foemod.tickParticles(&g.illusionMotes, dt, -1e9);
+fn tickBreaches(g: *Game, dt: f32) void {
+    g.env.tickBreaches(dt);
+    foemod.tickParticles(&g.breachMotes, dt, -1e9);
 }
 
 fn inBounds(p: rl.Vector3) rl.Vector3 {

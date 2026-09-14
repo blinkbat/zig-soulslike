@@ -185,6 +185,8 @@ const SW_SLASH_DUR: f32 = 0.26;
 const SW_SLASH_REC: f32 = 0.62;
 const SW_SLASH2_CHANCE: f32 = 0.55;
 const SW_SLASH_CD: f32 = 1.35;
+/// Metres pre-scale the slash carries him in (`foe.strokeStep`), on one clock across the wind and cut states.
+const SW_SLASH_STEP: f32 = 0.45;
 
 const SW_LUNGE_MIN: f32 = 3.4;
 const SW_LUNGE_MAX: f32 = 7.3;
@@ -349,12 +351,17 @@ fn swNearR(scale: f32) f32 {
     return foe.triggerBand(SW_LUNGE_MIN, SCALE, scale);
 }
 
+/// The slash's band on the shipped body: its swept reach plus the share of the step landed by mid-cut.
+fn swSlashBand() f32 {
+    return SW_SLASH_R + SW_SLASH_STEP * SCALE * foe.stepLanded(0.5);
+}
+
 fn swClassify(dist: f32, scale: f32, off: f32, slashReady: bool, heavyReady: bool, lungeReady: bool, backReady: bool, crowded: bool) SwChoice {
     if (dist > AGGRO_R) return .hold;
     if (crowded and backReady) return .back;
     const a = @abs(off);
     if (dist <= foe.triggerBand(SW_HEAVY_R, SCALE, scale) and heavyReady and a <= swHeavyArc()) return .heavy;
-    if (dist <= foe.triggerBand(SW_SLASH_R, SCALE, scale) and slashReady and a <= swSlashArc()) return .slash;
+    if (dist <= foe.triggerBand(swSlashBand(), SCALE, scale) and slashReady and a <= swSlashArc()) return .slash;
     if (lungeReady and dist >= swNearR(scale) and dist <= foe.triggerBand(SW_LUNGE_MAX, SCALE, scale) and a <= swLungeArc()) return .lunge;
     return .close;
 }
@@ -885,6 +892,7 @@ pub const Swordsman = struct {
             },
             .slash => {
                 self.faceToward(hero, dt * 0.33);
+                _ = foe.strokeStep(self, bounds, SW_SLASH_STEP * self.scale, SW_SLASH_WIND + self.t, SW_SLASH_WIND + self.t - dt, SW_SLASH_WIND, SW_SLASH_DUR);
                 self.chanSet(samplePose(&SW_SLASH_KEYS, mathx.clampF(self.t / SW_SLASH_DUR, 0, 1)));
                 if (self.t >= SW_SLASH_DUR) {
                     if (self.doubling) {

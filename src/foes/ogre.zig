@@ -1259,7 +1259,7 @@ pub const Ogre = struct {
                 const forward = self.fdir();
                 for ([_][3]usize{ .{ HIPL, KNEEL, ANKL }, .{ HIPR, KNEER, ANKR } }) |leg| {
                     const ankle = foe.markOn(body, v3(self.rest[leg[0]].x, self.rest[leg[2]].y, 0));
-                    heromod.armTo(&wx, self.rest, leg[0], leg[1], leg[2], ankle, forward, v3(0, -1, 0), forward);
+                    heromod.legTo(&wx, self.rest, leg[0], leg[1], leg[2], ankle, forward, v3(0, -1, 0), forward);
                 }
             }
         }

@@ -2533,6 +2533,39 @@ pub const Env = struct {
         return mathx.maxF((oc.x * oc.x + oc.y * oc.y + oc.z * oc.z) - along * along, 0);
     }
 
+    fn everyCell(_: void, _: *const Index, _: usize) bool {
+        return true;
+    }
+
+    /// THE ONE WALK OVER BOTH INDEXES — cells the lens can see, then props the lens can see. `cellOk` is the only
+    /// thing a caller may add and it is asked per CELL, before its props are touched; the prop test is `View`'s and
+    /// stays here, so the two callers cannot drift apart on what "visible" means.
+    fn eachVisible(
+        self: *const Env,
+        view: *const View,
+        cellCtx: anytype,
+        comptime cellOk: fn (@TypeOf(cellCtx), *const Index, usize) bool,
+        ctx: anytype,
+        comptime visit: fn (@TypeOf(ctx), u32) void,
+    ) void {
+        for ([_]*const Index{ &self.stx, &self.flx }) |idx| {
+            var c: usize = 0;
+            while (c < NCELL) : (c += 1) {
+                if (idx.start[c] == idx.start[c + 1]) continue;
+                if (!cellOk(cellCtx, idx, c)) continue;
+                if (!idx.cellSeen(c, view)) continue;
+                var k = idx.start[c];
+                while (k < idx.start[c + 1]) : (k += 1) {
+                    const pi = idx.items[k];
+                    const pr = &self.props[pi];
+                    const nfo = props.info(pr.kind);
+                    if (!view.visible(pr.pos, reachOf(pr, nfo), nfo.view)) continue;
+                    visit(ctx, pi);
+                }
+            }
+        }
+    }
+
     /// THE CELLS THE RAY PASSES THROUGH, out of the ones the lens can see. The frustum walk is the same one pass
     /// `eachInView` makes; the extra test is the cell's own sphere against the LINE rather than against the cone,
     /// which is what a cursor actually asks. On a full map that is a scan of the props in a dozen cells instead of
@@ -2546,24 +2579,16 @@ pub const Env = struct {
         ctx: anytype,
         comptime visit: fn (@TypeOf(ctx), u32) void,
     ) void {
-        for ([_]*const Index{ &self.stx, &self.flx }) |idx| {
-            var c: usize = 0;
-            while (c < NCELL) : (c += 1) {
-                if (idx.start[c] == idx.start[c + 1]) continue;
+        const Ray = struct {
+            origin: rl.Vector3,
+            dir: rl.Vector3,
+            fn near(r: @This(), idx: *const Index, c: usize) bool {
                 const vspan = (idx.yhi[c] - idx.ylo[c]) * 0.5;
                 const rad = CELL_CIRCUM + idx.bound[c] + vspan;
-                if (rayPerp2(origin, dir, idx.cellAt(c)) > rad * rad) continue;
-                if (!idx.cellSeen(c, view)) continue;
-                var k = idx.start[c];
-                while (k < idx.start[c + 1]) : (k += 1) {
-                    const pi = idx.items[k];
-                    const pr = &self.props[pi];
-                    const nfo = props.info(pr.kind);
-                    if (!view.visible(pr.pos, reachOf(pr, nfo), nfo.view)) continue;
-                    visit(ctx, pi);
-                }
+                return rayPerp2(r.origin, r.dir, idx.cellAt(c)) <= rad * rad;
             }
-        }
+        };
+        self.eachVisible(view, Ray{ .origin = origin, .dir = dir }, Ray.near, ctx, visit);
     }
 
     pub fn pickIf(
@@ -2915,21 +2940,7 @@ pub const Env = struct {
         ctx: anytype,
         comptime visit: fn (@TypeOf(ctx), u32) void,
     ) void {
-        for ([_]*const Index{ &self.stx, &self.flx }) |idx| {
-            var c: usize = 0;
-            while (c < NCELL) : (c += 1) {
-                if (idx.start[c] == idx.start[c + 1]) continue;
-                if (!idx.cellSeen(c, view)) continue;
-                var k = idx.start[c];
-                while (k < idx.start[c + 1]) : (k += 1) {
-                    const pi = idx.items[k];
-                    const pr = &self.props[pi];
-                    const nfo = props.info(pr.kind);
-                    if (!view.visible(pr.pos, reachOf(pr, nfo), nfo.view)) continue;
-                    visit(ctx, pi);
-                }
-            }
-        }
+        self.eachVisible(view, {}, everyCell, ctx, visit);
     }
 
     pub fn ownedBy(self: *const Env, op: u16) usize {

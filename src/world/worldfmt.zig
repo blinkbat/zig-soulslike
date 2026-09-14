@@ -3676,18 +3676,22 @@ pub fn assignsField(src: []const u8, comptime recv: []const u8, comptime field: 
         const rest = src[at..];
         if (std.mem.startsWith(u8, rest, " =") and !std.mem.startsWith(u8, rest, " ==")) return true;
         if (rest.len > 0 and rest[0] == '[') {
-            // Past the MATCHING bracket, not the first one: `e.sgrid_items[cursor[c]] =` nests an index inside the index.
-            var depth: usize = 0;
+            // Past the MATCHING bracket, not the first one: `e.sgrid_items[cursor[c]] =` nests an index inside the
+            // index — and past EVERY consecutive group, because a grid of grids is seated at `d.bossDead[0][0] =`.
             var j: usize = 0;
-            while (j < rest.len) : (j += 1) {
-                if (rest[j] == '[') depth += 1;
-                if (rest[j] == ']') {
-                    depth -= 1;
-                    if (depth == 0) break;
+            while (j < rest.len and rest[j] == '[') {
+                var depth: usize = 0;
+                while (j < rest.len) : (j += 1) {
+                    if (rest[j] == '[') depth += 1;
+                    if (rest[j] == ']') {
+                        depth -= 1;
+                        if (depth == 0) break;
+                    }
                 }
+                if (j >= rest.len) break;
+                j += 1;
             }
             if (j >= rest.len) continue;
-            j += 1;
             while (j < rest.len and rest[j] == ' ') j += 1;
             if (j < rest.len and rest[j] == '=' and !(j + 1 < rest.len and rest[j + 1] == '=')) return true;
         }

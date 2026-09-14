@@ -132,10 +132,23 @@ const CLAW_L = 14;
 const CLAW_R = 15;
 const SEGS = 3;
 const LIMBS = [_]usize{ LIMB_L, LIMB_R, LIMB_H };
+
+/// THE SPRING BANK'S LAYOUT, DERIVED AND NOT COUNTED: two body channels, then rx/ry for every limb of every
+/// segment. Written out by hand the stride was a literal `6` at three sites and the width a literal `20`, and both
+/// happen to equal `SEGS * 2` today only because there are as many segments as limbs.
+const CH_BODY = 2;
+const CH_STRIDE = LIMBS.len * 2;
+const NCH = CH_BODY + SEGS * CH_STRIDE;
+
+fn chanOf(seg: usize, limb: usize) usize {
+    return CH_BODY + seg * CH_STRIDE + limb * 2;
+}
+
 comptime {
     std.debug.assert(LIMB_R == LIMB_L + SEGS and LIMB_H == LIMB_R + SEGS and CLAW_L == LIMB_H + SEGS);
     std.debug.assert(SEG_LEN.len == SEGS and LIMB_SHUT.len == SEGS and LIMB_OPEN.len == SEGS);
     std.debug.assert(LIMB_Y.len == LIMBS.len and LIMB_A.len == LIMBS.len);
+    std.debug.assert(chanOf(SEGS - 1, LIMBS.len - 1) + 1 == NCH - 1);
 }
 
 const EYE_Y: f32 = 0.30 * H;
@@ -233,8 +246,8 @@ pub const Rooted = struct {
     open: f32 = 0,
     eyes: f32 = 0,
     swing: f32 = 0,
-    angles: [20]f32 = [_]f32{0} ** 20,
-    springs: anim.SpringBank(20) = .{},
+    angles: [NCH]f32 = [_]f32{0} ** NCH,
+    springs: anim.SpringBank(NCH) = .{},
     sway: f32 = 0,
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
@@ -625,7 +638,7 @@ pub const Rooted = struct {
         model.draw(self);
     }
 
-    fn targets(self: *const Rooted) [20]f32 {
+    fn targets(self: *const Rooted) [NCH]f32 {
         const swinging = self.state == .wind or self.state == .strike or self.state == .recover;
         const swing = if (swinging) self.swing else 0;
         const cock = mathx.clampF(-swing, 0, 1);
@@ -635,7 +648,7 @@ pub const Rooted = struct {
             else => 0,
         };
         const death = if (self.state == .dead) mathx.smoothstep(0, DEATH_DUR * 0.6, self.t) else 0;
-        var out = [_]f32{0} ** 20;
+        var out = [_]f32{0} ** NCH;
         out[0] = 9 * self.open + self.sway - 26 * reaction + 26 * death;
         out[1] = 9 * reaction;
         if (swinging) switch (self.atk) {
@@ -655,7 +668,7 @@ pub const Rooted = struct {
             const s = if (live) swing else 0;
             const openI = mathx.clampF((self.open - 0.14 * fi) / (1 - 0.14 * fi), 0, 1);
             for (0..SEGS) |seg| {
-                const ch = 2 + seg * 6 + i * 2;
+                const ch = chanOf(seg, i);
                 out[ch] = lerpF(LIMB_SHUT[seg], LIMB_OPEN[seg], openI) - 20 * reaction - 22 * death;
                 out[ch + 1] = (if (seg == 0) LIMB_A[i] else 0) + 12 * reaction * yawSign(i);
             }
@@ -664,7 +677,7 @@ pub const Rooted = struct {
                 const weight = if (self.state == .wind) cock else if (self.state == .strike) 1 else anim.keyAt(&RETURN_KEYS, self.t / self.move().recoverDur);
                 const solved = self.strikeAngles(i, &out, mathx.clampF(phase, 0, 1));
                 for (0..SEGS) |seg| {
-                    const ch = 2 + seg * 6 + i * 2;
+                    const ch = chanOf(seg, i);
                     out[ch] += mathx.wrapDeg(solved[seg * 2] - out[ch]) * weight;
                     out[ch + 1] += mathx.wrapDeg(solved[seg * 2 + 1] - out[ch + 1]) * weight;
                 }
@@ -673,7 +686,7 @@ pub const Rooted = struct {
         return out;
     }
 
-    fn strikeAngles(self: *const Rooted, limb: usize, body: *const [20]f32, phase: f32) [6]f32 {
+    fn strikeAngles(self: *const Rooted, limb: usize, body: *const [NCH]f32, phase: f32) [SEGS * 2]f32 {
         const lowerBole = mul(ry(body[1] * 0.5), rx(body[0] * 0.45));
         const bole = mul(mul3(ry(body[1] * 0.5), rx(body[0] * 0.55), place(REST[BOLE2])), lowerBole);
         const shoulder = foe.markOn(bole, branchRest(LIMBS[limb]));
@@ -698,7 +711,7 @@ pub const Rooted = struct {
         const outer = mathx.twoBone(upper.joint, upper.end, SEG_LEN[1], SEG_LEN[2], v3(0, -1, 0));
         const points = [_]rl.Vector3{ shoulder, upper.joint, outer.joint, outer.end };
         var parent = bole;
-        var result: [6]f32 = undefined;
+        var result: [SEGS * 2]f32 = undefined;
         for (0..SEGS) |seg| {
             const inverse = rl.math.matrixInvert(parent);
             const local = mathx.normV(mathx.subV(foe.markOn(inverse, points[seg + 1]), foe.markOn(inverse, points[seg])));
@@ -734,7 +747,7 @@ pub const Rooted = struct {
         }
         for (LIMBS, 0..) |b0, i| {
             for (0..SEGS) |seg| {
-                const ch = 2 + seg * 6 + i * 2;
+                const ch = chanOf(seg, i);
                 const m = mul3(rx(self.angles[ch]), ry(self.angles[ch + 1]), place(if (seg == 0) branchRest(b0) else REST[b0 + seg]));
                 self.xf[b0 + seg] = mul(m, if (seg == 0) self.xf[BOLE2] else self.xf[b0 + seg - 1]);
             }

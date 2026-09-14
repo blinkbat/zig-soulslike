@@ -2485,9 +2485,10 @@ pub const Editor = struct {
                                 self.wetStroke = true;
                             }
                         },
-                        else => |b| {
-                            const id = soilOf(b) orelse unreachable;
-                            if (m.paintSoil(g.x, g.z, self.radius, id, self.soilOpacity, self.brushEdge)) env.uploadSoil(m);
+                        // THE SOIL RUN IS NAMED, NOT SWEPT UP IN AN `else`: under one, a brush appended to
+                        // `GroundBrush` compiled clean and hit `soilOf`'s null at the first stroke.
+                        .dirt, .turf, .stone, .silt, .ash, .moss, .bone, .cinder, .spore, .bloom, .sand => |b| {
+                            if (m.paintSoil(g.x, g.z, self.radius, soilOf(b).?, self.soilOpacity, self.brushEdge)) env.uploadSoil(m);
                         },
                     }
                 }

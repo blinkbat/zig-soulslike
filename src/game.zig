@@ -929,6 +929,31 @@ test "EVERY CREATURE'S RIG IS CULLABLE — `foe.posed` at the head of its `pose`
     std.debug.print("  {d} of {d} foe groups skip the chain when nothing can see them ({d} excused)\n", .{ culled, FOE_GROUPS.len, NO_POSE_CULL.len });
 }
 
+test "EVERY GROUP IS DRIVEN — placement, draw, gate and settle come free off the fold, and the UPDATE does not" {
+    // The `inline for (FOE_GROUPS)` folds spawn a new group, draw it, gate its feet and shoulder it apart, so a row
+    // added without a hand-written update is a cohort that stands on the map and never moves. Nothing but this says so.
+    const src = try worldfmt.readForTest(std.testing.allocator, "src/game.zig", 1 << 22);
+    defer std.testing.allocator.free(src);
+    var missing: usize = 0;
+    var bespoke: usize = 0;
+    inline for (FOE_GROUPS) |gr| {
+        const billed = std.mem.indexOf(u8, src, "billGroup(g, \"" ++ gr.field ++ "\"") != null;
+        const grouped = std.mem.indexOf(u8, src, "g." ++ gr.field ++ ".update(") != null;
+        // The archers step per member, because a loose arrow is the group's business and the blow is not.
+        const perMember = std.mem.indexOf(u8, src, "g." ++ gr.field ++ ".live()) |*") != null;
+        if (!billed and !grouped) {
+            if (perMember) {
+                bespoke += 1;
+            } else {
+                std.debug.print("\n  `{s}` is in FOE_GROUPS and nothing in game.zig updates it — it will stand still\n", .{gr.field});
+                missing += 1;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 0), missing);
+    std.debug.print("  all {d} foe groups driven — {d} stepped per member\n", .{ FOE_GROUPS.len, bespoke });
+}
+
 /// Seated by a call that writes the WHOLE struct rather than by a plain `g.<field> =`, with the call named so the next reader can check it still does that.
 const SEATED_BY = [_]struct { field: []const u8, by: []const u8 }{
     .{ .field = "trig", .by = "armScript -> trigger.Runtime.arm, which opens with `self.* = .{}`" },
@@ -1638,19 +1663,29 @@ test "A SEALED ROOM HOLDS WHAT IS IN IT AND LETS EVERYTHING ELSE ALONE" {
     var shut = [_]bool{true} ** worldfmt.MAX_ARENAS;
 
     const inside = mathx.ground(4, 4);
-    const blinked = holdInRoom(m, &shut, inside, mathx.ground(60, 4), R);
+    const blinked = holdInRoom(m, &shut, inside, false, mathx.ground(60, 4), R);
     try std.testing.expect(m.arenas[0].contains(blinked.x, blinked.z));
     try std.testing.expectApproxEqAbs(@as(f32, 20.0 - R), blinked.x, 1e-4);
 
-    const passing = holdInRoom(m, &shut, mathx.ground(60, 60), mathx.ground(0, 0), R);
+    const passing = holdInRoom(m, &shut, mathx.ground(60, 60), false, mathx.ground(0, 0), R);
     try std.testing.expectApproxEqAbs(@as(f32, 0), passing.x, 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 0), passing.z, 1e-5);
 
-    const walk = holdInRoom(m, &shut, inside, mathx.ground(5, 5), R);
+    const walk = holdInRoom(m, &shut, inside, false, mathx.ground(5, 5), R);
     try std.testing.expectApproxEqAbs(@as(f32, 5), walk.x, 1e-5);
 
+    // The wall answers for the SURFACE the body is on, the same question `arenaIndexOn` answers everywhere else.
+    const below = holdInRoom(m, &shut, inside, true, mathx.ground(60, 4), R);
+    try std.testing.expectApproxEqAbs(@as(f32, 60), below.x, 1e-5);
+    m.arenas[0].under = true;
+    const sunk = holdInRoom(m, &shut, inside, true, mathx.ground(60, 4), R);
+    try std.testing.expectApproxEqAbs(@as(f32, 20.0 - R), sunk.x, 1e-4);
+    const overhead = holdInRoom(m, &shut, inside, false, mathx.ground(60, 4), R);
+    try std.testing.expectApproxEqAbs(@as(f32, 60), overhead.x, 1e-5);
+    m.arenas[0].under = false;
+
     shut[0] = false;
-    const out = holdInRoom(m, &shut, inside, mathx.ground(60, 4), R);
+    const out = holdInRoom(m, &shut, inside, false, mathx.ground(60, 4), R);
     try std.testing.expectApproxEqAbs(@as(f32, 60), out.x, 1e-5);
 }
 
@@ -2224,10 +2259,16 @@ fn snapshotPos(foes: anytype, out: []rl.Vector3) void {
     }
 }
 
-fn holdInRoom(m: *const worldfmt.Map, shut: []const bool, was: rl.Vector3, p: rl.Vector3, r: f32) rl.Vector3 {
-    const i = m.arenaIndexAt(was.x, was.z) orelse return p;
+/// `under` is the SURFACE the body was standing on, and it is the whole of `arenaIndexOn`'s point: a room on the
+/// hill may not wall in a passage beneath it, and a sealed chamber has to wall in the bodies that are actually in it.
+fn holdInRoom(m: *const worldfmt.Map, shut: []const bool, was: rl.Vector3, under: bool, p: rl.Vector3, r: f32) rl.Vector3 {
+    const i = m.arenaIndexOn(was.x, was.z, under) orelse return p;
     if (i >= shut.len or !shut[i]) return p;
     return m.arenas[i].hold(p, r);
+}
+
+fn holdIn(g: *const Game, was: rl.Vector3, p: rl.Vector3, r: f32) rl.Vector3 {
+    return holdInRoom(&g.map, &g.arenaShut, was, g.env.underground(was.x, was.z, was.y), p, r);
 }
 
 fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?FoeKind, crossesWards: bool) void {
@@ -2243,7 +2284,7 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?F
             f.pos.z = was[i].z;
             continue;
         }
-        const held = holdInRoom(&g.map, &g.arenaShut, was[i], f.pos, bodyRadiusOf(f));
+        const held = holdIn(g, was[i], f.pos, bodyRadiusOf(f));
         f.pos.x = held.x;
         f.pos.z = held.z;
         if (comptime @hasDecl(T, "airborne")) {
@@ -2316,7 +2357,7 @@ fn gateHeroTerrain(g: *Game, was: rl.Vector3) void {
     const out = gatedXZ(&g.env, was, g.hero.pos, g.hero.airborne());
     g.hero.pos.x = out.x;
     g.hero.pos.z = out.z;
-    const room = holdInRoom(&g.map, &g.arenaShut, was, g.hero.pos, HERO_R);
+    const room = holdIn(g, was, g.hero.pos, HERO_R);
     g.hero.pos.x = room.x;
     g.hero.pos.z = room.z;
     markWardStep(g, was);
@@ -6958,7 +6999,7 @@ fn collideActors(g: *Game, dt: f32) void {
     }
     const heroWasIn = g.hero.pos;
     g.hero.pos = mathx.approachV(g.hero.pos, inBounds(hp), step);
-    const heroHeld = holdInRoom(&g.map, &g.arenaShut, heroWasIn, g.hero.pos, HERO_R);
+    const heroHeld = holdIn(g, heroWasIn, g.hero.pos, HERO_R);
     g.hero.pos.x = heroHeld.x;
     g.hero.pos.z = heroHeld.z;
 
@@ -6989,7 +7030,7 @@ fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
         const wasIn = a.pos;
         if (a.airborne()) {
             a.pos = inBounds(g.env.resolveActor(a.pos, r, a.pos.y));
-            a.pos = holdInRoom(&g.map, &g.arenaShut, wasIn, a.pos, r);
+            a.pos = holdIn(g, wasIn, a.pos, r);
             continue;
         }
         var p = g.env.resolveActor(a.pos, r, a.pos.y);
@@ -7004,7 +7045,7 @@ fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
             }
         }
         a.pos = mathx.approachV(a.pos, inBounds(p), step);
-        a.pos = holdInRoom(&g.map, &g.arenaShut, wasIn, a.pos, r);
+        a.pos = holdIn(g, wasIn, a.pos, r);
     }
 }
 

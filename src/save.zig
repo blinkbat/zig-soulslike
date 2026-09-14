@@ -765,6 +765,8 @@ fn sample() Data {
     d.arrows = 3;
     d.fireArrows = 1;
     d.flask = .cerulean;
+    d.crimsonMax = combat.FLASK_CRIMSON + 2;
+    d.flaskTotal = combat.FLASK_TOTAL + 3;
     d.quick[0] = .crimson_flask;
     d.quick[3] = .mushroom_jerky;
     d.quickSel = 3;
@@ -801,7 +803,34 @@ fn sample() Data {
     d.bossDead[2][1] = true;
     d.seen[@intFromEnum(item.Kind.mushroom_jerky)] = true;
     d.seen[item.NK - 1] = true;
+    d.seenMap[0] = true;
+    d.seenMap[mapart.SEEN_N + 5] = true;
+    d.seenMap[mapart.SEEN_CELLS - 1] = true;
     return d;
+}
+
+test "THE ROUND TRIP IS ONLY WORTH WHAT `sample` FILLS — a field left at its default proves nothing" {
+    // Three had already fallen off it (`crimsonMax`, `flaskTotal`, and the whole explored chart), so the writer
+    // could have dropped any of them and the round-trip test would still have come back green.
+    const src = try wf.readForTest(testing.allocator, "src/save.zig", 1 << 22);
+    defer testing.allocator.free(src);
+    const head = std.mem.indexOf(u8, src, "fn sample() Data {").?;
+    const tail = std.mem.indexOfPos(u8, src, head, "\n}\n").?;
+    const body = src[head..tail];
+    var missing: usize = 0;
+    inline for (@typeInfo(Data).@"struct".fields) |f| {
+        // `wf.assignsField`'s rule plus the two more this sample uses: a SLICE handed to `@memcpy`, and a METHOD
+        // that writes the field (`worn.put`). Both seat it as surely as `=` does, and neither reads it.
+        const filled = wf.assignsField(body, "d", f.name) or
+            std.mem.indexOf(u8, body, "d." ++ f.name ++ "[0..") != null or
+            std.mem.indexOf(u8, body, "d." ++ f.name ++ ".put(") != null;
+        if (!filled) {
+            std.debug.print("\n  `sample` never fills `Data.{s}` — the round trip cannot see it\n", .{f.name});
+            missing += 1;
+        }
+    }
+    try testing.expectEqual(@as(usize, 0), missing);
+    std.debug.print("\n  save: all {d} of `Data`'s fields carried by the round-trip sample\n", .{@typeInfo(Data).@"struct".fields.len});
 }
 
 test "A FILE WITH NO RACK IN IT LOADS AS THE STARTING RACK, and a bad sorcery is refused rather than guessed" {

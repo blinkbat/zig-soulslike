@@ -2,7 +2,6 @@
 //! the cliffside stood in front of the wall. Local −z is the piece's FRONT (out over the low ground), +z runs into
 //! the hill (`proprock.cliffBuildOpt`: talus at z −2.1..−0.7, strata at `back − 1.20`).
 const std = @import("std");
-const rl = @import("raylib");
 const mathx = @import("../core/mathx.zig");
 const props = @import("../props/props.zig");
 const proprock = @import("../props/proprock.zig");
@@ -576,7 +575,6 @@ fn sideOf(fr: Frame, m: *const wf.Map, ix: usize, iz: usize, lx0: f32, lx1: f32,
     return if (l[1] >= cutZ) .high else .low;
 }
 
-// ---------------------------------------------------------------------------------------------------------------------
 
 const BENCH = wf.DIR ++ "/test_cliffseat" ++ wf.EXT;
 const BENCH_DROP: f32 = 6.0;

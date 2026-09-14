@@ -1823,7 +1823,8 @@ pub const Warband = struct {
         }
         var blow: ?foe.Blow = null;
         for (self.live()) |*k| {
-            switch (k.update(dt, k.threat.aim(hero), bounds, blade)) {
+            const aim = k.threat.aim(hero);
+            switch (k.update(dt, aim, bounds, blade)) {
                 .none => {},
                 .sling => |from| loose(ctx, from),
                 .healed => {
@@ -1841,7 +1842,7 @@ pub const Warband = struct {
                     }
                 },
             }
-            if (k.hurtOpen() and mathx.distXZ(k.pos, hero) <= k.hurtReach() and k.weaponTouches(hero)) {
+            if (k.hurtOpen() and mathx.distXZ(k.pos, aim) <= k.hurtReach() and k.weaponTouches(aim)) {
                 k.markDealt();
                 foe.worseBlow(&blow, k.hurtBlow(), k.pos, &k.threat);
             }

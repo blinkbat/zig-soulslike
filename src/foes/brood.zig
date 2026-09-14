@@ -5,6 +5,7 @@ const mathx = @import("../core/mathx.zig");
 const combat = @import("../play/combat.zig");
 const foe = @import("foe.zig");
 const wf = @import("../world/worldfmt.zig");
+const caves = @import("../world/caves.zig");
 const sfx = @import("../core/audio.zig");
 const heromod = @import("../play/hero.zig");
 const anim = @import("../core/anim.zig");
@@ -1410,7 +1411,12 @@ pub const Spider = struct {
         switch (self.state) {
             .idle => {
                 if (d <= B_AGGRO) self.faceToward(hero, dt);
-                self.resolveIdle();
+                const ps = foe.postStep(self, dt, bounds, B_SPEED, d, B_AGGRO);
+                if (ps.yaw) |w| {
+                    self.gait += ps.moved / (skinOf(self.role).stride * self.scale);
+                    self.facing = mathx.approachAngle(self.facing, w, TURN_RATE_B * dt);
+                    self.resolveWalk();
+                } else self.resolveIdle();
                 const wait = if (d <= B_AGGRO) mathx.minF(self.idleWait, 0.08) else self.idleWait;
                 if (self.t >= wait) self.decideBroodling(d, hero);
             },
@@ -2019,7 +2025,7 @@ pub const Brood = struct {
         self.clearSacs();
         for (m.foes[0..m.nfoes]) |h| {
             if (h.kind != .brood_sac or self.nsacs >= SAC_CAP) continue;
-            self.sacs[self.nsacs] = Sac.lay(v3(h.x, m.heightAt(h.x, h.z), h.z), h.seed, h.scale);
+            self.sacs[self.nsacs] = Sac.lay(v3(h.x, caves.homeY(m, h.x, h.z, h.under), h.z), h.seed, h.scale);
             self.nsacs += 1;
         }
         foe.resetRoles(Spider, Role, &self.band, &self.n, m, roleOf);

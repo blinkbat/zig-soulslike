@@ -79,13 +79,8 @@ const Lerp = struct {
     }
 };
 
-fn covF(v: u8) f32 {
-    return @as(f32, @floatFromInt(v)) / 255.0;
-}
-
-fn covByte(v: f32) u8 {
-    return @intFromFloat(mathx.clampF(@round(v * 255.0), 0, 255));
-}
+const covF = wf.covF;
+const covByte = wf.covByte;
 
 pub const EDGE_F: f32 = covF(EDGE);
 
@@ -173,6 +168,9 @@ pub const SHELTER_CONTOUR: f32 = 2.0;
 /// texture is BILINEAR and a field going hard to 0 outside the contour steps at every mouth. That is filtering,
 /// not the predicate — a body one cell outside a chamber is out under the sky and this must keep saying so.
 pub fn shelterAt(f: Fields, land: f32, px: f32, py: f32, pz: f32) f32 {
+    // The sky is the common answer here too, and `hollow()` already needs this very compare — `sampleAt`'s eight
+    // ghost scans are wasted on every point outside a chamber, and every light within reach asks once a frame.
+    if (openAt(f, px, pz) < EDGE_F) return 0;
     const s = sampleAt(f, px, pz);
     if (!s.hollow()) return 0;
     const thick = land - s.roof;
@@ -195,7 +193,6 @@ pub const Brush = struct {
     /// The floor's SLOPE, in metres per metre. A graded stroke writes the same height into a cell however many stamps cover it, so overlapping stamps cannot walk the floor down under themselves.
     dx: f32 = 0,
     dz: f32 = 0,
-    /// How deep the grade is allowed to reach.
     floorMin: f32 = -1e9,
 
     fn floorAt(self: Brush, x: f32, z: f32) f32 {
@@ -236,7 +233,7 @@ fn brushDistance(b: Brush, p: [2]f32) f32 {
 
 /// A SCULPT'S FEATHER IS NOT A CARVE'S — a carve eases over its rim alone so a passage keeps its walls, a sculpt eases
 /// over most of the disc (`Map.sculptTo`'s shape). The share is here rather than at the floor and the roof, which had it twice.
-const SCULPT_FEATHER: f32 = 0.15;
+const SCULPT_FEATHER = wf.SCULPT_FEATHER;
 
 fn sculptFall(r: f32, d: f32) f32 {
     return mathx.smoothstep(r, r * SCULPT_FEATHER, d);
@@ -267,6 +264,8 @@ pub fn carve(g: Grids, b: Brush, out: *[4]usize) bool {
             const wantR = wf.caveByte(mathx.clampF(want + head - arch, wf.CAVE_H_MIN, wf.CAVE_H_MAX));
             const nf = if (fresh) wantF else if (b.preserve) g.floor[i] else wf.caveByte(mathx.lerpF(wf.caveH(g.floor[i]), want, fall));
             const nr = if (fresh) wantR else if (b.preserve) @max(g.roof[i], wantR) else wf.caveByte(mathx.lerpF(wf.caveH(g.roof[i]), want + head - arch, fall));
+            // The parser refuses a covered point whose roof is at or under its floor, so a stroke clamped against `CAVE_H_MAX` must not open one.
+            if (nr <= nf) continue;
             if (cov != was or nf != g.floor[i] or nr != g.roof[i]) changed = true;
             g.cov[i] = cov;
             g.floor[i] = nf;
@@ -373,7 +372,8 @@ fn ringWalk(c: [4]f32, want: bool, out: *Shape) void {
     for (0..out.n) |i| out.wall[i] = isX[i] and isX[(i + 1) % out.n];
 }
 
-fn cornerWedge(c: [4]f32, k: usize, out: *Shape) void {
+fn cornerWedge(c: [4]f32, k0: usize, out: *Shape) void {
+    const k = k0 % 4;
     out.n = 3;
     out.pts[0] = edgePoint(c, (k + 3) % 4);
     out.pts[1] = corner(k);
@@ -431,7 +431,6 @@ pub fn cellShapes(c: [4]f32, centre: f32) Cell {
     return out;
 }
 
-/// The coverage, floor and roof at one lattice point, for a mesher walking cells.
 pub fn covAt(f: Fields, ix: usize, iz: usize) f32 {
     return covF(f.cov[iz * N + ix]);
 }
@@ -851,7 +850,6 @@ pub const bench = struct {
 
         stroke(m, CHAMBER, CHAMBER, CHAMBER_R, FLOOR, HEAD);
         stroke(m, CHAMBER, BEND, PASSAGE_R, FLOOR, HEAD);
-        // The low stretch: the same passage with the ceiling brought down.
         stroke(m, BEND, .{ 20, 8 }, PASSAGE_R, FLOOR, LOW_HEAD);
         entrance(m, MOUTH, .{ 20, 8 }, PASSAGE_R, HEAD);
 
@@ -1296,5 +1294,30 @@ test "fit lays the floor ROOF_MIN of rock under the hill, on the height step" {
     const land: f32 = 8.1;
     const head: f32 = 2.8;
     try std.testing.expect(land - (fitFloor(land, head) + head) >= ROOF_MIN);
+}
+
+test "every corner pattern shapes a cell, both ways a saddle can go" {
+    for (0..16) |bits| {
+        var c: [4]f32 = undefined;
+        for (0..4) |k| c[k] = if (bits & (@as(usize, 1) << @intCast(k)) != 0) 1.0 else 0.0;
+        for ([_]f32{ 0.0, 1.0 }) |centre| {
+            const cell = cellShapes(c, centre);
+            try std.testing.expect(cell.nopen + cell.nrock >= 1);
+            for (cell.open[0..cell.nopen]) |s| try std.testing.expect(s.n >= 3);
+            for (cell.rock[0..cell.nrock]) |s| try std.testing.expect(s.n >= 3);
+        }
+    }
+}
+
+test "a carve clamped against the roof cap opens no point the parser would refuse" {
+    const m = std.testing.allocator.create(wf.Map) catch unreachable;
+    defer std.testing.allocator.destroy(m);
+    m.* = .{};
+    m.blank("bench");
+    var span: [4]usize = undefined;
+    _ = carve(gridsOf(m), .{ .px = 0, .pz = 0, .r = 6, .floor = wf.CAVE_H_MAX, .roof = wf.CAVE_H_MAX + 3 }, &span);
+    for (m.caveCov, m.caveFloor, m.caveRoof) |c, f, r| {
+        if (c >= wf.CAVE_EDGE) try std.testing.expect(wf.caveH(r) > wf.caveH(f));
+    }
 }
 

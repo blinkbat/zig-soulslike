@@ -221,8 +221,6 @@ pub fn stalagmiteMesh(shader: rl.Shader) rl.Model {
             wz = nz;
             rprev = r1;
         }
-        const off2 = v3(wx - bx, 0, wz - bz);
-        _ = off2;
         b.addBlob(v3(wx, top, wz), v3(rprev * 1.5, rprev * 1.2, rprev * 1.45), 3, 8, DRIP);
         b.addBlob(v3(bx, base * 0.10, bz), v3(base * 1.5, base * 0.20, base * 1.35), 3, 9, DRIP_BAND);
     }

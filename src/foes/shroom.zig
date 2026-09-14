@@ -260,9 +260,7 @@ pub const Shroom = struct {
     }
     pub fn navWant(self: *const Shroom, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle) return null;
-        if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
-        if (foe.postAim(self)) |go| return go;
-        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
+        return foe.navChase(self, hero, AGGRO_R, HOME_R);
     }
 
     fn faceToward(self: *Shroom, target: rl.Vector3, dt: f32) void {
@@ -618,10 +616,7 @@ pub const Shroom = struct {
     }
 
     fn hullTouches(self: *const Shroom, a: rl.Vector3, b: rl.Vector3, radius: f32) bool {
-        for (HULLS) |hull| {
-            if (foe.hullTouches(self.xf[hull.bone], hull.center, hull.radii, a, b, radius)) return true;
-        }
-        return false;
+        return foe.hullsTouch(&self.xf, &HULLS, a, b, radius);
     }
 
     fn lowest(self: *const Shroom) f32 {

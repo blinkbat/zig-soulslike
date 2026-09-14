@@ -605,10 +605,8 @@ pub const Wolf = struct {
             self.faceToward(if (self.quarry) |q| q.at else heel, dt);
             self.speed = 0;
             const hopEnd = BITE_WIND + BITE_STRIKE;
-            if (self.t < hopEnd) {
-                const step = BITE_HOP * (dt / hopEnd);
-                mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), step, bounds);
-            }
+            const hop = mathx.sliceIn(self.t, dt, 0, hopEnd);
+            if (hop > 0) mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), BITE_HOP * (hop / hopEnd), bounds);
             if (self.t >= hopEnd + BITE_RECOVER) {
                 self.state = .idle;
                 self.t = 0;

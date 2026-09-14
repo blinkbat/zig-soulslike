@@ -89,6 +89,23 @@ const LIGHT_REACH: f32 = 90.0;
 /// reach where the haze has already eaten most of the thing: at a tuft's 85 m it fades 0 → 31% of the sky.
 const FADE_BAND: f32 = 7.0;
 
+/// A light's place in the queue for one of the shader's 15 slots: metres from the eye to its SPHERE, so one you are
+/// standing inside wins outright — plus how far that sphere sits outside the frame, since a torch at your back still
+/// lights the ground ahead. BOTH TERMS MOVE SMOOTHLY as you walk and turn; an in/out frustum test does not, and frees
+/// a slot the instant a light crosses the screen edge.
+fn lightKey(view: *const View, wl: WorldLight) f32 {
+    return mathx.lenV(mathx.subV(wl.base.pos, view.pos)) - wl.base.radius + view.outside(wl.base.pos);
+}
+
+/// THE CULL THAT BITES IS THE SLOT COUNT, NOT THE 90 M REACH: 367 lights stand in the shipping map for 15 slots, so
+/// a light arrives when it wins the queue, tens of metres inside any distance ramp. `cut` is the key of the nearest
+/// light that MISSED a slot — the pair trading places are both AT it, so a band up to it lands the newcomer at zero
+/// and takes the one it displaced out at zero.
+fn slotFade(k: f32, cut: f32) f32 {
+    if (cut >= std.math.floatMax(f32)) return 1;
+    return 1.0 - mathx.smoothstep(cut - FADE_BAND, cut, k);
+}
+
 pub const OCCL_MAX = 64;
 const OCCL_IN: f32 = 0.16;
 const OCCL_OUT: f32 = 0.34;
@@ -157,11 +174,11 @@ pub fn levelOf(base: wf.Hgt) f32 {
 
 /// The deepest lattice height the hero still wades (`WADE_MAX`) under a body at the DATUM; `dwellerFloorAt` is the same under the body at a point. Ground > Pool digs to it.
 pub fn dwellerFloor() f32 {
-    return @ceil((WATER_Y - GROUND_Y - WADE_MAX) / wf.HEIGHT_STEP) * wf.HEIGHT_STEP;
+    return @ceil((WATER_SKIM - WADE_MAX) / wf.HEIGHT_STEP) * wf.HEIGHT_STEP;
 }
 
 pub fn dwellerDepth() f32 {
-    return WATER_Y - GROUND_Y - dwellerFloor();
+    return WATER_SKIM - dwellerFloor();
 }
 
 var scratchIn: [wf.WATER_CELLS]f32 = undefined;
@@ -239,7 +256,6 @@ fn coastBand(e: wf.Edge) f32 {
     };
 }
 
-/// WHERE A PLACED INTERACTABLE STANDS, handed to whoever runs it: the prop's transform and the op that put it there.
 /// One type for chests and pickups both — they are the same placement, and two copies of it drifted apart field by field.
 pub const Site = struct {
     pos: rl.Vector3,
@@ -286,7 +302,6 @@ pub const WorldDeck = struct {
     halfW: f32 = 0,
     treads: u32 = 0,
 
-    /// A disc answers `y` everywhere inside it.
     fn floorAt(d: WorldDeck, x: f32, z: f32) ?f32 {
         if (d.run <= 0) return if (inDisc(d, x, z)) d.y else null;
         const dx = x - d.x;
@@ -465,6 +480,15 @@ pub const View = struct {
         return 1.0 - mathx.smoothstep(inner, far, @sqrt(d2));
     }
 
+    /// Metres the point sits outside the frame, 0 anywhere inside it — the same four planes `visible` tests, read as
+    /// a distance instead of a verdict.
+    pub fn outside(self: *const View, c: rl.Vector3) f32 {
+        const d = mathx.subV(c, self.pos);
+        var worst: f32 = 0;
+        for (self.n) |nn| worst = mathx.maxF(worst, -(nn.x * d.x + nn.y * d.y + nn.z * d.z));
+        return worst;
+    }
+
     pub fn visible(self: *const View, c: rl.Vector3, rad: f32, maxDist: f32) bool {
         const d = mathx.subV(c, self.pos);
         const far = mathx.maxF(maxDist, self.floor) + rad;
@@ -607,7 +631,6 @@ pub const Env = struct {
     caveAny: bool = false,
     /// The roof the SHADER reads: the ceiling height where there is one, and 0 where the roof is through the hill. Cut here, because the fragment has no terrain height to test against.
     caveShelterSrc: [wf.CAVE_CELLS]u8 = [_]u8{0} ** wf.CAVE_CELLS,
-    /// The chamber shells, tiled the way the terrain is: floor, walls and ceiling of every carve inside the tile.
     shells: [NTILES]rl.Model = undefined,
     shellBuilt: [NTILES]bool = [_]bool{false} ** NTILES,
     roofs: [NTILES]rl.Model = undefined,
@@ -638,16 +661,8 @@ pub const Env = struct {
         self.ground = terrain(shader, GROUND_HALF);
         self.waterSheet = waterQuad(shader, GROUND_HALF);
         self.waterSheetBuilt = true;
-        self.nprops = 0;
-        self.nsolids = 0;
+        self.clearPlacement();
         self.ncliffSolids = 0;
-        self.nwards = 0;
-        self.nillusions = 0;
-        self.openWards();
-        self.restoreIllusions();
-        self.nlights = 0;
-        self.npools = 0;
-        self.noccl = 0;
         self.ndress = 0;
         self.nchests = 0;
         self.npickups = 0;
@@ -1429,7 +1444,7 @@ pub const Env = struct {
 
     pub fn sheetStrips(self: *const Env) []const Strip {
         const N = wf.WATER_N;
-        const cell = 2 * self.waterHalf / @as(f32, @floatFromInt(N));
+        const cell = wf.cellStepFor(self.waterHalf, N);
         var n: usize = 0;
         for (0..N) |cz| {
             var cx: usize = 0;
@@ -1513,14 +1528,13 @@ pub const Env = struct {
         return levelOf(self.waterBaseField[i]);
     }
 
-    /// `dwellerFloor` under the body at this point.
     pub fn dwellerFloorAt(self: *const Env, x: f32, z: f32) f32 {
         const i = wf.gridIndex(self.waterHalf, wf.WATER_N, x, z) orelse return dwellerFloor();
         return wf.heightOf(self.waterBaseField[i]) + dwellerFloor();
     }
 
-    pub fn materialize(self: *Env, m: *const wf.Map) void {
-        self.mapHalf = m.half;
+    /// Everything a placement pass fills, zeroed in ONE list: `build`, `materialize` and `stageOne` each kept their own and two had drifted.
+    fn clearPlacement(self: *Env) void {
         self.nprops = 0;
         self.opsCapped = 0;
         self.lightsCapped = 0;
@@ -1533,6 +1547,11 @@ pub const Env = struct {
         self.npools = 0;
         self.noccl = 0;
         @memset(&self.sgrid_start, 0);
+    }
+
+    pub fn materialize(self: *Env, m: *const wf.Map) void {
+        self.mapHalf = m.half;
+        self.clearPlacement();
 
         var p = Placer{ .e = self, .m = m, .flat = !m.anyHeight() and !m.anyCave() };
         for (m.slice(), 0..) |*o, i| {
@@ -1542,6 +1561,43 @@ pub const Env = struct {
         }
         buildSolids(self);
         indexProps(self);
+    }
+
+    /// WHERE EVERY `Op` FIELD COMES FROM WHEN A GENERATOR IS BROKEN APART — `prop` off the instance that was
+    /// placed, `src` off the op that placed it, `drop` meaning an `at` has no such thing. `under` and `gold` were
+    /// each silently dropped for a release, so the walk below is a compile error on a field nobody has classified.
+    const EXPLODE_FROM = [_]struct { field: []const u8, from: enum { prop, src, drop }, why: []const u8 = "" }{
+        .{ .field = "op", .from = .drop, .why = "every row becomes an `at`" },
+        .{ .field = "kind", .from = .prop, .why = "a `mix=` op places several, so the INSTANCE says which" },
+        .{ .field = "x", .from = .prop },
+        .{ .field = "z", .from = .prop },
+        .{ .field = "yaw", .from = .prop },
+        .{ .field = "scale", .from = .prop },
+        .{ .field = "rise", .from = .prop },
+        .{ .field = "lean", .from = .prop },
+        .{ .field = "leanDir", .from = .prop },
+        .{ .field = "under", .from = .prop },
+        .{ .field = "r1", .from = .drop, .why = "the disc's outer radius; an `at` reads it as a LIFT and nothing generated is lifted" },
+        .{ .field = "scat", .from = .drop, .why = "an index into `Map.scats`, and the block goes with the op" },
+        .{ .field = "seed", .from = .src, .why = "salted per instance, and only a LIT prop reads it" },
+        .{ .field = "loot", .from = .src },
+        .{ .field = "nloot", .from = .src },
+        .{ .field = "gold", .from = .src },
+        .{ .field = "boss", .from = .src },
+        .{ .field = "nboss", .from = .src },
+    };
+
+    comptime {
+        for (@typeInfo(wf.Op).@"struct".fields) |f| {
+            var named = false;
+            for (EXPLODE_FROM) |row| {
+                if (std.mem.eql(u8, row.field, f.name)) named = true;
+            }
+            if (!named) @compileError("env: `explodeOp` gained the field `Op." ++ f.name ++ "` and EXPLODE_FROM does not say where it comes from");
+        }
+        for (EXPLODE_FROM) |row| {
+            if (!@hasField(wf.Op, row.field)) @compileError("env: EXPLODE_FROM names `" ++ row.field ++ "`, which is not an Op field");
+        }
     }
 
     pub fn explodeOp(self: *const Env, m: *wf.Map, s: usize) !usize {
@@ -1568,8 +1624,10 @@ pub const Env = struct {
             o.lean = pr.lean;
             o.leanDir = pr.leanDir;
             o.rise = pr.rise;
+            o.under = pr.under;
             o.loot = src.loot;
             o.nloot = src.nloot;
+            o.gold = src.gold;
             o.boss = src.boss;
             o.nboss = src.nboss;
             if (props.info(pr.kind).light != null) o.seed = src.seed +% k;
@@ -1581,13 +1639,7 @@ pub const Env = struct {
     }
 
     pub fn stageOne(self: *Env, kind: Kind) void {
-        self.nprops = 0;
-        self.opsCapped = 0;
-        self.lightsCapped = 0;
-        self.nsolids = 0;
-        self.nlights = 0;
-        self.npools = 0;
-        self.noccl = 0;
+        self.clearPlacement();
         const nfo = props.info(kind);
         self.props[0] = .{ .kind = kind, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1.0, .op = 0, .rise = nfo.stack * STAGE_SECTIONS };
         self.nprops = 1;
@@ -2075,7 +2127,11 @@ pub const Env = struct {
     /// How covered a point is, 0 out under the sky and 1 under solid rock. The CPU's read of what the shader shades by.
     pub fn shelterAt(self: *const Env, x: f32, y: f32, z: f32) f32 {
         if (!self.caveAny) return 0;
-        return caves.shelterAt(self.caveFields(), self.groundAt(x, z), x, y, z);
+        const f = self.caveFields();
+        // `groundAt` is only an ARGUMENT here, and on a painted cliff cell it is four 3x3 level scans. Out under the
+        // sky the answer is 0 whatever the land reads, and every light within reach asks this once a frame.
+        if (caves.openAt(f, x, z) < caves.EDGE_F) return 0;
+        return caves.shelterAt(f, self.groundAt(x, z), x, y, z);
     }
 
     pub fn caveStandAt(self: *const Env, x: f32, z: f32) ?f32 {
@@ -2083,7 +2139,6 @@ pub const Env = struct {
         return if (s.hollow()) s.floor else null;
     }
 
-    /// Whether the cell here is excavated — the hill over it is what the editor's cutaway leaves out.
     pub fn caveOpenAt(self: *const Env, x: f32, z: f32) bool {
         return self.caveAny and caves.openAt(self.caveFields(), x, z) >= caves.EDGE_F;
     }
@@ -2439,7 +2494,7 @@ pub const Env = struct {
                         if (m.water[wc] == 0) continue;
                         const i = iz * wf.HEIGHT_N + ix;
                         const cur = wf.heightOf(m.height[i]);
-                        const want = mathx.lerpF(cur, target, mathx.smoothstep(radius, radius * 0.15, d));
+                        const want = mathx.lerpF(cur, target, mathx.smoothstep(radius, radius * wf.SCULPT_FEATHER, d));
                         const v = wf.heightByte(want);
                         if (m.height[i] == v) continue;
                         m.height[i] = v;
@@ -2965,33 +3020,46 @@ pub const Env = struct {
         };
     }
 
-    pub fn uploadLights(self: *const Env, scene: *gfx.Scene, view: *const View, t: f32, reserved: []const gfx.Light) void {
-        comptime std.debug.assert(gfx.MAX_LIGHTS > 1);
-        var picked: [gfx.MAX_LIGHTS]gfx.Light = undefined;
-        var dist: [gfx.MAX_LIGHTS]f32 = undefined;
-        const keep = @min(reserved.len, gfx.MAX_LIGHTS / 2);
-        const cap = picked.len - keep;
+    pub fn pickLights(self: *const Env, view: *const View, t: f32, out: []gfx.Light) usize {
+        var key: [gfx.MAX_LIGHTS]f32 = undefined;
+        const cap = @min(out.len, key.len);
         var n: usize = 0;
+        var cut: f32 = std.math.floatMax(f32);
         for (self.lights[0..self.nlights]) |wl| {
-            if (!view.visible(wl.base.pos, wl.base.radius, LIGHT_REACH)) continue;
+            const reach = view.nearness(wl.base.pos, wl.base.radius, LIGHT_REACH);
+            if (reach <= 0) continue;
             var lit = self.lightOf(wl, t) orelse continue;
-            lit.col = mathx.scaleV(lit.col, view.nearness(wl.base.pos, wl.base.radius, LIGHT_REACH));
-            const d2 = mathx.dist2XZ(wl.base.pos, view.pos);
+            lit.col = mathx.scaleV(lit.col, reach);
+            const k = lightKey(view, wl);
             if (n < cap) {
-                picked[n] = lit;
-                dist[n] = d2;
+                out[n] = lit;
+                key[n] = k;
                 n += 1;
                 continue;
             }
             var worst: usize = 0;
-            for (dist[0..n], 0..) |dd, i| {
-                if (dd > dist[worst]) worst = i;
+            for (key[0..n], 0..) |kk, i| {
+                if (kk > key[worst]) worst = i;
             }
-            if (d2 < dist[worst]) {
-                picked[worst] = lit;
-                dist[worst] = d2;
+            if (k < key[worst]) {
+                cut = mathx.minF(cut, key[worst]);
+                out[worst] = lit;
+                key[worst] = k;
+            } else {
+                cut = mathx.minF(cut, k);
             }
         }
+        for (out[0..n], key[0..n]) |*p, k| {
+            p.col = mathx.scaleV(p.col, slotFade(k, cut));
+        }
+        return n;
+    }
+
+    pub fn uploadLights(self: *const Env, scene: *gfx.Scene, view: *const View, t: f32, reserved: []const gfx.Light) void {
+        comptime std.debug.assert(gfx.MAX_LIGHTS > 1);
+        var picked: [gfx.MAX_LIGHTS]gfx.Light = undefined;
+        const keep = @min(reserved.len, gfx.MAX_LIGHTS / 2);
+        var n = self.pickLights(view, t, picked[0 .. picked.len - keep]);
         for (reserved[0..keep]) |c| {
             picked[n] = c;
             n += 1;
@@ -3572,7 +3640,6 @@ fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi
         }
         const lip = land.lo + useDrop;
         const at = Station{ .px = px, .pz = pz, .nx = nx, .nz = nz, .alongX = alongX, .alongZ = alongZ, .lo = land.lo };
-        // The column is walked from below the low ground up to the lip; each row is one rock, sunk into the wall.
         var row: u32 = 0;
         var y = land.lo;
         while (row < FACE_ROCK_ROWS) : (row += 1) {
@@ -4535,7 +4602,7 @@ const Placer = struct {
         return self.e.blockedNear(v3(x, self.groundY(x, z) + SOLID_PROBE_Y, z), SOLID_PROBE_M, SOLID_PROBE_R);
     }
 
-    /// MEASURED: one line op at 0.001 m spacing over 400 m burns 21 ms a rebuild and places NOTHING; at the parser's own floor, 227 ms. A rebuild fires 0.28 s after every edit and a map holds 20,480 ops.
+    /// MEASURED: one line op at 0.001 m spacing over 400 m burns 21 ms a rebuild and places NOTHING; at the parser's own floor, 227 ms. A rebuild fires 0.28 s after every edit and a map holds `wf.MAX_OPS`.
     const BUDGET: i32 = 8192;
 
     fn spend(self: *Placer) bool {
@@ -5018,6 +5085,83 @@ test "NOTHING CUTS IN — the ramp reaches zero exactly where the cull drops the
         try std.testing.expect(vw.visible(v3(0, 0, far - 0.01), rad, reach));
         try std.testing.expect(!vw.visible(v3(0, 0, far + 0.01), rad, reach));
     }
+}
+
+fn holds(set: []const gfx.Light, at: rl.Vector3) bool {
+    for (set) |q| {
+        if (q.pos.x == at.x and q.pos.z == at.z) return true;
+    }
+    return false;
+}
+
+test "A LIGHT TAKING A SLOT ARRIVES AT ZERO, AND THE ONE IT PUSHES OUT LEAVES AT ZERO" {
+    const ta = std.testing.allocator;
+    const e = try ta.create(Env);
+    defer ta.destroy(e);
+    e.* = .{ .ground = undefined, .models = undefined };
+    const SPAN = 22;
+    const STRIDE: f32 = 9.0;
+    for (0..SPAN) |i| {
+        for (0..SPAN) |j| {
+            const x = (@as(f32, @floatFromInt(i)) - SPAN * 0.5) * STRIDE;
+            const z = (@as(f32, @floatFromInt(j)) - SPAN * 0.5) * STRIDE;
+            e.props[e.nprops] = .{ .kind = .torch, .pos = v3(x, 0, z), .yaw = 0, .scale = 1 };
+            e.lights[e.nlights] = .{
+                .base = .{ .pos = v3(x, 2.0, z), .col = v3(0.64, 0.34, 0.13), .radius = 11.0 },
+                .flicker = 0,
+                .phase = 0,
+                .prop = @intCast(e.nprops),
+            };
+            e.nprops += 1;
+            e.nlights += 1;
+        }
+    }
+
+    const SLOTS = gfx.MAX_LIGHTS - 1;
+    var now: [SLOTS]gfx.Light = undefined;
+    var was: [SLOTS]gfx.Light = undefined;
+    var nwas: usize = 0;
+    var first = true;
+    var worstIn: f32 = 0;
+    var worstOut: f32 = 0;
+    var swaps: usize = 0;
+    var seenMax: usize = 0;
+    const STEP: f32 = 0.05;
+    var walked: f32 = 0;
+    while (walked < 40.0) : (walked += STEP) {
+        const eye = v3(walked * 0.7 - 14.0, 2.4, walked - 14.0);
+        const yaw = walked * 0.16;
+        const view = viewLooking(eye, v3(eye.x + mathx.cosf(yaw), 2.0, eye.z + mathx.sinf(yaw)));
+        const n = e.pickLights(&view, 0, &now);
+        var seen: usize = 0;
+        for (e.lights[0..e.nlights]) |wl| {
+            if (view.nearness(wl.base.pos, wl.base.radius, LIGHT_REACH) > 0) seen += 1;
+        }
+        seenMax = @max(seenMax, seen);
+        if (first) {
+            first = false;
+        } else {
+            for (now[0..n]) |l| {
+                if (holds(was[0..nwas], l.pos)) continue;
+                swaps += 1;
+                worstIn = @max(worstIn, mathx.lenV(l.col));
+            }
+            for (was[0..nwas]) |l| {
+                if (holds(now[0..n], l.pos)) continue;
+                worstOut = @max(worstOut, mathx.lenV(l.col));
+            }
+        }
+        @memcpy(was[0..n], now[0..n]);
+        nwas = n;
+    }
+
+    const full = mathx.lenV(v3(0.64, 0.34, 0.13));
+    std.debug.print("\n  {d} lights, {d} at once within reach for {d} slots: {d} slot trades over a {d:.0} m walk\n", .{ e.nlights, seenMax, SLOTS, swaps, 40.0 });
+    std.debug.print("  the brightest ARRIVAL is {d:.1}% of a lit torch, the brightest DEPARTURE {d:.1}% — a cut would show 100%\n", .{ 100.0 * worstIn / full, 100.0 * worstOut / full });
+    try std.testing.expect(seenMax > SLOTS * 2);
+    try std.testing.expect(swaps > 20);
+    try std.testing.expect(worstIn < full * 0.02);
+    try std.testing.expect(worstOut < full * 0.02);
 }
 
 test "the culler accepts the full width of the screen, not just the axis" {
@@ -6372,6 +6516,8 @@ test "BREAKING A GROUP APART DOES NOT MOVE THE WORLD" {
         "belt: pillar -20 -20 20 20 12 0.9 1.1 seed=7001\n" ++
         "at: lantern 30 30 0 1\n");
     defer std.testing.allocator.destroy(m);
+    m.ops[0].under = true;
+    m.ops[0].gold = 7;
     const e = try std.testing.allocator.create(Env);
     defer std.testing.allocator.destroy(e);
     e.* = .{ .ground = undefined, .models = undefined };
@@ -6385,6 +6531,10 @@ test "BREAKING A GROUP APART DOES NOT MOVE THE WORLD" {
     try std.testing.expect(n > 1);
     try std.testing.expectEqual(n + 1, m.nops);
     for (m.slice()) |o| try std.testing.expectEqual(wf.OpKind.at, o.op);
+    for (m.ops[0..n]) |o| {
+        try std.testing.expect(o.under);
+        try std.testing.expectEqual(@as(u32, 7), o.gold);
+    }
 
     e.materialize(m);
     try std.testing.expectEqual(props0, e.propCount());
@@ -6728,16 +6878,17 @@ test "…AND NO HONEST OP IN THE SHIPPING MAP IS TRUNCATED BY IT" {
         cam.up = v3(0, 1, 0);
         const view = View.fromCamera(cam, 16.0 / 9.0);
         var timer = try std.time.Timer.start();
-        var seen: usize = 0;
+        var slots: [gfx.MAX_LIGHTS - 1]gfx.Light = undefined;
+        var picked: usize = 0;
         const ROUNDS = 2000;
-        for (0..ROUNDS) |_| {
-            for (e.lights[0..e.nlights]) |wl| {
-                if (view.visible(wl.base.pos, wl.base.radius, LIGHT_REACH)) seen += 1;
-            }
-        }
+        for (0..ROUNDS) |_| picked = e.pickLights(&view, 0, &slots);
         const us = @as(f64, @floatFromInt(timer.read())) / 1000.0 / @as(f64, ROUNDS);
-        std.debug.print("  ...the per-frame light walk is {d:.2} us over {d} lights ({d:.3} us each) — {d:.3}% of a 16.7 ms frame\n", .{
-            us, e.nlights, us / @as(f64, @floatFromInt(@max(e.nlights, 1))), 100.0 * us / 16700.0,
+        var reach: usize = 0;
+        for (e.lights[0..e.nlights]) |wl| {
+            if (view.nearness(wl.base.pos, wl.base.radius, LIGHT_REACH) > 0) reach += 1;
+        }
+        std.debug.print("  ...the per-frame light pick is {d:.2} us over {d} lights ({d:.3} us each) — {d:.3}% of a 16.7 ms frame; {d} within reach here, {d} took a slot\n", .{
+            us, e.nlights, us / @as(f64, @floatFromInt(@max(e.nlights, 1))), 100.0 * us / 16700.0, reach, picked,
         });
     }
 }
@@ -7182,4 +7333,28 @@ test "EVERY FIELD ON `Env` IS ASSIGNED — `Game` is `alloc.create`d and `Env` s
     }
     try std.testing.expectEqual(@as(usize, 0), missing);
     std.debug.print("\n  all {d} of Env's fields assigned — {d} carry a default that never runs\n", .{ @typeInfo(Env).@"struct".fields.len, defaulted });
+}
+
+test "AN EXPLODE CARRIES EVERY `Op` FIELD IT CLASSIFIES — a field added and never copied is silent data loss in the file" {
+    const src = try wf.readForTest(std.testing.allocator, "src/world/env.zig", 1 << 22);
+    defer std.testing.allocator.free(src);
+    const head = std.mem.indexOf(u8, src, "pub fn explodeOp(").?;
+    const tail = std.mem.indexOfPos(u8, src, head, "pub fn stageOne(").?;
+    const body = src[head..tail];
+    var missing: usize = 0;
+    var carried: usize = 0;
+    var dropped: usize = 0;
+    inline for (Env.EXPLODE_FROM) |row| {
+        if (row.from == .drop) {
+            dropped += 1;
+        } else {
+            carried += 1;
+            if (!wf.assignsField(body, "o", row.field)) {
+                std.debug.print("\n  `explodeOp` never writes `o.{s}` — an exploded `at` loses it\n", .{row.field});
+                missing += 1;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 0), missing);
+    std.debug.print("\n  explode: {d} of {d} `Op` fields carried across, {d} dropped with a reason\n", .{ carried, carried + dropped, dropped });
 }

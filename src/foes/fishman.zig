@@ -413,9 +413,7 @@ pub const Fishman = struct {
 
     pub fn navWant(self: *const Fishman, quarry: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle and self.state != .walk) return null;
-        if (foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R) <= AGGRO_R) return quarry;
-        if (foe.postAim(self)) |go| return go;
-        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
+        return foe.navChase(self, quarry, AGGRO_R, HOME_R);
     }
 
     fn faceToward(self: *Fishman, target: rl.Vector3, dt: f32) void {
@@ -644,11 +642,13 @@ pub const Fishman = struct {
     }
     fn enterStun(self: *Fishman, s: State) void {
         self.heroLatch = false;
+        self.rang = false;
         self.enter(s);
     }
     fn enterDeath(self: *Fishman) void {
         if (self.state == .dead) return;
         self.heroLatch = false;
+        self.rang = false;
         self.enter(.dead);
         self.justDied = true;
         sfx.world(.lurker_die, self.pos);

@@ -977,8 +977,8 @@ pub fn stickPan() rl.Vector2 {
 
 pub fn dpadZoom() f32 {
     var v: f32 = 0;
-    if (padDown(.left_face_up)) v += 1;
-    if (padDown(.left_face_down)) v -= 1;
+    if (padDown(padNav(.up))) v += 1;
+    if (padDown(padNav(.down))) v -= 1;
     const notch = rl.getMouseWheelMove();
     if (notch != 0) v = mathx.clampF(v + notch * 0.6, -1, 1);
     return v;

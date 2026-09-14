@@ -205,7 +205,7 @@ fn spellHas(r: usize, c: usize) bool {
         .fp => true,
         .reach => row.reach != null,
         .drip => row.blow == null,
-        else => row.blow != null,
+        .dmg, .poise, .stance, .fire, .cold, .lightning, .chaos => row.blow != null,
     };
 }
 

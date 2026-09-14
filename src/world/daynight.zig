@@ -22,6 +22,7 @@ pub const SUN_ALT_MAX: f32 = 61.8895;
 pub const SHOT_HOUR: f32 = 17.45283;
 
 /// 9 pm, an hour past `SUNSET` and pinned past the horizon by a comptime assert. Deliberately NOT `SHOT_HOUR`, which is the golden hour with the sun well up.
+pub const MORNING_HOUR: f32 = 8.5;
 pub const EVENING_HOUR: f32 = 21.0;
 comptime {
     std.debug.assert(EVENING_HOUR > SUNSET);
@@ -582,7 +583,7 @@ pub const Until = enum {
 
     pub fn hour(u: Until) f32 {
         return switch (u) {
-            .morning => 8.5,
+            .morning => MORNING_HOUR,
             .evening => EVENING_HOUR,
         };
     }
@@ -633,7 +634,7 @@ test "A BANK OF FOG IS THE HOUR'S OWN COLOUR, and the night never lights one" {
         .{ .at = 0.0, .name = "midnight" },
         .{ .at = 5.0, .name = "first light" },
         .{ .at = 6.0, .name = "sunrise" },
-        .{ .at = 8.5, .name = "morning" },
+        .{ .at = MORNING_HOUR, .name = "morning" },
         .{ .at = 12.0, .name = "noon" },
         .{ .at = SHOT_HOUR, .name = "golden hour" },
         .{ .at = 19.4, .name = "sunset" },

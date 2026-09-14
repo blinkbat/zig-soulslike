@@ -186,7 +186,6 @@ fn classify(sensed: f32, bearingDeg: f32, homeGap: f32, scale: f32, swipeReady: 
     return .close;
 }
 
-/// One nut let go: where it leaves the crown, and the point on the ground it is thrown at.
 pub const Toss = struct { from: rl.Vector3 = mathx.zero3, at: rl.Vector3 = mathx.zero3 };
 
 pub const Model = struct {
@@ -340,9 +339,7 @@ pub const Ent = struct {
 
     pub fn navWant(self: *const Ent, quarry: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle and self.state != .walk) return null;
-        if (foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R) <= AGGRO_R) return quarry;
-        if (foe.postAim(self)) |go| return go;
-        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
+        return foe.navChase(self, quarry, AGGRO_R, HOME_R);
     }
 
     fn faceToward(self: *Ent, target: rl.Vector3, dt: f32) void {
@@ -542,11 +539,13 @@ pub const Ent = struct {
     }
     fn enterStun(self: *Ent, s: State) void {
         self.heroLatch = false;
+        self.tossN = 0;
         self.enter(s);
     }
     fn enterDeath(self: *Ent) void {
         if (self.state == .dead) return;
         self.heroLatch = false;
+        self.tossN = 0;
         self.enter(.dead);
         self.justDied = true;
     }
@@ -855,7 +854,6 @@ fn crownMesh() rl.Mesh {
         );
     }
 
-        // `deadLimbTinted` is the one both leafless trees call.
     b.setMat(.bark);
     var tips: [6]rl.Vector3 = undefined;
     var boughs: u32 = 0;

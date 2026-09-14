@@ -360,9 +360,7 @@ pub const Owlbear = struct {
 
     pub fn navWant(self: *const Owlbear, quarry: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle and self.state != .walk) return null;
-        if (foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R) <= AGGRO_R) return quarry;
-        if (foe.postAim(self)) |go| return go;
-        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
+        return foe.navChase(self, quarry, AGGRO_R, HOME_R);
     }
 
     fn faceToward(self: *Owlbear, target: rl.Vector3, dt: f32) void {
@@ -555,10 +553,11 @@ pub const Owlbear = struct {
     fn tickBurst(self: *Owlbear, dt: f32, bounds: f32, movedDist: *f32, moveSpeed: *f32, moveYaw: *?f32) void {
         const u = self.leapU();
         self.hop = BURST_RISE * mathx.sinf(u * std.math.pi);
-        if (self.t > BURST_GATHER and u < 1.0) {
+        const uWas = mathx.clampF((self.t - dt - BURST_GATHER) / BURST_FLIGHT, 0, 1);
+        if (self.t > BURST_GATHER and uWas < 1.0) {
             const way = mathx.headingDir(self.burstYaw);
             const rate = BURST_DIST / BURST_FLIGHT * mathx.sinf(u * std.math.pi) * (std.math.pi / 2.0);
-            const moved = rate * dt;
+            const moved = BURST_DIST * 0.5 * (mathx.cosf(uWas * std.math.pi) - mathx.cosf(u * std.math.pi));
             mathx.stepXZ(&self.pos, way, moved, bounds);
             movedDist.* = moved;
             moveSpeed.* = rate;
@@ -609,12 +608,14 @@ pub const Owlbear = struct {
     fn enterStun(self: *Owlbear, s: State) void {
         self.heroLatch = false;
         self.hop = 0;
+        self.threw = false;
         self.enter(s);
     }
     fn enterDeath(self: *Owlbear) void {
         if (self.state == .dead) return;
         self.heroLatch = false;
         self.hop = 0;
+        self.threw = false;
         self.rouse = 1.0;
         self.enter(.dead);
         self.justDied = true;

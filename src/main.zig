@@ -181,11 +181,15 @@ fn runExplode(alloc: std.mem.Allocator, path: []const u8) !void {
         _ = try e.explodeOp(m, s);
         broken += 1;
     }
-    try wf.save(path, m);
+    // Written beside the map and renamed over it only once the re-load agrees, so a refused explode leaves the file as it was.
+    var tmpBuf: [wf.PATH_CAP + 16]u8 = undefined;
+    const tmp = try std.fmt.bufPrint(&tmpBuf, "{s}.explode", .{path});
+    try wf.save(tmp, m);
+    errdefer std.fs.cwd().deleteFile(tmp) catch {};
 
     const back = try alloc.create(wf.Map);
     defer alloc.destroy(back);
-    try wf.load(path, back, &line);
+    try wf.load(tmp, back, &line);
     e.uploadWater(back);
     e.materialize(back);
     std.debug.print(
@@ -193,6 +197,7 @@ fn runExplode(alloc: std.mem.Allocator, path: []const u8) !void {
         .{ path, ops0, broken, back.nops, props0, e.propCount(), solids0, e.solidCount(), lights0, e.lightCount() },
     );
     if (e.propCount() != props0 or e.solidCount() != solids0 or e.lightCount() != lights0) return error.MapMoved;
+    try std.fs.cwd().rename(tmp, path);
 }
 
 const CAVE_ROOF_MIN = caves.ROOF_MIN;

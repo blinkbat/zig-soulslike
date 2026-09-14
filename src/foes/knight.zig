@@ -2562,6 +2562,8 @@ pub const Knight = struct {
         self.live = false;
         self.strokeDone = 0;
         self.homing = false;
+        self.air = 0;
+        self.stepThen = null;
     }
     fn enterDeath(self: *Knight) void {
         self.deathFrom = self.toppleAmt();
@@ -2609,6 +2611,7 @@ pub const Knight = struct {
             },
             .leap => {
                 self.leapCd = LEAP.cd * self.aiRng.range(0.85, 1.25);
+                self.leapChained = false;
                 self.enter(.leapwind);
             },
             .charge => {
@@ -2827,6 +2830,7 @@ pub const Knight = struct {
             if (self.fallCd <= 0) return self.enter(.fallwind);
             if (self.harried() and self.leapCd <= 0 and foe.canLeap(&self.root)) {
                 self.leapCd = LEAP.cd * self.aiRng.range(0.85, 1.25);
+                self.leapChained = false;
                 return self.enter(.leapwind);
             }
         }
@@ -2861,6 +2865,8 @@ pub const Knight = struct {
         if ((self.state == .idle or self.state == .approach) and self.riposteCd <= 0 and self.aiRng.float() < 0.60) {
             self.riposteCd = 3.5;
             self.atk = THRUST_I;
+            self.opener = THRUST_I;
+            self.strung = 0;
             self.enter(.thrustwind);
         }
     }

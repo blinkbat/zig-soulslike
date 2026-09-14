@@ -551,6 +551,7 @@ pub const Ancient = struct {
         self.state = s;
         self.t = 0;
         self.homing = false;
+        self.raised = false;
         self.routine.stop();
     }
     fn enterDeath(self: *Ancient) void {

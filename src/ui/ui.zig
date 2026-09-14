@@ -478,8 +478,7 @@ fn niceStep(span: f32) f32 {
     const raw = span / 100.0;
     const p = std.math.pow(f32, 10.0, @floor(@log10(raw)));
     const n = raw / p;
-    const mul: f32 = if (n < 1.5) 1 else if (n < 3.5) 2 else if (n < 7.5) 5 else 10;
-    return mul * p;
+    return mathx.nice125(n) * p;
 }
 
 /// THE SAME ROW UNDER ANOTHER NAME — a continuous value still owes a fine clicker, and a stepped one still owes a
@@ -702,7 +701,6 @@ pub fn endDropdowns() void {
     const box = ddPanel(p.r, rows_.len);
     ddBox = box;
     uiart.seat(@intFromFloat(box.x), @intFromFloat(box.y), @intFromFloat(box.width), @intFromFloat(box.height));
-    rl.drawRectangleRec(box, rgba(0, 0, 0, 255));
     rl.drawRectangleRec(box, rgba(20, 18, 15, 255));
     rl.drawRectangleLinesEx(box, 1, alpha(TRIM, 190));
     const rows: i32 = @min(@as(i32, @intCast(rows_.len)), DD_MAX_SHOWN);

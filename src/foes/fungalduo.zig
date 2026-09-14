@@ -382,12 +382,10 @@ const MG_FLEE_R: f32 = 7.0;
 const MG_KEEP_R: f32 = 16.0;
 const MG_DRIFT_DUR: f32 = 0.85;
 
-/// HIS CASTING RANGE, HELD AND CIRCLED: past `MG_KEEP_R` he comes in, inside `MG_FLEE_R` he gives ground, between the two he only circles.
 const MG_KEEP = [_]behave.Step{
     .{ .band = .{ .min = MG_FLEE_R, .max = MG_KEEP_R, .secs = MG_DRIFT_DUR } },
 };
 
-/// Pressed inside the flee ring: break the range first, then hold it as always.
 const MG_BACK = [_]behave.Step{
     .{ .open = .{ .to = MG_FLEE_R } },
     .{ .run = .{ .script = &MG_KEEP } },
@@ -770,7 +768,7 @@ pub const Swordsman = struct {
         return self.hop / self.scale;
     }
     pub fn flashFrac(self: *const Swordsman) f32 {
-        return self.flash / foe.FLASH_DUR;
+        return foe.flashFrac(self.flash);
     }
 
     fn fdir(self: *const Swordsman) rl.Vector3 {
@@ -1103,8 +1101,8 @@ pub const Swordsman = struct {
 
     fn stunAmount(self: *const Swordsman) f32 {
         return switch (self.state) {
-            .stunlight => foe.stunCurve(self.t / combat.foeStunDur(false), false),
-            .stunheavy => foe.stunCurve(self.t / combat.foeStunDur(true), true),
+            .stunlight => foe.stunCurve(self.t, false),
+            .stunheavy => foe.stunCurve(self.t, true),
             else => 0,
         };
     }
@@ -1283,7 +1281,7 @@ pub const Magus = struct {
         return 0;
     }
     pub fn flashFrac(self: *const Magus) f32 {
-        return self.flash / foe.FLASH_DUR;
+        return foe.flashFrac(self.flash);
     }
 
     pub fn absent(self: *const Magus) bool {
@@ -1577,7 +1575,7 @@ pub const Magus = struct {
     }
 
     pub fn tryHit(self: *Magus, blade_: foe.Blade) void {
-        if (self.state == .dead) return;
+        if (self.state == .dead or self.absent()) return;
         const s = foe.reached(self, blade_) orelse return;
         const heavy = foe.wounded(self, s, blade_, MG_SHOVE);
         elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, s.contact, v3(0, 1, 0), .chaos, if (heavy) MG_HURT_HEAVY else MG_HURT_LIGHT, self.scale);
@@ -1591,18 +1589,28 @@ pub const Magus = struct {
 
     fn enterStun(self: *Magus, heavy: bool) void {
         if (self.state == .dead) return;
-        if (self.state == .fade_out or self.state == .fade_in) {
+        if (self.state == .fade_out or self.state == .fade_in or self.state == .gone) {
             self.fade = 0;
             self.press = 0;
             self.fadeCd = MG_FADE_CD;
         }
         sfx.world(.duo_magus_hurt, self.pos);
+        self.dropRelease();
         self.enter(if (heavy) .stunheavy else .stunlight);
+    }
+
+    /// The blade is billed inside `update`, after the state machine and before the Conclave reads what he let go.
+    fn dropRelease(self: *Magus) void {
+        self.threw = false;
+        self.sowed = false;
+        self.misted = false;
+        self.puffed = false;
     }
 
     fn enterDeath(self: *Magus) void {
         if (self.state == .dead) return;
         self.fade = 0;
+        self.dropRelease();
         sfx.world(.duo_magus_die, self.pos);
         self.justDied = true;
         self.enter(.dead);
@@ -1628,8 +1636,8 @@ pub const Magus = struct {
 
     fn stunAmount(self: *const Magus) f32 {
         return switch (self.state) {
-            .stunlight => foe.stunCurve(self.t / combat.foeStunDur(false), false),
-            .stunheavy => foe.stunCurve(self.t / combat.foeStunDur(true), true),
+            .stunlight => foe.stunCurve(self.t, false),
+            .stunheavy => foe.stunCurve(self.t, true),
             else => 0,
         };
     }
@@ -3090,4 +3098,26 @@ test "A DISSOLVED MAGUS IS NOT THERE FOR ANY OF THE THREE QUESTIONS" {
     });
     try std.testing.expectEqual(before, k.hits);
     try std.testing.expect(k.alive());
+}
+
+test "A STROKE ON THE RELEASE FRAME CANCELS THE MAGUS'S CAST — `tryHit` runs before the Conclave reads what he let go" {
+    const dt: f32 = 1.0 / 60.0;
+    const hero = mathx.ground(0, 11.0);
+    var m = Magus.spawn(mathx.zero3, 0, 1.0, 0.3);
+    m.leash.noteSeen();
+    var frames: u32 = 0;
+    while (frames < 1800) : (frames += 1) {
+        var probe = m;
+        _ = probe.update(dt, hero, 200.0, .{});
+        if (probe.threw or probe.sowed or probe.misted or probe.puffed) {
+            const at = m.centerWorld();
+            const blade = foe.Blade{ .active = true, .r = 1.2, .a = at, .b = at, .a0 = at, .b0 = at, .hit = .{ .dmg = 200, .poise = 999, .stance = 999 } };
+            _ = m.update(dt, hero, 200.0, blade);
+            try std.testing.expect(m.staggered());
+            try std.testing.expect(!m.threw and !m.sowed and !m.misted and !m.puffed);
+            return;
+        }
+        m = probe;
+    }
+    try std.testing.expect(false);
 }

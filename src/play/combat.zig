@@ -10,7 +10,19 @@ pub const Side = enum { hero, foe };
 
 pub const HitResult = enum { none, light, heavy, death };
 
-pub const HitOutcome = enum { ignored, taken, blocked, guardBroken };
+pub const HitOutcome = enum {
+    ignored,
+    taken,
+    blocked,
+    guardBroken,
+
+    pub fn landed(self: HitOutcome) bool {
+        return switch (self) {
+            .taken, .guardBroken => true,
+            .blocked, .ignored => false,
+        };
+    }
+};
 
 
 pub const Elem = enum(u8) { fire, cold, lightning, chaos };
@@ -415,10 +427,7 @@ pub const Vitals = struct {
     pub fn tick(self: *Vitals, dt: f32) void {
         self.sinceHit += dt;
         self.sinceHurt += dt;
-        if (!self.dead and self.asleep()) {
-            self.stunAs = .heavy;
-            self.stunLeft = self.heavyStun;
-        }
+        if (!self.dead and self.asleep()) self.beginStun(.heavy);
         if (self.stunLeft > 0) {
             self.stunLeft -= dt;
             if (self.stunLeft <= 0) {
@@ -427,7 +436,7 @@ pub const Vitals = struct {
                 self.poise = self.poiseMax;
             }
         }
-        const wearK = std.math.pow(f32, 0.5, dt / WEAR_HALFLIFE);
+        const wearK = @exp2(-dt / WEAR_HALFLIFE);
         self.lightWear *= wearK;
         self.heavyWear *= wearK;
         for (&self.ailWear) |*w| w.* *= wearK;

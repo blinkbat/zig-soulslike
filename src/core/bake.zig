@@ -161,8 +161,7 @@ pub const Emit = struct {
     fn zone(self: *Emit, name: []const u8, x0: f32, z0: f32, x1: f32, z1: f32, density: f32, mix: []const Kind) void {
         if (self.m.nzones >= wf.MAX_ZONES) @panic("bake: zone cap exceeded");
         var z = wf.Zone{ .x = x0, .z = z0, .x1 = x1, .z1 = z1, .density = density };
-        const n = @min(name.len, wf.NAME_CAP - 1);
-        @memcpy(z.name[0..n], name[0..n]);
+        z.setName(name);
         setMix(&z.mix, &z.nmix, mix);
         self.m.zones[self.m.nzones] = z;
         self.m.nzones += 1;

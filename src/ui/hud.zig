@@ -610,7 +610,7 @@ pub const LivePortrait = struct {
     yaw: f32,
     pitch: f32,
     dist: f32,
-    fov: f32 = 34.0,
+    fov: f32 = PORTRAIT_FOV,
     clear: rl.Color = PORT_CLEAR,
     ctx: *const anyopaque,
     drawFn: *const fn (*const anyopaque) void,
@@ -1030,7 +1030,7 @@ pub fn souls(n: u32) void {
 const COIN_H: i32 = 26;
 const COIN_GAP: i32 = 5;
 const COIN_W: i32 = SOUL_W;
-const COIN_TEXT = rgba(238, 216, 158, 255);
+pub const COIN_TEXT = rgba(238, 216, 158, 255);
 
 pub fn purseStackH() i32 {
     return SOUL_H + COIN_GAP + COIN_H;

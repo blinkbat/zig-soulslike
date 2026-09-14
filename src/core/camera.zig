@@ -153,15 +153,13 @@ pub const CamRig = struct {
         c.lift = mathx.smoothCD(c.lift, share * heroLift, &c.liftVel, LIFT_SECS, 0, dt);
     }
 
-    /// A SPRING IS TWO NUMBERS, SO A SNAP WRITES BOTH — left behind, `liftVel` carries the speed the lens had before
-    /// the footing jumped straight back into the frame the snap exists to make continuous.
+    /// A SPRING IS TWO NUMBERS, SO A SNAP WRITES BOTH — left behind, `liftVel` carries the old speed straight back in.
     pub fn snapLift(c: *CamRig, lift: f32) void {
         c.lift = lift;
         c.liftVel = 0;
     }
 
-    /// The focus is a SPRING, so seating it is two writes and they go together — `null` is "seat it wherever the
-    /// next frame finds him".
+    /// Two writes and they go together; `null` is "seat it wherever the next frame finds him".
     fn seatFocus(c: *CamRig, at: ?rl.Vector3) void {
         c.focus = at;
         c.focusVel = mathx.zero3;
@@ -184,9 +182,6 @@ pub const CamRig = struct {
         c.place(v3(at.x, at.y + TARGET_RAISE, at.z), c.dist);
     }
 
-    /// THE EYE DOES NOT INHERIT THE STAIR — the boom hangs off a point that walks to his shoulder on a spring, so a
-    /// flight of treads reads as a ramp. The flat axes are damped far less than the rise; past `FOCUS_SNAP` nothing
-    /// is damped at all.
     fn focusOn(c: *CamRig, shoulder: rl.Vector3, dt: f32) rl.Vector3 {
         const was = c.focus orelse {
             c.seatFocus(shoulder);
@@ -375,7 +370,6 @@ test "MASONRY PULLS THE EYE IN — the boom stops at the near face of a wall it 
         "\n  wall face at z -2.60: the eye stops at z {d:.3} on a {d:.2} m boom (asked for {d:.2})\n",
         .{ rig.cam.position.z, boomOf(rig), MAX_DIST },
     );
-    // Over the wall's head the boom is its own again.
     var over = CamRig{ .cam = undefined, .yaw = 0, .pitch = 0.9, .dist = MAX_DIST };
     over.followRoofed(v3(0, 1.4, 0), world, 1.0 / 60.0);
     try std.testing.expect(boomOf(over) > MAX_DIST - 0.1);
@@ -397,12 +391,10 @@ test "WHAT THE MARCH COSTS A FRAME — the floor is sampled once a rung, plus th
     Probe.floors = 0;
     rig.followRoofed(v3(0, 1.4, 0), walled, 1.0 / 60.0);
     std.debug.print("  the same boom stopped by a wall at 2.6 m: {d} floor samples\n", .{Probe.floors});
-    // Stopping early is CHEAPER than the open case — the march never walks past what blocks it.
     try std.testing.expect(Probe.floors < 12);
 }
 
 test "AN UP-TILT RUNS THE LINE ALONG THE TURF, and a chest standing in it costs no boom" {
-    // The eye ends at GROUND_CLEAR whatever the pitch asked for, so masonry is asked at THAT height, not the line's.
     const low = Probe{ .ground = flatGround, .box = .{ .x0 = -6, .x1 = 6, .z0 = -3.4, .z1 = -2.6, .top = 0.6 } };
     var rig = CamRig{ .cam = undefined, .yaw = 0, .pitch = PITCH_MIN, .dist = DEFAULT_DIST };
     rig.followRoofed(v3(0, 1.4, 0), low, 1.0 / 60.0);

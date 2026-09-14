@@ -98,6 +98,8 @@ pub const Scatter = struct {
 };
 
 /// What an `at` reads and no more. Everything a scatter op adds lives in `Scatter`.
+pub const DEFAULT_SEAL = [_]FoeKind{.bone_knight} ** MAX_SEAL;
+
 pub const Op = struct {
     op: OpKind = .at,
     kind: Kind = .pillar,
@@ -122,7 +124,7 @@ pub const Op = struct {
     nloot: u8 = 0,
     /// COIN IN THE CONTAINER, alongside the loot rather than instead of it — `chest.openNear` and `pickup.takeNear` hand back both. 0 is an empty purse and writes no tail.
     gold: u32 = 0,
-    boss: [MAX_SEAL]FoeKind = [_]FoeKind{.bone_knight} ** MAX_SEAL,
+    boss: [MAX_SEAL]FoeKind = DEFAULT_SEAL,
     nboss: u8 = 1,
 
     pub fn seal(self: *const Op) []const FoeKind {
@@ -225,12 +227,10 @@ pub const Location = struct {
         return self.wet != null or self.fog != null or self.spore != null or self.ember != null or self.soup != null;
     }
     pub fn label(self: *const Location) []const u8 {
-        return std.mem.sliceTo(&self.name, 0);
+        return nameText(&self.name);
     }
     pub fn setName(self: *Location, s: []const u8) void {
-        self.name = [_]u8{0} ** NAME_CAP;
-        const n = @min(s.len, NAME_CAP - 1);
-        @memcpy(self.name[0..n], s[0..n]);
+        setNameIn(&self.name, s);
     }
 };
 
@@ -252,12 +252,10 @@ pub const Zone = struct {
         return self.mix[@intCast(rng.intn(@intCast(self.nmix)))];
     }
     pub fn label(self: *const Zone) []const u8 {
-        return std.mem.sliceTo(&self.name, 0);
+        return nameText(&self.name);
     }
     pub fn setName(self: *Zone, s: []const u8) void {
-        self.name = [_]u8{0} ** NAME_CAP;
-        const n = @min(s.len, NAME_CAP - 1);
-        @memcpy(self.name[0..n], s[0..n]);
+        setNameIn(&self.name, s);
     }
 };
 
@@ -331,7 +329,7 @@ pub const Arena = struct {
     vx: [MAX_ARENA_VERTS]f32 = [_]f32{0} ** MAX_ARENA_VERTS,
     vz: [MAX_ARENA_VERTS]f32 = [_]f32{0} ** MAX_ARENA_VERTS,
     n: u8 = 0,
-    boss: [MAX_SEAL]FoeKind = [_]FoeKind{.bone_knight} ** MAX_SEAL,
+    boss: [MAX_SEAL]FoeKind = DEFAULT_SEAL,
     nboss: u8 = 1,
     /// A ROOM UNDERGROUND IS NOT THE GROUND OVER IT: an arena claims only bodies standing on its own surface.
     under: bool = false,
@@ -438,12 +436,10 @@ pub const Arena = struct {
     }
 
     pub fn label(self: *const Arena) []const u8 {
-        return std.mem.sliceTo(&self.name, 0);
+        return nameText(&self.name);
     }
     pub fn setName(self: *Arena, s: []const u8) void {
-        self.name = [_]u8{0} ** NAME_CAP;
-        const n = @min(s.len, NAME_CAP - 1);
-        @memcpy(self.name[0..n], s[0..n]);
+        setNameIn(&self.name, s);
     }
 };
 
@@ -620,8 +616,21 @@ pub fn setId(dst: *Id, s: []const u8) !void {
     @memcpy(dst[0..s.len], s);
 }
 
+/// THE EDITOR'S POLICY, where `setId` is the PARSER'S: a name too long is cut, not refused, and the cap comes off
+/// the destination so an `Id` cell and a `NAME_CAP` cell take the same call. One byte is always held back for the
+/// terminator `nameText` reads.
+pub fn setNameIn(dst: []u8, s: []const u8) void {
+    @memset(dst, 0);
+    const n = @min(s.len, dst.len - 1);
+    @memcpy(dst[0..n], s[0..n]);
+}
+
+pub fn nameText(src: []const u8) []const u8 {
+    return std.mem.sliceTo(src, 0);
+}
+
 pub fn idText(id: *const Id) []const u8 {
-    return std.mem.sliceTo(id, 0);
+    return nameText(id);
 }
 
 pub const Cmp = enum(u8) {
@@ -871,18 +880,18 @@ pub fn seedTalk(kind: NpcKind, t: *Talk) void {
     }
 }
 
-fn seedDialogs(m: *Map) void {
+fn seedDialogs(m: *Map) !void {
     for (m.npcs[0..m.nnpcs]) |*p| {
         if (p.dlg != NO_DIALOG) continue;
         var nb: [ID_CAP]u8 = undefined;
-        const name = std.fmt.bufPrint(&nb, "{s}_default", .{@tagName(p.kind)}) catch continue;
+        const name = std.fmt.bufPrint(&nb, "{s}_default", .{@tagName(p.kind)}) catch return ParseError.NameTooLong;
         if (m.findDialog(name)) |at| {
             p.dlg = at;
             continue;
         }
         var t = Talk{};
         seedTalk(p.kind, &t);
-        const at = addTalk(m, name, &t) catch continue;
+        const at = try addTalk(m, name, &t);
         m.dialogs[at].synth = true;
         p.dlg = at;
     }
@@ -1333,21 +1342,24 @@ fn upperTag(comptime s: []const u8) []const u8 {
     }
 }
 
+fn defaultEdgeByte(id: u8) u8 {
+    return @intFromEnum(@as(Soil, @enumFromInt(@min(id, Soil.N - 1))).defaultEdge());
+}
+
 fn edgesAllDefault(m: *const Map) bool {
     for (m.soil, m.soilEdge) |id, e| {
-        const want: u8 = @intFromEnum(@as(Soil, @enumFromInt(@min(id, Soil.N - 1))).defaultEdge());
-        if (e != want) return false;
+        if (e != defaultEdgeByte(id)) return false;
     }
     return true;
 }
 
 fn fillLegacyEdges(m: *Map) void {
-    for (m.soil, 0..) |id, i| {
-        m.soilEdge[i] = @intFromEnum(@as(Soil, @enumFromInt(@min(id, Soil.N - 1))).defaultEdge());
-    }
+    for (m.soil, 0..) |id, i| m.soilEdge[i] = defaultEdgeByte(id);
 }
 
 pub const COV_FULL: u8 = 255;
+/// A sculpt eases over most of its disc, from this share of the radius out to the rim; a carve's own feather is the rim cell alone.
+pub const SCULPT_FEATHER: f32 = 0.15;
 
 pub fn covF(v: u8) f32 {
     return @as(f32, @floatFromInt(v)) / 255.0;
@@ -1744,13 +1756,11 @@ pub const Map = struct {
     caveRoof: [CAVE_CELLS]u8 = [_]u8{CAVE_H_ZERO} ** CAVE_CELLS,
 
     pub fn label(self: *const Map) []const u8 {
-        return std.mem.sliceTo(&self.name, 0);
+        return nameText(&self.name);
     }
 
     pub fn setName(self: *Map, s: []const u8) void {
-        self.name = [_]u8{0} ** NAME_CAP;
-        const n = @min(s.len, NAME_CAP - 1);
-        @memcpy(self.name[0..n], s[0..n]);
+        setNameIn(&self.name, s);
     }
 
     /// EVERYTHING BUT WHERE AND WHAT THE FILE IS. Written out field by field it was a list to forget one from, and
@@ -1890,19 +1900,6 @@ pub const Map = struct {
         return self.ops[0..self.nops];
     }
 
-    pub fn clearScript(self: *Map) void {
-        self.nnpcs = 0;
-        self.ntrigs = 0;
-        self.ndialogs = 0;
-        self.nnodes = 0;
-        self.ngates = 0;
-        self.ndacts = 0;
-        self.nflags = 0;
-        self.ncounters = 0;
-        self.ntimers = 0;
-        self.ndtext = 0;
-    }
-
     pub fn spanText(self: *const Map, s: Span) []const u8 {
         if (s.len == 0 or s.at + s.len > self.ndtext) return "";
         return self.dtext[s.at .. s.at + s.len];
@@ -1955,6 +1952,9 @@ pub const Map = struct {
     }
     pub fn findCounter(self: *const Map, name: []const u8) ?u16 {
         return found(self.counterNames[0..self.ncounters], name);
+    }
+    pub fn findTimer(self: *const Map, name: []const u8) ?u16 {
+        return found(self.timerNames[0..self.ntimers], name);
     }
     pub fn isFallbackZone(self: *const Map, i: usize) bool {
         return self.nzones > 0 and i + 1 == self.nzones;
@@ -2328,7 +2328,7 @@ pub const Map = struct {
                 const dz = p[1] - pz;
                 const d = @sqrt(dx * dx + dz * dz);
                 if (d > r) continue;
-                const fall = mathx.smoothstep(r, r * 0.15, d);
+                const fall = mathx.smoothstep(r, r * SCULPT_FEATHER, d);
                 const i = iz * HEIGHT_N + ix;
                 const cur = heightOf(self.height[i]);
                 const want = switch (mode) {
@@ -2383,8 +2383,9 @@ pub fn write(m: *const Map, w: anytype) !void {
     try w.print("name: {s}\n", .{m.label()});
     try w.print("half: {d:.1}\n", .{m.half});
     try w.print("runway: {d:.2} {d:.2} {d:.2} {d:.2}\n", .{ m.runway.x, m.runway.z, m.runway.x1, m.runway.z1 });
-    try w.print("start: {d:.2} {d:.2} {d:.1}\n", .{ m.start.x, m.start.z, m.start.yaw });
-    try w.writeAll("\n");
+    try w.print("start: {d:.2} {d:.2} {d:.1}", .{ m.start.x, m.start.z, m.start.yaw });
+    if (m.start.under) try w.writeAll(" under=1");
+    try w.writeAll("\n\n");
 
     for (m.zones[0..m.nzones]) |*z| {
         try w.print("zone: {s} {d:.1} {d:.1} {d:.1} {d:.1} {d:.3} ", .{ z.label(), z.x, z.z, z.x1, z.z1, z.density });
@@ -2398,7 +2399,7 @@ pub fn write(m: *const Map, w: anytype) !void {
         if (l.spore) |v| try w.print(" spore={d:.3}", .{v});
         if (l.ember) |v| try w.print(" ember={d:.3}", .{v});
         if (l.soup) |v| try w.print(" soup={d:.3}", .{v});
-        if (l.blend != 6.0) try w.print(" blend={d:.2}", .{l.blend});
+        if (l.blend != (Location{}).blend) try w.print(" blend={d:.2}", .{l.blend});
         try w.writeAll("\n");
     }
     for (m.clearings[0..m.nclearings]) |c| {
@@ -2767,7 +2768,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
             if (it.next()) |tail| {
                 const eq = std.mem.indexOfScalar(u8, tail, '=') orelse return ParseError.UnknownKey;
                 if (!std.mem.eql(u8, tail[0..eq], "under")) return ParseError.UnknownKey;
-                m.start.under = !std.mem.eql(u8, tail[eq + 1 ..], "0");
+                m.start.under = try parseVal(bool, tail[eq + 1 ..]);
             }
         } else if (std.mem.eql(u8, rec, "zone")) {
             if (m.nzones >= MAX_ZONES) return ParseError.TooManyZones;
@@ -2788,7 +2789,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
         } else if (std.mem.eql(u8, rec, "soil")) {
             soilAt = try readGrid(u8, &it, &m.soil, soilAt, Soil.N);
         } else if (std.mem.eql(u8, rec, "soilcov")) {
-            covAt = try readGrid(u8, &it, &m.soilCov, covAt, 256);
+            covAt = try readGrid(u8, &it, &m.soilCov, covAt, std.math.maxInt(u8) + 1);
         } else if (std.mem.eql(u8, rec, "soiledge")) {
             edgeAt = try readGrid(u8, &it, &m.soilEdge, edgeAt, Edge.N);
         } else if (std.mem.eql(u8, rec, "water")) {
@@ -2802,16 +2803,16 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
         } else if (std.mem.eql(u8, rec, "hgt")) {
             if (!seenVersion) return ParseError.BadVersion;
             const from = hgtAt;
-            hgtAt = try readGrid(Hgt, &it, &m.height, hgtAt, if (ver == 1) 256 else std.math.maxInt(Hgt) + 1);
+            hgtAt = try readGrid(Hgt, &it, &m.height, hgtAt, if (ver == 1) std.math.maxInt(u8) + 1 else std.math.maxInt(Hgt) + 1);
             if (ver == 1) {
                 for (m.height[from..hgtAt]) |*h| h.* = h.* + HEIGHT_ZERO - LEGACY_HEIGHT_ZERO;
             }
         } else if (std.mem.eql(u8, rec, "cave")) {
-            caveAt = try readGrid(u8, &it, &m.caveCov, caveAt, 256);
+            caveAt = try readGrid(u8, &it, &m.caveCov, caveAt, std.math.maxInt(u8) + 1);
         } else if (std.mem.eql(u8, rec, "cavefloor")) {
-            caveFAt = try readGrid(u8, &it, &m.caveFloor, caveFAt, 256);
+            caveFAt = try readGrid(u8, &it, &m.caveFloor, caveFAt, std.math.maxInt(u8) + 1);
         } else if (std.mem.eql(u8, rec, "caveroof")) {
-            caveRAt = try readGrid(u8, &it, &m.caveRoof, caveRAt, 256);
+            caveRAt = try readGrid(u8, &it, &m.caveRoof, caveRAt, std.math.maxInt(u8) + 1);
         } else if (std.mem.eql(u8, rec, "cliff")) {
             cliffAt = try readGrid(u8, &it, &m.cliff, cliffAt, CLIFF_N);
         } else if (std.mem.eql(u8, rec, "foe")) {
@@ -2833,7 +2834,7 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
                 } else if (std.mem.eql(u8, key, "when")) {
                     f.when = try enumFromName(FoeWhen, val);
                 } else if (std.mem.eql(u8, key, "under")) {
-                    f.under = !std.mem.eql(u8, val, "0");
+                    f.under = try parseVal(bool, val);
                 } else if (std.mem.eql(u8, key, "wp")) {
                     if (f.nwp >= MAX_WP) return ParseError.TooManyWaypoints;
                     const comma = std.mem.indexOfScalar(u8, val, ',') orelse return ParseError.MissingField;
@@ -2965,7 +2966,12 @@ var fillSeen: [WATER_CELLS]bool = undefined;
 var regridScratch: [LEGACY_CAVE_N * LEGACY_CAVE_N]u8 align(@alignOf(Hgt)) = undefined;
 
 comptime {
+    // EVERY grid `gridRead` embeds, at its own element size — `waterBase` is the second `Hgt` grid and was not named
+    // here, so a lattice raised on its own would have sliced past the buffer rather than failing to build.
     std.debug.assert(regridScratch.len >= LEGACY_HEIGHT_N * LEGACY_HEIGHT_N * @sizeOf(Hgt));
+    std.debug.assert(regridScratch.len >= LEGACY_WATER_N * LEGACY_WATER_N * @sizeOf(Hgt));
+    std.debug.assert(regridScratch.len >= LEGACY_SOIL_N * LEGACY_SOIL_N);
+    std.debug.assert(regridScratch.len >= LEGACY_CAVE_N * LEGACY_CAVE_N);
 }
 
 /// WHAT A MAP FROM THE OLD BUILD IS WORTH IN THE NEW WORLD. Every lattice gained the same number of points, so grow
@@ -3049,7 +3055,7 @@ fn parseScript(m: *Map, rec: []const u8, rest: []const u8, it: *Toks, cur: *Curs
             const key = tok[0..eq];
             const val = tok[eq + 1 ..];
             if (std.mem.eql(u8, key, "under")) {
-                p.under = !std.mem.eql(u8, val, "0");
+                p.under = try parseVal(bool, val);
             } else if (std.mem.eql(u8, key, "roam")) {
                 p.roam = try finiteFloat(f32, val);
                 if (p.roam < 0 or p.roam > NPC_ROAM_MAX) return ParseError.BadNumber;
@@ -3298,7 +3304,7 @@ fn link(m: *Map) !void {
         if (a.kind != .dialog) continue;
         a.slot = m.findDialog(m.spanText(a.ref)) orelse return ParseError.UnknownRef;
     }
-    seedDialogs(m);
+    try seedDialogs(m);
     for (m.dialogs[0..m.ndialogs]) |*d| {
         const run = m.nodes[d.node0 .. d.node0 + d.nnodes];
         for (run) |*nd| {
@@ -3438,7 +3444,7 @@ fn parseArena(it: *std.mem.TokenIterator(u8, .any)) !Arena {
     while (it.next()) |xt| {
         if (std.mem.indexOfScalar(u8, xt, '=')) |e| {
             if (!std.mem.eql(u8, xt[0..e], "under")) return ParseError.UnknownKey;
-            a.under = !std.mem.eql(u8, xt[e + 1 ..], "0");
+            a.under = try parseVal(bool, xt[e + 1 ..]);
             continue;
         }
         if (a.n >= MAX_ARENA_VERTS) return ParseError.ExtraField;
@@ -3600,9 +3606,9 @@ pub const TEXT_CAP: usize =
     MAX_CLEARINGS * 48 +
     MAX_ARENAS * (NAME_CAP + 16 + MAX_SEAL * (longestTag(FoeKind) + 1) + MAX_ARENA_VERTS * 22) +
     MAX_OPS * OP_LINE_TYPICAL +
-    // EVERY grid the writer can emit, at its worst case. The cliff and the three cave grids were missing, which on a
-    // map with an incompressible cave was a legal map `save` refused and `load` could not read back.
-    (3 * SOIL_CELLS + 3 * WATER_CELLS + 2 * HEIGHT_CELLS + 3 * CAVE_CELLS) * GRID_CELL_CAP +
+    // EVERY grid the writer can emit, at its worst case: soil, coverage and edge; water, its edge, its liquid and its
+    // level; height and cliff; cave coverage, floor and roof. A grid left out is a legal map `save` refuses.
+    (3 * SOIL_CELLS + 4 * WATER_CELLS + 2 * HEIGHT_CELLS + 3 * CAVE_CELLS) * GRID_CELL_CAP +
     MAX_FOES * (longestTag(FoeKind) + 48) +
     (MAX_FLAGS + MAX_COUNTERS + MAX_TIMERS) * (ID_CAP + 2) + 64 +
     MAX_NPCS * (ID_CAP + NAME_CAP + 128) +
@@ -3799,6 +3805,18 @@ fn canTail(comptime k: OpKind, comptime name: []const u8) bool {
     return !isPositional(k, name);
 }
 
+comptime {
+    // ONE TAIL NAMESPACE FOR BOTH STRUCTS: `writeOp` and `parseOp` each walk `Op` then `Scatter` against the bare
+    // field name, so a name on both would be written twice and parsed into whichever walk ran last. `FieldOf`
+    // resolves Op first and would mask the other for good.
+    @setEvalBranchQuota(20000);
+    for (@typeInfo(Op).@"struct".fields) |a| {
+        for (@typeInfo(Scatter).@"struct".fields) |b| {
+            if (std.mem.eql(u8, a.name, b.name)) @compileError("worldfmt: `" ++ a.name ++ "` is declared on BOTH Op and Scatter, and they share one `key=` namespace");
+        }
+    }
+}
+
 fn sameSeal(a: *const Op, b: *const Op) bool {
     return a.nboss == b.nboss and std.mem.eql(FoeKind, a.seal(), b.seal());
 }
@@ -3824,7 +3842,7 @@ const FOE_RENAMED = [_][2][]const u8{
     .{ "florid_ravager", "fungal_deer" },
 };
 
-fn finiteFloat(comptime T: type, tok: []const u8) !T {
+pub fn finiteFloat(comptime T: type, tok: []const u8) !T {
     const v = std.fmt.parseFloat(T, tok) catch return ParseError.BadNumber;
     if (!std.math.isFinite(v)) return ParseError.BadNumber;
     return v;
@@ -5112,12 +5130,12 @@ test "WHAT A ROOM COSTS A FRAME — the per-body wall test, counted rather than 
 test "A MAP SAYS WHERE THE PLAYER STARTS, and one that does not says the old hard-coded spot" {
     var m = Map{};
     m.setName("Spawn");
-    m.start = .{ .x = -195.5, .z = -137.25, .yaw = 65 };
+    m.start = .{ .x = -195.5, .z = -137.25, .yaw = 65, .under = true };
     var buf: [4096]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);
     try write(&m, fbs.writer());
     const text = fbs.getWritten();
-    try std.testing.expect(std.mem.indexOf(u8, text, "start: -195.50 -137.25 65.0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "start: -195.50 -137.25 65.0 under=1\n") != null);
 
     var back = Map{};
     var ln: usize = 0;
@@ -5125,6 +5143,7 @@ test "A MAP SAYS WHERE THE PLAYER STARTS, and one that does not says the old har
     try std.testing.expectApproxEqAbs(@as(f32, -195.5), back.start.x, 1e-3);
     try std.testing.expectApproxEqAbs(@as(f32, -137.25), back.start.z, 1e-3);
     try std.testing.expectApproxEqAbs(mathx.radians(65.0), back.start.facing(), 1e-4);
+    try std.testing.expect(back.start.under);
 
     var old = Map{};
     ln = 0;

@@ -168,7 +168,6 @@ pub fn forgeMesh(shader: rl.Shader) rl.Model {
     b.setAnimY(0);
     art.flameInto(&b, &rng, 0, HEARTH_Y + 0.115, 0, 0.62);
     b.setMat(.stone);
-    b.setMat(.stone);
     const hz = -HEARTH_HD * 0.30;
     const hoodBase = HEARTH_Y + 0.52;
     b.addCylinder(v3(0, hoodBase, hz - 0.06), v3(0, HEARTH_Y + 1.02, hz - 0.26), HEARTH_HW * 0.82, 0.185, 10, MASON_DK);

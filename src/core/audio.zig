@@ -2597,7 +2597,6 @@ fn mkLurkerGape(r: *Rack) void {
     r.master(1.6, 2600);
 }
 
-// Baked a shade under the lash: the heavier blow keeps the top of the family.
 fn mkLurkerTongue(r: *Rack) void {
     r.air(0.0, 0.17, 0.62, 3300, 520, 0.72, 4.2);
     r.body(0.0, 0.06, 188, 60, 0.80, 5.4);
@@ -3145,7 +3144,7 @@ var consumed: usize = 0;
 var worker: ?std.Thread = null;
 var workerDone = std.atomic.Value(bool).init(false);
 
-/// The whole bank, first one take of every voice so everything is audible early, then the rest. `work`, `tape` and `pcm` are the worker's alone until `awaitBake` joins it.
+/// `work`, `tape` and `pcm` are the worker's alone until `awaitBake` joins it.
 fn bakeAll() void {
     var v: [NV]u8 = [_]u8{0} ** NV;
     var more = true;
@@ -3166,7 +3165,6 @@ fn bakeAll() void {
     workerDone.store(true, .release);
 }
 
-/// Uploads finished takes until the budget is spent. Returns true while anything is still owed.
 fn drainUploads(budgetNs: u64) bool {
     var t = std.time.Timer.start() catch return true;
     while (consumed < produced.load(.acquire)) {

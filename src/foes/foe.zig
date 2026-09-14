@@ -758,7 +758,7 @@ pub const Sense = struct {
             self.hurtHere = 0;
             return;
         }
-        self.hurtHere *= std.math.pow(f32, 0.5, dt / PRESSURE_HALFLIFE);
+        self.hurtHere *= @exp2(-dt / PRESSURE_HALFLIFE);
     }
 
     pub fn hurt(self: *Sense, dmg: f32) void {
@@ -837,6 +837,9 @@ pub fn swingCurve(u: f32) f32 {
     return std.math.pow(f32, mathx.smoothstep(0, 1, u), 1.35);
 }
 
+/// `t` is SECONDS since the stun began, not a share of it — the window is divided out HERE, as `recoilPose` does.
+/// Normalised at the call site the heavy reel only reaches `u` 0.42 by the time the state ends, which is inside the
+/// pulse's own plateau: the body stands at full reel on the frame it snaps back to idle.
 pub fn stunCurve(t: f32, heavy: bool) f32 {
     const u = mathx.clampF(t / combat.foeStunDur(heavy), 0, 1);
     if (!heavy) return mathx.sinf(u * std.math.pi);
@@ -942,6 +945,25 @@ pub const Hull = struct { bone: usize, center: rl.Vector3, radii: rl.Vector3 };
 /// Half the world-space HEIGHT of one `hullTouches` ellipsoid under its bone: the support of `radii` along +Y, which is the second column of the transform weighted by each radius. Add it to the hull's centre for a crown, subtract it for a sole.
 pub fn hullHalfY(xf: rl.Matrix, radii: rl.Vector3) f32 {
     return @sqrt(radii.x * radii.x * xf.m1 * xf.m1 + radii.y * radii.y * xf.m5 * xf.m5 + radii.z * radii.z * xf.m9 * xf.m9);
+}
+
+/// `hullTouches` over a whole rig — the blade against every posed ellipsoid the body is made of.
+pub fn hullsTouch(xf: []const rl.Matrix, hulls: []const Hull, a: rl.Vector3, b: rl.Vector3, radius: f32) bool {
+    for (hulls) |hull| {
+        if (hullTouches(xf[hull.bone], hull.center, hull.radii, a, b, radius)) return true;
+    }
+    return false;
+}
+
+/// THE CROWN OFF THE POSED HULLS, which is what `topWorld` owes on a body that has them — never a stature fraction,
+/// and never another creature's. Floored at the centre the caller hands over, so a rig of low hulls still answers above its middle.
+pub fn hullsTop(center: rl.Vector3, xf: []const rl.Matrix, hulls: []const Hull) rl.Vector3 {
+    var top = center;
+    for (hulls) |hull| {
+        const m = xf[hull.bone];
+        top.y = @max(top.y, markOn(m, hull.center).y + hullHalfY(m, hull.radii));
+    }
+    return top;
 }
 
 pub fn reached(self: anytype, blade: Blade) ?Strike {
@@ -1301,6 +1323,9 @@ pub const DUST_GRAV: f32 = 1.6;
 pub const BLOOD_DRAG: f32 = 3.6;
 pub const BLOOD_GRAV: f32 = 14.0;
 pub const BLOOD_STRETCH: f32 = 0.045;
+/// The reference pair the benches spray. A creature with its own hue names it beside its palette (ogre, kobold, leechfly, mastodon).
+pub const BLOOD = mathx.rgba(112, 22, 16, 235);
+pub const BLOOD_DEEP = mathx.rgba(52, 9, 7, 225);
 pub const MOTE = mathx.rgba(252, 198, 92, 170);
 pub const WAKE = mathx.rgba(224, 230, 244, 255);
 
@@ -2102,22 +2127,27 @@ fn farthestFirst(_: void, a: Ordered, b: Ordered) bool {
     return a.depth > b.depth;
 }
 
+/// The same scan that asks whether anything is visible also says WHICH pass has it: `beginBlendMode` flushes rlgl's
+/// batch whether or not the pass draws, and most pools are all matter or all light, so the empty half was paying two
+/// flushes a pool a frame.
 pub fn drawParticles(pool: []const Particle) void {
-    var any = false;
+    var anyAlpha = false;
+    var anyAdd = false;
     for (pool) |*q| {
-        if (q.life > 0 and motesVisible(q.p, q.r0 + q.r1)) {
-            any = true;
-            break;
-        }
+        if (q.life <= 0 or !motesVisible(q.p, q.r0 + q.r1)) continue;
+        if (q.add) anyAdd = true else anyAlpha = true;
+        if (anyAlpha and anyAdd) break;
     }
-    if (!any) return;
+    if (!anyAlpha and !anyAdd) return;
     _ = particleart.texture();
     rl.gl.rlDisableBackfaceCulling();
     rl.gl.rlDisableDepthMask();
-    drawPass(pool, false);
-    rl.beginBlendMode(.additive);
-    drawPass(pool, true);
-    rl.endBlendMode();
+    if (anyAlpha) drawPass(pool, false);
+    if (anyAdd) {
+        rl.beginBlendMode(.additive);
+        drawPass(pool, true);
+        rl.endBlendMode();
+    }
     rl.gl.rlEnableDepthMask();
     rl.gl.rlEnableBackfaceCulling();
 }
@@ -2339,6 +2369,15 @@ pub fn postAim(self: anytype) ?rl.Vector3 {
         .patrol => if (self.post.nwp == 0) null else self.post.legHere(self.home),
         .roam, .roam_free => if (self.post.marked) self.post.mark else null,
     };
+}
+
+/// THE STEERING ARM FIFTEEN CREATURES SHARE, `headHome`'s rule read as a PLACE instead of a verdict: the man once the
+/// body senses him, else wherever its orders point, else the tether once it has strayed past `homeR`. The STATE that
+/// may steer stays the caller's, which is the only part that was ever per-creature.
+pub fn navChase(self: anytype, quarry: rl.Vector3, aggroR: f32, homeR: f32) ?rl.Vector3 {
+    if (senseHero(&self.leash, self.pos, quarry, aggroR) <= aggroR) return quarry;
+    if (postAim(self)) |go| return go;
+    return if (mathx.distXZ(self.pos, homeFor(self)) > homeR) tetherFor(self) else null;
 }
 
 pub fn postDrive(
@@ -2671,7 +2710,7 @@ pub const Threat = struct {
         self.hasSpirit = spirit;
         self.since += dt;
         self.distHero = distHero;
-        const k = std.math.pow(f32, 0.5, dt / THREAT_HALFLIFE);
+        const k = @exp2(-dt / THREAT_HALFLIFE);
         self.dmgHero *= k;
         self.dmgSpirit *= k;
         if (self.charmed) {
@@ -3394,7 +3433,7 @@ test "legacy emitters select distinct matter, haze and contact sprites" {
     var blood = Spray{
         .fanLo = 0.6, .fanHi = 3.8, .upLo = 0.8, .upHi = 3.6,
         .lifeLo = 0.45, .lifeHi = 0.85, .rLo = 0.028, .rHi = 0.055,
-        .r1 = 0.008, .col = mathx.rgba(112, 22, 16, 235), .grav = BLOOD_GRAV, .drag = BLOOD_DRAG,
+        .r1 = 0.008, .col = BLOOD, .grav = BLOOD_GRAV, .drag = BLOOD_DRAG,
     };
     blood.stretch = BLOOD_STRETCH;
     spray(&pool, &head, &rng, v3(0, 0.6, 0), v3(1, 0, 0), 18, 6.4, 1.0, blood);

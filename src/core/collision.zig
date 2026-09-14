@@ -22,9 +22,8 @@ pub const Solid = struct {
     illusion: u8 = 0,
     /// SQUARE ENDS: the solid is the capsule's bounding rectangle in the segment's frame — `r` across, the segment plus `r` each way along.
     flat: bool = false,
-    /// MASONRY — `env.masonry` (`Info.solid`, less the one veil that thins) and the cliff stamps, the set the camera
-    /// will not thin. The boom shortens on these and on nothing else, because everything else answers the lens by
-    /// going thin (`env.markOccluders`), and a boom that shortened for one of those would fight it.
+    /// MASONRY — `env.masonry` (`Info.solid`, less the one veil that thins) and the cliff stamps. The boom shortens
+    /// on these and on nothing else; everything else answers the lens by going thin (`env.markOccluders`).
     arch: bool = false,
 };
 
@@ -53,9 +52,7 @@ pub fn frameOf(s: Solid) Frame {
 }
 
 /// **THE BOX ROUND A SOLID, AND A SQUARE END DOES NOT FIT IN `r`** — the rectangle is turned with the segment, so
-/// its corner stands `r*(|ux| + |uz|)` outside the segment's own box, up to `r*sqrt2` at 45 deg. Every broad phase
-/// asks this: a look was rejected against a diagonal wall it clips, and `env.SolidCells` indexed one into too few
-/// cells, so the corner of a turned keep was a walk-through.
+/// its corner stands `r*(|ux| + |uz|)` outside the segment's own box, up to `r*sqrt2` at 45 deg. Every broad phase asks it.
 pub fn padXZ(s: Solid) f32 {
     if (!s.flat) return s.r;
     const f = frameOf(s);
@@ -315,4 +312,34 @@ test "blocksPoint respects the blocking height: hits below the top, clears above
     try std.testing.expect(blocksPoint(v3(0.5, 1.2, 0), 0.05, s));
     try std.testing.expect(!blocksPoint(v3(0.5, 3.5, 0), 0.05, s));
     try std.testing.expect(!blocksPoint(v3(2.0, 1.2, 0), 0.05, s));
+}
+
+// MEASURED, AND IT IS THE SHAPE THAT MATTERS: `game.settleGroup` shoulders every body in a group against every
+// other, and a group's slab holds `wf.MAX_PER_KIND` — a map may legally spend the whole foe budget on one kind.
+// The fix is not a distance reject guessed here: a body is a SEGMENT when it lies down, and a bound too tight is
+// a walk-through (`padXZ`'s lesson). It wants a real broad phase or a smaller cap, which is the owner's call.
+test "WHAT ALL-PAIRS SHOULDERING COSTS A FRAME — `game.settleGroup` walks its own group for every body in it" {
+    var rng = mathx.Rng.init(0x5E77);
+    var bodies: [512]Solid = undefined;
+    for (&bodies) |*s| {
+        const x = rng.range(-40, 40);
+        const z = rng.range(-40, 40);
+        s.* = .{ .a = v3(x, 0, z), .b = v3(x, 0, z), .r = 0.55, .h = 1.9 };
+    }
+    std.debug.print("\n", .{});
+    for ([_]usize{ 16, 64, 256, 512 }) |n| {
+        var t = try std.time.Timer.start();
+        var sink: f32 = 0;
+        for (bodies[0..n], 0..) |*a, i| {
+            var p = a.a;
+            for (bodies[0..n], 0..) |*o, j| {
+                if (i == j) continue;
+                p = pushOut(p, 0.55, o.*);
+            }
+            sink += p.x;
+        }
+        const us = @as(f64, @floatFromInt(t.read())) / 1000.0;
+        std.mem.doNotOptimizeAway(sink);
+        std.debug.print("  all-pairs shoulder, {d:>3} bodies: {d:>8.1} us a frame — {d:.3}% of a 16.7 ms frame ({d} pairs)\n", .{ n, us, us / 16700.0 * 100.0, n * (n - 1) });
+    }
 }

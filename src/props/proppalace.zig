@@ -1046,7 +1046,7 @@ pub const PWALL_HALF: f32 = 8.00;
 pub const PWALL_H: f32 = 8.00;
 pub const PWALL_BREACH_X: f32 = 4.00;
 pub const PWALL_BREACH_H: f32 = 2.60;
-pub const PWALL_TOP: f32 = 9.10;
+pub const PWALL_TOP: f32 = 9.60;
 
 pub fn palaceWallMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
@@ -1228,7 +1228,7 @@ pub const TERR_R: f32 = 5.62;
 pub const TERR_IN: f32 = TERR_R * 0.9239;
 pub const TERR_DECK: f32 = 4.00;
 pub const TERR_PARAPET: f32 = 5.10;
-pub const TERR_TOP: f32 = 5.85;
+pub const TERR_TOP: f32 = 6.00;
 /// The TWO octagon edges the stair lands on, which the parapet leaves open. Two, because no single edge of an
 /// octagon is centred on an axis and a landing off to one side is a landing you walk off.
 pub const TERR_GAP_0: usize = 5;

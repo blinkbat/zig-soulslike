@@ -66,7 +66,7 @@ pub const Slot = struct {
     map: []const u8,
 };
 
-const MAP_CAP = 96;
+const MAP_CAP = wf.PATH_CAP;
 comptime {
     if (wf.START_MAP.len > MAP_CAP) @compileError("save: MAP_CAP is shorter than the map path it has to hold");
 }
@@ -680,9 +680,7 @@ const Tok = std.mem.TokenIterator(u8, .any);
 
 /// **NON-FINITE IS A BAD FIELD** (`worldfmt.finiteFloat`'s rule, and this parser is the other door into the same runtime). `parseFloat` accepts `nan` and `inf`, and a NaN through here is a number nothing downstream can refuse: a NaN `at:` clamps to the corner of the world and a NaN facing poses the whole rig off-screen.
 fn float(it: *Tok) !f32 {
-    const v = std.fmt.parseFloat(f32, it.next() orelse return Error.BadField) catch return Error.BadField;
-    if (!std.math.isFinite(v)) return Error.BadField;
-    return v;
+    return wf.finiteFloat(f32, it.next() orelse return Error.BadField) catch Error.BadField;
 }
 
 fn int(comptime T: type, it: *Tok) !T {
@@ -728,11 +726,7 @@ fn readNums(comptime T: type, it: *Tok, out: []T) !void {
     while (it.next()) |tok| : (i += 1) {
         if (i >= out.len) return Error.BadField;
         out[i] = switch (@typeInfo(T)) {
-            .float => blk: {
-                const v = std.fmt.parseFloat(T, tok) catch return Error.BadField;
-                if (!std.math.isFinite(v)) return Error.BadField;
-                break :blk v;
-            },
+            .float => wf.finiteFloat(T, tok) catch return Error.BadField,
             else => std.fmt.parseInt(T, tok, 10) catch return Error.BadField,
         };
     }

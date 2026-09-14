@@ -544,7 +544,7 @@ fn beginGame(g: *Game) void {
     g.hero.quick = .{};
     g.hero.quiver = .{};
     g.hero.worn = .{};
-
+    g.hero.tiers = [_]u8{0} ** heromod.NARM;
     g.hero.flasks = .{};
     g.day = .{};
     dropRunHud(g);
@@ -2621,10 +2621,7 @@ pub fn noteYank(g: *Game, from: rl.Vector3, pull: f32) void {
 fn applyYank(g: *Game, out: combat.HitOutcome) void {
     const h = g.hook orelse return;
     g.hook = null;
-    switch (out) {
-        .blocked, .ignored => return,
-        .taken, .guardBroken => {},
-    }
+    if (!out.landed()) return;
     const dir = mathx.dirXZ(g.hero.pos, h.from);
     if (mathx.lenXZ(dir) < 1e-3) return;
     g.hero.pos = inBounds(g.env.walkStep(g.hero.pos, mathx.normV(dir), h.pull));
@@ -2633,10 +2630,7 @@ fn applyYank(g: *Game, out: combat.HitOutcome) void {
 }
 
 fn heroShoved(g: *Game, from: rl.Vector3, push: f32, out: combat.HitOutcome) void {
-    switch (out) {
-        .blocked, .ignored => return,
-        .taken, .guardBroken => {},
-    }
+    if (!out.landed()) return;
     const dir = mathx.dirXZ(from, g.hero.pos);
     if (mathx.lenXZ(dir) < 1e-3) return;
     g.hero.pos = inBounds(g.env.walkStep(g.hero.pos, mathx.normV(dir), push));
@@ -2714,7 +2708,7 @@ pub fn rehomeFoesForShot(g: *Game) void {
 }
 
 pub fn shootShaftForShot(g: *Game, at: rl.Vector3, kind: combat.ArrowKind) void {
-    const blow = heromod.arrowBlow(kind, true, g.hero.perk);
+    const blow = g.hero.shotBlowOf(kind, true);
     putIn(&g.shafts, archermod.launchShaft(g.hero.nockWorld(), at, heromod.BOW_AIMED_SPEED, blow, false, heromod.arrowShot(kind)));
 }
 pub fn throwBoltForShot(g: *Game, at: rl.Vector3) void {
@@ -2724,10 +2718,17 @@ pub fn throwBoltForShot(g: *Game, at: rl.Vector3) void {
 pub fn stepShaftsForShot(g: *Game, dt: f32) void {
     stepShafts(g, dt);
 }
-pub fn tickPoisonForShot(g: *Game, dt: f32) void {
+/// Every field that doses him by standing in it, in one list; the shot harness ticks the same one.
+fn gatherDoses(g: *Game, dt: f32) void {
     g.hero.poisonBy(g.brood.burn(dt, g.hero.pos));
     g.hero.poisonBy(g.cluster.spores(dt, g.hero.pos));
+    g.hero.doseSelf(.sleep, g.bed.breath(g.hero.pos) * dt);
+    g.hero.doseSelf(.sleep, g.conclave.breath(g.hero.pos, dt));
     g.hero.doseSelf(.burning, g.scorch.scorching(dt, g.hero.pos));
+}
+
+pub fn tickPoisonForShot(g: *Game, dt: f32) void {
+    gatherDoses(g, dt);
     _ = g.hero.tickPoison(dt);
 }
 pub fn flyingPointForShot(g: *Game, kind: archermod.Shot) ?rl.Vector3 {
@@ -3165,7 +3166,7 @@ fn mountLadder(g: *Game) void {
     const axis = r.axis;
     g.hero.pos.x = axis.x;
     g.hero.pos.z = axis.z;
-    g.hero.pos.y = g.env.groundAt(axis.x, axis.z);
+    plantActor(g, &g.hero.pos);
     const face = mathx.headingXZ(mathx.scaleV(out, -1));
     g.climb = .{
         .rung = r,
@@ -3678,7 +3679,7 @@ fn tickTalk(g: *Game, dt: f32) void {
 fn voiceFolk(g: *Game) void {
     for (g.folk.live()) |*p| {
         if (!p.struck) continue;
-        const ear = v3(g.hero.pos.x, g.hero.pos.y + foemod.HERO_EYE, g.hero.pos.z);
+        const ear = heroEye(g);
         const anvil = v3(p.pos.x, p.pos.y + ANVIL_EAR, p.pos.z);
         sfx.worldThrough(.smith_ring, p.pos, 1.0, if (g.env.sees(ear, anvil)) 1.0 else 0.0);
     }
@@ -3739,10 +3740,10 @@ fn tickCounter(g: *Game, dt: f32) void {
         } else switch (g.counter.said) {
             .bought, .sold => sfx.play(.item_get),
             .forged => sfx.play(.smith_ring),
-            else => {},
+            .none, .no_coin, .no_stones, .maxed, .nothing => {},
         }
     }
-    if (g.counter.trade == .shop and (rl.isKeyPressed(.q) or padPressed(hud_.padOf(hud_.BTN_QUICK)))) {
+    if (g.counter.trade == .shop and (rl.isKeyPressed(QUICK_KEY) or padPressed(QUICK_PAD))) {
         g.counter.selling = !g.counter.selling;
         g.counter.sel = 0;
         g.counter.said = .none;
@@ -3769,6 +3770,7 @@ fn confirmPressed() bool {
 const INTERACT_PAD: rl.GamepadButton = hud_.padOf(hud_.BTN_INTERACT);
 const INTERACT_KEY: rl.KeyboardKey = .y;
 const QUICK_PAD: rl.GamepadButton = hud_.padOf(hud_.BTN_QUICK);
+const QUICK_KEY: rl.KeyboardKey = .r;
 const ARROW_KEY: rl.KeyboardKey = .u;
 const PARRY_KEY: rl.KeyboardKey = .c;
 const JUMP_PAD: rl.GamepadButton = hud_.padOf(hud_.BTN_JUMP);
@@ -4009,12 +4011,17 @@ fn releaseSpell(g: *Game) void {
     }
 }
 
+/// The one felt beat every cast shares; `landed` is the heavier pair a hit earns.
+fn castBeat(g: *Game, landed: bool) void {
+    g.rumble.play(if (landed) rumblemod.hit_heavy else rumblemod.cast_throw);
+    g.rig.addShake(if (landed) SHAKE_ROOTS_BITE else SHAKE_CAST);
+}
+
 fn whisperAt(g: *Game) void {
     const blow = g.hero.castBlow() orelse return;
     const reach = combat.spellReach(g.hero.spell) orelse return;
     sfx.play(.wand_cast);
-    g.rumble.play(rumblemod.cast_throw);
-    g.rig.addShake(SHAKE_CAST);
+    castBeat(g, false);
     const tint = whisperTint(g.hero.spell);
     const pick = strikeVictim(g, reach) orelse {
         g.hero.dustPuff(strikeMissAt(g, reach), WHISPER_R, tint, g.hero.casts);
@@ -4042,8 +4049,7 @@ fn throwLance(g: *Game) void {
     }
     const to = v3(from.x + dir.x * reach, from.y, from.z + dir.z * reach);
     sfx.play(.wand_cast);
-    g.rumble.play(rumblemod.cast_throw);
-    g.rig.addShake(SHAKE_CAST);
+    castBeat(g, false);
     _ = pierceFoes(g, .{
         .active = true,
         .pierce = true,
@@ -4064,14 +4070,12 @@ fn strikeSunder(g: *Game) void {
     sfx.play(.wand_cast);
     const pick = strikeVictim(g, reach) orelse {
         g.hero.sunderBurst(strikeMissAt(g, reach), false, g.hero.casts);
-        g.rumble.play(rumblemod.cast_throw);
-        g.rig.addShake(SHAKE_CAST);
+        castBeat(g, false);
         return;
     };
     const hit = strikeOne(g, pick, blow) orelse return;
     g.hero.sunderBurst(v3(hit.at.x, g.env.floorUnder(hit.at), hit.at.z), true, g.hero.casts);
-    g.rumble.play(rumblemod.hit_heavy);
-    g.rig.addShake(SHAKE_ROOTS_BITE);
+    castBeat(g, true);
 }
 
 fn throwBolt(g: *Game) void {
@@ -4079,8 +4083,7 @@ fn throwBolt(g: *Game) void {
     const locked: ?rl.Vector3 = if (activeLock(g)) |li| foeLockPoint(g, li) else null;
     launchBolt(g, locked orelse forwardPoint(g, heromod.BOLT_REACH), locked != null, blow);
     sfx.play(.wand_cast);
-    g.rumble.play(rumblemod.cast_throw);
-    g.rig.addShake(SHAKE_CAST);
+    castBeat(g, false);
 }
 
 const ROOT_THROW: f32 = 7.0;
@@ -4108,7 +4111,7 @@ fn rootVictim(g: *const Game, at: rl.Vector3) ?RootPick {
         for (@field(g, f.field).liveConst(), 0..) |*a, i| {
             if (!foemod.corporeal(a)) continue;
             if (disguised(a)) continue;
-            if (locked) |l| if (l.idx == i and l.kind == memberKind(a, f.kind)) return .{ .group = gi, .idx = i };
+            if (locked) |l| if (l.is(memberKind(a, f.kind), i)) return .{ .group = gi, .idx = i };
             const d = mathx.distXZ(a.pos, at);
             if (d < near) {
                 near = d;
@@ -4140,14 +4143,12 @@ fn seedRoots(g: *Game, at: rl.Vector3) ?rl.Vector3 {
 fn castRoots(g: *Game) void {
     const bit = seedRoots(g, rootMark(g)) != null;
     sfx.play(.wand_cast);
-    g.rumble.play(if (bit) rumblemod.hit_heavy else rumblemod.cast_throw);
-    g.rig.addShake(if (bit) SHAKE_ROOTS_BITE else SHAKE_CAST);
+    castBeat(g, bit);
 }
 
 fn openBreath(g: *Game) void {
     sfx.play(.wand_cast);
-    g.rumble.play(rumblemod.cast_throw);
-    g.rig.addShake(SHAKE_CAST);
+    castBeat(g, false);
 }
 
 fn rimeBreathe(g: *Game, dt: f32) void {
@@ -4196,7 +4197,7 @@ fn strikeVictim(g: *const Game, reach: f32) ?RootPick {
             if (@abs(a.pos.y - g.hero.pos.y) > foemod.REACH_RISE) continue;
             if (!g.env.sees(eye, a.lockPoint())) continue;
             if (locked) |l| {
-                if (l.idx == i and l.kind == memberKind(a, f.kind)) return .{ .group = gi, .idx = i };
+                if (l.is(memberKind(a, f.kind), i)) return .{ .group = gi, .idx = i };
                 continue;
             }
             const to = mathx.dirXZ(g.hero.pos, a.pos);
@@ -4253,22 +4254,19 @@ fn strikeLevin(g: *Game) void {
         const on = strikeMissAt(g, reach);
         const seg = strikeSegment(g, on, on.y);
         g.hero.levinStroke(seg[0], seg[1], on.y, g.hero.casts);
-        g.rumble.play(rumblemod.cast_throw);
-        g.rig.addShake(SHAKE_CAST);
+        castBeat(g, false);
         return;
     };
     const hit = strikeOne(g, pick, blow) orelse return;
     g.hero.levinStroke(hit.from, hit.at, g.env.floorUnder(hit.at), g.hero.casts);
-    g.rumble.play(rumblemod.hit_heavy);
-    g.rig.addShake(SHAKE_ROOTS_BITE);
+    castBeat(g, true);
 }
 
 fn drawSiphon(g: *Game) void {
     const blow = g.hero.castBlow() orelse return;
     const reach = combat.spellReach(g.hero.spell) orelse return;
     sfx.play(.wand_cast);
-    g.rumble.play(rumblemod.cast_throw);
-    g.rig.addShake(SHAKE_CAST);
+    castBeat(g, false);
     const pick = strikeVictim(g, reach) orelse {
         const on = strikeMissAt(g, reach);
         g.hero.siphonDrain(foemod.heroChest(on), g.hero.casts);
@@ -4893,10 +4891,7 @@ fn shotBuildup(s: archermod.Shot) f32 {
 }
 
 fn shotStatus(g: *Game, s: archermod.Shot, out: combat.HitOutcome) void {
-    switch (out) {
-        .blocked, .ignored => return,
-        .taken, .guardBroken => {},
-    }
+    if (!out.landed()) return;
     const amt = shotBuildup(s);
     if (amt > 0) g.hero.poisonBy(amt);
 }
@@ -5820,7 +5815,7 @@ pub fn run(mode: Mode) void {
         const offReq = rl.isKeyPressed(.f) or padPressed(.left_face_left);
         if (offReq and g.hero.swapOff()) sfx.play(.flask_cycle);
 
-        const drinkReq = rl.isKeyPressed(.r) or padPressed(QUICK_PAD);
+        const drinkReq = rl.isKeyPressed(QUICK_KEY) or padPressed(QUICK_PAD);
         const cycleReq = rl.isKeyPressed(.t) or padPressed(.left_face_down);
         if (cycleReq and !g.hero.dead) {
             g.hero.cycleQuick();
@@ -5890,7 +5885,7 @@ pub fn run(mode: Mode) void {
             if (rollReq) {
                 g.hero.requestRoll(rollDir(g, mv));
             } else if (jumpReq) {
-                if (g.hero.startJump(rollDir(g, mv), mv.speed)) sfx.play(.jump);
+                if (g.hero.startJump(rollDir(g, mv), mv.speed * g.hero.moveRate())) sfx.play(.jump);
             } else if (parryReq) {
                 if (g.hero.requestParry()) sfx.play(.swing_light);
             } else if (heavyReq) {
@@ -6221,11 +6216,7 @@ pub fn run(mode: Mode) void {
         }
         if (anyParried(g)) parryBeat(g);
         spendTurnedBlows(g);
-        g.hero.poisonBy(g.brood.burn(dt, g.hero.pos));
-        g.hero.poisonBy(g.cluster.spores(dt, g.hero.pos));
-        g.hero.doseSelf(.sleep, g.bed.breath(g.hero.pos) * dt);
-        g.hero.doseSelf(.sleep, g.conclave.breath(g.hero.pos, dt));
-        g.hero.doseSelf(.burning, g.scorch.scorching(dt, g.hero.pos));
+        gatherDoses(g, dt);
         tickLiquid(g, dt);
         _ = g.hero.tickPoison(dt);
         if (g.hero.vit.ailProcced(.poison)) {
@@ -6600,8 +6591,8 @@ fn quickLeft(g: *const Game) u8 {
 
 fn quickUse(g: *Game) void {
     const k = g.hero.quick.selected() orelse return;
-    if (combat.flaskOf(k)) |f| {
-        g.hero.flasks.sel = f;
+    if (combat.flaskOf(k) != null) {
+        g.hero.syncFlask();
         if (g.hero.startDrink()) sfx.play(.flask_drink);
         return;
     }
@@ -6683,8 +6674,7 @@ fn useItem(g: *Game, k: item.Kind) void {
             const at = v3(g.hero.pos.x, g.env.floorUnder(g.hero.pos), g.hero.pos.z);
             g.hero.sunderBurst(at, n > 0, g.hero.casts);
             sfx.play(.hollow_toll);
-            g.rumble.play(rumblemod.cast_throw);
-            g.rig.addShake(SHAKE_CAST);
+            castBeat(g, false);
         },
     }
 }
@@ -7020,7 +7010,15 @@ fn settleGroup(g: *Game, comptime gr: FoeGroup, step: f32) void {
 
 const FoeKind = worldfmt.FoeKind;
 /// `part` is WHICH POINT on the body the lock rides: 0 is its `lockPoint`, the rest are what `lockPointAt` offers (the ogre's head, the hollow's rider). A body offers `lockParts` of them; one without the decl offers one.
-const FoeRef = struct { kind: FoeKind, idx: usize, part: u8 = 0 };
+const FoeRef = struct {
+    kind: FoeKind,
+    idx: usize,
+    part: u8 = 0,
+
+    fn is(self: FoeRef, kind: FoeKind, idx: usize) bool {
+        return self.kind == kind and self.idx == idx;
+    }
+};
 
 fn partsOf(f: anytype) u8 {
     if (comptime @hasDecl(std.meta.Child(@TypeOf(f)), "lockParts")) return f.lockParts();
@@ -7303,7 +7301,7 @@ const CycleCtx = struct {
     fn visit(self: *CycleCtx, foes: anytype, kind: ?FoeKind) void {
         for (foes, 0..) |*f, i| {
             const r = FoeRef{ .kind = memberKind(f, kind), .idx = i };
-            if ((self.cur.kind == r.kind and self.cur.idx == i) or !foemod.corporeal(f)) continue;
+            if (self.cur.is(r.kind, i) or !foemod.corporeal(f)) continue;
             if (disguised(f)) continue;
             if (mathx.distXZ(self.g.hero.pos, f.pos) > self.maxR) continue;
             if (!canSee(self.g, r)) continue;
@@ -7374,10 +7372,12 @@ const BarCtx = struct {
     fn visit(self: *const BarCtx, foes: anytype, kind: ?FoeKind) void {
         for (foes, 0..) |*f, i| {
             if (!foemod.corporeal(f)) continue;
-            if (onBossRail(memberKind(f, kind))) continue;
-            if (disguised(f)) continue;
-            const fixed = if (self.lock) |l| l.idx == i and l.kind == memberKind(f, kind) else false;
+            // The hurt window rejects nearly every body, so it goes ahead of the rail scan and the disguise ask.
+            const k = memberKind(f, kind);
+            const fixed = if (self.lock) |l| l.is(k, i) else false;
             if (!fixed and f.vit.sinceHurt > HURT_BAR_WINDOW) continue;
+            if (onBossRail(k)) continue;
+            if (disguised(f)) continue;
             const s = projectToScreen(self.cam, f.topWorld()) orelse
                 projectToScreen(self.cam, f.centerWorld()) orelse continue;
             hud_.foeBar(s.x, s.y, f.vit.hpFrac(), f.staggered(), hudAils(&f.vit));

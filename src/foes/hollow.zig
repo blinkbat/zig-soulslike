@@ -464,9 +464,7 @@ pub const Hollow = struct {
 
     pub fn navWant(self: *const Hollow, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle and self.state != .walk) return null;
-        if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
-        if (foe.postAim(self)) |go| return go;
-        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
+        return foe.navChase(self, hero, AGGRO_R, HOME_R);
     }
 
     fn faceToward(self: *Hollow, at: rl.Vector3, dt: f32) void {
@@ -545,10 +543,9 @@ pub const Hollow = struct {
             .bite => {
                 if (self.t < BITE_WIND) self.faceToward(hero, dt);
                 self.speed = 0;
-                if (self.t >= BITE_WIND * BITE_LUNGE_FROM and self.t < BITE_WIND + BITE_STRIKE) {
-                    const span = BITE_WIND * (1.0 - BITE_LUNGE_FROM) + BITE_STRIKE;
-                    mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), BITE_LUNGE * self.scale * (dt / span), bounds);
-                }
+                const span = BITE_WIND * (1.0 - BITE_LUNGE_FROM) + BITE_STRIKE;
+                const lunge = mathx.sliceIn(self.t, dt, BITE_WIND * BITE_LUNGE_FROM, BITE_WIND + BITE_STRIKE);
+                if (lunge > 0) mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), BITE_LUNGE * self.scale * (lunge / span), bounds);
                 if (self.t >= BITE_WIND + BITE_STRIKE * BITE_IMPACT_K and self.t < BITE_WIND + BITE_STRIKE) self.tryBite(hero);
                 if (self.t >= BITE_WIND + BITE_STRIKE + BITE_RECOVER) {
                     self.biteCool = BITE_COOL;
@@ -755,6 +752,8 @@ pub const Hollow = struct {
         self.state = s;
         self.t = 0;
         self.heroLatch = false;
+        self.sparked = false;
+        self.tolled = false;
     }
     fn enterDeath(self: *Hollow) void {
         if (self.state == .dead) return;

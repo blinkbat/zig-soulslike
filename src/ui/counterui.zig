@@ -37,7 +37,7 @@ const CARD_ART: f32 = 46;
 const PANEL_A: u8 = 232;
 const NAME = rgba(226, 214, 188, 255);
 const NAME_OFF = rgba(150, 140, 122, 255);
-const COIN_OK = rgba(238, 216, 158, 255);
+const COIN_OK = hud.COIN_TEXT;
 const COIN_NO = rgba(176, 96, 78, 255);
 const SAID = rgba(198, 186, 160, 255);
 

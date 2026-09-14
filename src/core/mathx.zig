@@ -16,6 +16,16 @@ pub fn clampF(v: f32, lo: f32, hi: f32) f32 {
     return v;
 }
 
+/// The 1-2-5 figure a mantissa in 1..10 rounds to, for readouts and slider steps.
+pub fn nice125(n: f32) f32 {
+    return if (n < 1.5) 1 else if (n < 3.5) 2 else if (n < 7.5) 5 else 10;
+}
+
+/// How much of the frame `[t - dt, t]` fell inside `[from, to]`: a drive laid over a window integrates to its whole distance at any frame rate.
+pub fn sliceIn(t: f32, dt: f32, from: f32, to: f32) f32 {
+    return maxF(0, minF(t, to) - maxF(t - dt, from));
+}
+
 pub fn maxF(a: f32, b: f32) f32 {
     return if (a > b) a else b;
 }
@@ -104,8 +114,7 @@ pub fn headingXZ(v: rl.Vector3) f32 {
 
 pub const SegNear = struct { t: f32, d: f32 };
 
-/// WHERE A POINT SITS AGAINST A SEGMENT IN XZ: the clamped parameter and the distance to it. A swept brush is a segment
-/// with a radius, so every one of them asks this — and each hand-rolled copy carried its own degenerate epsilon.
+/// WHERE A POINT SITS AGAINST A SEGMENT IN XZ: the clamped parameter and the distance to it. Every swept brush asks it.
 pub fn segNearXZ(p: [2]f32, a: [2]f32, b: [2]f32) SegNear {
     const abx = b[0] - a[0];
     const abz = b[1] - a[1];
@@ -331,7 +340,6 @@ test "a spring closes the gap without overshooting it, and carries its own speed
         try std.testing.expect(x <= 1.0 + 1e-5);
     }
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), x, 1e-3);
-    // A linear approach would take the first frame at full speed; the spring's first step is a fraction of its peak.
     var v2: f32 = 0;
     const first = smoothCD(0, 1.0, &v2, 0.2, 0, 1.0 / 60.0) * 60.0;
     try std.testing.expect(first < peak * 0.35);

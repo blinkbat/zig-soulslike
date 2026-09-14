@@ -215,15 +215,15 @@ fn fogGateShots(g: *Game, dt: f32) void {
     const back = mathx.headingDir(mathx.radians(LIT_YAW)); // off the SUN's bearing, or the sheet is in its own shadow
     const step = tall * 0.5;
     standSettled(g, at.x - back.x * step, at.z - back.z * step, mathx.headingXZ(back));
-    shootAt(g, "shots/156_foggate.png", v3(at.x, at.y + tall * 0.20, at.z), LIT_YAW, 0.06, tall * 0.84);
-    shootAt(g, "shots/156b_foggate_head.png", v3(at.x, at.y + tall * 0.62, at.z), LIT_YAW, 0.16, tall * 0.90);
+    shootAt(g, DIR ++ "/156_foggate.png", v3(at.x, at.y + tall * 0.20, at.z), LIT_YAW, 0.06, tall * 0.84);
+    shootAt(g, DIR ++ "/156b_foggate_head.png", v3(at.x, at.y + tall * 0.62, at.z), LIT_YAW, 0.16, tall * 0.90);
     var k: i32 = 0;
     while (k < 60) : (k += 1) stepWorld(g, dt, 0);
     standSettled(g, at.x - back.x * step, at.z - back.z * step, mathx.headingXZ(back));
-    shootAt(g, "shots/156c_foggate_moved.png", v3(at.x, at.y + tall * 0.20, at.z), LIT_YAW, 0.06, tall * 0.84);
-    shootAt(g, "shots/156d_foggate_side.png", v3(at.x, at.y + tall * 0.20, at.z), LIT_YAW + 62, 0.06, tall * 0.84);
+    shootAt(g, DIR ++ "/156c_foggate_moved.png", v3(at.x, at.y + tall * 0.20, at.z), LIT_YAW, 0.06, tall * 0.84);
+    shootAt(g, DIR ++ "/156d_foggate_side.png", v3(at.x, at.y + tall * 0.20, at.z), LIT_YAW + 62, 0.06, tall * 0.84);
     g.env.wardShut[0] = true;
-    shootAt(g, "shots/156e_foggate_shut.png", v3(at.x, at.y + tall * 0.20, at.z), LIT_YAW, 0.06, tall * 0.84);
+    shootAt(g, DIR ++ "/156e_foggate_shut.png", v3(at.x, at.y + tall * 0.20, at.z), LIT_YAW, 0.06, tall * 0.84);
     g.env.wardShut[0] = false;
 }
 
@@ -732,16 +732,16 @@ pub fn runShots(g: *Game) void {
     while (i < 40) : (i += 1) stepWorld(g, dt, heromod.WALK_SPEED);
 
     g.menu.stats = true;
-    shootAt(g, "shots/0_stats.png", v3(g.hero.pos.x, 1.15, g.hero.pos.z), LIT_YAW, 0.10, 6.0);
+    shootAt(g, DIR ++ "/0_stats.png", v3(g.hero.pos.x, 1.15, g.hero.pos.z), LIT_YAW, 0.10, 6.0);
     g.menu.stats = false;
 
     const stages = [_]struct { name: [:0]const u8, yaw: f32, pitch: f32, dist: f32, adv: i32, speed: f32 }{
-        .{ .name = "shots/1_walk_side.png", .yaw = 90, .pitch = 0.10, .dist = 4.0, .adv = 0, .speed = heromod.WALK_SPEED },
-        .{ .name = "shots/2_walk_front.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .adv = 22, .speed = heromod.WALK_SPEED },
-        .{ .name = "shots/3_run_side.png", .yaw = 90, .pitch = 0.06, .dist = 4.9, .adv = 24, .speed = heromod.RUN_SPEED },
-        .{ .name = "shots/4_run_threequarter.png", .yaw = 45, .pitch = 0.16, .dist = 4.9, .adv = 12, .speed = heromod.RUN_SPEED },
-        .{ .name = "shots/5_sprint_side.png", .yaw = 90, .pitch = 0.04, .dist = 5.4, .adv = 16, .speed = heromod.SPRINT_SPEED },
-        .{ .name = "shots/6_sprint_back.png", .yaw = 180, .pitch = 0.22, .dist = 5.2, .adv = 14, .speed = heromod.SPRINT_SPEED },
+        .{ .name = DIR ++ "/1_walk_side.png", .yaw = 90, .pitch = 0.10, .dist = 4.0, .adv = 0, .speed = heromod.WALK_SPEED },
+        .{ .name = DIR ++ "/2_walk_front.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .adv = 22, .speed = heromod.WALK_SPEED },
+        .{ .name = DIR ++ "/3_run_side.png", .yaw = 90, .pitch = 0.06, .dist = 4.9, .adv = 24, .speed = heromod.RUN_SPEED },
+        .{ .name = DIR ++ "/4_run_threequarter.png", .yaw = 45, .pitch = 0.16, .dist = 4.9, .adv = 12, .speed = heromod.RUN_SPEED },
+        .{ .name = DIR ++ "/5_sprint_side.png", .yaw = 90, .pitch = 0.04, .dist = 5.4, .adv = 16, .speed = heromod.SPRINT_SPEED },
+        .{ .name = DIR ++ "/6_sprint_back.png", .yaw = 180, .pitch = 0.22, .dist = 5.2, .adv = 14, .speed = heromod.SPRINT_SPEED },
     };
     for (stages) |st| {
         g.rig.yaw = mathx.radians(st.yaw);
@@ -762,20 +762,20 @@ pub fn runShots(g: *Game) void {
         var k: i32 = 0;
         while (k < hp.adv) : (k += 1) stepWorld(g, dt, heromod.RUN_SPEED);
         var name: [64]u8 = undefined;
-        const p = std.fmt.bufPrintZ(&name, "shots/7{s}_hero_hip.png", .{hp.tag}) catch continue;
+        const p = std.fmt.bufPrintZ(&name, DIR ++ "/7{s}_hero_hip.png", .{hp.tag}) catch continue;
         shootAt(g, p, v3(g.hero.pos.x, g.hero.pos.y + 0.92, g.hero.pos.z), hp.yaw, 0.05, 2.4);
     }
 
     const lockedStages = [_]struct { name: [:0]const u8, yaw: f32, pitch: f32, dist: f32, phTgt: f32, dx: f32, dz: f32 }{
-        .{ .name = "shots/38a_strafe_stepout.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.50, .dx = 1, .dz = 0 },
-        .{ .name = "shots/38b_strafe_apart.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.57, .dx = 1, .dz = 0 },
-        .{ .name = "shots/38c_strafe_crossing.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.81, .dx = 1, .dz = 0 },
-        .{ .name = "shots/38d_strafe_crossed.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.02, .dx = 1, .dz = 0 },
-        .{ .name = "shots/38e_strafe_uncross.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.31, .dx = 1, .dz = 0 },
-        .{ .name = "shots/38f_strafe_crossed_3q.png", .yaw = 40, .pitch = 0.13, .dist = 4.2, .phTgt = 0.02, .dx = 1, .dz = 0 },
-        .{ .name = "shots/38g_strafe_crossing_3q.png", .yaw = 40, .pitch = 0.13, .dist = 4.2, .phTgt = 0.81, .dx = 1, .dz = 0 },
-        .{ .name = "shots/39a_backpedal_side.png", .yaw = 90, .pitch = 0.10, .dist = 4.0, .phTgt = 0.05, .dx = 0, .dz = 1 },
-        .{ .name = "shots/39b_backpedal_side.png", .yaw = 90, .pitch = 0.10, .dist = 4.0, .phTgt = 0.55, .dx = 0, .dz = 1 },
+        .{ .name = DIR ++ "/38a_strafe_stepout.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.50, .dx = 1, .dz = 0 },
+        .{ .name = DIR ++ "/38b_strafe_apart.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.57, .dx = 1, .dz = 0 },
+        .{ .name = DIR ++ "/38c_strafe_crossing.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.81, .dx = 1, .dz = 0 },
+        .{ .name = DIR ++ "/38d_strafe_crossed.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.02, .dx = 1, .dz = 0 },
+        .{ .name = DIR ++ "/38e_strafe_uncross.png", .yaw = 0, .pitch = 0.16, .dist = 4.2, .phTgt = 0.31, .dx = 1, .dz = 0 },
+        .{ .name = DIR ++ "/38f_strafe_crossed_3q.png", .yaw = 40, .pitch = 0.13, .dist = 4.2, .phTgt = 0.02, .dx = 1, .dz = 0 },
+        .{ .name = DIR ++ "/38g_strafe_crossing_3q.png", .yaw = 40, .pitch = 0.13, .dist = 4.2, .phTgt = 0.81, .dx = 1, .dz = 0 },
+        .{ .name = DIR ++ "/39a_backpedal_side.png", .yaw = 90, .pitch = 0.10, .dist = 4.0, .phTgt = 0.05, .dx = 0, .dz = 1 },
+        .{ .name = DIR ++ "/39b_backpedal_side.png", .yaw = 90, .pitch = 0.10, .dist = 4.0, .phTgt = 0.55, .dx = 0, .dz = 1 },
     };
     for (lockedStages) |st| {
         g.rig.yaw = mathx.radians(st.yaw);
@@ -799,9 +799,9 @@ pub fn runShots(g: *Game) void {
     g.rig.dist = 4.4;
     stagedRoll(g, v3(0, 0, -1));
     const rollStages = [_]struct { name: [:0]const u8, adv: i32 }{
-        .{ .name = "shots/7_roll_tuck.png", .adv = 6 }, // ~u 0.14
-        .{ .name = "shots/8_roll_over.png", .adv = 8 }, // ~u 0.33
-        .{ .name = "shots/9_roll_recover.png", .adv = 19 }, // ~u 0.79
+        .{ .name = DIR ++ "/7_roll_tuck.png", .adv = 6 }, // ~u 0.14
+        .{ .name = DIR ++ "/8_roll_over.png", .adv = 8 }, // ~u 0.33
+        .{ .name = DIR ++ "/9_roll_recover.png", .adv = 19 }, // ~u 0.79
     };
     for (rollStages) |st| {
         var k: i32 = 0;
@@ -828,9 +828,9 @@ pub fn runShots(g: *Game) void {
     must(g.hero.startJump(v3(0, 0, -1), heromod.RUN_SPEED), "the jump would not start");
     // AIMED OFF THE ARC'S OWN NUMBERS, never literal frames: each stage is a FRACTION of the flight, and the apex is 0.5 because that is where v passes through zero (t = v0/g = JUMP_AIR/2).
     const jumpStages = [_]struct { name: [:0]const u8, at: f32 }{
-        .{ .name = "shots/9a_jump_drive.png", .at = 0.15 },
-        .{ .name = "shots/9b_jump_apex.png", .at = 0.50 },
-        .{ .name = "shots/9c_jump_reach.png", .at = 0.80 },
+        .{ .name = DIR ++ "/9a_jump_drive.png", .at = 0.15 },
+        .{ .name = DIR ++ "/9b_jump_apex.png", .at = 0.50 },
+        .{ .name = DIR ++ "/9c_jump_reach.png", .at = 0.80 },
     };
     var flown: f32 = 0;
     for (jumpStages) |st| {
@@ -846,7 +846,7 @@ pub fn runShots(g: *Game) void {
         g.hero.pose();
     }
     g.rig.follow(jumpGround);
-    shoot(g, "shots/9d_jump_land.png");
+    shoot(g, DIR ++ "/9d_jump_land.png");
 
     g.hero.pos = mathx.ground(0, 0);
     g.hero.facing = 0;
@@ -855,9 +855,9 @@ pub fn runShots(g: *Game) void {
     const launchGround = mathx.addV(g.hero.shoulderPoint(), v3(0, 0, heromod.LAUNCH_BACK * 0.5));
     must(g.hero.startLaunch(v3(0, 0, -1), combat.SLAM_LAUNCH), "the launch would not start");
     const launchStages = [_]struct { name: [:0]const u8, at: f32 }{
-        .{ .name = "shots/9e_launch_off_feet.png", .at = 0.18 },
-        .{ .name = "shots/9f_launch_apex.png", .at = 0.50 },
-        .{ .name = "shots/9g_launch_fall.png", .at = 0.82 },
+        .{ .name = DIR ++ "/9e_launch_off_feet.png", .at = 0.18 },
+        .{ .name = DIR ++ "/9f_launch_apex.png", .at = 0.50 },
+        .{ .name = DIR ++ "/9g_launch_fall.png", .at = 0.82 },
     };
     var thrown: f32 = 0;
     for (launchStages) |st| {
@@ -868,7 +868,7 @@ pub fn runShots(g: *Game) void {
     }
     while (g.hero.airborne()) game.stepAirForShot(g, dt);
     g.rig.follow(launchGround);
-    shoot(g, "shots/9h_launch_down.png");
+    shoot(g, DIR ++ "/9h_launch_down.png");
     g.hero.clearForShot();
 
     g.hero.pos = mathx.ground(0, 4);
@@ -877,19 +877,19 @@ pub fn runShots(g: *Game) void {
     g.rig.dist = 4.2;
     stagedAttack(g, .light);
     advanceAttack(g, dt, 10); // ~u 0.28: windup apex
-    shoot(g, "shots/15a_atk_light_wind.png");
+    shoot(g, DIR ++ "/15a_atk_light_wind.png");
     advanceAttack(g, dt, 5); // ~u 0.42: mid-arc
-    shoot(g, "shots/15_atk_light_strike.png");
+    shoot(g, DIR ++ "/15_atk_light_strike.png");
     advanceAttack(g, dt, 4); // ~u 0.53: the whip PEAK
-    shoot(g, "shots/15p_atk_light_peak.png");
+    shoot(g, DIR ++ "/15p_atk_light_peak.png");
     advanceAttack(g, dt, 3); // ~u 0.61: follow-through
-    shoot(g, "shots/15b_atk_light_thru.png");
+    shoot(g, DIR ++ "/15b_atk_light_thru.png");
     g.hero.stam.reset();
     g.hero.requestAttack(.light);
     advanceAttack(g, dt, 12); // chain fires at ~u 0.80, then into the backhand WINDUP
-    shoot(g, "shots/15r_atk_return_wind.png");
+    shoot(g, DIR ++ "/15r_atk_return_wind.png");
     advanceAttack(g, dt, 10); // ~u 0.42 into the return swipe
-    shoot(g, "shots/15c_atk_light_return.png");
+    shoot(g, DIR ++ "/15c_atk_light_return.png");
     advanceAttack(g, dt, 999);
 
     g.hero.arm = .shield;
@@ -897,9 +897,9 @@ pub fn runShots(g: *Game) void {
     g.rig.yaw = mathx.radians(-30);
     stagedAttack(g, .light);
     advanceAttack(g, dt, 10);
-    shoot(g, "shots/15L_atk_left_wind.png");
+    shoot(g, DIR ++ "/15L_atk_left_wind.png");
     advanceAttack(g, dt, 7);
-    shoot(g, "shots/15L_atk_left_peak.png");
+    shoot(g, DIR ++ "/15L_atk_left_peak.png");
     advanceAttack(g, dt, 999);
     g.hero.arm = .sword;
     g.hero.off = .shield;
@@ -909,20 +909,20 @@ pub fn runShots(g: *Game) void {
     g.rig.dist = 6.5;
     stagedAttack(g, .light);
     advanceAttack(g, dt, 17); // ~u 0.47, deep in the active window
-    shoot(g, "shots/15t_atk_light_top.png");
+    shoot(g, DIR ++ "/15t_atk_light_top.png");
     advanceAttack(g, dt, 999);
     g.rig.pitch = 0.13;
     g.rig.yaw = mathx.radians(90);
     stagedAttack(g, .heavy);
     advanceAttack(g, dt, 20); // ~u 0.33: overhead windup apex
-    shoot(g, "shots/16_atk_heavy_windup.png");
+    shoot(g, DIR ++ "/16_atk_heavy_windup.png");
     advanceAttack(g, dt, 14); // ~u 0.57: buried impact
-    shoot(g, "shots/17_atk_heavy_impact.png");
+    shoot(g, DIR ++ "/17_atk_heavy_impact.png");
     advanceAttack(g, dt, 999);
     g.menu.hitboxes = true;
     stagedAttack(g, .heavy);
     advanceAttack(g, dt, 28); // ~u 0.47: inside the active window
-    shoot(g, "shots/18_atk_hitbox.png");
+    shoot(g, DIR ++ "/18_atk_hitbox.png");
     advanceAttack(g, dt, 999);
     g.menu.hitboxes = false;
 
@@ -935,18 +935,18 @@ pub fn runShots(g: *Game) void {
     must(g.hero.wear(.hand_dagger, .fang_dirk), "the dirk would not go in its own socket");
     stagedAttack(g, .light);
     advanceTo(g, dt, 0.16); // the cock — IN at the far ribs, not back
-    shoot(g, "shots/15x_dagger_flick_cock.png");
+    shoot(g, DIR ++ "/15x_dagger_flick_cock.png");
     advanceTo(g, dt, liveMid(.dagger, false)); // accelerating through the live window
-    shoot(g, "shots/15y_dagger_flick_through.png");
+    shoot(g, DIR ++ "/15y_dagger_flick_through.png");
     advanceTo(g, dt, 0.58); // and the carry-past
-    shoot(g, "shots/15z_dagger_flick_past.png");
+    shoot(g, DIR ++ "/15z_dagger_flick_past.png");
     advanceAttack(g, dt, 999);
 
     stagedAttack(g, .heavy);
     advanceTo(g, dt, 0.30); // THE HELD COIL, which is the bait
-    shoot(g, "shots/16x_dagger_thrust_coil.png");
+    shoot(g, DIR ++ "/16x_dagger_thrust_coil.png");
     advanceTo(g, dt, liveMid(.dagger, true)); // the point out, trunk squared rather than turned
-    shoot(g, "shots/16y_dagger_thrust_out.png");
+    shoot(g, DIR ++ "/16y_dagger_thrust_out.png");
     advanceAttack(g, dt, 999);
 
     g.hero.arm = .club;
@@ -954,28 +954,28 @@ pub fn runShots(g: *Game) void {
     g.rig.dist = 5.6; // 1.44 m of bog-oak needs the room
     stagedAttack(g, .light);
     advanceTo(g, dt, 0.29); // the wind, held at the far end of itself
-    shoot(g, "shots/15c1_club_sweep_wind.png");
+    shoot(g, DIR ++ "/15c1_club_sweep_wind.png");
     advanceTo(g, dt, liveMid(.club, false)); // through, hips already round
-    shoot(g, "shots/15c2_club_sweep_through.png");
+    shoot(g, DIR ++ "/15c2_club_sweep_through.png");
     advanceTo(g, dt, 0.71); // and a long way past
-    shoot(g, "shots/15c3_club_sweep_past.png");
+    shoot(g, DIR ++ "/15c3_club_sweep_past.png");
     advanceAttack(g, dt, 999);
 
     g.rig.pitch = 0.02;
     g.rig.dist = 7.0; // the head stands 3.3 m up at the hang (measured), well outside the sweep's framing
     stagedAttack(g, .heavy);
     advanceTo(g, dt, 0.38); // THE HANG — 0.17 s of a club dead still overhead, inside its own `.hold`
-    shoot(g, "shots/16c1_club_smash_hang.png");
+    shoot(g, DIR ++ "/16c1_club_smash_hang.png");
     advanceTo(g, dt, heromod.moveOf(.club, true).t.hitA); // the frame the capsule goes live, half way down
-    shoot(g, "shots/16c2_club_smash_falling.png");
+    shoot(g, DIR ++ "/16c2_club_smash_falling.png");
     advanceTo(g, dt, heromod.moveOf(.club, true).t.hitB); // into the ground at his feet
-    shoot(g, "shots/16c3_club_smash_ground.png");
+    shoot(g, DIR ++ "/16c3_club_smash_ground.png");
     advanceAttack(g, dt, 999);
 
     g.menu.hitboxes = true;
     stagedAttack(g, .heavy);
     advanceTo(g, dt, liveMid(.club, true));
-    shoot(g, "shots/18c_club_smash_hitbox.png");
+    shoot(g, DIR ++ "/18c_club_smash_hitbox.png");
     advanceAttack(g, dt, 999);
     g.menu.hitboxes = false;
 
@@ -1001,20 +1001,20 @@ pub fn runShots(g: *Game) void {
             g.hero.update(dt, 0, 0, null);
             g.hero.pose();
         }
-        shootPortrait(g, "shots/20a_guard_front.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
-        shootPortrait(g, "shots/20b_guard_3q.png", g.hero.shoulderPoint(), LIT_YAW + 42, 0.09, 3.0);
-        shootPortrait(g, "shots/20c_guard_side.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.09, 3.0);
+        shootPortrait(g, DIR ++ "/20a_guard_front.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        shootPortrait(g, DIR ++ "/20b_guard_3q.png", g.hero.shoulderPoint(), LIT_YAW + 42, 0.09, 3.0);
+        shootPortrait(g, DIR ++ "/20c_guard_side.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.09, 3.0);
         _ = g.hero.takeHit(ogremod.SWIPE_HIT, mathx.headingDir(g.hero.facing));
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
-        shootPortrait(g, "shots/20d_guard_block.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        shootPortrait(g, DIR ++ "/20d_guard_block.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
         g.hero.facing = mathx.headingXZ(LIT_BACK) + std.math.pi;
         k = 0;
         while (k < 30) : (k += 1) {
             g.hero.update(dt, 0, 0, null);
             g.hero.pose();
         }
-        shootPortrait(g, "shots/20e_guard_back.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        shootPortrait(g, DIR ++ "/20e_guard_back.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
         g.hero.setGuard(false);
         g.hero.stam.reset();
         g.hero.hurtFlash = 0;
@@ -1036,12 +1036,12 @@ pub fn runShots(g: *Game) void {
             g.hero.updateParry(dt, null);
         }
         must(g.hero.parryLive(), "the shove peaked outside its own catch window");
-        shootPortrait(g, "shots/20l_parry_front.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        shootPortrait(g, DIR ++ "/20l_parry_front.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
         g.hero.noteParry();
         k = 0;
         while (k < 4) : (k += 1) g.hero.updateParry(dt, null);
-        shootPortrait(g, "shots/20m_parry_catch.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
-        shootPortrait(g, "shots/20n_parry_catch_3q.png", g.hero.shoulderPoint(), LIT_YAW + 42, 0.09, 3.0);
+        shootPortrait(g, DIR ++ "/20m_parry_catch.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        shootPortrait(g, DIR ++ "/20n_parry_catch_3q.png", g.hero.shoulderPoint(), LIT_YAW + 42, 0.09, 3.0);
         while (g.hero.parrying) g.hero.updateParry(dt, null);
         k = 0;
         while (k < 20) : (k += 1) stepWorld(g, dt, 0);
@@ -1052,9 +1052,9 @@ pub fn runShots(g: *Game) void {
         g.hero.pose();
         must(g.hero.requestParry(), "the parry would not start for the arc");
         for ([_]struct { u: f32, name: [:0]const u8 }{
-            .{ .u = heromod.PARRY_COIL_AT, .name = "shots/20o_parry_arc_coil.png" },
-            .{ .u = heromod.PARRY_PUNCH_AT, .name = "shots/20p_parry_arc_cross.png" },
-            .{ .u = heromod.PARRY_SWEEP_END, .name = "shots/20q_parry_arc_follow.png" },
+            .{ .u = heromod.PARRY_COIL_AT, .name = DIR ++ "/20o_parry_arc_coil.png" },
+            .{ .u = heromod.PARRY_PUNCH_AT, .name = DIR ++ "/20p_parry_arc_cross.png" },
+            .{ .u = heromod.PARRY_SWEEP_END, .name = DIR ++ "/20q_parry_arc_follow.png" },
         }) |step| {
             while (g.hero.parrying and g.hero.parryT < heromod.PARRY_DUR * step.u) g.hero.updateParry(dt, null);
             shootPortrait(g, step.name, g.hero.shoulderPoint(), LIT_YAW, 1.32, 3.4);
@@ -1077,8 +1077,8 @@ pub fn runShots(g: *Game) void {
             g.hero.update(dt, 0, 0, null);
             g.hero.pose();
         }
-        shootPortrait(g, "shots/20f_bow_carry.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
-        shootPortrait(g, "shots/20g_bow_carry_side.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.09, 3.0);
+        shootPortrait(g, DIR ++ "/20f_bow_carry.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        shootPortrait(g, DIR ++ "/20g_bow_carry_side.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.09, 3.0);
         g.hero.setAim(true);
         k = 0;
         while (k < 24) : (k += 1) {
@@ -1086,10 +1086,10 @@ pub fn runShots(g: *Game) void {
             g.hero.update(dt, 0, 0, null);
             g.hero.pose();
         }
-        shootPortrait(g, "shots/20h_bow_aim_front.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
-        shootPortrait(g, "shots/20i_bow_aim_3q.png", g.hero.shoulderPoint(), LIT_YAW + 42, 0.09, 3.0);
-        shootPortrait(g, "shots/20j_bow_aim_side.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.08, 3.2);
-        shootPortrait(g, "shots/20k_bow_string.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.02, 1.5);
+        shootPortrait(g, DIR ++ "/20h_bow_aim_front.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        shootPortrait(g, DIR ++ "/20i_bow_aim_3q.png", g.hero.shoulderPoint(), LIT_YAW + 42, 0.09, 3.0);
+        shootPortrait(g, DIR ++ "/20j_bow_aim_side.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.08, 3.2);
+        shootPortrait(g, DIR ++ "/20k_bow_string.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.02, 1.5);
         g.hero.requestShot(true);
         var fired = false;
         k = 0;
@@ -1100,7 +1100,7 @@ pub fn runShots(g: *Game) void {
         }
         must(fired, "the aimed loose never let the shaft go");
         g.hero.updateShot(dt, null);
-        shootPortrait(g, "shots/20l_bow_loose.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.08, 3.2);
+        shootPortrait(g, DIR ++ "/20l_bow_loose.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.08, 3.2);
         g.hero.setAim(false);
         k = 0;
         while (k < 40) : (k += 1) {
@@ -1112,7 +1112,7 @@ pub fn runShots(g: *Game) void {
         g.hero.requestShot(false);
         k = 0;
         while (k < 5) : (k += 1) g.hero.updateShot(dt, null);
-        shootPortrait(g, "shots/20m_bow_snap.png", g.hero.shoulderPoint(), LIT_YAW + 60, 0.09, 3.2);
+        shootPortrait(g, DIR ++ "/20m_bow_snap.png", g.hero.shoulderPoint(), LIT_YAW + 60, 0.09, 3.2);
         while (g.hero.shooting) g.hero.updateShot(dt, null);
         g.hero.stam.reset();
         g.hero.setAim(true);
@@ -1125,17 +1125,17 @@ pub fn runShots(g: *Game) void {
         game.shootShaftForShot(g, SHOT_DOWNRANGE, .plain);
         k = 0;
         while (k < 7) : (k += 1) game.stepShaftsForShot(g, dt);
-        shootPortrait(g, "shots/20n_bow_shaft.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.06, 6.0);
+        shootPortrait(g, DIR ++ "/20n_bow_shaft.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.06, 6.0);
         game.clearShaftsForShot(g);
         game.shootShaftForShot(g, SHOT_DOWNRANGE, .fire);
         k = 0;
         while (k < 7) : (k += 1) game.stepShaftsForShot(g, dt);
-        shootPortrait(g, "shots/20s_fire_shaft.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.06, 6.0);
-        if (game.flyingPointForShot(g, .firearrow)) |at| shootPortrait(g, "shots/20t_fire_head.png", at, LIT_YAW + 20, 0.04, 1.3);
+        shootPortrait(g, DIR ++ "/20s_fire_shaft.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.06, 6.0);
+        if (game.flyingPointForShot(g, .firearrow)) |at| shootPortrait(g, DIR ++ "/20t_fire_head.png", at, LIT_YAW + 20, 0.04, 1.3);
         game.clearShaftsForShot(g);
-        shootClear(g, "shots/20o_bow_hud.png", LIT_YAW + 150, 0.18, 4.6);
+        shootClear(g, DIR ++ "/20o_bow_hud.png", LIT_YAW + 150, 0.18, 4.6);
         game.pinHourForShot(g, 23.4);
-        shootClear(g, "shots/20o2_bow_hud_night.png", LIT_YAW + 150, 0.18, 4.6);
+        shootClear(g, DIR ++ "/20o2_bow_hud_night.png", LIT_YAW + 150, 0.18, 4.6);
         game.pinHourForShot(g, game.daynight.SHOT_HOUR);
         g.hero.setAim(true);
         k = 0;
@@ -1145,18 +1145,18 @@ pub fn runShots(g: *Game) void {
             g.hero.pose();
         }
         g.rig.aimB = g.hero.aimB;
-        shootClear(g, "shots/20p_bow_aimcam.png", LIT_YAW + 150, 0.18, 4.6);
-        shootClear(g, "shots/20q_bow_ammo.png", LIT_YAW + 150, 0.18, 4.6);
+        shootClear(g, DIR ++ "/20p_bow_aimcam.png", LIT_YAW + 150, 0.18, 4.6);
+        shootClear(g, DIR ++ "/20q_bow_ammo.png", LIT_YAW + 150, 0.18, 4.6);
         const hadArrows = g.hero.quiver.ready();
         g.hero.quiver.arrows = 0;
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
-        shootClear(g, "shots/20r_bow_ammo_dry.png", LIT_YAW + 150, 0.18, 4.6);
+        shootClear(g, DIR ++ "/20r_bow_ammo_dry.png", LIT_YAW + 150, 0.18, 4.6);
         g.hero.quiver.arrows = hadArrows;
         must(g.hero.cycleArrow(), "the arrow would not cycle");
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
-        shootClear(g, "shots/20u_fire_ammo.png", LIT_YAW + 150, 0.18, 4.6);
+        shootClear(g, DIR ++ "/20u_fire_ammo.png", LIT_YAW + 150, 0.18, 4.6);
         must(g.hero.cycleArrow(), "the arrow would not cycle back");
         g.rig.aimB = 0;
         g.hero.setAim(false);
@@ -1180,38 +1180,38 @@ pub fn runShots(g: *Game) void {
             g.hero.update(dt, 0, 0, null);
             g.hero.pose();
         }
-        shootPortrait(g, "shots/20v_wand_carry.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
-        shootPortrait(g, "shots/20w_wand_carry_side.png", g.hero.shoulderPoint(), LIT_YAW - 78, 0.09, 3.0);
+        shootPortrait(g, DIR ++ "/20v_wand_carry.png", g.hero.shoulderPoint(), LIT_YAW, 0.09, 3.0);
+        shootPortrait(g, DIR ++ "/20w_wand_carry_side.png", g.hero.shoulderPoint(), LIT_YAW - 78, 0.09, 3.0);
         stagedCast(g);
         k = 0;
         while (k < 9) : (k += 1) g.hero.updateCast(dt, null);
-        shootPortrait(g, "shots/20y_wand_raise.png", wandFrame(g), LIT_YAW + 30, 0.12, 3.2);
+        shootPortrait(g, DIR ++ "/20y_wand_raise.png", wandFrame(g), LIT_YAW + 30, 0.12, 3.2);
         castToCharged(g, dt);
-        shootPortrait(g, "shots/20y2_wand_charged.png", wandFrame(g), LIT_YAW + 30, 0.05, 6.5);
-        shootPortrait(g, "shots/20y3_wand_gather.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.25);
+        shootPortrait(g, DIR ++ "/20y2_wand_charged.png", wandFrame(g), LIT_YAW + 30, 0.05, 6.5);
+        shootPortrait(g, DIR ++ "/20y3_wand_gather.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.25);
         castToThrow(g, dt);
-        shootPortrait(g, "shots/20z_wand_throw.png", wandFrame(g), LIT_YAW + 30, 0.16, 3.4);
+        shootPortrait(g, DIR ++ "/20z_wand_throw.png", wandFrame(g), LIT_YAW + 30, 0.16, 3.4);
         game.clearShaftsForShot(g);
         game.throwBoltForShot(g, SHOT_DOWNRANGE);
-        shootPortrait(g, "shots/20z3_wand_release.png", wandFrame(g), LIT_YAW + 30, 0.05, 6.5);
-        shootPortrait(g, "shots/20z4_wand_release_head.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.6);
+        shootPortrait(g, DIR ++ "/20z3_wand_release.png", wandFrame(g), LIT_YAW + 30, 0.05, 6.5);
+        shootPortrait(g, DIR ++ "/20z4_wand_release_head.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.6);
         game.clearShaftsForShot(g);
-        shootPortrait(g, "shots/20x_wand_crop.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.25);
-        shootPortrait(g, "shots/20za_wand_throw_front.png", wandFrame(g), LIT_YAW, 0.16, 3.4);
+        shootPortrait(g, DIR ++ "/20x_wand_crop.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.25);
+        shootPortrait(g, DIR ++ "/20za_wand_throw_front.png", wandFrame(g), LIT_YAW, 0.16, 3.4);
         const firstSide = g.hero.castAlt;
         while (g.hero.casting) g.hero.updateCast(dt, null);
         stagedCast(g);
         castToThrow(g, dt);
         must(g.hero.castAlt != firstSide, "the second cast did not sweep the other way");
-        shootPortrait(g, "shots/20zb_wand_throw_alt.png", wandFrame(g), LIT_YAW + 30, 0.16, 3.4);
-        shootPortrait(g, "shots/20zc_wand_throw_alt_front.png", wandFrame(g), LIT_YAW, 0.16, 3.4);
+        shootPortrait(g, DIR ++ "/20zb_wand_throw_alt.png", wandFrame(g), LIT_YAW + 30, 0.16, 3.4);
+        shootPortrait(g, DIR ++ "/20zc_wand_throw_alt_front.png", wandFrame(g), LIT_YAW, 0.16, 3.4);
         game.clearShaftsForShot(g);
         game.throwBoltForShot(g, SHOT_DOWNRANGE);
         k = 0;
         while (k < 9) : (k += 1) game.stepShaftsForShot(g, dt);
         if (game.flyingPointForShot(g, .bolt)) |at| {
-            shootPortrait(g, "shots/20zd_wand_bolt.png", at, LIT_YAW + 78, 0.06, 5.0);
-            shootPortrait(g, "shots/20ze_wand_bolt_head.png", at, LIT_YAW + 20, 0.04, 1.1);
+            shootPortrait(g, DIR ++ "/20zd_wand_bolt.png", at, LIT_YAW + 78, 0.06, 5.0);
+            shootPortrait(g, DIR ++ "/20ze_wand_bolt_head.png", at, LIT_YAW + 20, 0.04, 1.1);
         }
         game.clearShaftsForShot(g);
         while (g.hero.casting) g.hero.updateCast(dt, null);
@@ -1220,39 +1220,39 @@ pub fn runShots(g: *Game) void {
             g.hero.update(dt, 0, 0, null);
             g.hero.pose();
         }
-        shootClear(g, "shots/20zf_wand_hud.png", LIT_YAW + 150, 0.18, 4.6);
+        shootClear(g, DIR ++ "/20zf_wand_hud.png", LIT_YAW + 150, 0.18, 4.6);
         g.hero.fp.cur = combat.BOLT_FP - 1;
         g.hero.fpRefused = combat.STAM_REFUSE_FLASH;
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
-        shootClear(g, "shots/20zg_wand_hud_dry.png", LIT_YAW + 150, 0.18, 4.6);
+        shootClear(g, DIR ++ "/20zg_wand_hud_dry.png", LIT_YAW + 150, 0.18, 4.6);
 
         g.hero.fp.cur = g.hero.fp.max;
         g.hero.fpRefused = 0;
         game.selectSpellForShot(g, .roots);
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
-        shootClear(g, "shots/20zg2_roots_hud.png", LIT_YAW + 150, 0.18, 4.6);
+        shootClear(g, DIR ++ "/20zg2_roots_hud.png", LIT_YAW + 150, 0.18, 4.6);
         stagedCast(g);
         castToThrow(g, dt);
         const rootsAt = game.castRootsForShot(g);
-        shootPortrait(g, "shots/20zg3_roots_erupt.png", rootsAt, LIT_YAW, 0.10, 5.5);
+        shootPortrait(g, DIR ++ "/20zg3_roots_erupt.png", rootsAt, LIT_YAW, 0.10, 5.5);
         k = 0;
         while (k < 26) : (k += 1) {
             if (g.hero.casting) g.hero.updateCast(dt, null) else g.hero.update(dt, 0, 0, null);
             g.hero.pose();
         }
-        shootPortrait(g, "shots/20zg4_roots_stand.png", rootsAt, LIT_YAW, 0.09, 5.8);
+        shootPortrait(g, DIR ++ "/20zg4_roots_stand.png", rootsAt, LIT_YAW, 0.09, 5.8);
         // Thin geometry needs a CROP (AGENTS.md): a tendril is ~4 cm through, so at 1:1 the blunt tip and the side stubs are two pixels each.
-        shootPortrait(g, "shots/20zg5_roots_crop.png", v3(rootsAt.x, rootsAt.y + 0.70, rootsAt.z), LIT_YAW + 34, 0.06, 2.7);
-        shootPortrait(g, "shots/20zg6_roots_low.png", v3(rootsAt.x, rootsAt.y + 0.35, rootsAt.z), LIT_YAW - 40, 0.02, 4.0);
+        shootPortrait(g, DIR ++ "/20zg5_roots_crop.png", v3(rootsAt.x, rootsAt.y + 0.70, rootsAt.z), LIT_YAW + 34, 0.06, 2.7);
+        shootPortrait(g, DIR ++ "/20zg6_roots_low.png", v3(rootsAt.x, rootsAt.y + 0.35, rootsAt.z), LIT_YAW - 40, 0.02, 4.0);
         while (g.hero.casting) g.hero.updateCast(dt, null);
 
         game.selectSpellForShot(g, .rime);
         g.hero.fp.cur = g.hero.fp.max;
         const rimeAt = mathx.ground(-26.0, 30.0);
         standSettled(g, rimeAt.x, rimeAt.z, mathx.headingXZ(LIT_BACK));
-        shootClear(g, "shots/20zj_rime_hud.png", LIT_YAW + 150, 0.18, 4.6);
+        shootClear(g, DIR ++ "/20zj_rime_hud.png", LIT_YAW + 150, 0.18, 4.6);
         const coneMid = v3(
             g.hero.pos.x + LIT_BACK.x * combat.RIME_REACH * 0.45,
             g.hero.pos.y + 1.15,
@@ -1260,44 +1260,44 @@ pub fn runShots(g: *Game) void {
         );
         stagedCast(g);
         castToThrow(g, dt);
-        shootPortrait(g, "shots/20zk_rime_open.png", coneMid, LIT_YAW + 90, 0.10, 7.0);
+        shootPortrait(g, DIR ++ "/20zk_rime_open.png", coneMid, LIT_YAW + 90, 0.10, 7.0);
         for ([_]struct { u: f32, name: [:0]const u8 }{
-            .{ .u = 0.35, .name = "shots/20zl_rime_pour.png" },
-            .{ .u = 0.75, .name = "shots/20zm_rime_reach.png" },
+            .{ .u = 0.35, .name = DIR ++ "/20zl_rime_pour.png" },
+            .{ .u = 0.75, .name = DIR ++ "/20zm_rime_reach.png" },
         }) |step| {
             while (g.hero.casting and g.hero.breathU() < step.u) g.hero.updateCast(dt, null);
             must(g.hero.breathLive(), "the pour ended before the beat it was aimed at");
             shootPortrait(g, step.name, coneMid, LIT_YAW + 90, 0.10, 7.0);
         }
-        shootPortrait(g, "shots/20zn_rime_nozzle.png", g.hero.breathMouth(), LIT_YAW + 90, 0.06, 1.5);
-        shootPortrait(g, "shots/20zo_rime_front.png", coneMid, LIT_YAW, 0.16, 6.0);
+        shootPortrait(g, DIR ++ "/20zn_rime_nozzle.png", g.hero.breathMouth(), LIT_YAW + 90, 0.06, 1.5);
+        shootPortrait(g, DIR ++ "/20zo_rime_front.png", coneMid, LIT_YAW, 0.16, 6.0);
         while (g.hero.casting) g.hero.updateCast(dt, null);
         var bk: i32 = 0;
         while (bk < 8) : (bk += 1) {
             g.hero.update(dt, 0, 0, null);
             g.hero.pose();
         }
-        shootPortrait(g, "shots/20zp_rime_after.png", g.hero.shoulderPoint(), LIT_YAW + 90, 0.10, 3.4);
+        shootPortrait(g, DIR ++ "/20zp_rime_after.png", g.hero.shoulderPoint(), LIT_YAW + 90, 0.10, 3.4);
         g.muster.n = 1;
         const chilled = &g.muster.band[0];
         chilled.* = warriormod.Warrior.spawnAs(.shieldman, along(rimeAt, LIT_BACK, 3.2), mathx.headingXZ(mathx.scaleV(LIT_BACK, -1)), 1.0, 0.3);
         chilled.chill.touch();
         chilled.vit.sinceHurt = 0;
-        shootFoe(g, chilled, "shots/20zq_rime_chilled.png", LIT_YAW, 0.10, 4.6);
+        shootFoe(g, chilled, DIR ++ "/20zq_rime_chilled.png", LIT_YAW, 0.10, 4.6);
         g.muster.n = 0;
         g.hero.fp.cur = g.hero.fp.max;
 
         game.selectSpellForShot(g, .levin);
         standSettled(g, rimeAt.x, rimeAt.z, mathx.headingXZ(LIT_BACK));
-        shootClear(g, "shots/20zr_levin_hud.png", LIT_YAW + 150, 0.18, 4.6);
+        shootClear(g, DIR ++ "/20zr_levin_hud.png", LIT_YAW + 150, 0.18, 4.6);
         g.muster.n = 1;
         const struck = &g.muster.band[0];
         struck.* = warriormod.Warrior.spawnAs(.shieldman, along(rimeAt, LIT_BACK, 5.0), mathx.headingXZ(mathx.scaleV(LIT_BACK, -1)), 1.0, 0.3);
         stagedCast(g);
         castToThrow(g, dt);
         game.releaseSpellForShot(g);
-        shootFoe(g, struck, "shots/20zs_levin_strike.png", LIT_YAW + 90, 0.10, 6.4);
-        shootPortrait(g, "shots/20zt_levin_crop.png", struck.centerWorld(), LIT_YAW + 90, 0.06, 2.6);
+        shootFoe(g, struck, DIR ++ "/20zs_levin_strike.png", LIT_YAW + 90, 0.10, 6.4);
+        shootPortrait(g, DIR ++ "/20zt_levin_crop.png", struck.centerWorld(), LIT_YAW + 90, 0.06, 2.6);
         while (g.hero.casting) g.hero.updateCast(dt, null);
 
         game.selectSpellForShot(g, .siphon);
@@ -1306,8 +1306,8 @@ pub fn runShots(g: *Game) void {
         stagedCast(g);
         castToThrow(g, dt);
         game.releaseSpellForShot(g);
-        shootPortrait(g, "shots/20zu_siphon_draw.png", mathx.lerpV(g.hero.shoulderPoint(), struck.centerWorld(), 0.5), LIT_YAW + 90, 0.10, 5.2);
-        shootClear(g, "shots/20zv_siphon_hud.png", LIT_YAW + 150, 0.18, 4.6);
+        shootPortrait(g, DIR ++ "/20zu_siphon_draw.png", mathx.lerpV(g.hero.shoulderPoint(), struck.centerWorld(), 0.5), LIT_YAW + 90, 0.10, 5.2);
+        shootClear(g, DIR ++ "/20zv_siphon_hud.png", LIT_YAW + 150, 0.18, 4.6);
         while (g.hero.casting) g.hero.updateCast(dt, null);
         g.muster.n = 0;
         g.hero.vit.hp = g.hero.vit.hpMax;
@@ -1316,7 +1316,7 @@ pub fn runShots(g: *Game) void {
         g.hero.pos = mathx.ground(0, 6);
         k = 0;
         while (k < 40) : (k += 1) stepWorld(g, dt, heromod.WALK_SPEED);
-        shootPortrait(g, "shots/20zh_wand_walk.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 4.2);
+        shootPortrait(g, DIR ++ "/20zh_wand_walk.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 4.2);
         // Measured off the phase, which WRAPS — a bare `< 0.5` test can already be satisfied and shoot twice.
         const ph0 = g.hero.phase;
         k = 0;
@@ -1324,22 +1324,22 @@ pub fn runShots(g: *Game) void {
             stepWorld(g, dt, heromod.WALK_SPEED);
             if (@mod(g.hero.phase - ph0 + 1.0, 1.0) >= 0.5) break;
         }
-        shootPortrait(g, "shots/20zi_wand_walk_b.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 4.2);
+        shootPortrait(g, DIR ++ "/20zi_wand_walk_b.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 4.2);
         g.hero.fp.reset();
         g.hero.fpRefused = 0;
         offTo(g, .sword);
         armTo(g, .wand);
         must(g.hero.wandOut() and !g.hero.wandLeft(), "the rod would not go in the right hand");
         standSettled(g, 0, 4, mathx.headingXZ(LIT_BACK));
-        shootPortrait(g, "shots/20zr_wand_right_carry.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.09, 3.0);
+        shootPortrait(g, DIR ++ "/20zr_wand_right_carry.png", g.hero.shoulderPoint(), LIT_YAW + 78, 0.09, 3.0);
         stagedCast(g);
         castToCharged(g, dt);
-        shootPortrait(g, "shots/20zs_wand_right_gather.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.25);
+        shootPortrait(g, DIR ++ "/20zs_wand_right_gather.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.25);
         castToThrow(g, dt);
-        shootPortrait(g, "shots/20zt_wand_right_throw.png", wandFrame(g), LIT_YAW - 30, 0.16, 3.4);
+        shootPortrait(g, DIR ++ "/20zt_wand_right_throw.png", wandFrame(g), LIT_YAW - 30, 0.16, 3.4);
         game.clearShaftsForShot(g);
         game.throwBoltForShot(g, SHOT_DOWNRANGE);
-        shootPortrait(g, "shots/20zu_wand_right_release.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.6);
+        shootPortrait(g, DIR ++ "/20zu_wand_right_release.png", g.hero.wandTipWorld(), LIT_YAW + 40, 0.08, 1.6);
         game.clearShaftsForShot(g);
         while (g.hero.casting) g.hero.updateCast(dt, null);
 
@@ -1353,14 +1353,14 @@ pub fn runShots(g: *Game) void {
             g.hero.update(dt, 0, 0, null);
             g.hero.pose();
         }
-        shootPortrait(g, "shots/20zv_guard_right.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 3.4);
+        shootPortrait(g, DIR ++ "/20zv_guard_right.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 3.4);
         g.hero.setGuard(false);
         must(g.hero.requestParry(), "the parry was refused in the right hand");
         while (!g.hero.parryLive()) g.hero.updateParry(dt, null);
         g.hero.noteParry();
         k = 0;
         while (k < 3) : (k += 1) g.hero.updateParry(dt, null);
-        shootPortrait(g, "shots/20zw_parry_right.png", g.hero.shieldFaceWorld().at, LIT_YAW, 0.10, 2.4);
+        shootPortrait(g, DIR ++ "/20zw_parry_right.png", g.hero.shieldFaceWorld().at, LIT_YAW, 0.10, 2.4);
         while (g.hero.parrying) g.hero.updateParry(dt, null);
 
         armTo(g, .sword);
@@ -1370,19 +1370,19 @@ pub fn runShots(g: *Game) void {
         g.hero.fp.reset();
         must(g.hero.requestRing(), "the ring was refused in the left hand");
         while (g.hero.ringing and !g.hero.rang) g.hero.updateRing(dt, null);
-        shootPortrait(g, "shots/20zx_bell_left.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 3.2);
+        shootPortrait(g, DIR ++ "/20zx_bell_left.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 3.2);
         while (g.hero.ringing) g.hero.updateRing(dt, null);
 
         armTo(g, .sword);
         offTo(g, .torch);
         must(g.hero.torchOut() and g.hero.torchLeft(), "the torch would not go in the left hand");
         standSettled(g, 0, 4, mathx.headingXZ(LIT_BACK));
-        shootPortrait(g, "shots/20zy_torch_left.png", g.hero.torchFlameWorld(), LIT_YAW + 150, 0.10, 2.6);
+        shootPortrait(g, DIR ++ "/20zy_torch_left.png", g.hero.torchFlameWorld(), LIT_YAW + 150, 0.10, 2.6);
         game.pinHourForShot(g, 23.4);
-        shootPortrait(g, "shots/20zz_torch_night.png", g.hero.shoulderPoint(), LIT_YAW + 150, 0.10, 4.4);
+        shootPortrait(g, DIR ++ "/20zz_torch_night.png", g.hero.shoulderPoint(), LIT_YAW + 150, 0.10, 4.4);
         offTo(g, .shield);
         standSettled(g, 0, 4, mathx.headingXZ(LIT_BACK));
-        shootPortrait(g, "shots/20zz_bodylight_night.png", g.hero.shoulderPoint(), LIT_YAW + 150, 0.10, 4.4);
+        shootPortrait(g, DIR ++ "/20zz_bodylight_night.png", g.hero.shoulderPoint(), LIT_YAW + 150, 0.10, 4.4);
         game.pinHourForShot(g, game.daynight.SHOT_HOUR);
 
         g.hero.fp.reset();
@@ -1400,7 +1400,7 @@ pub fn runShots(g: *Game) void {
     g.rig.pitch = 0.14;
     g.rig.dist = 3.4;
     g.rig.follow(g.hero.shoulderPoint());
-    shoot(g, "shots/19_idle_hold.png");
+    shoot(g, DIR ++ "/19_idle_hold.png");
 
     {
         const f = &g.warren.frogs[0];
@@ -1414,31 +1414,31 @@ pub fn runShots(g: *Game) void {
 
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         stepFoe(f, 8, front);
-        shootFoe(g, f, "shots/20_frog_idle.png", 90, 0.10, 2.7);
-        shootFoe(g, f, "shots/21_frog_scale.png", 35, 0.16, 4.7);
+        shootFoe(g, f, DIR ++ "/20_frog_idle.png", 90, 0.10, 2.7);
+        shootFoe(g, f, DIR ++ "/21_frog_scale.png", 35, 0.16, 4.7);
 
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), std.math.pi, 1.0, 0.0);
         f.startHop(mathx.ground(0, -2.2), game.PLAY_HALF, false);
         stepFoe(f, 6, behind);
-        shootFoe(g, f, "shots/22_frog_coil.png", 90, 0.08, 3.0);
+        shootFoe(g, f, DIR ++ "/22_frog_coil.png", 90, 0.08, 3.0);
         stepFoe(f, 22, behind);
-        shootFoe(g, f, "shots/23_frog_leap.png", 90, 0.05, 3.4);
+        shootFoe(g, f, DIR ++ "/23_frog_leap.png", 90, 0.05, 3.4);
         stepFoe(f, 22, behind);
-        shootFoe(g, f, "shots/24_frog_land.png", 90, 0.09, 3.1);
+        shootFoe(g, f, DIR ++ "/24_frog_land.png", 90, 0.09, 3.1);
 
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), std.math.pi, 1.0, 0.0);
         f.startHop(mathx.ground(0, -3.6), game.PLAY_HALF, true);
         stepFoe(f, 26, behind);
-        shootFoe(g, f, "shots/25_frog_lunge_wind.png", 55, 0.09, 3.3);
+        shootFoe(g, f, DIR ++ "/25_frog_lunge_wind.png", 55, 0.09, 3.3);
         stepFoe(f, 60, behind); // through flight + heavy landing, ~0.3 s into recovery
-        shootFoe(g, f, "shots/26_frog_recover.png", 70, 0.13, 3.2);
+        shootFoe(g, f, DIR ++ "/26_frog_recover.png", 70, 0.13, 3.2);
 
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         f.startChomp();
         stepFoe(f, 22, front);
-        shootFoe(g, f, "shots/27_frog_gape.png", 162, 0.06, 2.2);
+        shootFoe(g, f, DIR ++ "/27_frog_gape.png", 162, 0.06, 2.2);
         stepFoe(f, 6, front);
-        shootFoe(g, f, "shots/28_frog_snap.png", 162, 0.06, 2.2);
+        shootFoe(g, f, DIR ++ "/28_frog_snap.png", 162, 0.06, 2.2);
 
         g.menu.hitboxes = true;
         g.menu.stats = true;
@@ -1457,7 +1457,7 @@ pub fn runShots(g: *Game) void {
                 g.rig.pitch = 0.12;
                 g.rig.dist = 3.6;
                 g.rig.follow(f.centerWorld());
-                shoot(g, "shots/29_frog_hit.png");
+                shoot(g, DIR ++ "/29_frog_hit.png");
             }
         }
         g.menu.hitboxes = false;
@@ -1475,12 +1475,12 @@ pub fn runShots(g: *Game) void {
             g.hero.updateAttack(dt, game.PLAY_HALF, null);
             _ = f.update(dt, mathx.ground(0, 60), game.PLAY_HALF, heroBlade(g));
             if (f.hits > 0 and landed < 0) landed = wk;
-            if (landed >= 0 and wk == landed + 5) shootFoe(g, f, "shots/29b_frog_wound.png", 60, 0.10, 2.6);
+            if (landed >= 0 and wk == landed + 5) shootFoe(g, f, DIR ++ "/29b_frog_wound.png", 60, 0.10, 2.6);
         }
         must(landed >= 0, "the wound shot's swing never landed");
         var ws: i32 = 0;
         while (ws < 12) : (ws += 1) _ = f.update(dt, mathx.ground(0, 60), game.PLAY_HALF, .{});
-        shootFoe(g, f, "shots/29c_frog_wound_after.png", 60, 0.30, 2.4);
+        shootFoe(g, f, DIR ++ "/29c_frog_wound_after.png", 60, 0.30, 2.4);
 
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         stepFoe(f, 8, front);
@@ -1493,7 +1493,7 @@ pub fn runShots(g: *Game) void {
         g.rig.pitch = 0.16;
         g.rig.dist = 5.4;
         g.rig.follow(g.hero.shoulderPoint());
-        shoot(g, "shots/30_lockon.png");
+        shoot(g, DIR ++ "/30_lockon.png");
         g.lock = null;
     }
 
@@ -1504,15 +1504,15 @@ pub fn runShots(g: *Game) void {
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         f.stagger(false);
         stepFoe(f, 13, front);
-        shootFoe(g, f, "shots/31_frog_flinch.png", 70, 0.12, 3.2);
+        shootFoe(g, f, DIR ++ "/31_frog_flinch.png", 70, 0.12, 3.2);
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         f.stagger(true);
         stepFoe(f, 24, front);
-        shootFoe(g, f, "shots/32_frog_stagger.png", 55, 0.12, 3.4);
+        shootFoe(g, f, DIR ++ "/32_frog_stagger.png", 55, 0.12, 3.4);
         f.* = frogmod.Frog.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         f.debugKill();
         stepFoe(f, 42, front);
-        shootFoe(g, f, "shots/33_frog_death.png", 60, 0.10, 3.4);
+        shootFoe(g, f, DIR ++ "/33_frog_death.png", 60, 0.10, 3.4);
 
         g.hero.pos = mathx.ground(0, 4);
         g.hero.facing = std.math.pi;
@@ -1523,26 +1523,26 @@ pub fn runShots(g: *Game) void {
         g.rig.pitch = 0.12;
         g.rig.dist = 4.6;
         g.rig.follow(g.hero.shoulderPoint());
-        shoot(g, "shots/34_hero_flinch.png");
+        shoot(g, DIR ++ "/34_hero_flinch.png");
         while (g.hero.staggered()) g.hero.updateStun(dt);
 
         _ = g.hero.takeHit(.{ .stance = 999 }, mathx.zero3);
         sk = 0;
         while (sk < 26) : (sk += 1) g.hero.updateStun(dt);
         g.rig.follow(g.hero.shoulderPoint());
-        shoot(g, "shots/35_hero_stagger.png");
+        shoot(g, DIR ++ "/35_hero_stagger.png");
         while (g.hero.staggered()) g.hero.updateStun(dt);
 
         _ = g.hero.takeHit(.{ .dmg = 999 }, mathx.zero3);
         sk = 0;
         while (@as(f32, @floatFromInt(sk)) * dt < game.HUD_FADE_DUR * 0.5) : (sk += 1) g.hero.updateDeath(dt);
         g.rig.follow(g.hero.shoulderPoint());
-        shoot(g, "shots/36a_hero_death_hudfade.png");
+        shoot(g, DIR ++ "/36a_hero_death_hudfade.png");
         while (sk < 130) : (sk += 1) g.hero.updateDeath(dt);
         g.rig.pitch = 0.22;
         g.rig.dist = 5.2;
         g.rig.follow(g.hero.shoulderPoint());
-        shoot(g, "shots/36_hero_death.png");
+        shoot(g, DIR ++ "/36_hero_death.png");
         while (g.hero.dead) g.hero.updateDeath(dt);
 
         g.hero.hurtFlash = 0;
@@ -1563,14 +1563,14 @@ pub fn runShots(g: *Game) void {
         g.rig.pitch = 0.16;
         g.rig.dist = 6.4;
         g.rig.follow(f.centerWorld());
-        shoot(g, "shots/37_hp_bars.png");
+        shoot(g, DIR ++ "/37_hp_bars.png");
 
         g.hero.stam.spend(combat.STAM_MAX);
         g.hero.startRoll(v3(0, 0, -1));
         std.debug.assert(!g.hero.rolling);
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
-        shoot(g, "shots/37b_stam_locked.png");
+        shoot(g, DIR ++ "/37b_stam_locked.png");
 
         var st: usize = 0;
         while (g.hero.stam.frac() < 0.2 and st < 600) : (st += 1) g.hero.stam.tick(SHOT_DT, false, false);
@@ -1578,7 +1578,7 @@ pub fn runShots(g: *Game) void {
         g.hero.stamRefused = 0;
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
-        shoot(g, "shots/37c_stam_winded.png");
+        shoot(g, DIR ++ "/37c_stam_winded.png");
 
         g.hero.vit.hp = g.hero.vit.hpMax;
         g.hero.stam.reset();
@@ -1595,9 +1595,9 @@ pub fn runShots(g: *Game) void {
         g.hero.pose();
         var k: i32 = 0;
         while (k < 140 and a.drawAmt < 0.98) : (k += 1) _ = a.update(dt, mathx.ground(0, 12), game.PLAY_HALF, .{});
-        shootFoe(g, a, "shots/40_archer_aim_side.png", 90, 0.06, 4.8);
-        shootFoe(g, a, "shots/41_archer_aim_front.png", 6, 0.12, 4.4);
-        shootFoe(g, a, "shots/42_archer_aim_3q.png", 48, 0.10, 4.8);
+        shootFoe(g, a, DIR ++ "/40_archer_aim_side.png", 90, 0.06, 4.8);
+        shootFoe(g, a, DIR ++ "/41_archer_aim_front.png", 6, 0.12, 4.4);
+        shootFoe(g, a, DIR ++ "/42_archer_aim_3q.png", 48, 0.10, 4.8);
         var loose: i32 = 0;
         while (loose < 120) : (loose += 1) {
             if (a.update(dt, mathx.ground(0, 15), game.PLAY_HALF, .{})) {
@@ -1610,31 +1610,31 @@ pub fn runShots(g: *Game) void {
             _ = a.update(dt, mathx.ground(0, 15), game.PLAY_HALF, .{});
             archermod.stepArrow(&g.arrows[0], mathx.ground(0, 15), HERO_CENTER_Y, g.env.groundAt(g.arrows[0].pos.x, g.arrows[0].pos.z), false, arrowCover(g, &g.arrows[0], dt), dt);
         }
-        shootFoe(g, a, "shots/44_archer_loose.png", 90, 0.05, 5.2);
+        shootFoe(g, a, DIR ++ "/44_archer_loose.png", 90, 0.05, 5.2);
         g.arrows[0] = .{};
         a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         var j: i32 = 0;
         while (j < 20) : (j += 1) _ = a.update(dt, mathx.ground(0, 60), game.PLAY_HALF, .{});
-        shootFoe(g, a, "shots/43_archer_idle_side.png", 90, 0.08, 4.6);
+        shootFoe(g, a, DIR ++ "/43_archer_idle_side.png", 90, 0.08, 4.6);
         a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         var w2: i32 = 0;
         while (w2 < 60) : (w2 += 1) _ = a.update(dt, mathx.ground(0, 3), game.PLAY_HALF, .{});
-        shootFoe(g, a, "shots/45_archer_kite.png", 90, 0.09, 5.4);
+        shootFoe(g, a, DIR ++ "/45_archer_kite.png", 90, 0.09, 5.4);
         a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         var bs: i32 = 0;
         while (bs < 400 and !a.airborne()) : (bs += 1) _ = a.update(dt, mathx.ground(0, 2.2), game.PLAY_HALF, .{});
         var bp: i32 = 0;
         while (bp < 7) : (bp += 1) _ = a.update(dt, mathx.ground(0, 2.2), game.PLAY_HALF, .{});
-        shootFoe(g, a, "shots/45b_archer_backstep.png", 90, 0.06, 6.0);
+        shootFoe(g, a, DIR ++ "/45b_archer_backstep.png", 90, 0.06, 6.0);
         var bl: i32 = 0;
         while (bl < 18) : (bl += 1) _ = a.update(dt, mathx.ground(0, 2.2), game.PLAY_HALF, .{});
-        shootFoe(g, a, "shots/45c_archer_backstep_land.png", 90, 0.06, 6.0);
+        shootFoe(g, a, DIR ++ "/45c_archer_backstep_land.png", 90, 0.06, 6.0);
         const ac = mathx.ground(-26.0, 30.0);
         a.* = archermod.Archer.spawn(ac, 0, 1.0, 0.0);
         a.debugKill();
         stepFoe(a, 95, mathx.ground(0, 60)); // ~1.58 s: the collapse is over and the cloud is at full
         standHero(g, ac.x + 2.2, ac.z - 1.4, std.math.pi);
-        shootFoe(g, a, "shots/45d_archer_dissolve.png", LIT_YAW, 0.42, 3.4);
+        shootFoe(g, a, DIR ++ "/45d_archer_dissolve.png", LIT_YAW, 0.42, 3.4);
         a.* = archermod.Archer.spawn(mathx.ground(0, 0), 0, 1.0, 0.0);
         var lk: i32 = 0;
         while (lk < 24) : (lk += 1) _ = a.update(dt, mathx.ground(0, 60), game.PLAY_HALF, .{});
@@ -1647,7 +1647,7 @@ pub fn runShots(g: *Game) void {
         g.rig.pitch = 0.16;
         g.rig.dist = 6.2;
         g.rig.follow(g.hero.shoulderPoint());
-        shoot(g, "shots/46_archer_lockon.png");
+        shoot(g, DIR ++ "/46_archer_lockon.png");
         g.lock = null;
         game.rehomeFoesForShot(g);
     }
@@ -1662,13 +1662,13 @@ pub fn runShots(g: *Game) void {
         g.hero.pos = mathx.ground(oc.x - 22.0, oc.z);
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
-        shootFoe(g, o, "shots/47_ogre_idle.png", 55, 0.14, 13.0);
+        shootFoe(g, o, DIR ++ "/47_ogre_idle.png", 55, 0.14, 13.0);
         {
             _ = o.vit.hit(.{ .dmg = 90 });
             g.hero.facing = mathx.headingXZ(mathx.scaleV(LIT_BACK, -1));
             for ([_]struct { m: f32, name: [:0]const u8 }{
-                .{ .m = 9.0, .name = "shots/47b_ogre_bar_far.png" },
-                .{ .m = 2.6, .name = "shots/47c_ogre_bar_close.png" },
+                .{ .m = 9.0, .name = DIR ++ "/47b_ogre_bar_far.png" },
+                .{ .m = 2.6, .name = DIR ++ "/47c_ogre_bar_close.png" },
             }) |shot| {
                 g.hero.pos = along(oc, LIT_BACK, shot.m);
                 g.hero.update(dt, 0, 0, null);
@@ -1684,26 +1684,26 @@ pub fn runShots(g: *Game) void {
             g.hero.update(dt, 0, 0, null);
             g.hero.pose();
             g.lock = .{ .kind = .ogre, .idx = 0 };
-            shootClear(g, "shots/47d_ogre_lock.png", LIT_YAW, 0.10, 6.4);
+            shootClear(g, DIR ++ "/47d_ogre_lock.png", LIT_YAW, 0.10, 6.4);
             g.lock = null;
         }
         g.hero.pos = mathx.ground(oc.x + 4.8, oc.z + 1.4);
         g.hero.facing = mathx.headingXZ(mathx.subV(oc, g.hero.pos));
         g.hero.update(dt, 0, 0, null);
         g.hero.pose();
-        shootFoe(g, o, "shots/48_ogre_scale.png", 30, 0.16, 15.5);
+        shootFoe(g, o, DIR ++ "/48_ogre_scale.png", 30, 0.16, 15.5);
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         stepFoe(o, 100, v3(oc.x, 0, oc.z + 15.0));
-        shootFoe(g, o, "shots/56_ogre_walk.png", 90, 0.06, 12.0);
+        shootFoe(g, o, DIR ++ "/56_ogre_walk.png", 90, 0.06, 12.0);
         stepFoe(o, 34, v3(oc.x, 0, oc.z + 15.0));
-        shootFoe(g, o, "shots/57_ogre_walk_b.png", 270, 0.06, 12.0);
+        shootFoe(g, o, DIR ++ "/57_ogre_walk_b.png", 270, 0.06, 12.0);
         stepFoe(o, 69, v3(oc.x, 0, oc.z + 15.0));
-        shootFoe(g, o, "shots/58_ogre_walk_c.png", 270, 0.06, 12.0);
+        shootFoe(g, o, DIR ++ "/58_ogre_walk_c.png", 270, 0.06, 12.0);
         stepFoe(o, 17, v3(oc.x, 0, oc.z + 15.0));
-        shootFoe(g, o, "shots/59_ogre_walk_3q.png", 320, 0.08, 12.5);
+        shootFoe(g, o, DIR ++ "/59_ogre_walk_3q.png", 320, 0.08, 12.5);
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         stepFoe(o, 14, v3(oc.x + 9.0, 0, oc.z + 1.0)); // 14 frames: the head is AT its 55 deg
-        shootFoe(g, o, "shots/60_ogre_headtrack.png", 20, 0.20, 11.0);
+        shootFoe(g, o, DIR ++ "/60_ogre_headtrack.png", 20, 0.20, 11.0);
 
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         stepFoe(o, 30, far);
@@ -1711,26 +1711,26 @@ pub fn runShots(g: *Game) void {
         g.rig.pitch = 0.16;
         g.rig.dist = 3.2;
         g.rig.follow(o.headWorld());
-        shoot(g, "shots/55_ogre_face.png");
+        shoot(g, DIR ++ "/55_ogre_face.png");
 
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         o.debugSlam();
         stepFoe(o, 64, far);
-        shootFoe(g, o, "shots/49_ogre_windup.png", 55, 0.00, 13.0);
+        shootFoe(g, o, DIR ++ "/49_ogre_windup.png", 55, 0.00, 13.0);
         stepFoe(o, 21, far);
-        shootFoe(g, o, "shots/50_ogre_slam.png", 60, 0.06, 13.0);
+        shootFoe(g, o, DIR ++ "/50_ogre_slam.png", 60, 0.06, 13.0);
         stepFoe(o, 25, far); // f110: ~0.4 s into recovery
-        shootFoe(g, o, "shots/51_ogre_recover.png", 48, 0.10, 12.5);
+        shootFoe(g, o, DIR ++ "/51_ogre_recover.png", 48, 0.10, 12.5);
 
         {
             const flank = v3(oc.x + 3.6, 0, oc.z - 1.2); // ~108 deg off his facing, inside SWIPE_R
             o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
             o.debugSwipe();
             stepFoe(o, 24, flank);
-            shootFoe(g, o, "shots/61_ogre_swipewind.png", 35, 0.12, 12.0);
+            shootFoe(g, o, DIR ++ "/61_ogre_swipewind.png", 35, 0.12, 12.0);
             stepFoe(o, 11, flank);
-            shootFoe(g, o, "shots/62_ogre_swipe.png", 35, 0.12, 12.0);
-            shootFoe(g, o, "shots/63_ogre_swipe_top.png", 35, 0.60, 15.0);
+            shootFoe(g, o, DIR ++ "/62_ogre_swipe.png", 35, 0.12, 12.0);
+            shootFoe(g, o, DIR ++ "/63_ogre_swipe_top.png", 35, 0.60, 15.0);
         }
 
         {
@@ -1738,10 +1738,10 @@ pub fn runShots(g: *Game) void {
             o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
             o.debugBackswipe();
             stepFoe(o, 20, ahead);
-            shootFoe(g, o, "shots/63b_ogre_backwind.png", 35, 0.50, 14.0);
+            shootFoe(g, o, DIR ++ "/63b_ogre_backwind.png", 35, 0.50, 14.0);
             stepFoe(o, 9, ahead);
-            shootFoe(g, o, "shots/63c_ogre_backswipe.png", 35, 0.12, 12.0);
-            shootFoe(g, o, "shots/63d_ogre_backswipe_top.png", 35, 0.60, 15.0);
+            shootFoe(g, o, DIR ++ "/63c_ogre_backswipe.png", 35, 0.12, 12.0);
+            shootFoe(g, o, DIR ++ "/63d_ogre_backswipe_top.png", 35, 0.60, 15.0);
         }
 
         {
@@ -1749,34 +1749,34 @@ pub fn runShots(g: *Game) void {
             o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
             o.debugDrive();
             stepFoe(o, 40, mark);
-            shootFoe(g, o, "shots/64_ogre_drive_tell.png", 55, 0.10, 13.0);
+            shootFoe(g, o, DIR ++ "/64_ogre_drive_tell.png", 55, 0.10, 13.0);
             stepFoe(o, 18, mark);
-            shootFoe(g, o, "shots/64b_ogre_drive_surge.png", 90, 0.08, 13.5);
+            shootFoe(g, o, DIR ++ "/64b_ogre_drive_surge.png", 90, 0.08, 13.5);
             stepFoe(o, 15, mark);
-            shootFoe(g, o, "shots/64c_ogre_drive_crash.png", 55, 0.08, 13.0);
+            shootFoe(g, o, DIR ++ "/64c_ogre_drive_crash.png", 55, 0.08, 13.0);
         }
 
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         o.stagger(false);
         stepFoe(o, 13, far);
-        shootFoe(g, o, "shots/52_ogre_flinch.png", 55, 0.04, 12.5);
+        shootFoe(g, o, DIR ++ "/52_ogre_flinch.png", 55, 0.04, 12.5);
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         o.stagger(true);
         stepFoe(o, 42, far);
-        shootFoe(g, o, "shots/53_ogre_stagger.png", 50, 0.10, 13.0);
+        shootFoe(g, o, DIR ++ "/53_ogre_stagger.png", 50, 0.10, 13.0);
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         o.debugSlam();
         stepFoe(o, 64, far);
         o.stagger(true);
         stepFoe(o, 10, far);
-        shootFoe(g, o, "shots/53b_ogre_stagger_armed.png", 50, 0.10, 13.0);
+        shootFoe(g, o, DIR ++ "/53b_ogre_stagger_armed.png", 50, 0.10, 13.0);
         stepFoe(o, 32, far);
-        shootFoe(g, o, "shots/53c_ogre_stagger_armed_late.png", 50, 0.10, 13.0);
+        shootFoe(g, o, DIR ++ "/53c_ogre_stagger_armed_late.png", 50, 0.10, 13.0);
 
         o.* = ogremod.Ogre.spawn(oc, 0, 1.0, 0.4);
         o.debugKill();
         stepFoe(o, 72, far);
-        shootFoe(g, o, "shots/54_ogre_death.png", 55, 0.12, 13.5);
+        shootFoe(g, o, DIR ++ "/54_ogre_death.png", 55, 0.12, 13.5);
 
         o.* = ogremod.Ogre.spawn(mathx.ground(3.0, -50.0), 0, 1.0, 0.4);
     }
@@ -1796,12 +1796,12 @@ pub fn runShots(g: *Game) void {
         sling.* = koboldmod.Kobold.spawnAs(.slinger, mathx.ground(kc.x + 1.7, kc.z), 0, 1.0, 0.85);
         for ([_]*koboldmod.Kobold{ zerk, priest, sling }) |k| stepFoe(k, 30, far);
         standHero(g, kc.x + 3.2, kc.z - 3.4, mathx.radians(-140));
-        shootAt(g, "shots/64_kobold_band.png", v3(kc.x + 0.6, kc.y + 1.0, kc.z), LIT_YAW, 0.10, 7.6);
-        shootAt(g, "shots/64b_kobold_heads.png", v3(kc.x, kc.y + 1.30, kc.z), LIT_YAW, 0.03, 4.2);
-        shootPortrait(g, "shots/64c_kobold_head.png", v3(kc.x + 1.7, kc.y + 1.42, kc.z), LIT_YAW + 12, -0.05, 2.3);
+        shootAt(g, DIR ++ "/64_kobold_band.png", v3(kc.x + 0.6, kc.y + 1.0, kc.z), LIT_YAW, 0.10, 7.6);
+        shootAt(g, DIR ++ "/64b_kobold_heads.png", v3(kc.x, kc.y + 1.30, kc.z), LIT_YAW, 0.03, 4.2);
+        shootPortrait(g, DIR ++ "/64c_kobold_head.png", v3(kc.x + 1.7, kc.y + 1.42, kc.z), LIT_YAW + 12, -0.05, 2.3);
         const back = v3(kc.x - litB.x * 80.0, 0, kc.z - litB.z * 80.0);
         for ([_]*koboldmod.Kobold{ zerk, priest, sling }) |k| stepFoe(k, 40, back);
-        shootPortrait(g, "shots/64d_kobold_tail.png", v3(kc.x - 1.7, kc.y + 0.74, kc.z), LIT_YAW - 34, 0.14, 2.7);
+        shootPortrait(g, DIR ++ "/64d_kobold_tail.png", v3(kc.x - 1.7, kc.y + 0.74, kc.z), LIT_YAW - 34, 0.14, 2.7);
 
         g.hero.pos = mathx.ground(kc.x, kc.z - 26.0);
         g.hero.update(dt, 0, 0, null);
@@ -1819,7 +1819,7 @@ pub fn runShots(g: *Game) void {
         var chf: i32 = 0;
         while (zerk.state != .approach and chf < 600) : (chf += 1) _ = zerk.update(SHOT_DT, near, game.PLAY_HALF, .{});
         stepFoe(zerk, 26, near);
-        shootFoe(g, zerk, "shots/64e_kobold_charge.png", LIT_YAW + 30, 0.06, 3.8);
+        shootFoe(g, zerk, DIR ++ "/64e_kobold_charge.png", LIT_YAW + 30, 0.06, 3.8);
 
         zerk.* = koboldmod.Kobold.spawnAs(.berserker, kc, 0, 1.0, 0.15);
         var zf: i32 = 0;
@@ -1831,21 +1831,21 @@ pub fn runShots(g: *Game) void {
         }.frames;
         const raiseTop = chopAt(koboldmod.CHOP_HIT_A * 0.62);
         stepFoe(zerk, raiseTop, near);
-        shootFoe(g, zerk, "shots/65_kobold_chop.png", LIT_YAW + 20, 0.06, 3.4);
+        shootFoe(g, zerk, DIR ++ "/65_kobold_chop.png", LIT_YAW + 20, 0.06, 3.4);
         stepFoe(zerk, chopAt(koboldmod.CHOP_HIT_A + 0.10) - raiseTop, near);
-        shootFoe(g, zerk, "shots/65b_kobold_chop_b.png", LIT_YAW + 20, 0.06, 3.4);
+        shootFoe(g, zerk, DIR ++ "/65b_kobold_chop_b.png", LIT_YAW + 20, 0.06, 3.4);
         var guard: i32 = 0;
         while (zerk.state != .heave and guard < 600) : (guard += 1) _ = zerk.update(SHOT_DT, near, game.PLAY_HALF, .{});
         stepFoe(zerk, 12, near);
-        shootFoe(g, zerk, "shots/66_kobold_heave.png", LIT_YAW + 62, 0.04, 3.6);
+        shootFoe(g, zerk, DIR ++ "/66_kobold_heave.png", LIT_YAW + 62, 0.04, 3.6);
 
         {
             const dside = v3(kc.x - litB.z * 5.0, 0, kc.z + litB.x * 5.0);
             const dyaw = mathx.headingXZ(mathx.subV(dside, kc));
             const beats = [_]struct { name: [:0]const u8, at: f32 }{
-                .{ .name = "shots/66d_kobold_dash_coil.png", .at = 0.10 },
-                .{ .name = "shots/66e_kobold_dash_fly.png", .at = 0.30 },
-                .{ .name = "shots/66f_kobold_dash_land.png", .at = 0.56 },
+                .{ .name = DIR ++ "/66d_kobold_dash_coil.png", .at = 0.10 },
+                .{ .name = DIR ++ "/66e_kobold_dash_fly.png", .at = 0.30 },
+                .{ .name = DIR ++ "/66f_kobold_dash_land.png", .at = 0.56 },
             };
             for (beats) |b| {
                 zerk.* = koboldmod.Kobold.spawnAs(.berserker, kc, dyaw, 1.0, 0.15);
@@ -1861,11 +1861,11 @@ pub fn runShots(g: *Game) void {
         zerk.* = koboldmod.Kobold.spawnAs(.berserker, kc, 0, 1.0, 0.15);
         zerk.stagger(true);
         stepFoe(zerk, 10, far);
-        shootFoe(g, zerk, "shots/66b_kobold_stagger.png", LIT_YAW + 22, 0.06, 3.8);
+        shootFoe(g, zerk, DIR ++ "/66b_kobold_stagger.png", LIT_YAW + 22, 0.06, 3.8);
         zerk.* = koboldmod.Kobold.spawnAs(.berserker, kc, 0, 1.0, 0.15);
         zerk.debugKill();
         stepFoe(zerk, 34, far);
-        shootFoe(g, zerk, "shots/66c_kobold_death.png", LIT_YAW + 30, 0.16, 3.6);
+        shootFoe(g, zerk, DIR ++ "/66c_kobold_death.png", LIT_YAW + 30, 0.16, 3.6);
 
         zerk.* = koboldmod.Kobold.spawnAs(.berserker, mathx.ground(kc.x - 1.6, kc.z + 0.4), 0, 1.0, 0.15);
         zerk.vit.hp = 20;
@@ -1874,8 +1874,8 @@ pub fn runShots(g: *Game) void {
         priest.castCd = 0;
         var cf: i32 = 0;
         while (cf < 64) : (cf += 1) _ = g.band.update(SHOT_DT, far, game.PLAY_HALF, .{}, g, game.spawnClump);
-        shootFoe(g, priest, "shots/67_kobold_cast.png", LIT_YAW + 16, 0.10, 4.4);
-        shootFoe(g, priest, "shots/67b_kobold_cast_far.png", LIT_YAW + 16, 0.14, 13.0);
+        shootFoe(g, priest, DIR ++ "/67_kobold_cast.png", LIT_YAW + 16, 0.10, 4.4);
+        shootFoe(g, priest, DIR ++ "/67b_kobold_cast_far.png", LIT_YAW + 16, 0.14, 13.0);
 
         park(zerk, .berserker, away);
         park(priest, .priest, away);
@@ -1885,35 +1885,35 @@ pub fn runShots(g: *Game) void {
         var g2: i32 = 0;
         while (sling.state != .whirl and g2 < 600) : (g2 += 1) _ = sling.update(SHOT_DT, band8, game.PLAY_HALF, .{});
         stepFoe(sling, 16, band8);
-        shootFoe(g, sling, "shots/68_kobold_whirl.png", LIT_YAW + 18, 0.10, 3.8);
-        shootPortrait(g, "shots/68b_kobold_sling_lit.png", sling.slingPoint(), LIT_YAW + 18, 0.04, 1.1);
+        shootFoe(g, sling, DIR ++ "/68_kobold_whirl.png", LIT_YAW + 18, 0.10, 3.8);
+        shootPortrait(g, DIR ++ "/68b_kobold_sling_lit.png", sling.slingPoint(), LIT_YAW + 18, 0.04, 1.1);
         var g5: i32 = 0;
         while (game.flyingPointForShot(g, .clump) == null and g5 < 900) : (g5 += 1) stepBandAndShots(g, 1, band8);
         must(game.flyingPointForShot(g, .clump) != null, "the slinger never threw a clump");
         stepBandAndShots(g, 5, band8);
-        if (game.flyingPointForShot(g, .clump)) |at| shootPortrait(g, "shots/68c_kobold_clump.png", at, LIT_YAW + 18, 0.05, 1.6);
-        shootFoe(g, sling, "shots/68d_kobold_sling_sparks.png", LIT_YAW + 18, 0.10, 4.2);
+        if (game.flyingPointForShot(g, .clump)) |at| shootPortrait(g, DIR ++ "/68c_kobold_clump.png", at, LIT_YAW + 18, 0.05, 1.6);
+        shootFoe(g, sling, DIR ++ "/68d_kobold_sling_sparks.png", LIT_YAW + 18, 0.10, 4.2);
         game.clearShaftsForShot(g);
         sling.* = koboldmod.Kobold.spawnAs(.slinger, kc, 0, 1.0, 0.85);
         sling.biteCd = 0;
         var g3: i32 = 0;
         while (sling.state != .bite and g3 < 600) : (g3 += 1) _ = sling.update(SHOT_DT, near, game.PLAY_HALF, .{});
         stepFoe(sling, 10, near);
-        shootFoe(g, sling, "shots/69_kobold_bite.png", LIT_YAW + 14, 0.04, 2.6);
+        shootFoe(g, sling, DIR ++ "/69_kobold_bite.png", LIT_YAW + 14, 0.04, 2.6);
         const side = v3(kc.x - litB.z * 1.2, 0, kc.z + litB.x * 1.2);
         sling.* = koboldmod.Kobold.spawnAs(.slinger, kc, mathx.headingXZ(mathx.subV(side, kc)), 1.0, 0.85);
         sling.biteCd = 0;
         var g4: i32 = 0;
         while (sling.state != .bite and g4 < 600) : (g4 += 1) _ = sling.update(SHOT_DT, side, game.PLAY_HALF, .{});
         stepFoe(sling, 4, side);
-        shootPortrait(g, "shots/69d_kobold_bite_coil.png", sling.centerWorld(), LIT_YAW, 0.06, 4.4);
+        shootPortrait(g, DIR ++ "/69d_kobold_bite_coil.png", sling.centerWorld(), LIT_YAW, 0.06, 4.4);
         stepFoe(sling, 6, side);
-        shootPortrait(g, "shots/69c_kobold_bite_side.png", sling.centerWorld(), LIT_YAW, 0.06, 4.4);
-        shootPortrait(g, "shots/69e_kobold_bite_jaw.png", sling.lockPoint(), LIT_YAW, 0.02, 1.9);
+        shootPortrait(g, DIR ++ "/69c_kobold_bite_side.png", sling.centerWorld(), LIT_YAW, 0.06, 4.4);
+        shootPortrait(g, DIR ++ "/69e_kobold_bite_jaw.png", sling.lockPoint(), LIT_YAW, 0.02, 1.9);
 
         zerk.* = koboldmod.Kobold.spawnAs(.berserker, mathx.ground(kc.x - litB.x * 9.0, kc.z - litB.z * 9.0), 0, 1.0, 0.15);
         const walkTo = v3(kc.x + litB.x * 40.0, 0, kc.z + litB.z * 40.0);
-        const walkNames = [_][:0]const u8{ "shots/69b_kobold_walk.png", "shots/69c_kobold_walk.png", "shots/69d_kobold_walk.png" };
+        const walkNames = [_][:0]const u8{ DIR ++ "/69b_kobold_walk.png", DIR ++ "/69c_kobold_walk.png", DIR ++ "/69d_kobold_walk.png" };
         for ([_]i32{ 26, 9, 9 }, 0..) |adv, wi| {
             stepFoe(zerk, adv, walkTo);
             shootFoe(g, zerk, walkNames[wi], LIT_YAW + 58, 0.06, 4.6);
@@ -1923,8 +1923,8 @@ pub fn runShots(g: *Game) void {
 
     {
         standHero(g, 0, 12, std.math.pi);
-        shootAt(g, "shots/70_avenue_north.png", g.hero.shoulderPoint(), 180, 0.16, 9.0);
-        shootAt(g, "shots/71_vista_north.png", mathx.ground(0, 6), 180, 0.30, 9.0);
+        shootAt(g, DIR ++ "/70_avenue_north.png", g.hero.shoulderPoint(), 180, 0.16, 9.0);
+        shootAt(g, DIR ++ "/71_vista_north.png", mathx.ground(0, 6), 180, 0.30, 9.0);
 
         {
             const wasSoil = g.map.soil;
@@ -1943,7 +1943,7 @@ pub fn runShots(g: *Game) void {
             g.env.uploadSoil(&g.map);
             game.pinHourForShot(g, 12.0);
             standHero(g, EX, EZ, std.math.pi);
-            shootAt(g, "shots/98a_soil_edges.png", mathx.ground(EX, EZ), 180, 1.12, 74.0);
+            shootAt(g, DIR ++ "/98a_soil_edges.png", mathx.ground(EX, EZ), 180, 1.12, 74.0);
             game.pinHourForShot(g, game.daynight.SHOT_HOUR);
             g.map.soil = wasSoil;
             g.map.soilCov = wasCov;
@@ -1951,12 +1951,12 @@ pub fn runShots(g: *Game) void {
             g.env.uploadSoil(&g.map);
         }
         standHero(g, 1.4, 7.4, mathx.radians(120));
-        shootAt(g, "shots/71b_bonfire.png", v3(3.0, 0.55, 6.5), 300, 0.07, 3.1);
+        shootAt(g, DIR ++ "/71b_bonfire.png", v3(3.0, 0.55, 6.5), 300, 0.07, 3.1);
         standHero(g, 0.0, 3.4, mathx.radians(200));
-        shootPortrait(g, "shots/71c_guitar.png", v3(1.38, 0.68, 7.34), 20, 0.06, 2.7);
+        shootPortrait(g, DIR ++ "/71c_guitar.png", v3(1.38, 0.68, 7.34), 20, 0.06, 2.7);
         standHero(g, 3.0, 8.4, mathx.radians(200));
         game.beginRestForShot(g);
-        for ([_]i32{ 165, 55, 60 }, [_][:0]const u8{ "shots/71e_rest.png", "shots/71f_rest_play.png", "shots/71g_rest_play2.png" }) |adv, name| {
+        for ([_]i32{ 165, 55, 60 }, [_][:0]const u8{ DIR ++ "/71e_rest.png", DIR ++ "/71f_rest_play.png", DIR ++ "/71g_rest_play2.png" }) |adv, name| {
             var k: i32 = 0;
             while (k < adv) : (k += 1) game.tickRestForShot(g, SHOT_DT);
             bonfireShoot(g, name);
@@ -1968,21 +1968,21 @@ pub fn runShots(g: *Game) void {
         g.hero.souls.shown = 900;
         game.applyTree(g);
         restmod.debugShow(&g.rest, .list, 0, 0, 1.0);
-        bonfireShoot(g, "shots/71h_bonfire_list.png");
+        bonfireShoot(g, DIR ++ "/71h_bonfire_list.png");
         restmod.debugShow(&g.rest, .waits, 0, 0, 1.0);
-        bonfireShoot(g, "shots/71m_bonfire_rest.png");
+        bonfireShoot(g, DIR ++ "/71m_bonfire_rest.png");
         restmod.debugShow(&g.rest, .flasks, 0, 0, 1.0);
-        bonfireShoot(g, "shots/71n_bonfire_flasks.png");
+        bonfireShoot(g, DIR ++ "/71n_bonfire_flasks.png");
         restmod.debugShow(&g.rest, .tree, 0, ptree.armFirst(.warrior) + 3, 1.0);
-        bonfireShoot(g, "shots/71i_bonfire_tree.png");
+        bonfireShoot(g, DIR ++ "/71i_bonfire_tree.png");
         restmod.debugShow(&g.rest, .tree, 0, ptree.armFirst(.warrior) + 3, 2.3);
-        bonfireShoot(g, "shots/71j_bonfire_tree_zoom.png");
+        bonfireShoot(g, DIR ++ "/71j_bonfire_tree_zoom.png");
         const memWas = g.hero.mem;
         g.hero.mem.put(1, .levin);
         restmod.debugMemory(&g.rest, 1, null);
-        bonfireShoot(g, "shots/71k_bonfire_memory.png");
+        bonfireShoot(g, DIR ++ "/71k_bonfire_memory.png");
         restmod.debugMemory(&g.rest, 2, 4);
-        bonfireShoot(g, "shots/71l_bonfire_memory_pick.png");
+        bonfireShoot(g, DIR ++ "/71l_bonfire_memory_pick.png");
         g.hero.mem = memWas;
         restmod.debugShow(&g.rest, .list, 0, 0, 1.0);
         g.tree = .{};
@@ -1992,55 +1992,55 @@ pub fn runShots(g: *Game) void {
         game.endRestForShot(g);
 
         standHero(g, 4.4, 6.2, mathx.radians(120));
-        shootAt(g, "shots/71d_plume.png", v3(3.0, 2.3, 6.5), LIT_YAW, 0.14, 9.0);
+        shootAt(g, DIR ++ "/71d_plume.png", v3(3.0, 2.3, 6.5), LIT_YAW, 0.14, 9.0);
 
         standHero(g, 2.0, -66.0, std.math.pi);
-        shootAt(g, "shots/72_city_plaza.png", mathx.ground(0, -74), 180, 0.26, 9.0);
+        shootAt(g, DIR ++ "/72_city_plaza.png", mathx.ground(0, -74), 180, 0.26, 9.0);
         // The chapel at (-30, -66) turned to yaw 270 maps its local +Z (the altar end) to world −X, so the nave runs along X from -33.6 (altar) to -26.4 (door).
         standHero(g, -22.0, -66.0, -std.math.pi * 0.5);
-        shootAt(g, "shots/73_chapel_outside.png", mathx.ground(-30, -66), 270, 0.22, 17.0);
+        shootAt(g, DIR ++ "/73_chapel_outside.png", mathx.ground(-30, -66), 270, 0.22, 17.0);
         standHero(g, -29.6, -66.0, -std.math.pi * 0.5);
-        shootAt(g, "shots/74_chapel_torchlit.png", v3(-30.7, 1.4, -66.0), 270, 0.05, 4.4);
+        shootAt(g, DIR ++ "/74_chapel_torchlit.png", v3(-30.7, 1.4, -66.0), 270, 0.05, 4.4);
         standHero(g, -30.6, -66.0, -std.math.pi * 0.5);
-        shootAt(g, "shots/75_chapel_altar.png", v3(-32.6, 1.0, -66.0), 270, 0.10, 4.8);
+        shootAt(g, DIR ++ "/75_chapel_altar.png", v3(-32.6, 1.0, -66.0), 270, 0.10, 4.8);
 
         standHero(g, 34.0, -95.0, mathx.radians(20));
-        shootAt(g, "shots/76_watchtower.png", mathx.ground(36, -88), 20, 0.30, 52.0);
+        shootAt(g, DIR ++ "/76_watchtower.png", mathx.ground(36, -88), 20, 0.30, 52.0);
         standHero(g, 36.4, -88.4, 0);
-        shootAt(g, "shots/77_watchtower_inside.png", v3(35.7, 1.7, -87.6), 200, 0.06, 2.0);
+        shootAt(g, DIR ++ "/77_watchtower_inside.png", v3(35.7, 1.7, -87.6), 200, 0.06, 2.0);
 
         standHero(g, 130.0, 14.0, -std.math.pi * 0.5);
-        shootAt(g, "shots/78_tarn.png", mathx.ground(122, 12), 268, 0.10, 13.0);
+        shootAt(g, DIR ++ "/78_tarn.png", mathx.ground(122, 12), 268, 0.10, 13.0);
         standHero(g, 70.0, 8.0, std.math.pi * 0.5);
-        shootAt(g, "shots/79_tarn_causeway.png", mathx.ground(78, 8), 100, 0.18, 12.0);
+        shootAt(g, DIR ++ "/79_tarn_causeway.png", mathx.ground(78, 8), 100, 0.18, 12.0);
 
         standHero(g, -84.0, 4.0, -std.math.pi * 0.5);
-        shootAt(g, "shots/80_wood.png", mathx.ground(-90, 4), 260, 0.12, 11.0);
-        shootAt(g, "shots/81_bigtree.png", v3(-90.0, 5.0, 6.0), 300, -0.10, 17.0);
+        shootAt(g, DIR ++ "/80_wood.png", mathx.ground(-90, 4), 260, 0.12, 11.0);
+        shootAt(g, DIR ++ "/81_bigtree.png", v3(-90.0, 5.0, 6.0), 300, -0.10, 17.0);
         standHero(g, -90.0, -16.0, -std.math.pi * 0.5);
-        shootAt(g, "shots/82_stone_circle.png", mathx.ground(-98, -16), 265, 0.14, 15.0);
+        shootAt(g, DIR ++ "/82_stone_circle.png", mathx.ground(-98, -16), 265, 0.14, 15.0);
         standHero(g, -66.0, 30.0, -std.math.pi * 0.5);
-        shootAt(g, "shots/83_cottage.png", mathx.ground(-72, 30), 258, 0.10, 12.0);
+        shootAt(g, DIR ++ "/83_cottage.png", mathx.ground(-72, 30), 258, 0.10, 12.0);
 
         standHero(g, 22.0, 82.0, 0);
-        shootAt(g, "shots/84_downs.png", mathx.ground(22, 92), 8, 0.14, 14.0);
+        shootAt(g, DIR ++ "/84_downs.png", mathx.ground(22, 92), 8, 0.14, 14.0);
 
         const rimZ = g.map.half - 20.0;
         standHero(g, 40.0, rimZ, 0);
-        shootAt(g, "shots/85_cliffs.png", mathx.ground(40, rimZ + 12), 4, 0.22, 22.0);
+        shootAt(g, DIR ++ "/85_cliffs.png", mathx.ground(40, rimZ + 12), 4, 0.22, 22.0);
         standHero(g, 10.0, rimZ + 10, std.math.pi * 0.5);
-        shootAt(g, "shots/85b_cliffs_along.png", mathx.ground(30, rimZ + 18), 80, 0.16, 26.0);
+        shootAt(g, DIR ++ "/85b_cliffs_along.png", mathx.ground(30, rimZ + 18), 80, 0.16, 26.0);
         standHero(g, 0.0, 6.0, 0);
-        shootAt(g, "shots/85c_arc_ivied.png", mathx.ground(0, 21), 0, 0.16, 22.0);
+        shootAt(g, DIR ++ "/85c_arc_ivied.png", mathx.ground(0, 21), 0, 0.16, 22.0);
         standHero(g, 22.0, 3.0, mathx.radians(90));
-        shootAt(g, "shots/85d_arc_collapsed.png", mathx.ground(36, 2), 90, 0.14, 20.0);
+        shootAt(g, DIR ++ "/85d_arc_collapsed.png", mathx.ground(36, 2), 90, 0.14, 20.0);
 
         const maps = [_]struct { name: [:0]const u8, x: f32, z: f32, dist: f32 }{
-            .{ .name = "shots/86_map_city.png", .x = 0, .z = -80, .dist = 58 },
-            .{ .name = "shots/87_map_tarn.png", .x = 92, .z = 8, .dist = 58 },
-            .{ .name = "shots/88_map_wood.png", .x = -92, .z = 6, .dist = 55 },
-            .{ .name = "shots/89_map_downs.png", .x = 20, .z = 92, .dist = 58 },
-            .{ .name = "shots/90_map_start.png", .x = 0, .z = 0, .dist = 52 },
+            .{ .name = DIR ++ "/86_map_city.png", .x = 0, .z = -80, .dist = 58 },
+            .{ .name = DIR ++ "/87_map_tarn.png", .x = 92, .z = 8, .dist = 58 },
+            .{ .name = DIR ++ "/88_map_wood.png", .x = -92, .z = 6, .dist = 55 },
+            .{ .name = DIR ++ "/89_map_downs.png", .x = 20, .z = 92, .dist = 58 },
+            .{ .name = DIR ++ "/90_map_start.png", .x = 0, .z = 0, .dist = 52 },
         };
         for (maps) |m| {
             standHero(g, m.x, m.z, std.math.pi);
@@ -2048,66 +2048,66 @@ pub fn runShots(g: *Game) void {
         }
 
         standHero(g, 46.0, -24.0, std.math.pi);
-        shootAt(g, "shots/90a_map_deepwater.png", mathx.ground(46, -24), 180, 1.02, 55.0);
+        shootAt(g, DIR ++ "/90a_map_deepwater.png", mathx.ground(46, -24), 180, 1.02, 55.0);
         standHero(g, 44.0, -22.0, mathx.radians(200));
-        shootAt(g, "shots/90b_deepwater_bank.png", mathx.ground(50, -32), 53, 0.14, 17.0);
+        shootAt(g, DIR ++ "/90b_deepwater_bank.png", mathx.ground(50, -32), 53, 0.14, 17.0);
 
         g.menu.stats = true;
         standHero(g, 2.0, -72.0, std.math.pi);
-        shootAt(g, "shots/91_stats_city.png", g.hero.shoulderPoint(), 180, 0.22, 8.0);
+        shootAt(g, DIR ++ "/91_stats_city.png", g.hero.shoulderPoint(), 180, 0.22, 8.0);
         standHero(g, -88.0, 8.0, -std.math.pi * 0.5);
-        shootAt(g, "shots/92_stats_wood.png", g.hero.shoulderPoint(), 265, 0.20, 8.0);
+        shootAt(g, DIR ++ "/92_stats_wood.png", g.hero.shoulderPoint(), 265, 0.20, 8.0);
         g.menu.stats = false;
 
         const trunk = g.env.nearestFading(v3(-118.0, 0, -14.0), 600.0);
         must(trunk != null, "no fadeable prop in the world to stand behind");
         const tp = trunk.?;
         standHero(g, tp.x - LIT_BACK.x * 2.4, tp.z - LIT_BACK.z * 2.4, mathx.radians(LIT_YAW + 180.0));
-        shootAt(g, "shots/93_occlude_fade.png", g.hero.shoulderPoint(), LIT_YAW, 0.06, 7.0);
+        shootAt(g, DIR ++ "/93_occlude_fade.png", g.hero.shoulderPoint(), LIT_YAW, 0.06, 7.0);
         g.retro.values = gfx.RETRO_DEFAULTS;
-        shootAt(g, "shots/93b_occlude_filtered.png", g.hero.shoulderPoint(), LIT_YAW, 0.06, 7.0);
+        shootAt(g, DIR ++ "/93b_occlude_filtered.png", g.hero.shoulderPoint(), LIT_YAW, 0.06, 7.0);
         g.retro.allOff();
         standHero(g, tp.x + 7.0, tp.z + 7.0, mathx.radians(LIT_YAW + 180.0));
-        shootAt(g, "shots/94_occlude_clear.png", g.hero.shoulderPoint(), LIT_YAW, 0.06, 7.0);
+        shootAt(g, DIR ++ "/94_occlude_clear.png", g.hero.shoulderPoint(), LIT_YAW, 0.06, 7.0);
 
         standHero(g, 2.0, -18.0, std.math.pi);
         game.clearWeatherForShot(g);
-        shootAt(g, "shots/150_weather_dry.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
+        shootAt(g, DIR ++ "/150_weather_dry.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
         game.forceWeatherForShot(g, .gentle, -1);
         stepWorld(g, dt, 0);
-        shootAt(g, "shots/151_rain_gentle.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
+        shootAt(g, DIR ++ "/151_rain_gentle.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
         game.forceWeatherForShot(g, .moderate, -1);
         stepWorld(g, dt, 0);
-        shootAt(g, "shots/152_rain_moderate.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
+        shootAt(g, DIR ++ "/152_rain_moderate.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
         game.forceWeatherForShot(g, .moderate, 0.02);
-        shootAt(g, "shots/153_lightning.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
+        shootAt(g, DIR ++ "/153_lightning.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
         game.clearWeatherForShot(g);
 
         game.forceFogForShot(g, true);
         game.forceMistForShot(g, 16.0);
         stepWorld(g, dt, 0);
-        shootAt(g, "shots/154_fog.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
-        shootAt(g, "shots/155_mist_bank.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 22.0);
+        shootAt(g, DIR ++ "/154_fog.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
+        shootAt(g, DIR ++ "/155_mist_bank.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 22.0);
         game.forceFogForShot(g, false);
 
         game.forceEmberForShot(g, 0.9);
         game.forceMistForShot(g, 16.0);
         stepWorld(g, dt, 0);
-        shootAt(g, "shots/158_embers.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
-        shootAt(g, "shots/158b_embers_smoke.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 22.0);
+        shootAt(g, DIR ++ "/158_embers.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 7.5);
+        shootAt(g, DIR ++ "/158b_embers_smoke.png", g.hero.shoulderPoint(), LIT_YAW, 0.16, 22.0);
         game.forceEmberForShot(g, null);
 
         game.forceSkeinForShot(g, mathx.radians(24.0));
         stepWorld(g, dt, 0);
-        shootAt(g, "shots/157_birds.png", v3(g.hero.pos.x, g.hero.pos.y + 26.0, g.hero.pos.z), LIT_YAW, -0.52, 26.0);
+        shootAt(g, DIR ++ "/157_birds.png", v3(g.hero.pos.x, g.hero.pos.y + 26.0, g.hero.pos.z), LIT_YAW, -0.52, 26.0);
         game.forceSkeinForShot(g, mathx.radians(-58.0));
         stepWorld(g, dt, 0);
-        shootAt(g, "shots/157a_birds_across.png", game.skeinLeadForShot(g), LIT_YAW, -0.30, 46.0);
+        shootAt(g, DIR ++ "/157a_birds_across.png", game.skeinLeadForShot(g), LIT_YAW, -0.30, 46.0);
         game.forceSkeinForShot(g, mathx.radians(38.0));
         stepWorld(g, dt, 0);
         // The camera yaw is the back-bearing, so it is the look bearing plus 180.
         const toFlock = mathx.headingXZ(mathx.dirXZ(g.hero.pos, game.skeinLeadForShot(g)));
-        shootAt(g, "shots/157b_birds_resting.png", g.hero.shoulderPoint(), mathx.degrees(toFlock) + 180.0, camera.DEFAULT_PITCH, camera.DEFAULT_DIST);
+        shootAt(g, DIR ++ "/157b_birds_resting.png", g.hero.shoulderPoint(), mathx.degrees(toFlock) + 180.0, camera.DEFAULT_PITCH, camera.DEFAULT_DIST);
     }
 
     fogGateShots(g, dt);
@@ -2122,10 +2122,10 @@ pub fn runShots(g: *Game) void {
     g.rig.follow(g.hero.shoulderPoint());
 
     g.retro.applyPreset(&gfx.PRESET_CRT);
-    shoot(g, "shots/10_retro_crt.png");
+    shoot(g, DIR ++ "/10_retro_crt.png");
 
     g.retro.applyPreset(&gfx.PRESET_PS1);
-    shoot(g, "shots/11_retro_ps1.png");
+    shoot(g, DIR ++ "/11_retro_ps1.png");
     g.retro.allOff();
 
     var shelf = savemod.Shelf{};
@@ -2142,7 +2142,7 @@ pub fn runShots(g: *Game) void {
     drawScene(g);
     hud(g, SHOT_DT);
     g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &shelf);
-    snap("shots/12_menu_main.png");
+    snap(DIR ++ "/12_menu_main.png");
 
     game.bootCamForShot(g, BOOT_SHOT_T);
     g.menu.screen = .boot;
@@ -2150,34 +2150,34 @@ pub fn runShots(g: *Game) void {
     g.menu.cursor = 1;
     drawScene(g);
     g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &bare);
-    snap("shots/12a_menu_boot.png");
+    snap(DIR ++ "/12a_menu_boot.png");
 
     drawScene(g);
     g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &shelf);
-    snap("shots/12b_menu_boot_save.png");
+    snap(DIR ++ "/12b_menu_boot_save.png");
 
     g.menu.showSlotsForShot(.load, 1);
     drawScene(g);
     g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &shelf);
-    snap("shots/12c_menu_slots.png");
+    snap(DIR ++ "/12c_menu_slots.png");
 
     g.menu.showSlotsForShot(.new, 1);
     drawScene(g);
     g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &shelf);
-    snap("shots/12d_menu_slots_new.png");
+    snap(DIR ++ "/12d_menu_slots_new.png");
 
     g.menu.screen = .boot;
     g.menu.cursor = 0;
     drawScene(g);
     g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &packed_);
-    snap("shots/12ca_menu_boot_full.png");
+    snap(DIR ++ "/12ca_menu_boot_full.png");
     g.menu.showSlotsForShot(.load, 1);
 
     g.menu.showSlotsForShot(.load, 0);
     g.menu.armDeleteForShot();
     drawScene(g);
     g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &shelf);
-    snap("shots/12e_menu_slot_delete.png");
+    snap(DIR ++ "/12e_menu_slot_delete.png");
 
     g.menu.onEscape();
     g.menu.home = .main;
@@ -2192,11 +2192,11 @@ pub fn runShots(g: *Game) void {
     drawScene(g);
     hud(g, SHOT_DT);
     g.menu.draw(&g.retro, &g.day, &g.weather, game.bookView(g), null, &shelf);
-    snap("shots/13_menu_retro.png");
+    snap(DIR ++ "/13_menu_retro.png");
     g.menu.screen = .closed;
 
     g.retro.values = gfx.RETRO_DEFAULTS;
-    shoot(g, "shots/14_retro_default.png");
+    shoot(g, DIR ++ "/14_retro_default.png");
     g.retro.allOff();
 
     _ = runUnitStudies(g, false);
@@ -2244,7 +2244,7 @@ fn particleStudyShots(g: *Game) void {
                 foemod.tickParticles(&g.hero.fx, SHOT_DT, at.y);
                 if (stream) elemfx.pour(&g.hero.fx, &g.hero.fxHead, &rng, source, side, e, foemod.emitDue(&acc, SHOT_DT, elemfx.POUR_RATE), mathx.radians(18), 3.5, 1);
             }
-            const file = std.fmt.bufPrintZ(&name, "shots/particles_study_{s}_{s}.png", .{ @tagName(e), if (stream) "stream" else "burst" }) catch unreachable;
+            const file = std.fmt.bufPrintZ(&name, DIR ++ "/particles_study_{s}_{s}.png", .{ @tagName(e), if (stream) "stream" else "burst" }) catch unreachable;
             shootAt(g, file, mathx.addV(source, mathx.scaleV(side, if (stream) @as(f32, 1.1) else 0.3)), LIT_YAW, 0.18, 6.6);
         }
     }
@@ -2267,8 +2267,8 @@ fn particleStudyShots(g: *Game) void {
                 .rLo = 0.03,
                 .rHi = 0.05,
                 .r1 = 0.012,
-                .col = mathx.rgba(112, 22, 16, 235),
-                .col1 = mathx.rgba(52, 9, 7, 225),
+                .col = foemod.BLOOD,
+                .col1 = foemod.BLOOD_DEEP,
                 .grav = foemod.BLOOD_GRAV,
                 .stretch = foemod.BLOOD_STRETCH,
                 .splat = 3,
@@ -2282,7 +2282,7 @@ fn particleStudyShots(g: *Game) void {
                 foemod.tickParticles(&g.hero.fx, dt, at.y);
                 clock += dt;
             }
-            const file = std.fmt.bufPrintZ(&name, "shots/particles_study_{s}_{d:.2}.png", .{ @tagName(kind), t }) catch unreachable;
+            const file = std.fmt.bufPrintZ(&name, DIR ++ "/particles_study_{s}_{d:.2}.png", .{ @tagName(kind), t }) catch unreachable;
             const focus = if (kind == .hit) source else g.hero.shieldFaceWorld().at;
             shootAt(g, file, mathx.addV(focus, v3(0, -0.25, 0)), LIT_YAW, 0.25, 4.8);
         }
@@ -2296,7 +2296,7 @@ fn particleStudyShots(g: *Game) void {
             for (&g.cluster.clouds) |*c| c.update(dt);
             clock += dt;
         }
-        const file = std.fmt.bufPrintZ(&name, "shots/particles_study_spores_{d:.2}.png", .{t}) catch unreachable;
+        const file = std.fmt.bufPrintZ(&name, DIR ++ "/particles_study_spores_{d:.2}.png", .{t}) catch unreachable;
         shootAt(g, file, mathx.addV(at, v3(0, 0.85, 0)), LIT_YAW, 0.20, 6.6);
     }
     game.clearFoesForShot(g);
@@ -2307,36 +2307,36 @@ fn particleStudyShots(g: *Game) void {
     frog.pose();
     frog.tryHit(foemod.shaftThrough(mathx.addV(frog.centerWorld(), mathx.scaleV(LIT_BACK, frog.hurtRadius() * 0.8)), .{ .dmg = 8, .poise = 35 }));
     for (0..12) |_| studyStep(frog, SHOT_DT, mathx.addV(at, mathx.scaleV(side, 10)), game.PLAY_HALF);
-    shootAt(g, "shots/particles_study_frog_hit.png", frog.centerWorld(), LIT_YAW, 0.22, 5.2);
+    shootAt(g, DIR ++ "/particles_study_frog_hit.png", frog.centerWorld(), LIT_YAW, 0.22, 5.2);
     for (0..28) |_| studyStep(frog, SHOT_DT, mathx.addV(at, mathx.scaleV(side, 10)), game.PLAY_HALF);
-    shootAt(g, "shots/particles_study_frog_blood.png", frog.centerWorld(), LIT_YAW, 0.38, 5.2);
+    shootAt(g, DIR ++ "/particles_study_frog_blood.png", frog.centerWorld(), LIT_YAW, 0.38, 5.2);
     game.clearFoesForShot(g);
     g.vigil.gas[0] = .{ .pos = at, .live = true };
     for (0..72) |_| g.vigil.gas[0].update(SHOT_DT);
-    shootAt(g, "shots/particles_study_knight_gas.png", mathx.addV(at, v3(0, 0.8, 0)), LIT_YAW, 0.20, 6.6);
+    shootAt(g, DIR ++ "/particles_study_knight_gas.png", mathx.addV(at, v3(0, 0.8, 0)), LIT_YAW, 0.20, 6.6);
     game.clearFoesForShot(g);
     g.conclave.dusts[0] = .{ .at = at, .live = true, .t = 1.2, .seed = 0.3 };
-    shootAt(g, "shots/particles_study_magus_dust.png", mathx.addV(at, v3(0, 0.8, 0)), LIT_YAW, 0.20, 6.6);
+    shootAt(g, DIR ++ "/particles_study_magus_dust.png", mathx.addV(at, v3(0, 0.8, 0)), LIT_YAW, 0.20, 6.6);
     game.clearFoesForShot(g);
     g.bed.n = 1;
     const bloom = &g.bed.blooms[0];
     bloom.* = @TypeOf(bloom.*).spawn(at, mathx.headingXZ(LIT_BACK), 1, 0.3);
     bloom.debugPour();
     for (0..110) |_| studyStep(bloom, SHOT_DT, g.hero.pos, game.PLAY_HALF);
-    shootAt(g, "shots/particles_study_sleep.png", mathx.addV(at, v3(0, 0.9, 0)), LIT_YAW, 0.20, 6.6);
+    shootAt(g, DIR ++ "/particles_study_sleep.png", mathx.addV(at, v3(0, 0.9, 0)), LIT_YAW, 0.20, 6.6);
     game.clearFoesForShot(g);
     g.brood.pools[0] = broodmod.Pool.splash(at, 0.3);
     for (0..72) |_| g.brood.pools[0].update(SHOT_DT);
-    shootAt(g, "shots/particles_study_venom.png", mathx.addV(at, v3(0, 0.35, 0)), LIT_YAW, 0.30, 5.8);
+    shootAt(g, DIR ++ "/particles_study_venom.png", mathx.addV(at, v3(0, 0.35, 0)), LIT_YAW, 0.30, 5.8);
     game.clearFoesForShot(g);
     g.herd.spores[0] = .{ .at = source, .live = true, .t = 1.2, .seed = 0.3 };
-    shootAt(g, "shots/particles_study_deer_spore.png", source, LIT_YAW, 0.12, 3.5);
+    shootAt(g, DIR ++ "/particles_study_deer_spore.png", source, LIT_YAW, 0.12, 3.5);
     game.clearFoesForShot(g);
     g.ring.n = 1;
     const mage = &g.ring.mages[0];
     mage.* = @TypeOf(mage.*).spawn(at, mathx.headingXZ(LIT_BACK), 1, 0.3);
     mage.stageGather(0.92);
-    shootAt(g, "shots/particles_study_cupped_fire.png", mage.cupWorld(), LIT_YAW, 0.20, 4.0);
+    shootAt(g, DIR ++ "/particles_study_cupped_fire.png", mage.cupWorld(), LIT_YAW, 0.20, 4.0);
     game.clearFoesForShot(g);
 }
 
@@ -2587,7 +2587,7 @@ fn parryStudyPair(g: *Game, rt: rl.RenderTexture2D, initial: anytype, model: any
 
 fn parryStudyFrame(g: *Game, rt: rl.RenderTexture2D, body: anytype, model: anytype, name: []const u8, side: usize, frame: usize, clock: f32, boom: f32) void {
     var path: [160]u8 = undefined;
-    const file = std.fmt.bufPrintZ(&path, "shots/parry_study_{s}_{d}_{d}.png", .{ name, side, frame }) catch unreachable;
+    const file = std.fmt.bufPrintZ(&path, DIR ++ "/parry_study_{s}_{d}_{d}.png", .{ name, side, frame }) catch unreachable;
     if (!stageOn(file)) return;
     const Plate = struct {
         body: @TypeOf(body),
@@ -2621,7 +2621,7 @@ fn unitStudyFrame(g: *Game, rt: rl.RenderTexture2D, body: anytype, model: anytyp
 
 fn unitStudyViewFrame(g: *Game, rt: rl.RenderTexture2D, body: anytype, model: anytype, tag: []const u8, view: StudyView) void {
     var name: [128]u8 = undefined;
-    const path = std.fmt.bufPrintZ(&name, "shots/{s}.png", .{tag}) catch unreachable;
+    const path = std.fmt.bufPrintZ(&name, DIR ++ "/{s}.png", .{tag}) catch unreachable;
     if (!stageOn(path)) return;
     const Plate = struct {
         body: @TypeOf(body),
@@ -3501,7 +3501,7 @@ fn frogStudyShots(g: *Game) void {
         }
         fn shot(p: *const @This(), gg: *Game, target: rl.RenderTexture2D, tag: []const u8, tall: bool) void {
             var name: [128]u8 = undefined;
-            const path = std.fmt.bufPrintZ(&name, "shots/frog_study_{s}.png", .{tag}) catch unreachable;
+            const path = std.fmt.bufPrintZ(&name, DIR ++ "/frog_study_{s}.png", .{tag}) catch unreachable;
             if (!stageOn(path)) return;
             const height: f32 = if (tall) 2.65 else 1.30;
             const dist = height / (2 * @tan(mathx.radians(camera.FOVY) * 0.5) * 0.78) + 0.50;
@@ -3559,30 +3559,30 @@ fn statsShots(g: *Game) void {
     g.editor.enter(mathx.ground(0, -66));
     g.editor.applyCamForShot();
     g.editor.statsForShot("Spells", 0);
-    editorSnap(g, "shots/117a_stats_spells.png");
+    editorSnap(g, DIR ++ "/117a_stats_spells.png");
     g.editor.statsForShot("Bag", 1);
-    editorSnap(g, "shots/117b_stats_consumables.png");
+    editorSnap(g, DIR ++ "/117b_stats_consumables.png");
     g.editor.statsForShot("Foes", 2);
-    editorSnap(g, "shots/117c_stats_foes.png");
+    editorSnap(g, DIR ++ "/117c_stats_foes.png");
     g.editor.statsForShot("Drops", @intFromEnum(worldfmt.FoeKind.archer));
-    editorSnap(g, "shots/117h_stats_drops.png");
+    editorSnap(g, DIR ++ "/117h_stats_drops.png");
     g.editor.statsPickForShot(tunemod.colIndex(g.editor.statsTabForShot(), "common").?);
-    editorSnap(g, "shots/117i_stats_drops_open.png");
+    editorSnap(g, DIR ++ "/117i_stats_drops_open.png");
     uimod.closeDropdown();
     const dropTab = g.editor.statsTabForShot();
     const commonCol = tunemod.colIndex(dropTab, "common").?;
     tunemod.setValue(dropTab, @intFromEnum(worldfmt.FoeKind.archer), commonCol, tunemod.itemOrdinal(.bloodgrass));
-    editorSnap(g, "shots/117j_stats_drops_edited.png");
+    editorSnap(g, DIR ++ "/117j_stats_drops_edited.png");
     tunemod.revertAll();
     g.editor.statsForShot("Blows", 18);
-    editorSnap(g, "shots/117e_stats_blows.png");
+    editorSnap(g, DIR ++ "/117e_stats_blows.png");
     g.editor.statsForShot("Hero", 0);
-    editorSnap(g, "shots/117f_stats_hero.png");
+    editorSnap(g, DIR ++ "/117f_stats_hero.png");
     g.editor.statsForShot("Passives", 3);
-    editorSnap(g, "shots/117g_stats_passives.png");
+    editorSnap(g, DIR ++ "/117g_stats_passives.png");
     g.editor.closeModalForShot();
     g.editor.itemForShot(.tower_shield);
-    editorSnap(g, "shots/117d_stats_item.png");
+    editorSnap(g, DIR ++ "/117d_stats_item.png");
     g.editor.closeModalForShot();
     g.editor.on = false;
     g.menu.screen = was;
@@ -3593,7 +3593,7 @@ fn soundFilterShots(g: *Game) void {
     const wasCursor = g.menu.cursor;
     sfx.applyFxPreset(.combat, &sfx.FX_VINYL);
     g.menu.screen = .closed;
-    editorJukeShot(g, "shots/115a_sound_rack.png");
+    editorJukeShot(g, DIR ++ "/115a_sound_rack.png");
 
     sfx.resetFx(.combat);
     g.menu.screen = was;
@@ -3612,38 +3612,38 @@ fn broodShots(g: *Game) void {
     g.brood.n = 1;
     const m = &g.brood.band[0];
     stepFoe(m, 40, far);
-    shootFoe(g, m, "shots/107_brood_mother.png", 55, 0.12, 9.0);
-    shootFoe(g, m, "shots/107b_brood_mother_3q.png", 20, 0.16, 8.0);
-    shootFoe(g, m, "shots/107c_brood_mother_side.png", 300, 0.10, 8.5);
+    shootFoe(g, m, DIR ++ "/107_brood_mother.png", 55, 0.12, 9.0);
+    shootFoe(g, m, DIR ++ "/107b_brood_mother_3q.png", 20, 0.16, 8.0);
+    shootFoe(g, m, DIR ++ "/107c_brood_mother_side.png", 300, 0.10, 8.5);
 
     g.hero.pos = mathx.ground(bc.x + 3.4, bc.z + 1.2);
     g.hero.facing = mathx.headingXZ(mathx.subV(bc, g.hero.pos));
     g.hero.update(SHOT_DT, 0, 0, null);
     g.hero.pose();
-    shootFoe(g, m, "shots/108_brood_scale.png", 30, 0.14, 11.0);
+    shootFoe(g, m, DIR ++ "/108_brood_scale.png", 30, 0.14, 11.0);
     g.hero.pos = mathx.ground(bc.x - 26.0, bc.z);
     g.hero.update(SHOT_DT, 0, 0, null);
     g.hero.pose();
 
     m.* = broodmod.Spider.spawnAs(.mother, bc, std.math.pi, 1.0, 0.3);
     stepFoe(m, 34, v3(bc.x, 0, bc.z - 11.0));
-    shootFoe(g, m, "shots/109_brood_spit_wind.png", 40, 0.10, 8.0);
+    shootFoe(g, m, DIR ++ "/109_brood_spit_wind.png", 40, 0.10, 8.0);
     stepFoe(m, 8, v3(bc.x, 0, bc.z - 11.0));
-    shootFoe(g, m, "shots/109b_brood_spit_throw.png", 40, 0.10, 8.0);
+    shootFoe(g, m, DIR ++ "/109b_brood_spit_throw.png", 40, 0.10, 8.0);
 
     m.* = broodmod.Spider.spawnAs(.mother, bc, std.math.pi, 1.0, 0.3);
     const near = v3(bc.x, 0, bc.z - 8.0);
     var k: i32 = 0;
     while (k < 260) : (k += 1) _ = g.brood.update(SHOT_DT, near, game.PLAY_HALF, .{}, g, game.spawnVenom);
-    shootFoe(g, m, "shots/110_brood_laying.png", 45, 0.12, 9.5);
+    shootFoe(g, m, DIR ++ "/110_brood_laying.png", 45, 0.12, 9.5);
     while (k < 560) : (k += 1) _ = g.brood.update(SHOT_DT, near, game.PLAY_HALF, .{}, g, game.spawnVenom);
-    shootFoe(g, m, "shots/110b_brood_clutch.png", 45, 0.16, 10.5);
+    shootFoe(g, m, DIR ++ "/110b_brood_clutch.png", 45, 0.16, 10.5);
     const hatched = 240 + @as(i32, @intFromFloat((broodmod.SAC_HATCH + 1.0) / SHOT_DT));
     while (k < hatched) : (k += 1) _ = g.brood.update(SHOT_DT, near, game.PLAY_HALF, .{}, g, game.spawnVenom);
     if (g.brood.n > 1) {
         const b = &g.brood.band[g.brood.n - 1];
-        shootFoe(g, b, "shots/111_broodlings.png", 45, 0.14, 8.0);
-        shootFoe(g, b, "shots/111b_broodling.png", 40, 0.08, 3.4);
+        shootFoe(g, b, DIR ++ "/111_broodlings.png", 45, 0.14, 8.0);
+        shootFoe(g, b, DIR ++ "/111b_broodling.png", 40, 0.08, 3.4);
     }
 
     const dc = mathx.ground(bc.x + 6.0, bc.z - 8.0);
@@ -3651,17 +3651,17 @@ fn broodShots(g: *Game) void {
     g.brood.n = 1;
     m.debugKill();
     stepFoe(m, 9, near);
-    shootFoe(g, m, "shots/112a_brood_death_rear.png", 55, 0.14, 9.0);
+    shootFoe(g, m, DIR ++ "/112a_brood_death_rear.png", 55, 0.14, 9.0);
     stepFoe(m, 17, near);
-    shootFoe(g, m, "shots/112b_brood_death_flip.png", 55, 0.14, 9.0);
+    shootFoe(g, m, DIR ++ "/112b_brood_death_flip.png", 55, 0.14, 9.0);
     stepFoe(m, 10, near);
-    shootFoe(g, m, "shots/112c_brood_death_crash.png", 55, 0.12, 9.0);
+    shootFoe(g, m, DIR ++ "/112c_brood_death_crash.png", 55, 0.12, 9.0);
     stepFoe(m, 26, near);
-    shootFoe(g, m, "shots/112d_brood_death_curl.png", 55, 0.12, 9.0);
+    shootFoe(g, m, DIR ++ "/112d_brood_death_curl.png", 55, 0.12, 9.0);
     g.brood.band[0] = broodmod.Spider.spawnAs(.broodling, dc, std.math.pi, 1.0, 0.55);
     g.brood.band[0].debugKill();
     stepFoe(&g.brood.band[0], 62, near);
-    shootFoe(g, &g.brood.band[0], "shots/112e_broodling_death.png", 45, 0.10, 3.6);
+    shootFoe(g, &g.brood.band[0], DIR ++ "/112e_broodling_death.png", 45, 0.10, 3.6);
 
     game.clearFoesForShot(g);
     g.brood.splash(bc);
@@ -3672,7 +3672,7 @@ fn broodShots(g: *Game) void {
     g.hero.pos = mathx.ground(bc.x, bc.z + 0.6);
     g.hero.update(SHOT_DT, 0, 0, null);
     g.hero.pose();
-    shootAt(g, "shots/112_acid_pool.png", g.hero.shoulderPoint(), 45, 0.34, 7.0);
+    shootAt(g, DIR ++ "/112_acid_pool.png", g.hero.shoulderPoint(), 45, 0.34, 7.0);
 
     game.clearFoesForShot(g);
     game.rehomeFoesForShot(g);
@@ -3705,7 +3705,7 @@ fn warriorShots(g: *Game) void {
     spawnGs(gs, mathx.ground(wc.x + 1.4, wc.z), faceCam);
     for ([_]*warriormod.Warrior{ sm, gs }) |w| stepFoe(w, 30, far);
     standHero(g, wc.x + 3.0, wc.z - 3.2, mathx.radians(-140));
-    shootAt(g, "shots/113_warriors_pair.png", v3(wc.x, wc.y + 1.15, wc.z), LIT_YAW, 0.08, 7.4);
+    shootAt(g, DIR ++ "/113_warriors_pair.png", v3(wc.x, wc.y + 1.15, wc.z), LIT_YAW, 0.08, 7.4);
 
     g.hero.pos = mathx.ground(wc.x, wc.z - 30.0);
     g.hero.update(SHOT_DT, 0, 0, null);
@@ -3714,16 +3714,16 @@ fn warriorShots(g: *Game) void {
     spawnGs(gs, away, faceCam);
     spawnSm(sm, wc, faceCam);
     stepFoe(sm, 40, near);
-    shootFoe(g, sm, "shots/113a_shield_guard.png", LIT_YAW, 0.04, 4.0);
-    shootFoe(g, sm, "shots/113b_shield_guard_side.png", LIT_YAW + 62, 0.04, 4.2);
-    shootPortrait(g, "shots/113c_shield_boards.png", sm.centerWorld(), LIT_YAW + 16, 0.02, 2.1);
+    shootFoe(g, sm, DIR ++ "/113a_shield_guard.png", LIT_YAW, 0.04, 4.0);
+    shootFoe(g, sm, DIR ++ "/113b_shield_guard_side.png", LIT_YAW + 62, 0.04, 4.2);
+    shootPortrait(g, DIR ++ "/113c_shield_boards.png", sm.centerWorld(), LIT_YAW + 16, 0.02, 2.1);
 
     const mc = warriormod.moveClock(.shieldman, 0);
     const maceBeats = [_]struct { name: [:0]const u8, at: f32 }{
-        .{ .name = "shots/113d_mace_gather.png", .at = mc.wind * 0.22 },
-        .{ .name = "shots/113e_mace_cock.png", .at = mc.wind * 0.92 },
-        .{ .name = "shots/113f_mace_strike.png", .at = mc.wind + mc.swing * 0.47 },
-        .{ .name = "shots/113g_mace_follow.png", .at = mc.wind + mc.swing * 0.88 },
+        .{ .name = DIR ++ "/113d_mace_gather.png", .at = mc.wind * 0.22 },
+        .{ .name = DIR ++ "/113e_mace_cock.png", .at = mc.wind * 0.92 },
+        .{ .name = DIR ++ "/113f_mace_strike.png", .at = mc.wind + mc.swing * 0.47 },
+        .{ .name = DIR ++ "/113g_mace_follow.png", .at = mc.wind + mc.swing * 0.88 },
     };
     for (maceBeats) |b| {
         spawnSm(sm, wc, faceCam);
@@ -3738,20 +3738,20 @@ fn warriorShots(g: *Game) void {
     sm.debugBreak();
     stepFoe(sm, 20, far);
     const kneelAt = v3(sm.pos.x, sm.pos.y + 0.55, sm.pos.z);
-    shootPortrait(g, "shots/113h_shield_kneel.png", kneelAt, LIT_YAW + 12, 0.02, 4.0);
-    shootPortrait(g, "shots/113i_shield_kneel_side.png", kneelAt, LIT_YAW + 66, 0.02, 4.0);
+    shootPortrait(g, DIR ++ "/113h_shield_kneel.png", kneelAt, LIT_YAW + 12, 0.02, 4.0);
+    shootPortrait(g, DIR ++ "/113i_shield_kneel_side.png", kneelAt, LIT_YAW + 66, 0.02, 4.0);
     g.menu.hitboxes = true;
-    shootPortrait(g, "shots/113h2_shield_kneel_hurt.png", kneelAt, LIT_YAW + 66, 0.02, 4.2);
+    shootPortrait(g, DIR ++ "/113h2_shield_kneel_hurt.png", kneelAt, LIT_YAW + 66, 0.02, 4.2);
     g.menu.hitboxes = false;
     var bf: i32 = 0;
     while (sm.state == .guardbreak and bf < 900) : (bf += 1) _ = sm.update(SHOT_DT, far, game.PLAY_HALF, .{});
     stepFoe(sm, 30, near);
-    shootFoe(g, sm, "shots/113j_shield_broken.png", LIT_YAW, 0.06, 4.2);
+    shootFoe(g, sm, DIR ++ "/113j_shield_broken.png", LIT_YAW, 0.06, 4.2);
 
     spawnSm(sm, away, faceCam);
     spawnGs(gs, wc, faceCam);
     stepFoe(gs, 40, far);
-    shootFoe(g, gs, "shots/113k_greatsword_carry.png", LIT_YAW, 0.06, 5.2);
+    shootFoe(g, gs, DIR ++ "/113k_greatsword_carry.png", LIT_YAW, 0.06, 5.2);
 
     const beat = struct {
         fn at(gg: *Game, w: *warriormod.Warrior, home: rl.Vector3, face: f32, which: usize, clock: f32, name: [:0]const u8, toward: rl.Vector3, yaw: f32, dist: f32) void {
@@ -3764,41 +3764,41 @@ fn warriorShots(g: *Game) void {
     }.at;
 
     const sc = warriormod.moveClock(.greatsword, 0);
-    beat(g, gs, wc, faceCam, 0, sc.wind * 0.88, "shots/113l_slam_cock.png", near, LIT_YAW + 20, 6.0);
-    beat(g, gs, wc, faceCam, 0, sc.wind + sc.swing * 0.57, "shots/113m_slam_through.png", near, LIT_YAW + 20, 6.0);
-    beat(g, gs, wc, faceCam, 0, sc.wind + sc.swing * 0.97, "shots/113n_slam_end.png", near, LIT_YAW + 20, 6.0);
-    beat(g, gs, wc, faceCam, 0, sc.wind + sc.swing + sc.recover * 0.32, "shots/113o_slam_spent.png", near, LIT_YAW + 34, 5.6);
+    beat(g, gs, wc, faceCam, 0, sc.wind * 0.88, DIR ++ "/113l_slam_cock.png", near, LIT_YAW + 20, 6.0);
+    beat(g, gs, wc, faceCam, 0, sc.wind + sc.swing * 0.57, DIR ++ "/113m_slam_through.png", near, LIT_YAW + 20, 6.0);
+    beat(g, gs, wc, faceCam, 0, sc.wind + sc.swing * 0.97, DIR ++ "/113n_slam_end.png", near, LIT_YAW + 20, 6.0);
+    beat(g, gs, wc, faceCam, 0, sc.wind + sc.swing + sc.recover * 0.32, DIR ++ "/113o_slam_spent.png", near, LIT_YAW + 34, 5.6);
 
     const lc = warriormod.moveClock(.greatsword, 1);
     const stroke2 = lc.wind + lc.swing + lc.chain;
-    beat(g, gs, wc, faceCam, 1, lc.wind * 0.88, "shots/113p_lunge_coil.png", near, LIT_YAW + 26, 5.6);
-    beat(g, gs, wc, faceCam, 1, lc.wind + lc.swing * 0.38, "shots/113q_lunge_leap.png", near, LIT_YAW + 26, 5.6);
-    beat(g, gs, wc, faceCam, 1, lc.wind + lc.swing * 0.92, "shots/113r_lunge_thrust.png", near, LIT_YAW + 26, 5.6);
-    beat(g, gs, wc, faceCam, 1, stroke2 + lc.swing * 0.5, "shots/113s_lunge_return.png", near, LIT_YAW + 26, 5.6);
+    beat(g, gs, wc, faceCam, 1, lc.wind * 0.88, DIR ++ "/113p_lunge_coil.png", near, LIT_YAW + 26, 5.6);
+    beat(g, gs, wc, faceCam, 1, lc.wind + lc.swing * 0.38, DIR ++ "/113q_lunge_leap.png", near, LIT_YAW + 26, 5.6);
+    beat(g, gs, wc, faceCam, 1, lc.wind + lc.swing * 0.92, DIR ++ "/113r_lunge_thrust.png", near, LIT_YAW + 26, 5.6);
+    beat(g, gs, wc, faceCam, 1, stroke2 + lc.swing * 0.5, DIR ++ "/113s_lunge_return.png", near, LIT_YAW + 26, 5.6);
 
     spawnGs(gs, away, faceCam);
     spawnSm(sm, wc, faceCam);
     sm.stagger(true);
     stepFoe(sm, 14, far);
-    shootFoe(g, sm, "shots/113t_shield_stagger.png", LIT_YAW + 22, 0.06, 4.2);
+    shootFoe(g, sm, DIR ++ "/113t_shield_stagger.png", LIT_YAW + 22, 0.06, 4.2);
     spawnSm(sm, away, faceCam);
     spawnGs(gs, wc, faceCam);
     gs.debugKill();
     stepFoe(gs, 34, far);
-    shootFoe(g, gs, "shots/113u_greatsword_death.png", LIT_YAW + 28, 0.14, 5.0);
+    shootFoe(g, gs, DIR ++ "/113u_greatsword_death.png", LIT_YAW + 28, 0.14, 5.0);
 
     // HAS TO BE INSIDE HIS AGGRO RANGE or he does not move at all — 49 m out is `Choice.hold`.
     spawnGs(gs, away, faceCam);
     const gaitAcross = mathx.perpXZ(LIT_BACK);
     const gaitFrom = mathx.ground(wc.x - gaitAcross.x * 5.0, wc.z - gaitAcross.z * 5.0);
     spawnSm(sm, gaitFrom, mathx.headingXZ(gaitAcross));
-    const walkNames = [_][:0]const u8{ "shots/113v_shield_walk.png", "shots/113w_shield_walk.png", "shots/113x_shield_walk.png" };
+    const walkNames = [_][:0]const u8{ DIR ++ "/113v_shield_walk.png", DIR ++ "/113w_shield_walk.png", DIR ++ "/113x_shield_walk.png" };
     for ([_]i32{ 20, 9, 9 }, 0..) |adv, wi| {
         stepFoe(sm, adv, along(gaitFrom, gaitAcross, 4.0));
         shootFoe(g, sm, walkNames[wi], LIT_YAW, 0.06, 4.8);
     }
     spawnSm(sm, gaitFrom, mathx.headingXZ(gaitAcross));
-    const runNames = [_][:0]const u8{ "shots/113y_shield_run.png", "shots/113z_shield_run.png" };
+    const runNames = [_][:0]const u8{ DIR ++ "/113y_shield_run.png", DIR ++ "/113z_shield_run.png" };
     for ([_]i32{ 40, 11 }, 0..) |adv, wi| {
         stepFoe(sm, adv, along(gaitFrom, gaitAcross, 19.0));
         shootFoe(g, sm, runNames[wi], LIT_YAW, 0.06, 5.2);
@@ -3827,19 +3827,19 @@ fn rootedShots(g: *Game) void {
     spawn(t, sc, faceCam, 0.21);
     stepFoe(t, 30, far);
     standHero(g, sc.x + 5.0, sc.z - 5.0, mathx.radians(-140));
-    shootAt(g, "shots/118_rooted_hidden.png", v3(sc.x, sc.y + 3.2, sc.z), LIT_YAW, 0.10, 15.0);
+    shootAt(g, DIR ++ "/118_rooted_hidden.png", v3(sc.x, sc.y + 3.2, sc.z), LIT_YAW, 0.10, 15.0);
 
     var k: f32 = 0;
     while (k < 3.0) : (k += SHOT_DT) _ = t.update(SHOT_DT, near, game.PLAY_HALF, .{});
-    shootAt(g, "shots/118a_rooted_eyes.png", t.lockPoint(), LIT_YAW, 0.05, 3.2);
-    shootAt(g, "shots/118b_rooted_watching.png", v3(sc.x, sc.y + 3.0, sc.z), LIT_YAW, 0.08, 9.0);
+    shootAt(g, DIR ++ "/118a_rooted_eyes.png", t.lockPoint(), LIT_YAW, 0.05, 3.2);
+    shootAt(g, DIR ++ "/118b_rooted_watching.png", v3(sc.x, sc.y + 3.0, sc.z), LIT_YAW, 0.08, 9.0);
 
     spawn(t, sc, faceCam, 0.21);
     t.debugWake();
     stepFoe(t, 28, near);
-    shootAt(g, "shots/118c_rooted_wake.png", v3(sc.x, sc.y + 3.0, sc.z), LIT_YAW, 0.08, 10.0);
+    shootAt(g, DIR ++ "/118c_rooted_wake.png", v3(sc.x, sc.y + 3.0, sc.z), LIT_YAW, 0.08, 10.0);
     stepFoe(t, 40, near);
-    shootAt(g, "shots/118d_rooted_open.png", v3(sc.x, sc.y + 3.2, sc.z), LIT_YAW, 0.08, 11.0);
+    shootAt(g, DIR ++ "/118d_rooted_open.png", v3(sc.x, sc.y + 3.2, sc.z), LIT_YAW, 0.08, 11.0);
 
     const beat = struct {
         fn at(gg: *Game, tt: *rootedmod.Rooted, home: rl.Vector3, face: f32, which: usize, clock: f32, name: [:0]const u8, toward: rl.Vector3, dist: f32) void {
@@ -3854,12 +3854,12 @@ fn rootedShots(g: *Game) void {
     const swp = rootedmod.moveClock(rootedmod.SWEEP);
     const hk = rootedmod.moveClock(rootedmod.HOOK);
     standHero(g, near.x, near.z, mathx.radians(LIT_YAW + 180));
-    beat(g, t, sc, faceCam, rootedmod.SLAM, slam.wind * 0.9, "shots/118e_rooted_slam_cock.png", near, 11.0);
-    beat(g, t, sc, faceCam, rootedmod.SLAM, slam.wind + slam.strike * 0.8, "shots/118f_rooted_slam.png", near, 11.0);
-    beat(g, t, sc, faceCam, rootedmod.SWEEP, swp.wind + swp.strike * 0.6, "shots/118g_rooted_sweep.png", near, 11.0);
+    beat(g, t, sc, faceCam, rootedmod.SLAM, slam.wind * 0.9, DIR ++ "/118e_rooted_slam_cock.png", near, 11.0);
+    beat(g, t, sc, faceCam, rootedmod.SLAM, slam.wind + slam.strike * 0.8, DIR ++ "/118f_rooted_slam.png", near, 11.0);
+    beat(g, t, sc, faceCam, rootedmod.SWEEP, swp.wind + swp.strike * 0.6, DIR ++ "/118g_rooted_sweep.png", near, 11.0);
     const hookAt = along(sc, LIT_BACK, 4.2); // inside the hook's own (measured) band
     standHero(g, hookAt.x, hookAt.z, mathx.radians(LIT_YAW + 180));
-    beat(g, t, sc, faceCam, rootedmod.HOOK, hk.wind + hk.strike * 0.7, "shots/118h_rooted_hook.png", hookAt, 13.0);
+    beat(g, t, sc, faceCam, rootedmod.HOOK, hk.wind + hk.strike * 0.7, DIR ++ "/118h_rooted_hook.png", hookAt, 13.0);
 
     g.hero.pos = mathx.ground(sc.x, sc.z - 40.0);
     g.hero.update(SHOT_DT, 0, 0, null);
@@ -3867,12 +3867,12 @@ fn rootedShots(g: *Game) void {
     spawn(t, sc, faceCam, 0.21);
     t.stagger(true);
     stepFoe(t, 16, far);
-    shootAt(g, "shots/118i_rooted_stagger.png", v3(sc.x, sc.y + 2.8, sc.z), LIT_YAW + 20, 0.10, 11.0);
+    shootAt(g, DIR ++ "/118i_rooted_stagger.png", v3(sc.x, sc.y + 2.8, sc.z), LIT_YAW + 20, 0.10, 11.0);
 
     spawn(t, sc, faceCam, 0.21);
     t.debugKill();
     stepFoe(t, 70, far);
-    shootAt(g, "shots/118j_rooted_death.png", v3(sc.x, sc.y + 2.2, sc.z), LIT_YAW + 24, 0.12, 12.0);
+    shootAt(g, DIR ++ "/118j_rooted_death.png", v3(sc.x, sc.y + 2.2, sc.z), LIT_YAW + 24, 0.12, 12.0);
     game.clearFoesForShot(g);
 }
 
@@ -3892,7 +3892,7 @@ fn rootShots(g: *Game) void {
         g.env.stageOne(row.kind);
         standHero(g, -(row.dist + 1.2), 1.2, mathx.radians(115));
         var buf: [96]u8 = undefined;
-        const name = std.fmt.bufPrintZ(&buf, "shots/157{c}_roots_{s}.png", .{ @as(u8, 'a' + @as(u8, @intCast(i))), @tagName(row.kind) }) catch unreachable;
+        const name = std.fmt.bufPrintZ(&buf, DIR ++ "/157{c}_roots_{s}.png", .{ @as(u8, 'a' + @as(u8, @intCast(i))), @tagName(row.kind) }) catch unreachable;
         shootAt(g, name, v3(0, row.up, 0), 35, 0.16, row.dist);
     }
     game.clearFoesForShot(g);
@@ -3910,9 +3910,9 @@ fn duoShots(g: *Game) void {
     standHero(g, sc.x + 2.4, sc.z - 2.4, mathx.radians(-140));
 
     const moments = [_]struct { at: f32, name: [:0]const u8 }{
-        .{ .at = duomod.CAP_GROW * 0.30, .name = "shots/119f_duo_caps_rising.png" },
-        .{ .at = duomod.CAP_GROW, .name = "shots/119g_duo_caps_stood.png" },
-        .{ .at = duomod.CAP_GROW + duomod.CAP_GLOW * 0.90, .name = "shots/119h_duo_caps_lit.png" },
+        .{ .at = duomod.CAP_GROW * 0.30, .name = DIR ++ "/119f_duo_caps_rising.png" },
+        .{ .at = duomod.CAP_GROW, .name = DIR ++ "/119g_duo_caps_stood.png" },
+        .{ .at = duomod.CAP_GROW + duomod.CAP_GLOW * 0.90, .name = DIR ++ "/119h_duo_caps_lit.png" },
     };
     for (moments) |mo| {
         g.conclave.clearGroundForShot();
@@ -3926,7 +3926,7 @@ fn duoShots(g: *Game) void {
     g.conclave.sow(mark);
     var k: i32 = 0;
     while (k < @as(i32, @intFromFloat(duomod.CAP_GROW / SHOT_DT))) : (k += 1) _ = g.conclave.update(SHOT_DT, far, game.PLAY_HALF, .{});
-    shootAt(g, "shots/119i_duo_cap_close.png", v3(mark.x, mark.y + 0.60, mark.z), LIT_YAW, 0.14, 3.0);
+    shootAt(g, DIR ++ "/119i_duo_cap_close.png", v3(mark.x, mark.y + 0.60, mark.z), LIT_YAW, 0.14, 3.0);
 
     // IN PROFILE, so the sun is on him and the cloud is beside him rather than behind him: he stands off the mark and breathes across it.
     const side = mathx.perpXZ(LIT_BACK);
@@ -3936,11 +3936,11 @@ fn duoShots(g: *Game) void {
     const toBlow: i32 = @intFromFloat((duomod.MG_PUFF_WIND + duomod.MG_PUFF_DUR * duomod.MG_PUFF_BLOW_K) / SHOT_DT);
     k = 0;
     while (k < toBlow) : (k += 1) _ = g.conclave.update(SHOT_DT, mark, game.PLAY_HALF, .{});
-    shootAt(g, "shots/119j_duo_dust_breath.png", v3(sc.x, sc.y + 0.90, sc.z), LIT_YAW, 0.20, 6.0);
+    shootAt(g, DIR ++ "/119j_duo_dust_breath.png", v3(sc.x, sc.y + 0.90, sc.z), LIT_YAW, 0.20, 6.0);
 
     k = 0;
     while (k < @as(i32, @intFromFloat(duomod.DUST_BLOOM * 1.8 / SHOT_DT))) : (k += 1) _ = g.conclave.update(SHOT_DT, mark, game.PLAY_HALF, .{});
-    shootAt(g, "shots/119k_duo_dust_cloud.png", v3(sc.x, sc.y + 0.90, sc.z), LIT_YAW, 0.20, 6.0);
+    shootAt(g, DIR ++ "/119k_duo_dust_cloud.png", v3(sc.x, sc.y + 0.90, sc.z), LIT_YAW, 0.20, 6.0);
 
     game.clearFoesForShot(g);
 }
@@ -3964,7 +3964,7 @@ fn shroomShots(g: *Game) void {
     stepFoe(m, 40, far);
     stepFoe(&g.cluster.shrooms[1], 40, far);
     standHero(g, sc.x + 2.2, sc.z - 2.2, mathx.radians(-140));
-    shootAt(g, "shots/119_shroom_pair.png", v3(sc.x, sc.y + 0.6, sc.z), LIT_YAW, 0.10, 4.6);
+    shootAt(g, DIR ++ "/119_shroom_pair.png", v3(sc.x, sc.y + 0.6, sc.z), LIT_YAW, 0.10, 4.6);
 
     g.hero.pos = mathx.ground(sc.x, sc.z - 30.0);
     g.hero.update(SHOT_DT, 0, 0, null);
@@ -3975,21 +3975,21 @@ fn shroomShots(g: *Game) void {
     spawn(m, sc, faceCam, 0.23);
     m.debugFling(mark);
     stepFoe(m, 32, mark);
-    shootAt(g, "shots/119b_shroom_gather.png", v3(sc.x, sc.y + 0.5, sc.z), LIT_YAW, 0.06, 4.2);
+    shootAt(g, DIR ++ "/119b_shroom_gather.png", v3(sc.x, sc.y + 0.5, sc.z), LIT_YAW, 0.06, 4.2);
 
     stepFoe(m, 22, mark);
-    shootAt(g, "shots/119c_shroom_fling.png", v3(m.pos.x, m.pos.y + 1.2, m.pos.z), LIT_YAW, 0.06, 4.6);
+    shootAt(g, DIR ++ "/119c_shroom_fling.png", v3(m.pos.x, m.pos.y + 1.2, m.pos.z), LIT_YAW, 0.06, 4.6);
 
     spawn(m, sc, faceCam, 0.23);
     m.debugFling(mark);
     var k: i32 = 0;
     while (k < 132) : (k += 1) _ = g.cluster.update(SHOT_DT, mark, game.PLAY_HALF, .{});
-    shootAt(g, "shots/119d_shroom_cloud.png", v3(mark.x, mark.y + 0.9, mark.z), LIT_YAW, 0.10, 7.0);
+    shootAt(g, DIR ++ "/119d_shroom_cloud.png", v3(mark.x, mark.y + 0.9, mark.z), LIT_YAW, 0.10, 7.0);
 
     spawn(m, sc, faceCam, 0.23);
     m.debugTrip(mark);
     stepFoe(m, 38 + 15 + 30, mark);
-    shootAt(g, "shots/119e_shroom_trip.png", v3(sc.x, sc.y + 0.3, sc.z), LIT_YAW + 40, 0.45, 4.2);
+    shootAt(g, DIR ++ "/119e_shroom_trip.png", v3(sc.x, sc.y + 0.3, sc.z), LIT_YAW + 40, 0.45, 4.2);
 
     poisonShots(g, mark);
 
@@ -4020,18 +4020,18 @@ fn delverShots(g: *Game) void {
     spawn(d, sc, faceCam);
     stand(g, sc.x, sc.z - 40.0, 0);
     stepFoe(d, 30, far);
-    shootAt(g, "shots/122_delver.png", v3(sc.x, sc.y + 0.7, sc.z), LIT_YAW, 0.16, 4.6);
+    shootAt(g, DIR ++ "/122_delver.png", v3(sc.x, sc.y + 0.7, sc.z), LIT_YAW, 0.16, 4.6);
 
     spawn(d, sc, faceCam);
     d.debugDive();
     run(d, DIVE_TELL_AT, far);
-    shootAt(g, "shots/122b_delver_dive.png", v3(sc.x, sc.y + 0.9, sc.z), LIT_YAW, 0.12, 4.8);
+    shootAt(g, DIR ++ "/122b_delver_dive.png", v3(sc.x, sc.y + 0.9, sc.z), LIT_YAW, 0.12, 4.8);
 
     const mark = along(sc, LIT_BACK, 6.0);
     spawn(d, sc, faceCam);
     d.debugDive();
     run(d, 2.4, mark);
-    shootAt(g, "shots/122c_delver_mound.png", v3(d.pos.x, d.pos.y + 0.3, d.pos.z), LIT_YAW, 0.42, 5.0);
+    shootAt(g, DIR ++ "/122c_delver_mound.png", v3(d.pos.x, d.pos.y + 0.3, d.pos.z), LIT_YAW, 0.42, 5.0);
 
     spawn(d, sc, faceCam);
     stand(g, sc.x, sc.z, mathx.radians(LIT_YAW + 180));
@@ -4039,27 +4039,27 @@ fn delverShots(g: *Game) void {
     d.t = 0;
     d.depth = delvermod.UNDER_DEPTH;
     run(d, SURGE_TELL_AT, g.hero.pos);
-    shootAt(g, "shots/122d_delver_surge.png", v3(sc.x, sc.y + 0.7, sc.z), LIT_YAW, 0.20, 7.2);
+    shootAt(g, DIR ++ "/122d_delver_surge.png", v3(sc.x, sc.y + 0.7, sc.z), LIT_YAW, 0.20, 7.2);
 
     run(d, (delvermod.SURGE_DUR - SURGE_TELL_AT) + delvermod.BURST_RISE * 0.9, g.hero.pos);
-    shootAt(g, "shots/122e_delver_burst.png", v3(sc.x, sc.y + 0.9, sc.z), LIT_YAW, 0.22, 5.4);
+    shootAt(g, DIR ++ "/122e_delver_burst.png", v3(sc.x, sc.y + 0.9, sc.z), LIT_YAW, 0.22, 5.4);
 
     spawn(d, sc, faceCam);
     stand(g, mark.x, mark.z, mathx.radians(LIT_YAW + 180));
     d.debugClaw();
     run(d, CLAW_TELL_AT, g.hero.pos);
-    shootAt(g, "shots/122f_delver_claw.png", mathx.lerpV(v3(sc.x, sc.y + 0.9, sc.z), g.hero.pos, 0.5), LIT_YAW + 30, 0.40, 6.4);
+    shootAt(g, DIR ++ "/122f_delver_claw.png", mathx.lerpV(v3(sc.x, sc.y + 0.9, sc.z), g.hero.pos, 0.5), LIT_YAW + 30, 0.40, 6.4);
 
     spawn(d, sc, faceCam);
     stand(g, mark.x, mark.z, mathx.radians(LIT_YAW + 180));
     d.debugRake();
     run(d, RAKE_TELL_AT, g.hero.pos);
-    shootAt(g, "shots/122g_delver_rake.png", mathx.lerpV(v3(sc.x, sc.y + 0.9, sc.z), g.hero.pos, 0.5), LIT_YAW + 30, 0.40, 6.4);
+    shootAt(g, DIR ++ "/122g_delver_rake.png", mathx.lerpV(v3(sc.x, sc.y + 0.9, sc.z), g.hero.pos, 0.5), LIT_YAW + 30, 0.40, 6.4);
 
     spawn(d, sc, faceCam);
     d.debugPlough();
     run(d, PLOUGH_TELL_AT, far);
-    shootAt(g, "shots/122h_delver_plough_tell.png", v3(d.pos.x, d.pos.y + 0.4, d.pos.z), LIT_YAW + 70, 0.46, 8.5);
+    shootAt(g, DIR ++ "/122h_delver_plough_tell.png", v3(d.pos.x, d.pos.y + 0.4, d.pos.z), LIT_YAW + 70, 0.46, 8.5);
 
     spawn(d, sc, faceCam);
     const onLine = along(sc, LIT_BACK, 9.0);
@@ -4068,7 +4068,7 @@ fn delverShots(g: *Game) void {
     d.debugPlough();
     run(d, delvermod.PLOUGH_WIND + 0.34, g.hero.pos);
     const mid = mathx.lerpV(d.pos, g.hero.pos, 0.45);
-    shootAt(g, "shots/122i_delver_plough.png", v3(mid.x, mid.y + 1.0, mid.z), LIT_YAW + 70, 0.30, 11.0);
+    shootAt(g, DIR ++ "/122i_delver_plough.png", v3(mid.x, mid.y + 1.0, mid.z), LIT_YAW + 70, 0.30, 11.0);
 
     game.clearFoesForShot(g);
 }
@@ -4108,12 +4108,12 @@ fn necroShots(g: *Game) void {
     spawn(k, sc, faceCam);
     stand(g, sc.x, sc.z - 6.0, 0);
     stepFoe(k, 30, far);
-    shootAt(g, "shots/123_necro.png", v3(sc.x, sc.y + 1.5, sc.z), LIT_YAW, 0.06, 7.4);
+    shootAt(g, DIR ++ "/123_necro.png", v3(sc.x, sc.y + 1.5, sc.z), LIT_YAW, 0.06, 7.4);
 
     spawn(k, sc, faceCam);
     stand(g, sc.x, sc.z - 3.0, 0);
     run(k, 1.6, v3(sc.x, sc.y, sc.z - 3.0));
-    shootAt(g, "shots/123b_necro_hem.png", v3(k.pos.x, k.pos.y + 0.55, k.pos.z), LIT_YAW + 62, 0.10, 4.2);
+    shootAt(g, DIR ++ "/123b_necro_hem.png", v3(k.pos.x, k.pos.y + 0.55, k.pos.z), LIT_YAW + 62, 0.10, 4.2);
 
     spawn(k, sc, faceCam);
     stand(g, sc.x, sc.z - 7.0, 0);
@@ -4127,36 +4127,36 @@ fn necroShots(g: *Game) void {
     k.vigil.at = body.pos;
     k.debugRaise(body.pos);
     run(k, RAISE_TELL_AT, g.hero.pos);
-    shootAt(g, "shots/123c_necro_raise_tell.png", v3(k.pos.x, k.pos.y + 1.3, k.pos.z), LIT_YAW, 0.10, 6.6);
+    shootAt(g, DIR ++ "/123c_necro_raise_tell.png", v3(k.pos.x, k.pos.y + 1.3, k.pos.z), LIT_YAW, 0.10, 6.6);
 
     run(k, (necromod.RAISE_WIND - RAISE_TELL_AT) + 0.10, g.hero.pos);
     const between = mathx.lerpV(k.pos, body.pos, 0.5);
-    shootAt(g, "shots/123d_necro_raise.png", v3(between.x, between.y + 1.0, between.z), LIT_YAW, 0.16, 7.0);
+    shootAt(g, DIR ++ "/123d_necro_raise.png", v3(between.x, between.y + 1.0, between.z), LIT_YAW, 0.16, 7.0);
     g.muster.n = 0;
 
     spawn(k, sc, faceCam);
     stand(g, sc.x, sc.z - 9.0, 0);
     k.debugFrost();
     run(k, FROST_TELL_AT, g.hero.pos);
-    shootAt(g, "shots/123e_necro_frost_tell.png", v3(k.pos.x, k.pos.y + 1.4, k.pos.z), LIT_YAW, 0.10, 6.4);
+    shootAt(g, DIR ++ "/123e_necro_frost_tell.png", v3(k.pos.x, k.pos.y + 1.4, k.pos.z), LIT_YAW, 0.10, 6.4);
 
     spawn(k, sc, faceCam);
     stand(g, sc.x, sc.z - 9.0, 0);
     k.debugLay(g.hero.pos);
     run(k, FUSE_AT, g.hero.pos);
-    shootAt(g, "shots/123f_necro_sigil.png", v3(g.hero.pos.x, g.hero.pos.y + 0.35, g.hero.pos.z), LIT_YAW, 0.60, 10.5);
+    shootAt(g, DIR ++ "/123f_necro_sigil.png", v3(g.hero.pos.x, g.hero.pos.y + 0.35, g.hero.pos.z), LIT_YAW, 0.60, 10.5);
 
     run(k, (necromod.FROST_FUSE - FUSE_AT) + 0.06, g.hero.pos);
-    shootAt(g, "shots/123g_necro_burst.png", v3(g.hero.pos.x, g.hero.pos.y + 0.5, g.hero.pos.z), LIT_YAW, 0.50, 10.0);
+    shootAt(g, DIR ++ "/123g_necro_burst.png", v3(g.hero.pos.x, g.hero.pos.y + 0.5, g.hero.pos.z), LIT_YAW, 0.50, 10.0);
 
     game.pinHourForShot(g, NIGHT_HOUR);
     spawn(k, sc, faceCam);
     stand(g, sc.x, sc.z - 9.0, 0);
     k.debugLay(g.hero.pos);
     run(k, FUSE_AT, g.hero.pos);
-    shootAt(g, "shots/123h_necro_sigil_night.png", v3(g.hero.pos.x, g.hero.pos.y + 0.35, g.hero.pos.z), LIT_YAW, 0.60, 10.5);
+    shootAt(g, DIR ++ "/123h_necro_sigil_night.png", v3(g.hero.pos.x, g.hero.pos.y + 0.35, g.hero.pos.z), LIT_YAW, 0.60, 10.5);
     run(k, (necromod.FROST_FUSE - FUSE_AT) + 0.06, g.hero.pos);
-    shootAt(g, "shots/123i_necro_burst_night.png", v3(g.hero.pos.x, g.hero.pos.y + 0.5, g.hero.pos.z), LIT_YAW, 0.50, 10.0);
+    shootAt(g, DIR ++ "/123i_necro_burst_night.png", v3(g.hero.pos.x, g.hero.pos.y + 0.5, g.hero.pos.z), LIT_YAW, 0.50, 10.0);
     game.pinHourForShot(g, game.daynight.SHOT_HOUR);
 
     game.clearFoesForShot(g);
@@ -4184,7 +4184,7 @@ fn pickupShots(g: *Game) void {
     const gy = mathx.ground(cx, cz).y;
     standSettled(g, cx, cz - 1.6, 0);
     game.stepPickupsForShot(g);
-    shootAt(g, "shots/124_pickup.png", v3(cx, gy + 0.45, cz), LIT_YAW, 0.10, 4.2);
+    shootAt(g, DIR ++ "/124_pickup.png", v3(cx, gy + 0.45, cz), LIT_YAW, 0.10, 4.2);
 
     game.awardForShot(g, .grave_warbow, .first);
     game.awardForShot(g, .grave_warbow, .again);
@@ -4193,11 +4193,11 @@ fn pickupShots(g: *Game) void {
     drawScene(g);
     hud(g, SHOT_DT);
     game.drawAwardCardForShot(g);
-    snap("shots/124b_pickup_card.png");
+    snap(DIR ++ "/124b_pickup_card.png");
 
     game.dismissAwardForShot(g);
     game.tickAwardForShot(g, 0.5);
-    shoot(g, "shots/124b2_pickup_card_toast_after.png");
+    shoot(g, DIR ++ "/124b2_pickup_card_toast_after.png");
 
     game.awardForShot(g, .grave_warbow, .clear);
     game.awardForShot(g, .mushroom_jerky, .again);
@@ -4205,7 +4205,7 @@ fn pickupShots(g: *Game) void {
     game.awardForShot(g, .nameless_soul, .again);
     game.awardForShot(g, .iron_key, .again);
     game.tickAwardForShot(g, 0.5);
-    shoot(g, "shots/124c_pickup_toasts.png");
+    shoot(g, DIR ++ "/124c_pickup_toasts.png");
     game.awardForShot(g, .iron_key, .clear);
 
     g.map.nops = saved;
@@ -4236,11 +4236,11 @@ fn knightShots(g: *Game) void {
     spawn(k, sc, mathx.headingXZ(mathx.headingDir(mathx.headingXZ(LIT_BACK) + mathx.radians(42.0))));
     standHero(g, far.x, far.z, mathx.radians(LIT_YAW + 180));
     stepFoe(k, 30, far);
-    shootAt(g, "shots/121_knight.png", v3(sc.x, sc.y + 2.5, sc.z), LIT_YAW, 0.14, 12.0);
+    shootAt(g, DIR ++ "/121_knight.png", v3(sc.x, sc.y + 2.5, sc.z), LIT_YAW, 0.14, 12.0);
 
     spawn(k, sc, mathx.headingXZ(mathx.scaleV(LIT_BACK, -1)));
     stepFoe(k, 30, far);
-    shootAt(g, "shots/121a_knight_back.png", v3(sc.x, sc.y + 2.5, sc.z), LIT_YAW, 0.14, 12.0);
+    shootAt(g, DIR ++ "/121a_knight_back.png", v3(sc.x, sc.y + 2.5, sc.z), LIT_YAW, 0.14, 12.0);
 
     g.hero.pos = mathx.ground(sc.x, sc.z - 44.0);
     g.hero.update(SHOT_DT, 0, 0, null);
@@ -4252,22 +4252,22 @@ fn knightShots(g: *Game) void {
     spawn(k, sc, atHero);
     k.debugBash();
     run(k, bash.wind * 0.9, near);
-    shootAt(g, "shots/121b_knight_bash_wind.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 11.0);
+    shootAt(g, DIR ++ "/121b_knight_bash_wind.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 11.0);
     run(k, bash.wind * 0.1 + bash.strike * 0.8, near);
-    shootAt(g, "shots/121c_knight_bash.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 11.0);
+    shootAt(g, DIR ++ "/121c_knight_bash.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 11.0);
 
     spawn(k, sc, atHero);
     k.debugSwat(false);
     run(k, knightmod.moveClock(knightmod.SWAT_I).wind + knightmod.moveClock(knightmod.SWAT_I).strike * 0.55, near);
-    shootAt(g, "shots/121v_knight_swat_sword.png", v3(sc.x, sc.y + 2.2, sc.z), LIT_YAW, 0.12, 12.0);
+    shootAt(g, DIR ++ "/121v_knight_swat_sword.png", v3(sc.x, sc.y + 2.2, sc.z), LIT_YAW, 0.12, 12.0);
     spawn(k, sc, atHero);
     k.debugSwat(true);
     run(k, knightmod.moveClock(knightmod.SWAT_I).wind + knightmod.moveClock(knightmod.SWAT_I).strike * 0.55, near);
-    shootAt(g, "shots/121w_knight_swat_shield.png", v3(sc.x, sc.y + 2.2, sc.z), LIT_YAW, 0.12, 12.0);
+    shootAt(g, DIR ++ "/121w_knight_swat_shield.png", v3(sc.x, sc.y + 2.2, sc.z), LIT_YAW, 0.12, 12.0);
     spawn(k, sc, atHero);
     k.debugAwaken();
     run(k, knightmod.awakenPeak(), near);
-    shootAt(g, "shots/121t_knight_awaken.png", v3(sc.x, sc.y + 3.2, sc.z), LIT_YAW, 0.18, 14.0);
+    shootAt(g, DIR ++ "/121t_knight_awaken.png", v3(sc.x, sc.y + 3.2, sc.z), LIT_YAW, 0.18, 14.0);
     spawn(k, sc, atHero);
     k.lit = true;
     k.debugSweep();
@@ -4278,7 +4278,7 @@ fn knightShots(g: *Game) void {
             _ = g.vigil.update(SHOT_DT, near, game.PLAY_HALF, .{});
         }
     }
-    shootAt(g, "shots/121ta_knight_gas.png", v3(sc.x, sc.y + 1.4, sc.z), LIT_YAW, 0.10, 12.0);
+    shootAt(g, DIR ++ "/121ta_knight_gas.png", v3(sc.x, sc.y + 1.4, sc.z), LIT_YAW, 0.10, 12.0);
     {
         var gc: f32 = 0;
         const away = along(sc, mathx.headingDir(mathx.headingXZ(LIT_BACK)), 40.0);
@@ -4286,79 +4286,79 @@ fn knightShots(g: *Game) void {
             _ = g.vigil.update(SHOT_DT, away, game.PLAY_HALF, .{});
         }
     }
-    shootAt(g, "shots/121tb_knight_gas_late.png", v3(sc.x, sc.y + 1.4, sc.z), LIT_YAW, 0.10, 12.0);
+    shootAt(g, DIR ++ "/121tb_knight_gas_late.png", v3(sc.x, sc.y + 1.4, sc.z), LIT_YAW, 0.10, 12.0);
     spawn(k, sc, atHero);
     k.debugLeap();
     run(k, knightmod.leapPeak(), near);
-    shootAt(g, "shots/121y_knight_leap.png", v3(sc.x, sc.y + 2.8, sc.z), LIT_YAW, 0.16, 14.0);
+    shootAt(g, DIR ++ "/121y_knight_leap.png", v3(sc.x, sc.y + 2.8, sc.z), LIT_YAW, 0.16, 14.0);
     spawn(k, sc, atHero);
     k.debugStepTurn();
     run(k, knightmod.stepTurnMid(), near);
-    shootAt(g, "shots/121z_knight_stepturn.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.14, 12.0);
+    shootAt(g, DIR ++ "/121z_knight_stepturn.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.14, 12.0);
 
     spawn(k, sc, atHero);
     k.debugShove(false);
     run(k, bash.wind * 0.92, near);
-    shootAt(g, "shots/121t_knight_shove_wind.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 11.0);
+    shootAt(g, DIR ++ "/121t_knight_shove_wind.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 11.0);
     run(k, bash.wind * 0.08 + bash.strike * 0.85, near);
-    shootAt(g, "shots/121u_knight_shove.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 11.0);
+    shootAt(g, DIR ++ "/121u_knight_shove.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 11.0);
     spawn(k, sc, atHero);
     k.debugShove(true);
     run(k, bash.wind + bash.strike * 0.85, near);
-    shootAt(g, "shots/121ua_knight_shove_shield.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 11.0);
+    shootAt(g, DIR ++ "/121ua_knight_shove_shield.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 11.0);
 
     const sweep = knightmod.moveClock(knightmod.SWEEP_I);
     spawn(k, sc, atHero);
     k.debugSweep();
     run(k, sweep.wind * 0.92, near);
-    shootAt(g, "shots/121d_knight_sweep_cock.png", v3(sc.x, sc.y + 3.0, sc.z), LIT_YAW, 0.16, 13.0);
+    shootAt(g, DIR ++ "/121d_knight_sweep_cock.png", v3(sc.x, sc.y + 3.0, sc.z), LIT_YAW, 0.16, 13.0);
     run(k, sweep.wind * 0.08 + sweep.strike * 0.55, near);
-    shootAt(g, "shots/121e_knight_sweep.png", v3(sc.x, sc.y + 2.2, sc.z), LIT_YAW, 0.10, 12.0);
+    shootAt(g, DIR ++ "/121e_knight_sweep.png", v3(sc.x, sc.y + 2.2, sc.z), LIT_YAW, 0.10, 12.0);
 
     const over = knightmod.moveClock(knightmod.OVER_I);
     spawn(k, sc, atHero);
     k.debugOverhead();
     run(k, over.wind * 0.92, near);
-    shootAt(g, "shots/121p_knight_over_cock.png", v3(sc.x, sc.y + 3.4, sc.z), LIT_YAW, 0.18, 13.0);
+    shootAt(g, DIR ++ "/121p_knight_over_cock.png", v3(sc.x, sc.y + 3.4, sc.z), LIT_YAW, 0.18, 13.0);
     run(k, over.wind * 0.08 + over.strike + over.recover * 0.20, near);
-    shootAt(g, "shots/121q_knight_over_buried.png", v3(sc.x, sc.y + 2.0, sc.z), LIT_YAW, 0.14, 12.0);
+    shootAt(g, DIR ++ "/121q_knight_over_buried.png", v3(sc.x, sc.y + 2.0, sc.z), LIT_YAW, 0.14, 12.0);
 
     const thr = knightmod.moveClock(knightmod.THRUST_I);
     spawn(k, sc, atHero);
     k.debugThrust();
     run(k, thr.wind * 0.9, near);
-    shootAt(g, "shots/121r_knight_thrust_cock.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 11.0);
+    shootAt(g, DIR ++ "/121r_knight_thrust_cock.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 11.0);
     run(k, thr.wind * 0.1 + thr.strike * 0.9, near);
-    shootAt(g, "shots/121s_knight_thrust.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 12.0);
+    shootAt(g, DIR ++ "/121s_knight_thrust.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.12, 12.0);
 
     spawn(k, sc, atHero);
     k.debugSlam();
     const slam = knightmod.slamClock();
     run(k, slam.wind * 0.9, near);
-    shootAt(g, "shots/121l_knight_slam_haul.png", v3(sc.x, sc.y + 3.2, sc.z), LIT_YAW, 0.16, 13.0);
+    shootAt(g, DIR ++ "/121l_knight_slam_haul.png", v3(sc.x, sc.y + 3.2, sc.z), LIT_YAW, 0.16, 13.0);
     run(k, slam.wind * 0.1 + slam.strike * 0.65, near);
     {
         const mark = k.slamMarkOf();
-        shootAt(g, "shots/121m_knight_slam.png", v3(mark.x, sc.y + 1.1, mark.z), LIT_YAW, 0.30, 12.0);
+        shootAt(g, DIR ++ "/121m_knight_slam.png", v3(mark.x, sc.y + 1.1, mark.z), LIT_YAW, 0.30, 12.0);
     }
 
     const chg = knightmod.chargeClock();
     spawn(k, sc, atHero);
     k.debugCharge();
     run(k, chg.wind * 0.9, near);
-    shootAt(g, "shots/121n_knight_charge_dig.png", v3(sc.x, sc.y + 2.2, sc.z), LIT_YAW, 0.12, 11.0);
+    shootAt(g, DIR ++ "/121n_knight_charge_dig.png", v3(sc.x, sc.y + 2.2, sc.z), LIT_YAW, 0.12, 11.0);
     const across2 = mathx.headingXZ(LIT_BACK) + mathx.radians(94.0);
     const farHero = along(sc, mathx.headingDir(across2), 16.0);
     spawn(k, sc, across2);
     k.debugCharge();
     run(k, chg.wind + 1.0, farHero);
-    shootAt(g, "shots/121o_knight_charge.png", v3(k.pos.x, sc.y + 2.4, k.pos.z), LIT_YAW, 0.14, 13.0);
+    shootAt(g, DIR ++ "/121o_knight_charge.png", v3(k.pos.x, sc.y + 2.4, k.pos.z), LIT_YAW, 0.14, 13.0);
     const skidWay = across2 + std.math.pi;
     const skidHero = along(sc, mathx.headingDir(skidWay), 7.0);
     spawn(k, sc, skidWay);
     k.debugCharge();
     run(k, chg.wind + 1.74, skidHero);
-    shootAt(g, "shots/121o2_knight_charge_skid.png", v3(k.pos.x, sc.y + 2.2, k.pos.z), LIT_YAW, 0.14, 12.0);
+    shootAt(g, DIR ++ "/121o2_knight_charge_skid.png", v3(k.pos.x, sc.y + 2.2, k.pos.z), LIT_YAW, 0.14, 12.0);
 
     const across = mathx.headingXZ(LIT_BACK) + mathx.radians(90.0);
     const backDir = mathx.scaleV(mathx.headingDir(across), -1);
@@ -4368,20 +4368,20 @@ fn knightShots(g: *Game) void {
     spawn(k, sc, across);
     k.debugFall();
     run(k, fc.wind * 0.88, behind);
-    shootAt(g, "shots/121f_knight_fall_tell.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.20, 12.0);
+    shootAt(g, DIR ++ "/121f_knight_fall_tell.png", v3(sc.x, sc.y + 2.4, sc.z), LIT_YAW, 0.20, 12.0);
     run(k, fc.wind * 0.12 + fc.drop * 0.55, behind);
-    shootAt(g, "shots/121g_knight_falling.png", v3(lying.x, sc.y + 1.8, lying.z), LIT_YAW, 0.34, 12.0);
+    shootAt(g, DIR ++ "/121g_knight_falling.png", v3(lying.x, sc.y + 1.8, lying.z), LIT_YAW, 0.34, 12.0);
     run(k, fc.drop * 0.45 + 0.10, behind);
-    shootAt(g, "shots/121h_knight_landed.png", v3(lying.x, sc.y + 0.9, lying.z), LIT_YAW, 0.40, 11.0);
+    shootAt(g, DIR ++ "/121h_knight_landed.png", v3(lying.x, sc.y + 0.9, lying.z), LIT_YAW, 0.40, 11.0);
     run(k, fc.down - 0.10 + fc.roll * 0.55, behind);
-    shootAt(g, "shots/121i_knight_rollover.png", v3(lying.x, sc.y + 0.8, lying.z), LIT_YAW, 0.36, 10.0);
+    shootAt(g, DIR ++ "/121i_knight_rollover.png", v3(lying.x, sc.y + 0.8, lying.z), LIT_YAW, 0.36, 10.0);
     run(k, fc.roll * 0.45 + fc.rise * 0.58, behind);
-    shootAt(g, "shots/121j_knight_rise.png", v3(lying.x, sc.y + 1.4, lying.z), LIT_YAW, 0.28, 11.0);
+    shootAt(g, DIR ++ "/121j_knight_rise.png", v3(lying.x, sc.y + 1.4, lying.z), LIT_YAW, 0.28, 11.0);
 
     spawn(k, sc, faceCam);
     k.debugKill();
     stepFoe(k, 96, far);
-    shootAt(g, "shots/121k_knight_death.png", v3(sc.x, sc.y + 1.2, sc.z), LIT_YAW + 26, 0.30, 12.0);
+    shootAt(g, DIR ++ "/121k_knight_death.png", v3(sc.x, sc.y + 1.2, sc.z), LIT_YAW + 26, 0.30, 12.0);
 
     knightDoorShots(g, sc, faceCam, far, spawn, run);
     knightStrokeStrips(g, sc, spawn, run);
@@ -4415,7 +4415,7 @@ fn knightDoorShots(
         spawn(k, sc, faceCam + mathx.radians(s.turn));
         run(k, 0.60, far);
         var name: [64]u8 = undefined;
-        const p = std.fmt.bufPrintZ(&name, "shots/122{s}_knight_carry.png", .{s.tag}) catch continue;
+        const p = std.fmt.bufPrintZ(&name, DIR ++ "/122{s}_knight_carry.png", .{s.tag}) catch continue;
         shootAt(g, p, v3(sc.x, sc.y + lift, sc.z), LIT_YAW, 0.12, dist);
     }
     g.bossK[0] = bossWas;
@@ -4461,7 +4461,7 @@ fn knightStrokeStrips(
             }
             run(k, at, side);
             var name: [64]u8 = undefined;
-            const p = std.fmt.bufPrintZ(&name, "shots/121{s}{d}_knight_stroke.png", .{ st.tag, f }) catch continue;
+            const p = std.fmt.bufPrintZ(&name, DIR ++ "/121{s}{d}_knight_stroke.png", .{ st.tag, f }) catch continue;
             shootAt(g, p, v3(sc.x, sc.y + st.lift, sc.z), LIT_YAW, st.pitch, st.dist);
         }
     }
@@ -4530,7 +4530,7 @@ fn poisonShots(g: *Game, mark: rl.Vector3) void {
     m.debugFling(g.hero.pos);
     soak(g, 46 + 34);
     soak(g, 90);
-    shootClear(g, "shots/119f_poison_filling.png", LIT_YAW, 0.10, 5.2);
+    shootClear(g, DIR ++ "/119f_poison_filling.png", LIT_YAW, 0.10, 5.2);
 
     m.* = shroommod.Shroom.spawn(mathx.ground(mark.x - 6.0, mark.z), 0, 1.0, 0.23);
     m.debugFling(g.hero.pos);
@@ -4539,14 +4539,14 @@ fn poisonShots(g: *Game, mark: rl.Vector3) void {
         _ = g.cluster.update(SHOT_DT, g.hero.pos, game.PLAY_HALF, .{});
         game.tickPoisonForShot(g, SHOT_DT);
     }
-    shootClear(g, "shots/119g_poison_proc.png", LIT_YAW, 0.10, 5.2);
+    shootClear(g, DIR ++ "/119g_poison_proc.png", LIT_YAW, 0.10, 5.2);
     soakDrawn(g, 30);
-    shootClear(g, "shots/119g2_status_word.png", LIT_YAW, 0.10, 5.2);
+    shootClear(g, DIR ++ "/119g2_status_word.png", LIT_YAW, 0.10, 5.2);
 
     game.clearFoesForShot(g);
     var d: i32 = 0;
     while (d < 60 * 6) : (d += 1) game.tickPoisonForShot(g, SHOT_DT);
-    shootClear(g, "shots/119h_poison_draining.png", LIT_YAW, 0.10, 5.2);
+    shootClear(g, DIR ++ "/119h_poison_draining.png", LIT_YAW, 0.10, 5.2);
     g.hero.respawnNow();
 }
 
@@ -4570,7 +4570,7 @@ fn leechShots(g: *Game) void {
     spawn(&g.swarm.flies[2], mathx.ground(sc.x + 2.0, sc.z - 0.6), faceCam, 0.89);
     for (g.swarm.live()) |*fly| stepFoe(fly, 30, far);
     standHero(g, sc.x + 3.0, sc.z - 3.2, mathx.radians(-140));
-    shootAt(g, "shots/117_swarm.png", v3(sc.x, sc.y + 1.5, sc.z), LIT_YAW, 0.04, 7.0);
+    shootAt(g, DIR ++ "/117_swarm.png", v3(sc.x, sc.y + 1.5, sc.z), LIT_YAW, 0.04, 7.0);
 
     g.hero.pos = mathx.ground(sc.x, sc.z - 30.0);
     g.hero.update(SHOT_DT, 0, 0, null);
@@ -4579,10 +4579,10 @@ fn leechShots(g: *Game) void {
 
     spawn(f, sc, faceCam, 0.18);
     stepFoe(f, 30, far);
-    shootFoe(g, f, "shots/117a_leech_idle.png", LIT_YAW, 0.04, 3.4);
-    shootFoe(g, f, "shots/117b_leech_side.png", LIT_YAW + 68, 0.03, 3.4);
-    shootFoe(g, f, "shots/117c_leech_top.png", LIT_YAW + 20, 0.85, 3.2);
-    shootAt(g, "shots/117d_leech_head.png", f.lockPoint(), LIT_YAW + 30, 0.02, 1.3);
+    shootFoe(g, f, DIR ++ "/117a_leech_idle.png", LIT_YAW, 0.04, 3.4);
+    shootFoe(g, f, DIR ++ "/117b_leech_side.png", LIT_YAW + 68, 0.03, 3.4);
+    shootFoe(g, f, DIR ++ "/117c_leech_top.png", LIT_YAW + 20, 0.85, 3.2);
+    shootAt(g, DIR ++ "/117d_leech_head.png", f.lockPoint(), LIT_YAW + 30, 0.02, 1.3);
 
     const beat = struct {
         fn at(gg: *Game, fly: *leechmod.Leechfly, home: rl.Vector3, face: f32, clock: f32, name: [:0]const u8, toward: rl.Vector3, dist: f32) void {
@@ -4596,10 +4596,10 @@ fn leechShots(g: *Game) void {
     }.at;
     standHero(g, near.x, near.z, mathx.radians(LIT_YAW + 180));
     const fc = leechmod.feedClock();
-    beat(g, f, sc, faceCam, fc.wind * 0.92, "shots/117e_leech_rear.png", near, 3.6);
-    beat(g, f, sc, faceCam, fc.wind + fc.stab * 0.70, "shots/117f_leech_stab.png", near, 3.6);
-    beat(g, f, sc, faceCam, fc.wind + fc.stab + 0.55, "shots/117g_leech_drink.png", near, 3.2);
-    shootAt(g, "shots/117h_leech_eyes.png", f.lockPoint(), LIT_YAW + 20, 0.02, 1.2);
+    beat(g, f, sc, faceCam, fc.wind * 0.92, DIR ++ "/117e_leech_rear.png", near, 3.6);
+    beat(g, f, sc, faceCam, fc.wind + fc.stab * 0.70, DIR ++ "/117f_leech_stab.png", near, 3.6);
+    beat(g, f, sc, faceCam, fc.wind + fc.stab + 0.55, DIR ++ "/117g_leech_drink.png", near, 3.2);
+    shootAt(g, DIR ++ "/117h_leech_eyes.png", f.lockPoint(), LIT_YAW + 20, 0.02, 1.2);
 
     g.hero.pos = mathx.ground(sc.x, sc.z - 30.0);
     g.hero.update(SHOT_DT, 0, 0, null);
@@ -4608,17 +4608,17 @@ fn leechShots(g: *Game) void {
     f.debugClimb();
     stepFoe(f, 26, near);
     standHero(g, sc.x + 0.5, sc.z - 2.4, mathx.radians(LIT_YAW + 180));
-    shootAt(g, "shots/117i_leech_climb.png", v3(sc.x, sc.y + 3.1, sc.z), LIT_YAW, 0.12, 7.6);
+    shootAt(g, DIR ++ "/117i_leech_climb.png", v3(sc.x, sc.y + 3.1, sc.z), LIT_YAW, 0.12, 7.6);
 
     spawn(f, sc, faceCam, 0.18);
     f.stagger(true);
     stepFoe(f, 14, far);
-    shootFoe(g, f, "shots/117j_leech_stagger.png", LIT_YAW + 20, 0.05, 3.6);
+    shootFoe(g, f, DIR ++ "/117j_leech_stagger.png", LIT_YAW + 20, 0.05, 3.6);
 
     spawn(f, sc, faceCam, 0.18);
     f.debugKill();
     stepFoe(f, 30, far);
-    shootFoe(g, f, "shots/117k_leech_death.png", LIT_YAW + 24, 0.16, 3.8);
+    shootFoe(g, f, DIR ++ "/117k_leech_death.png", LIT_YAW + 24, 0.16, 3.8);
     game.clearFoesForShot(g);
 }
 
@@ -4642,7 +4642,7 @@ fn shadeShots(g: *Game) void {
     spawn(&g.haunt.shades[2], mathx.ground(sc.x + 1.9, sc.z - 0.4), faceCam, 0.87);
     for (g.haunt.live()) |*sh| stepFoe(sh, 40, far);
     standHero(g, sc.x + 3.0, sc.z - 3.2, mathx.radians(-140));
-    shootAt(g, "shots/116_haunting.png", v3(sc.x, sc.y + 1.05, sc.z), LIT_YAW, 0.06, 7.6);
+    shootAt(g, DIR ++ "/116_haunting.png", v3(sc.x, sc.y + 1.05, sc.z), LIT_YAW, 0.06, 7.6);
 
     g.hero.pos = mathx.ground(sc.x, sc.z - 30.0);
     g.hero.update(SHOT_DT, 0, 0, null);
@@ -4651,9 +4651,9 @@ fn shadeShots(g: *Game) void {
 
     spawn(s, sc, faceCam, 0.18);
     stepFoe(s, 40, far);
-    shootFoe(g, s, "shots/116a_shade_idle.png", LIT_YAW, 0.04, 4.4);
-    shootFoe(g, s, "shots/116b_shade_side.png", LIT_YAW + 66, 0.04, 4.4);
-    shootAt(g, "shots/116c_shade_cowl.png", s.lockPoint(), LIT_YAW, 0.02, 1.9);
+    shootFoe(g, s, DIR ++ "/116a_shade_idle.png", LIT_YAW, 0.04, 4.4);
+    shootFoe(g, s, DIR ++ "/116b_shade_side.png", LIT_YAW + 66, 0.04, 4.4);
+    shootAt(g, DIR ++ "/116c_shade_cowl.png", s.lockPoint(), LIT_YAW, 0.02, 1.9);
 
     const beat = struct {
         fn at(gg: *Game, sh: *shademod.Shade, home: rl.Vector3, face: f32, which: usize, clock: f32, name: [:0]const u8, toward: rl.Vector3, yaw: f32, dist: f32) void {
@@ -4668,31 +4668,31 @@ fn shadeShots(g: *Game) void {
         }
     }.at;
     const gc = shademod.moveClock(shademod.GRASP);
-    beat(g, s, sc, faceCam, shademod.GRASP, gc.wind * 0.94, "shots/116d_grasp_wide.png", near, LIT_YAW + 16, 4.2);
-    beat(g, s, sc, faceCam, shademod.GRASP, gc.wind + gc.strike * 0.62, "shots/116e_grasp_close.png", near, LIT_YAW + 16, 4.2);
+    beat(g, s, sc, faceCam, shademod.GRASP, gc.wind * 0.94, DIR ++ "/116d_grasp_wide.png", near, LIT_YAW + 16, 4.2);
+    beat(g, s, sc, faceCam, shademod.GRASP, gc.wind + gc.strike * 0.62, DIR ++ "/116e_grasp_close.png", near, LIT_YAW + 16, 4.2);
 
     const wc = shademod.moveClock(shademod.WISP);
-    beat(g, s, sc, faceCam, shademod.WISP, wc.wind * 0.96, "shots/116f_wisp_gather.png", near, LIT_YAW + 16, 4.0);
-    beat(g, s, sc, faceCam, shademod.WISP, wc.wind + wc.strike + 0.10, "shots/116g_wisp_thrown.png", near, LIT_YAW + 16, 5.4);
+    beat(g, s, sc, faceCam, shademod.WISP, wc.wind * 0.96, DIR ++ "/116f_wisp_gather.png", near, LIT_YAW + 16, 4.0);
+    beat(g, s, sc, faceCam, shademod.WISP, wc.wind + wc.strike + 0.10, DIR ++ "/116g_wisp_thrown.png", near, LIT_YAW + 16, 5.4);
     game.clearShaftsForShot(g);
 
     spawn(s, sc, faceCam, 0.18);
     s.debugBlink(near);
     var t: f32 = 0;
     while (t < shademod.BLINK_OUT * 0.62) : (t += SHOT_DT) _ = s.update(SHOT_DT, near, game.PLAY_HALF, .{});
-    shootFoe(g, s, "shots/116h_blink_out.png", LIT_YAW, 0.05, 4.4);
+    shootFoe(g, s, DIR ++ "/116h_blink_out.png", LIT_YAW, 0.05, 4.4);
     while (t < shademod.BLINK_OUT + shademod.BLINK_IN * 0.45) : (t += SHOT_DT) _ = s.update(SHOT_DT, near, game.PLAY_HALF, .{});
-    shootFoe(g, s, "shots/116i_blink_in.png", LIT_YAW, 0.05, 4.4);
+    shootFoe(g, s, DIR ++ "/116i_blink_in.png", LIT_YAW, 0.05, 4.4);
 
     spawn(s, sc, faceCam, 0.18);
     s.stagger(true);
     stepFoe(s, 16, far);
-    shootFoe(g, s, "shots/116j_shade_stagger.png", LIT_YAW + 20, 0.06, 4.4);
+    shootFoe(g, s, DIR ++ "/116j_shade_stagger.png", LIT_YAW + 20, 0.06, 4.4);
 
     spawn(s, sc, faceCam, 0.18);
     s.debugKill();
     stepFoe(s, 22, far);
-    shootFoe(g, s, "shots/116k_shade_death.png", LIT_YAW + 24, 0.10, 4.8);
+    shootFoe(g, s, DIR ++ "/116k_shade_death.png", LIT_YAW + 24, 0.10, 4.8);
 
     game.clearFoesForShot(g);
     game.rehomeFoesForShot(g);
@@ -4722,14 +4722,14 @@ fn campfireShots(g: *Game) void {
     g.hero.pos = mathx.ground(cx, cz - 24.0);
     g.hero.update(SHOT_DT, 0, 0, null);
     g.hero.pose();
-    shootPortrait(g, "shots/114_campfires.png", v3(cx, gy + 0.5, cz), LIT_YAW, 0.16, 6.4);
-    shootPortrait(g, "shots/114b_campfire_dead.png", v3(cx - 1.8, gy + 0.30, cz), LIT_YAW, 0.20, 2.6);
+    shootPortrait(g, DIR ++ "/114_campfires.png", v3(cx, gy + 0.5, cz), LIT_YAW, 0.16, 6.4);
+    shootPortrait(g, DIR ++ "/114b_campfire_dead.png", v3(cx - 1.8, gy + 0.30, cz), LIT_YAW, 0.20, 2.6);
     const right = v3(-LIT_BACK.z, 0, LIT_BACK.x);
     const hx = cx + 1.8 + right.x * 1.7;
     const hz = cz + right.z * 1.7;
     standHero(g, hx, hz, mathx.headingXZ(v3(cx + 1.8 - hx, 0, cz - hz)));
     g.rest.look(g.hero.pos);
-    shootAt(g, "shots/114c_campfire_prompt.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 4.6);
+    shootAt(g, DIR ++ "/114c_campfire_prompt.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 4.6);
 
     g.map.nops = saved;
     g.env.materialize(&g.map);
@@ -4755,15 +4755,15 @@ fn soulsShots(g: *Game) void {
     g.souls.spill(v3(sc.x, gy, sc.z), 4820);
     var t: f32 = 0;
     while (t < 0.22) : (t += SHOT_DT) g.souls.update(SHOT_DT);
-    shootAt(g, "shots/120_souls_rising.png", aim, LIT_YAW, 0.10, 4.2);
+    shootAt(g, DIR ++ "/120_souls_rising.png", aim, LIT_YAW, 0.10, 4.2);
     while (t < 2.4) : (t += SHOT_DT) g.souls.update(SHOT_DT);
-    shootAt(g, "shots/120a_souls_bloom.png", aim, LIT_YAW, 0.10, 4.2);
+    shootAt(g, DIR ++ "/120a_souls_bloom.png", aim, LIT_YAW, 0.10, 4.2);
     g.souls.look(g.hero.pos);
-    shootAt(g, "shots/120b_souls_prompt.png", aim, LIT_YAW, 0.16, 5.4);
+    shootAt(g, DIR ++ "/120b_souls_prompt.png", aim, LIT_YAW, 0.16, 5.4);
     _ = g.souls.take(g.hero.pos);
     t = 0;
     while (t < 0.12) : (t += SHOT_DT) g.souls.update(SHOT_DT);
-    shootAt(g, "shots/120c_souls_reclaim.png", between, LIT_YAW, 0.12, 5.6);
+    shootAt(g, DIR ++ "/120c_souls_reclaim.png", between, LIT_YAW, 0.12, 5.6);
     g.souls.clear();
 }
 
@@ -4796,10 +4796,10 @@ fn chestShots(g: *Game) void {
     const aim = v3(cx, gy + 0.55, cz);
     standHero(g, hx, hz, mathx.headingXZ(v3(cx - hx, 0, cz - hz)));
     g.chests.update(SHOT_DT, g.hero.pos);
-    shootPortrait(g, "shots/106_chest_closed.png", aim, LIT_YAW, 0.16, 4.4);
+    shootPortrait(g, DIR ++ "/106_chest_closed.png", aim, LIT_YAW, 0.16, 4.4);
 
     _ = game.openChestForShot(g);
-    const names = [_][:0]const u8{ "shots/106b_chest_opening.png", "shots/106c_chest_opening.png", "shots/106d_chest_open.png" };
+    const names = [_][:0]const u8{ DIR ++ "/106b_chest_opening.png", DIR ++ "/106c_chest_opening.png", DIR ++ "/106d_chest_open.png" };
     for ([_]i32{ 8, 10, 34 }, 0..) |adv, i| {
         var f: i32 = 0;
         while (f < adv) : (f += 1) g.chests.update(SHOT_DT, g.hero.pos);
@@ -4818,28 +4818,28 @@ fn chestShots(g: *Game) void {
         if (g.bag.count(row.scroll) == 0) g.bag.add(row.scroll, 1);
     }
     g.menu.onStartButton();
-    bookShot(g, "shots/106e_book_equipment.png", .equipment, bookmod.slotOrdinal(.right), null, 0);
-    bookShot(g, "shots/106f_book_swap.png", .equipment, bookmod.slotOrdinal(.right), bookmod.slotOrdinal(.right), 1);
-    bookShot(g, "shots/106f3_book_bell.png", .equipment, bookmod.slotOrdinal(.right), bookmod.slotOrdinal(.right), 2);
-    bookShot(g, "shots/106f2_book_quickbar.png", .equipment, bookmod.slotOrdinal(.q2), bookmod.slotOrdinal(.q2), 3);
-    bookShot(g, "shots/106g_book_inventory.png", .inventory, 0, null, 0);
-    bookShot(g, "shots/106g2_book_inventory_p2.png", .inventory, item.NK - 1, null, 0);
-    bookShot(g, "shots/106g3_book_longest_row.png", .inventory, bagOrdinalOf(g, .envenomed_dagger), null, 0);
-    bookShot(g, "shots/106h_book_stats.png", .stats, @intFromEnum(stats.Attr.endurance), null, 0);
-    bookShot(g, "shots/106h2_book_stats_skill.png", .stats, @intFromEnum(stats.Attr.strength), null, 0);
-    bookShot(g, "shots/106i_book_tree.png", .tree, ptree.armFirst(.wizard) + ptree.PER_ARM - 1, null, 0);
-    mapShot(g, "shots/106m_book_map.png", 1.0, false);
+    bookShot(g, DIR ++ "/106e_book_equipment.png", .equipment, bookmod.slotOrdinal(.right), null, 0);
+    bookShot(g, DIR ++ "/106f_book_swap.png", .equipment, bookmod.slotOrdinal(.right), bookmod.slotOrdinal(.right), 1);
+    bookShot(g, DIR ++ "/106f3_book_bell.png", .equipment, bookmod.slotOrdinal(.right), bookmod.slotOrdinal(.right), 2);
+    bookShot(g, DIR ++ "/106f2_book_quickbar.png", .equipment, bookmod.slotOrdinal(.q2), bookmod.slotOrdinal(.q2), 3);
+    bookShot(g, DIR ++ "/106g_book_inventory.png", .inventory, 0, null, 0);
+    bookShot(g, DIR ++ "/106g2_book_inventory_p2.png", .inventory, item.NK - 1, null, 0);
+    bookShot(g, DIR ++ "/106g3_book_longest_row.png", .inventory, bagOrdinalOf(g, .envenomed_dagger), null, 0);
+    bookShot(g, DIR ++ "/106h_book_stats.png", .stats, @intFromEnum(stats.Attr.endurance), null, 0);
+    bookShot(g, DIR ++ "/106h2_book_stats_skill.png", .stats, @intFromEnum(stats.Attr.strength), null, 0);
+    bookShot(g, DIR ++ "/106i_book_tree.png", .tree, ptree.armFirst(.wizard) + ptree.PER_ARM - 1, null, 0);
+    mapShot(g, DIR ++ "/106m_book_map.png", 1.0, false);
     walkTheMap(g);
-    mapShot(g, "shots/106m2_book_map_walked.png", 1.0, false);
-    mapShot(g, "shots/106m3_book_map_zoom.png", 3.4, true);
+    mapShot(g, DIR ++ "/106m2_book_map_walked.png", 1.0, false);
+    mapShot(g, DIR ++ "/106m3_book_map_zoom.png", 3.4, true);
 
     const memWas = g.hero.mem;
     g.hero.mem.put(1, .levin);
     g.hero.mem.put(2, .rime);
-    bookShot(g, "shots/106k_book_spells.png", .spells, @intFromEnum(combat.Spell.rime), null, 0);
+    bookShot(g, DIR ++ "/106k_book_spells.png", .spells, @intFromEnum(combat.Spell.rime), null, 0);
     const hadLance = g.bag.count(combat.spellScroll(.lance));
     _ = g.bag.take(combat.spellScroll(.lance), hadLance);
-    bookShot(g, "shots/106k2_book_spells_missing.png", .spells, @intFromEnum(combat.Spell.lance), null, 0);
+    bookShot(g, DIR ++ "/106k2_book_spells_missing.png", .spells, @intFromEnum(combat.Spell.lance), null, 0);
     g.bag.add(combat.spellScroll(.lance), hadLance);
     g.hero.mem = memWas;
 
@@ -4849,13 +4849,13 @@ fn chestShots(g: *Game) void {
         _ = g.hero.wear(item.wearSlot(k).?, k);
     }
     g.hero.arm = .club;
-    bookShot(g, "shots/106e2_book_geared.png", .equipment, bookmod.slotOrdinal(.chest), null, 0);
-    bookShot(g, "shots/106e3_book_geared_pick.png", .equipment, bookmod.slotOrdinal(.right), bookmod.slotOrdinal(.right), 0);
-    bookShot(g, "shots/106e4_book_wear_pick.png", .equipment, bookmod.slotOrdinal(.chest), bookmod.slotOrdinal(.chest), 2);
+    bookShot(g, DIR ++ "/106e2_book_geared.png", .equipment, bookmod.slotOrdinal(.chest), null, 0);
+    bookShot(g, DIR ++ "/106e3_book_geared_pick.png", .equipment, bookmod.slotOrdinal(.right), bookmod.slotOrdinal(.right), 0);
+    bookShot(g, DIR ++ "/106e4_book_wear_pick.png", .equipment, bookmod.slotOrdinal(.chest), bookmod.slotOrdinal(.chest), 2);
     _ = g.hero.wear(.hand_dagger, .envenomed_dagger);
     g.hero.arm = .dagger;
-    bookShot(g, "shots/106e5_book_card_tall.png", .equipment, bookmod.slotOrdinal(.right), null, 0);
-    bookShot(g, "shots/106e6_book_no_card.png", .equipment, bookmod.slotOrdinal(.arrows), null, 0);
+    bookShot(g, DIR ++ "/106e5_book_card_tall.png", .equipment, bookmod.slotOrdinal(.right), null, 0);
+    bookShot(g, DIR ++ "/106e6_book_no_card.png", .equipment, bookmod.slotOrdinal(.arrows), null, 0);
     inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
         const w: item.Wear = @enumFromInt(f.value);
         _ = g.hero.wear(w, wornWas.at(w));
@@ -4888,9 +4888,9 @@ fn counterShots(g: *Game) void {
     g.bag.add(.smithing_stone, 6);
     g.bag.add(.mushroom_jerky, 3);
     g.hero.tiers[@intFromEnum(heromod.Armament.sword)] = 4;
-    counterSnap(g, .shop, false, "shots/109_counter_shop_buy.png");
-    counterSnap(g, .shop, true, "shots/109b_counter_shop_sell.png");
-    counterSnap(g, .smithy, false, "shots/109c_counter_smithy.png");
+    counterSnap(g, .shop, false, DIR ++ "/109_counter_shop_buy.png");
+    counterSnap(g, .shop, true, DIR ++ "/109b_counter_shop_sell.png");
+    counterSnap(g, .smithy, false, DIR ++ "/109c_counter_smithy.png");
     game.closeCounterForShot(g);
 }
 
@@ -4918,17 +4918,17 @@ fn folkShots(g: *Game) void {
     p.pos = post;
 
     faceLens(p);
-    shootPortrait(g, "shots/108_npc_hooded.png", eye, LIT_YAW, 0.10, 3.4);
-    shootPortrait(g, "shots/108b_npc_hood_face.png", face, LIT_YAW, 0.06, 1.30);
+    shootPortrait(g, DIR ++ "/108_npc_hooded.png", eye, LIT_YAW, 0.10, 3.4);
+    shootPortrait(g, DIR ++ "/108b_npc_hood_face.png", face, LIT_YAW, 0.06, 1.30);
 
     p.variant = 1;
-    shootPortrait(g, "shots/108c_npc_bare.png", eye, LIT_YAW, 0.10, 3.4);
-    shootPortrait(g, "shots/108d_npc_bare_face.png", face, LIT_YAW, 0.06, 1.30);
+    shootPortrait(g, DIR ++ "/108c_npc_bare.png", eye, LIT_YAW, 0.10, 3.4);
+    shootPortrait(g, DIR ++ "/108d_npc_bare_face.png", face, LIT_YAW, 0.06, 1.30);
     p.variant = 0;
 
     for (g.folk.live(), 0..) |*q, i| {
         var nameBuf: [64]u8 = undefined;
-        const path = std.fmt.bufPrintZ(&nameBuf, "shots/108p_npc_portrait_{d}.png", .{i}) catch continue;
+        const path = std.fmt.bufPrintZ(&nameBuf, DIR ++ "/108p_npc_portrait_{d}.png", .{i}) catch continue;
         faceLens(q);
         shootPortrait(g, path, q.facePoint(), LIT_YAW + hudmod.PORTRAIT_YAW, hudmod.PORTRAIT_PITCH, npcmod.PORTRAIT_DIST);
     }
@@ -4939,7 +4939,7 @@ fn folkShots(g: *Game) void {
     while (k < 17) : (k += 1) game.stepFolkForShot(g, SHOT_DT);
     p.pos = post;
     faceLens(p);
-    shootPortrait(g, "shots/108e_npc_beckon.png", eye, LIT_YAW, 0.10, 3.7);
+    shootPortrait(g, DIR ++ "/108e_npc_beckon.png", eye, LIT_YAW, 0.10, 3.7);
 
     const laneYaw = mathx.radians(LIT_YAW - 90.0);
     const lane = mathx.ground(14, 70);
@@ -4961,7 +4961,7 @@ fn folkShots(g: *Game) void {
         }
         must(p.moving > 0.9, "the wanderer never set off, so there is no gait to photograph");
         const at = v3(p.pos.x, p.pos.y + 1.0, p.pos.z);
-        shootPortrait(g, if (seen == 0) "shots/108f_npc_staff_plant.png" else "shots/108g_npc_carry.png", at, LIT_YAW, 0.08, 4.0);
+        shootPortrait(g, if (seen == 0) DIR ++ "/108f_npc_staff_plant.png" else DIR ++ "/108g_npc_carry.png", at, LIT_YAW, 0.08, 4.0);
     }
 
     const TALK_OFF: f32 = 52.0;
@@ -4971,13 +4971,13 @@ fn folkShots(g: *Game) void {
     plantHeroForShot(g);
     game.stepFolkForShot(g, SHOT_DT);
     const pair = mathx.lerpV(eye, g.hero.shoulderPoint(), 0.5);
-    shootPortrait(g, "shots/108h_npc_prompt.png", pair, LIT_YAW, 0.12, 4.6);
+    shootPortrait(g, DIR ++ "/108h_npc_prompt.png", pair, LIT_YAW, 0.12, 4.6);
 
     must(game.openTalkForShot(g, "wanderer"), "the wanderer's dialog would not open");
-    talkShot(g, "shots/108i_dialog_root.png", pair, 20, .{});
-    talkShot(g, "shots/108j_dialog_cursor.png", pair, 1, .{ .down = true });
-    talkShot(g, "shots/108k_dialog_continue.png", pair, 4, .{ .pick = 1 });
-    talkShot(g, "shots/108l_dialog_gate_open.png", pair, 4, .{ .confirm = true });
+    talkShot(g, DIR ++ "/108i_dialog_root.png", pair, 20, .{});
+    talkShot(g, DIR ++ "/108j_dialog_cursor.png", pair, 1, .{ .down = true });
+    talkShot(g, DIR ++ "/108k_dialog_continue.png", pair, 4, .{ .pick = 1 });
+    talkShot(g, DIR ++ "/108l_dialog_gate_open.png", pair, 4, .{ .confirm = true });
 
     var bail: i32 = 0;
     while (g.talk.active() and bail < 40) : (bail += 1) game.stepTalkForShot(g, .{ .pick = 3 });
@@ -4988,7 +4988,7 @@ fn folkShots(g: *Game) void {
         must(false, "the map has no `text` action to photograph");
         return;
     });
-    shootPortrait(g, "shots/108m_trigger_banner.png", pair, LIT_YAW, 0.12, 4.6);
+    shootPortrait(g, DIR ++ "/108m_trigger_banner.png", pair, LIT_YAW, 0.12, 4.6);
 
     g.trig.arm(&g.map);
     g.folk.reset(&g.map);
@@ -5046,11 +5046,11 @@ fn terrainEditorStudy(g: *Game) void {
     }
     g.env.replay(&g.map);
     standHero(g, 4, 8, std.math.pi);
-    shootAt(g, "shots/terrain_01_overview.png", v3(1, 3, -3), 205, 0.68, 67);
-    shootAt(g, "shots/terrain_02_entrance.png", v3(4, 2.3, -1), 180, 0.08, 18);
+    shootAt(g, DIR ++ "/terrain_01_overview.png", v3(1, 3, -3), 205, 0.68, 67);
+    shootAt(g, DIR ++ "/terrain_02_entrance.png", v3(4, 2.3, -1), 180, 0.08, 18);
     g.hero.pos = v3(4, g.env.caveFloorAt(4, -10), -10);
     g.hero.pose();
-    shootAt(g, "shots/terrain_03_chamber.png", v3(4, 1.7, -11), 180, 0.02, 6);
+    shootAt(g, DIR ++ "/terrain_03_chamber.png", v3(4, 1.7, -11), 180, 0.02, 6);
     g.editor.enter(v3(3, 0, -8));
     g.editor.terrainForShot(&g.map, &g.env);
     g.editor.focus = v3(3, 0, -8);
@@ -5061,28 +5061,28 @@ fn terrainEditorStudy(g: *Game) void {
     g.editor.radius = 3;
     rl.setMousePosition(620, 410);
     g.editor.applyCamForShot();
-    editorSnap(g, "shots/terrain_04_inside_editor.png");
+    editorSnap(g, DIR ++ "/terrain_04_inside_editor.png");
     g.editor.setUnder(false);
     g.editor.applyCamForShot();
-    editorSnap(g, "shots/terrain_05_surface_editor.png");
+    editorSnap(g, DIR ++ "/terrain_05_surface_editor.png");
     g.editor.setLayer(.ground);
     g.editor.brush[@intFromEnum(editormod.Layer.ground)] = @intFromEnum(editormod.GroundBrush.cliff);
     g.editor.applyCamForShot();
-    editorSnap(g, "shots/terrain_06_cliff_editor.png");
+    editorSnap(g, DIR ++ "/terrain_06_cliff_editor.png");
     g.editor.on = false;
     env.Env.setCutaway(false, &g.env);
     _ = cliffs.waterfall(&g.map, .{ 4, 0 }, .{ 4, 0 }, 5, true, &span);
     g.env.replay(&g.map);
     standHero(g, 4, 6, std.math.pi);
-    shootAt(g, "shots/terrain_07_waterfall_cave.png", v3(4, 3, -1), 185, 0.10, 22);
+    shootAt(g, DIR ++ "/terrain_07_waterfall_cave.png", v3(4, 3, -1), 185, 0.10, 22);
     g.hero.pos = v3(4, g.env.caveFloorAt(4, -6), -6);
     g.hero.pose();
-    shootAt(g, "shots/terrain_08_behind_waterfall.png", v3(4, 1.8, 4), 0, 0.02, 9);
+    shootAt(g, DIR ++ "/terrain_08_behind_waterfall.png", v3(4, 1.8, 4), 0, 0.02, 9);
     g.editor.on = true;
     g.editor.brush[@intFromEnum(editormod.Layer.ground)] = @intFromEnum(editormod.GroundBrush.waterfall);
     g.editor.radius = 5;
     g.editor.applyCamForShot();
-    editorSnap(g, "shots/terrain_09_waterfall_editor.png");
+    editorSnap(g, DIR ++ "/terrain_09_waterfall_editor.png");
     g.editor.on = false;
 }
 
@@ -5105,10 +5105,10 @@ fn editorGapShots(g: *Game) void {
     g.editor.enter(mathx.ground(0, -66));
     g.editor.applyCamForShot();
     g.editor.worldForShot();
-    editorSnap(g, "shots/116a_editor_world.png");
+    editorSnap(g, DIR ++ "/116a_editor_world.png");
 
     g.editor.zoneMixForShot(&g.map, 0);
-    editorSnap(g, "shots/116b_editor_zonemix.png");
+    editorSnap(g, DIR ++ "/116b_editor_zonemix.png");
 
     g.editor.closeModalForShot();
     for (g.map.slice(), 0..) |o, i| {
@@ -5117,7 +5117,7 @@ fn editorGapShots(g: *Game) void {
             break;
         }
     }
-    editorSnap(g, "shots/116c_editor_gradient.png");
+    editorSnap(g, DIR ++ "/116c_editor_gradient.png");
     g.editor.on = false;
 }
 
@@ -5128,7 +5128,7 @@ fn editorShots(g: *Game) void {
     g.editor.pitch = -0.65;
     g.editor.applyCamForShot();
 
-    editorSnap(g, "shots/95_editor_props.png");
+    editorSnap(g, DIR ++ "/95_editor_props.png");
 
     if (g.map.narenas > 0) {
         g.editor.setLayer(.locations);
@@ -5138,7 +5138,7 @@ fn editorShots(g: *Game) void {
         g.editor.dist = 62;
         g.editor.pitch = -0.85;
         g.editor.applyCamForShot();
-        editorSnap(g, "shots/95e_editor_rooms.png");
+        editorSnap(g, DIR ++ "/95e_editor_rooms.png");
         g.editor.setLayer(.props);
         g.editor.focus = mathx.ground(0, -66);
         g.editor.dist = 46;
@@ -5148,34 +5148,34 @@ fn editorShots(g: *Game) void {
 
     if (g.map.ntrigs > 0) {
         g.editor.openScriptForShot(&g.map);
-        editorSnap(g, "shots/95f_editor_script.png");
+        editorSnap(g, DIR ++ "/95f_editor_script.png");
         uimod.openDropdownForShot(uimod.ddId(1, g.editor.trigSelForShot() orelse 0, 0));
-        editorSnap(g, "shots/95g_editor_script_open.png");
+        editorSnap(g, DIR ++ "/95g_editor_script_open.png");
         uimod.closeDropdown();
         g.editor.closeModalForShot();
     }
 
     g.editor.optionsForShot();
-    editorSnap(g, "shots/95h_editor_options.png");
+    editorSnap(g, DIR ++ "/95h_editor_options.png");
     g.editor.closeModalForShot();
 
     if (g.editor.lootForShot(&g.map, .consumable)) {
-        editorSnap(g, "shots/95k_editor_items.png");
+        editorSnap(g, DIR ++ "/95k_editor_items.png");
         _ = g.editor.lootForShot(&g.map, .armament);
-        editorSnap(g, "shots/95l_editor_items_arms.png");
+        editorSnap(g, DIR ++ "/95l_editor_items_arms.png");
         g.editor.closeModalForShot();
     }
 
     for (0..g.map.nnpcs) |ni| {
         g.editor.talkForShot(&g.map, ni);
-        editorSnap(g, if (g.editor.talkIsFlatForShot()) "shots/95i_editor_talk.png" else "shots/95j_editor_talk_tree.png");
+        editorSnap(g, if (g.editor.talkIsFlatForShot()) DIR ++ "/95i_editor_talk.png" else DIR ++ "/95j_editor_talk_tree.png");
         g.editor.closeModalForShot();
     }
 
     g.editor.setLayer(.ground);
     for (&g.editor.shown) |*s| s.* = false;
     g.editor.showWeather = false;
-    editorSnap(g, "shots/95b_editor_hidden.png");
+    editorSnap(g, DIR ++ "/95b_editor_hidden.png");
     for (&g.editor.shown) |*s| s.* = true;
     g.editor.showWeather = true;
     g.editor.setLayer(.props);
@@ -5187,7 +5187,7 @@ fn editorShots(g: *Game) void {
             break;
         }
     }
-    editorSnap(g, "shots/96_editor_selected.png");
+    editorSnap(g, DIR ++ "/96_editor_selected.png");
 
     g.editor.enter(mathx.ground(0, 0));
     g.editor.setLayer(.decor);
@@ -5201,7 +5201,7 @@ fn editorShots(g: *Game) void {
     g.editor.dragging = true;
     g.editor.dragFrom = mathx.ground(-16, -12);
     g.editor.dragTo = mathx.ground(14, 16);
-    editorSnap(g, "shots/97_editor_drag.png");
+    editorSnap(g, DIR ++ "/97_editor_drag.png");
     g.editor.dragging = false;
 
     const before = g.map.soil;
@@ -5220,7 +5220,7 @@ fn editorShots(g: *Game) void {
     g.editor.yaw = std.math.pi;
     g.editor.dist = 46;
     g.editor.applyCamForShot();
-    editorSnap(g, "shots/98_editor_ground.png");
+    editorSnap(g, DIR ++ "/98_editor_ground.png");
 
     g.map.soil = before;
     g.map.soilCov = beforeCov;
@@ -5243,11 +5243,11 @@ fn editorShots(g: *Game) void {
     g.editor.yaw = 2.4;
     g.editor.dist = 34;
     g.editor.applyCamForShot();
-    editorSnap(g, "shots/98b_editor_water.png");
+    editorSnap(g, DIR ++ "/98b_editor_water.png");
     g.editor.pitch = -1.15;
     g.editor.dist = 58;
     g.editor.applyCamForShot();
-    editorSnap(g, "shots/98c_editor_water_map.png");
+    editorSnap(g, DIR ++ "/98c_editor_water_map.png");
 
     g.map.water = beforeWater;
     g.env.uploadWater(&g.map);
@@ -5260,9 +5260,9 @@ fn editorShots(g: *Game) void {
     g.editor.dist = 40;
     g.editor.applyCamForShot();
     g.editor.unitsForShot(.foes, .bone);
-    editorSnap(g, "shots/98d_editor_units_foes.png");
+    editorSnap(g, DIR ++ "/98d_editor_units_foes.png");
     g.editor.unitsForShot(.folk, .bone);
-    editorSnap(g, "shots/98e_editor_units_folk.png");
+    editorSnap(g, DIR ++ "/98e_editor_units_folk.png");
 
     g.editor.setLayer(.props);
     g.editor.focus = mathx.ground(0, -12);
@@ -5271,26 +5271,26 @@ fn editorShots(g: *Game) void {
     g.editor.dist = 40;
     g.editor.applyCamForShot();
     g.editor.selectForShot(&g.map, &g.env, mathx.ground(-20, -30), mathx.ground(20, 6));
-    editorSnap(g, "shots/99_editor_marquee.png");
+    editorSnap(g, DIR ++ "/99_editor_marquee.png");
 
     g.editor.openForShot();
-    editorSnap(g, "shots/99b_editor_open.png");
+    editorSnap(g, DIR ++ "/99b_editor_open.png");
 
     g.editor.charForShot(.fungal_swordsman);
-    editorSnap(g, "shots/99f_char_duo_sword.png");
+    editorSnap(g, DIR ++ "/99f_char_duo_sword.png");
     g.editor.charForShot(.fungal_magus);
-    editorSnap(g, "shots/99g_char_duo_magus.png");
+    editorSnap(g, DIR ++ "/99g_char_duo_magus.png");
     g.editor.charForShot(.fungal_deer);
-    editorSnap(g, "shots/99h_char_fungal_deer.png");
+    editorSnap(g, DIR ++ "/99h_char_fungal_deer.png");
 
     g.editor.objectsForShot(.props, 0, null);
-    editorSnap(g, "shots/99c_editor_objects.png");
+    editorSnap(g, DIR ++ "/99c_editor_objects.png");
 
     g.editor.objectsForShot(.props, 0, .well);
-    editorSnap(g, "shots/99d_editor_object_one.png");
+    editorSnap(g, DIR ++ "/99d_editor_object_one.png");
 
     g.editor.objectsForShot(.decor, 0, null);
-    editorSnap(g, "shots/99e_editor_objects_decor.png");
+    editorSnap(g, DIR ++ "/99e_editor_objects_decor.png");
 
     g.editor.modal = .none;
     g.editor.setLayer(.interact);
@@ -5300,10 +5300,10 @@ fn editorShots(g: *Game) void {
     g.editor.yaw = std.math.pi;
     g.editor.dist = 34;
     g.editor.applyCamForShot();
-    editorSnap(g, "shots/99f_editor_interact.png");
+    editorSnap(g, DIR ++ "/99f_editor_interact.png");
 
     g.editor.soundsForShot(.ogre_slam);
-    editorSnap(g, "shots/99g_editor_sounds.png");
+    editorSnap(g, DIR ++ "/99g_editor_sounds.png");
     g.editor.modal = .none;
 
     g.editor.on = false;
@@ -5317,14 +5317,14 @@ fn dayShots(g: *Game) void {
     game.clearFoesForShot(g);
     game.clearShaftsForShot(g);
     const hours = [_]struct { h: f32, name: [:0]const u8 }{
-        .{ .h = NIGHT_HOUR, .name = "shots/140_day_night.png" },
-        .{ .h = 5.2, .name = "shots/141_day_firstlight.png" },
-        .{ .h = 6.2, .name = "shots/142_day_sunrise.png" },
-        .{ .h = 8.5, .name = "shots/143_day_morning.png" },
-        .{ .h = 12.0, .name = "shots/144_day_noon.png" },
-        .{ .h = game.daynight.SHOT_HOUR, .name = "shots/145_day_golden.png" },
-        .{ .h = 19.4, .name = "shots/146_day_sunset.png" },
-        .{ .h = game.daynight.EVENING_HOUR, .name = "shots/147_day_dusk.png" },
+        .{ .h = NIGHT_HOUR, .name = DIR ++ "/140_day_night.png" },
+        .{ .h = 5.2, .name = DIR ++ "/141_day_firstlight.png" },
+        .{ .h = 6.2, .name = DIR ++ "/142_day_sunrise.png" },
+        .{ .h = 8.5, .name = DIR ++ "/143_day_morning.png" },
+        .{ .h = 12.0, .name = DIR ++ "/144_day_noon.png" },
+        .{ .h = game.daynight.SHOT_HOUR, .name = DIR ++ "/145_day_golden.png" },
+        .{ .h = 19.4, .name = DIR ++ "/146_day_sunset.png" },
+        .{ .h = game.daynight.EVENING_HOUR, .name = DIR ++ "/147_day_dusk.png" },
     };
     const intoSun: f32 = 232.5 + 180.0;
     for (hours) |row| {
@@ -5332,9 +5332,9 @@ fn dayShots(g: *Game) void {
         shootAt(g, row.name, at, intoSun, 0.02, 7.0);
     }
     for ([_]struct { h: f32, name: [:0]const u8 }{
-        .{ .h = 7.0, .name = "shots/148_day_shadows_morning.png" },
-        .{ .h = 12.0, .name = "shots/148b_day_shadows_noon.png" },
-        .{ .h = 19.0, .name = "shots/148c_day_shadows_evening.png" },
+        .{ .h = 7.0, .name = DIR ++ "/148_day_shadows_morning.png" },
+        .{ .h = 12.0, .name = DIR ++ "/148b_day_shadows_noon.png" },
+        .{ .h = 19.0, .name = DIR ++ "/148c_day_shadows_evening.png" },
     }) |row| {
         game.pinHourForShot(g, row.h);
         shootAt(g, row.name, at, 90, 0.62, 26.0);
@@ -5359,11 +5359,11 @@ fn elevationShots(g: *Game) void {
 
     standHero(g, -6, 6, mathx.radians(215));
     plantHeroForShot(g);
-    shootAt(g, "shots/100_hill_from_below.png", g.hero.shoulderPoint(), 215, 0.06, 9.0);
+    shootAt(g, DIR ++ "/100_hill_from_below.png", g.hero.shoulderPoint(), 215, 0.06, 9.0);
 
     standHero(g, -30, -8, mathx.radians(75));
     plantHeroForShot(g);
-    shootAt(g, "shots/101_hill_from_above.png", g.hero.shoulderPoint(), 75, 0.30, 11.0);
+    shootAt(g, DIR ++ "/101_hill_from_above.png", g.hero.shoulderPoint(), 75, 0.30, 11.0);
 
     standHero(g, -14, -2, mathx.radians(215));
     plantHeroForShot(g);
@@ -5378,14 +5378,14 @@ fn elevationShots(g: *Game) void {
         g.hero.update(SHOT_DT, heromod.WALK_SPEED * SHOT_DT, heromod.WALK_SPEED, mathx.radians(215));
         g.hero.pose();
     }
-    shootClear(g, "shots/102_hill_climb.png", 215, 0.62, 8.0);
+    shootClear(g, DIR ++ "/102_hill_climb.png", 215, 0.62, 8.0);
     g.menu.stats = true;
-    shootClear(g, "shots/103_hill_stats.png", 215, 0.62, 8.0);
+    shootClear(g, DIR ++ "/103_hill_stats.png", 215, 0.62, 8.0);
     g.menu.stats = false;
 
     standHero(g, -4, 22, mathx.radians(215));
     plantHeroForShot(g);
-    shootAt(g, "shots/104_hill_profile.png", v3(-24, 6, -8), 215, 0.42, 92.0);
+    shootAt(g, DIR ++ "/104_hill_profile.png", v3(-24, 6, -8), 215, 0.42, 92.0);
 
     g.editor.enter(g.hero.pos);
     g.editor.setLayer(.ground);
@@ -5396,7 +5396,7 @@ fn elevationShots(g: *Game) void {
     g.editor.yaw = 2.5;
     g.editor.dist = 62;
     g.editor.applyCamForShot();
-    editorSnap(g, "shots/105_editor_sculpt.png");
+    editorSnap(g, DIR ++ "/105_editor_sculpt.png");
     g.editor.on = false;
 
     g.map.height = before;
@@ -5456,38 +5456,38 @@ fn wolfShots(g: *Game) void {
     standHero(g, 6.0, 4.0, std.math.pi * 0.5);
     plantHeroForShot(g);
     const chest = v3(g.hero.pos.x, game.heroCenterY(g), g.hero.pos.z);
-    shootPortrait(g, "shots/130_bell_carry.png", chest, 53, 0.06, 2.2);
+    shootPortrait(g, DIR ++ "/130_bell_carry.png", chest, 53, 0.06, 2.2);
     game.ringForShot(g, heromod.RING_AT);
-    shootPortrait(g, "shots/131_bell_ring.png", chest, 53, 0.06, 2.4);
+    shootPortrait(g, DIR ++ "/131_bell_ring.png", chest, 53, 0.06, 2.4);
 
     const at = mathx.ground(9.0, 4.0);
     game.callWolfForShot(g, at, 0);
     game.poseWolfForShot(g, 0, 0);
-    shootAt(g, "shots/132_wolf_stand.png", at, 53, 0.10, 3.4);
-    shootAt(g, "shots/133_wolf_stand_side.png", at, 90, 0.06, 3.2);
+    shootAt(g, DIR ++ "/132_wolf_stand.png", at, 53, 0.10, 3.4);
+    shootAt(g, DIR ++ "/133_wolf_stand_side.png", at, 90, 0.06, 3.2);
     const phases = [_]f32{ 0.0, 0.25, 0.5, 0.75 };
     const names = [_][:0]const u8{
-        "shots/134a_wolf_trot_q0.png",
-        "shots/134b_wolf_trot_q1.png",
-        "shots/134c_wolf_trot_q2.png",
-        "shots/134d_wolf_trot_q3.png",
+        DIR ++ "/134a_wolf_trot_q0.png",
+        DIR ++ "/134b_wolf_trot_q1.png",
+        DIR ++ "/134c_wolf_trot_q2.png",
+        DIR ++ "/134d_wolf_trot_q3.png",
     };
     for (phases, names) |ph, nm| {
         game.poseWolfForShot(g, wolfmod.TROT_SPEED, ph);
         shootAt(g, nm, at, 90, 0.05, 3.4);
     }
     game.poseWolfForShot(g, wolfmod.GALLOP_SPEED, 0.25);
-    shootAt(g, "shots/135_wolf_gallop.png", at, 90, 0.05, 3.8);
+    shootAt(g, DIR ++ "/135_wolf_gallop.png", at, 90, 0.05, 3.8);
     game.poseWolfGatherForShot(g, 0.5);
-    shootAt(g, "shots/135b_wolf_gather.png", at, 90, 0.05, 3.4);
+    shootAt(g, DIR ++ "/135b_wolf_gather.png", at, 90, 0.05, 3.4);
     game.poseWolfPounceForShot(g, 1.0);
-    shootAt(g, "shots/135c_wolf_pounce.png", mathx.addV(at, v3(0, wolfmod.W * 0.8, 0)), 90, 0.10, 4.0);
+    shootAt(g, DIR ++ "/135c_wolf_pounce.png", mathx.addV(at, v3(0, wolfmod.W * 0.8, 0)), 90, 0.10, 4.0);
     game.poseWolfForShot(g, 0, 0);
-    shootPortrait(g, "shots/136_wolf_head.png", mathx.addV(at, v3(0, wolfmod.W * 1.0, 0)), 40, 0.02, 1.5);
+    shootPortrait(g, DIR ++ "/136_wolf_head.png", mathx.addV(at, v3(0, wolfmod.W * 1.0, 0)), 40, 0.02, 1.5);
 
     g.bag.add(.spirit_scroll_wolf, 1);
     game.showSpiritToastForShot(g);
-    shootClear(g, "shots/137_spirit_toast.png", 53, 0.14, 4.6);
+    shootClear(g, DIR ++ "/137_spirit_toast.png", 53, 0.14, 4.6);
     g.pack.clear();
     g.hero.arm = .sword;
 }

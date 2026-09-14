@@ -342,9 +342,7 @@ pub const Skitterer = struct {
 
     pub fn navWant(self: *const Skitterer, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle and self.state != .move) return null;
-        if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
-        if (foe.postAim(self)) |go| return go;
-        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
+        return foe.navChase(self, hero, AGGRO_R, HOME_R);
     }
 
     fn faceToward(self: *Skitterer, at: rl.Vector3, dt: f32) void {

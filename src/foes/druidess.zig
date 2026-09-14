@@ -128,7 +128,6 @@ const KEEP_MIN: f32 = 7.0;
 const KEEP_MAX: f32 = 13.0;
 const DRIFT_DUR: f32 = 0.8;
 
-/// HER CASTING RANGE, HELD AND CIRCLED: inside `KEEP_MIN` she gives ground, past `KEEP_MAX` she comes in, between the two she only circles.
 const KEEP = [_]behave.Step{
     .{ .band = .{ .min = KEEP_MIN, .max = KEEP_MAX, .secs = DRIFT_DUR } },
 };
@@ -146,7 +145,6 @@ const VINE_WIND: f32 = 0.72;
 const VINE_CAST: f32 = 0.22;
 const VINE_CD: f32 = 4.4;
 pub const SNARE_R: f32 = 1.55;
-/// Shown before it bites: the ring of buds stands this long, then withers.
 pub const SNARE_SHOW: f32 = 2.2;
 const CAST_MIN: f32 = 3.0;
 const CAST_MAX: f32 = 16.0;
@@ -1086,6 +1084,11 @@ pub const Druidess = struct {
         self.t = 0;
         self.homing = false;
         self.heroLatch = true;
+        self.summoned = null;
+        self.sowed = false;
+        self.snared = null;
+        self.speared = false;
+        self.scattered = false;
     }
     fn enterDeath(self: *Druidess) void {
         if (self.state == .dead) return;
@@ -2796,4 +2799,27 @@ test "THE TANGLE RINGS PAST HER TURN AND SETTLES ON IT — springs, not eases" {
     std.debug.print("\n  druidess tangle: overshot the turn by {d:.1} deg, settled within {d:.2} deg\n", .{ mathx.degrees(over), mathx.degrees(@abs(d.trailYaw[1] - d.facing)) });
     try std.testing.expect(over > mathx.radians(3.0));
     for (d.trailYaw) |y| try std.testing.expect(@abs(y - d.facing) < mathx.radians(1.5));
+}
+
+test "A STROKE ON THE RELEASE FRAME CANCELS THE CAST — the blade is billed inside `update`, before the coven reads what she let go" {
+    const dt: f32 = 1.0 / 60.0;
+    const hero = mathx.ground(0, 9.0);
+    var d = Druidess.spawn(mathx.zero3, 0, 1.0, 0.3);
+    d.leash.noteSeen();
+    var frames: u32 = 0;
+    while (frames < 1200) : (frames += 1) {
+        var probe = d;
+        _ = probe.update(dt, hero, 200.0, .{});
+        const lets = probe.sowed or probe.snared != null or probe.speared or probe.scattered or probe.summoned != null;
+        if (lets) {
+            const at = d.centerWorld();
+            const blade = foe.Blade{ .active = true, .r = 1.2, .a = at, .b = at, .a0 = at, .b0 = at, .hit = .{ .dmg = 200, .poise = 999, .stance = 999 } };
+            _ = d.update(dt, hero, 200.0, blade);
+            try std.testing.expect(d.staggered());
+            try std.testing.expect(!d.sowed and d.snared == null and !d.speared and !d.scattered and d.summoned == null);
+            return;
+        }
+        d = probe;
+    }
+    try std.testing.expect(false);
 }

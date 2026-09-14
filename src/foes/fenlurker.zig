@@ -356,12 +356,9 @@ pub const Lurker = struct {
         return foe.markOn(self.xf[TIP], v3(0, 0, TONGUE_SEG));
     }
 
-    pub fn tongueSeg(self: *const Lurker) [2]rl.Vector3 {
-        return .{ foe.markOn(self.xf[TONGUE], mathx.zero3), self.tipPoint() };
-    }
-
-        /// `foe.weaponReaches` samples five points along whatever it is handed, so the whole 4.96 m shaft as one segment
-        /// puts them 1.24 m apart against a 0.47 m grip — measured, it passed through a man standing at 2.95 m.
+    /// `foe.weaponReaches` samples five points along whatever it is handed, so the whole 4.96 m shaft as one segment
+    /// puts them 1.24 m apart against a 0.47 m grip — measured, it passed through a man standing at 2.95 m. THE SHAFT
+    /// IS ONLY EVER HANDED OVER JOINT BY JOINT, which is why there is no whole-shaft accessor to reach for.
     pub fn tongueJoints(self: *const Lurker) [TSEGS + 1]rl.Vector3 {
         var out: [TSEGS + 1]rl.Vector3 = undefined;
         for (0..TSEGS) |k| out[k] = foe.markOn(self.xf[TONGUE + k], mathx.zero3);
@@ -445,7 +442,7 @@ pub const Lurker = struct {
         if (!foe.caught(self, reach, self.toImpact(), null)) return;
         self.heroLatch = true;
         self.splash(foe.markOn(self.xf[if (self.tonguing()) TONGUE else HEAD], mathx.zero3), 8);
-        self.enterStun(false);
+        self.enterStun(foe.parryBroke(self));
     }
 
     fn stateStep(self: *Lurker, dt: f32, hero: rl.Vector3, bounds: f32) void {
@@ -1389,7 +1386,8 @@ test "A CHAINED SECOND STROKE DOES NOT DROP THE BODY BACK IN THE WATER" {
 test "THE TONGUE'S REACH IS MEASURED OFF THE POSED RIG, and the shaft is laid through his own height" {
     var l = Lurker.spawn(mathx.zero3, 0, 1.0, 0.3);
     l.stageSpit(1.0);
-    const seg = l.tongueSeg();
+    const joints = l.tongueJoints();
+    const seg = [2]rl.Vector3{ joints[0], joints[joints.len - 1] };
     const reach = mathx.distXZ(l.pos, seg[1]);
     std.debug.print(
         "\n  fen lurker tongue: {d:.2} m of shaft over a {d:.2} m stature, reaching {d:.2} m out (band says {d:.2}); jaw {d:.2} m down to {d:.2} m at the pad\n",

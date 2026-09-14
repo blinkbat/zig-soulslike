@@ -263,7 +263,6 @@ pub fn faceRockBuild(seed: u64, masses: ?*Masses) Builder {
     return b;
 }
 
-/// `masses` collects what `fitParts` colliders.
 pub fn cliffBuildOpt(seed: u64, k: CliffKind, masses: ?*Masses) Builder {
     const H = k.H;
     var b = Builder.init();

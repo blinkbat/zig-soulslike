@@ -485,8 +485,7 @@ pub fn niceMetres(want: f32) f32 {
     const p = @floor(std.math.log10(want));
     const pow = std.math.pow(f32, 10, p);
     const n = want / pow;
-    const step: f32 = if (n < 1.5) 1 else if (n < 3.5) 2 else if (n < 7.5) 5 else 10;
-    return step * pow;
+    return mathx.nice125(n) * pow;
 }
 
 /// TEXELS, top-down. A render texture reads bottom-up: source `y` is off the far edge and the height negative.

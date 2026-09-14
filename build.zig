@@ -1,5 +1,8 @@
 const std = @import("std");
 
+/// 144.4 MB of slabs measured across 29 rows; Windows commits stack lazily, so this is address space, not memory. The test binary needs the same: a `Map` is 5.4 MB and a round-trip test holds two in a frame.
+const STACK_SIZE: usize = 192 * 1024 * 1024;
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -20,8 +23,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    // 144.4 MB of slabs measured across 29 rows; Windows commits stack lazily, so this is address space, not memory.
-    exe.stack_size = 192 * 1024 * 1024;
+    exe.stack_size = STACK_SIZE;
     exe.linkLibrary(raylib_artifact);
     exe.root_module.addImport("raylib", raylib);
     addAssets(b, exe.root_module);
@@ -42,8 +44,7 @@ pub fn build(b: *std.Build) void {
         }),
         .filters = if (test_filter) |f| &.{f} else &.{},
     });
-    // The exe's, for the same reason: a `Map` is 5.4 MB and a test that round-trips one holds two of them in a frame.
-    unit_tests.stack_size = 192 * 1024 * 1024;
+    unit_tests.stack_size = STACK_SIZE;
     unit_tests.linkLibrary(raylib_artifact);
     unit_tests.root_module.addImport("raylib", raylib);
     addAssets(b, unit_tests.root_module);
@@ -107,7 +108,6 @@ fn checkTestRoster(b: *std.Build) void {
         // The walker returns Windows backslashes; main.zig imports with forward slashes.
         const slashed = b.allocator.dupe(u8, ent.path) catch @panic("OOM in the roster check");
         std.mem.replaceScalar(u8, slashed, '\\', '/');
-        // ui/editor.zig was committed truncated to 0 bytes (c08f4f7) and this walk passed.
         const st = ent.dir.statFile(ent.basename) catch |e|
             std.debug.panic("src/{s} could not be stat'd ({s}) — the truncation check cannot run", .{ slashed, @errorName(e) });
         if (st.size < MIN_SRC) std.debug.panic(

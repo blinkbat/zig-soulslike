@@ -137,7 +137,7 @@ pub fn noPurse(k: wf.FoeKind) bool {
     return false;
 }
 
-/// The live thirty-seven. `BANK` above is the revert (`play/tune.zig`), and it is what the walk below reads.
+/// The live rows. `BANK` above is the revert (`play/tune.zig`), and it is what the walk below reads.
 pub var TABLE: [BANK.len]Row = BANK;
 
 comptime {

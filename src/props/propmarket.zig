@@ -84,7 +84,7 @@ fn poleInto(b: *Builder, from: rl.Vector3, h: f32, r: f32, lean: f32, at: f32, t
     return top;
 }
 
-fn canopyInto(b: *Builder, rng: *mathx.Rng, corners: [4]rl.Vector3, sag: f32, tone: rl.Color, toneLt: rl.Color) void {
+fn canopyInto(b: *Builder, corners: [4]rl.Vector3, sag: f32, tone: rl.Color, toneLt: rl.Color) void {
     b.setMat(.cloth);
     const NU = 5;
     const NV = 5;
@@ -102,7 +102,6 @@ fn canopyInto(b: *Builder, rng: *mathx.Rng, corners: [4]rl.Vector3, sag: f32, to
             const p01 = sheetAt(corners, ua, vb, sag);
             const dip = (dipAt(ua, va) + dipAt(ub, vb)) * 0.5;
             sheetQuad(b, p00, p01, p11, p10, art.weathered(toneLt, tone, mathx.clampF(dip * 1.4, 0, 1)));
-            _ = rng;
         }
     }
 }
@@ -150,7 +149,7 @@ pub fn merchantHutMesh(shader: rl.Shader) rl.Model {
         const h = eave * (if (i < 2) @as(f32, 1.14) else 1.0) * rng.range(0.97, 1.03);
         top[i] = poleInto(&b, f, h, 0.058, rng.range(0.02, 0.06), rng.angle(), if (@mod(i, 2) == 0) POLE else POLE_LT);
     }
-    canopyInto(&b, &rng, top, 0.34, CANVAS_SUN, CANVAS_LT);
+    canopyInto(&b, top, 0.34, CANVAS_SUN, CANVAS_LT);
     b.setMat(.cloth);
     const walls = [3][2]usize{ .{ 0, 1 }, .{ 1, 2 }, .{ 3, 0 } };
     for (walls, 0..) |w, wi| {
@@ -259,7 +258,6 @@ pub fn trestleTableMesh(shader: rl.Shader) rl.Model {
     b.setMat(.wood);
     for ([_]f32{ -1.0, 1.0 }) |end| {
         const ex = end * hw * 0.66;
-        const shrt = rng.range(0.86, 1.0);
         for ([_]f32{ -1.0, 1.0 }) |side| {
             b.addCylinder(
                 v3(ex + rng.signed() * 0.03, 0, side * hd * 0.86),
@@ -269,7 +267,6 @@ pub fn trestleTableMesh(shader: rl.Shader) rl.Model {
                 6,
                 if (side > 0) POLE else POLE_LT,
             );
-            _ = shrt;
         }
         b.addCylinder(v3(ex, TABLE_TOP * 0.42, -hd * 0.55), v3(ex, TABLE_TOP * 0.42, hd * 0.55), 0.028, 0.028, 6, POLE_LT);
     }
@@ -398,7 +395,7 @@ pub fn awningMesh(shader: rl.Shader) rl.Model {
         const h = (AWNING_TOP - 0.08) * (if (i == 3) @as(f32, 0.80) else rng.range(0.96, 1.02));
         top[i] = poleInto(&b, f, h, 0.052, rng.range(0.02, 0.07), rng.angle(), if (@mod(i, 2) == 0) POLE else POLE_LT);
     }
-    canopyInto(&b, &rng, top, 0.30, CANVAS, CANVAS_LT);
+    canopyInto(&b, top, 0.30, CANVAS, CANVAS_LT);
     b.setMat(.cloth);
     for ([_]usize{ 0, 1 }) |ci| {
         const t = top[ci];

@@ -723,7 +723,8 @@ technique. NO stamina, no jump attack.
   (`wf.cliffMinDrop`, 2.1 m), so a painted face is a wall to the jump as it is to the walk.
 - **THE INTEGRATOR IS THE CLOSED FORM**, not `v -= g·dt; y += v·dt` — that pair loses `g·t·dt/2`: nine centimetres
   of apex at 30 fps and none at 240. A test flies all four rates.
-- **`pos.y` IS STILL THE GROUND UNDER HIM** — `game.groundActor` its only writer, `hero.lift` what he flies above
+- **`pos.y` IS STILL THE GROUND UNDER HIM** — `game.groundActor` eases it and `game.plantActor` snaps it, and
+  nothing else writes it, `hero.lift` what he flies above
   it by. The height integrated is `airY` and `lift` is DERIVED off it every frame, which is what makes running
   off a ledge work. **`lift` is ZERO unless he is airborne**, so a teleport can never strand him on nothing.
 - **GRAVITY LIVES IN `tickClocks`** — a blow mid-air routes to `updateStun` and a death to `updateDeath`, and a
@@ -877,9 +878,9 @@ keystone that is a MECHANIC.**
   archer 130, mother 240, so `costAt` is set where the first node is three archers and the whole 21 is ~80k. ONE
   price per level whichever node it lands on.
 - **THE REST OF THE GAME READS FIELDS OFF ONE `Bonus`**, stamped by `game.applyTree` → `hero.applyPerks` (sheet +
-  resistances + perks in ONE call). **Nothing outside `passivetree.zig` walks the node list.** Five hero-local
-  readers: the roll's stamina, the roll's i-frames, the cast's cost, the cast's blow (`Hit.scaled`, the WHOLE
-  blow) and the guard's negation.
+  resistances + perks in ONE call). **Nothing outside `passivetree.zig` walks the node list** — every reader takes
+  a NAMED field off the stamped `Bonus` (`hero.perk`), and `game.zig` takes only what the hero cannot: the thrown
+  blow, the kill bounty, the bolt's cloud and the cull.
 - **SPENT AT A BONFIRE, READ ANYWHERE** — the book's last page is the wheel READ-ONLY, `drawPage` is ONE copy
   drawn by both, `spendable` the only difference.
 - **THE WALK IS GEOMETRIC** (`book.slotStep`'s law) — an ordinal walk steps between nodes nowhere near each other.
@@ -1093,7 +1094,7 @@ the respawn, so the spill plays under the YOU DIED card.
 ### The map is data, and the editor owns it
 
 `worlds/*.world` are versioned text files of authoring OPS (`worldfmt.zig`); `env.materialize` replays them.
-**Nothing about the world is authored in Zig.** Ops: `at`, `belt`, `disc`, `ring`, `line`, `ivy`, `edge`, `cover`,
+**Nothing about the world is authored in Zig.** Ops: `at`, `belt`, `disc`, `ring`, `line`, `ivy`,
 plus `zone`/`clear`/`runway`/`foe` tables. The world is **1000 m**.
 
 **`worlds/test_*.world` ARE BENCHES, NOT CONTENT** — one per thing being built, loaded with `--map
@@ -1119,7 +1120,7 @@ and never pin a test to a coordinate, yaw or count off `01_fallen_plain.world` �
   `opsCapped` counts what hit it and the editor's status line shows it, because a budget that bites real content
   has made the world quietly smaller.
 - **EVERY PROP PLANTS AT THE HEIGHT UNDER IT** — `uploadHeight` must run BEFORE `materialize`, and a sculpt stroke
-  re-materializes on RELEASE. **`buildSolids` RESETS** (`materialize` runs it twice; an appending version doubles
+  re-materializes on RELEASE. **`buildSolids` RESETS** (a sculpt runs it again over the same props; an appending version doubles
   every collider). Props carry the index of the op that placed them, which is what makes a generated rock
   selectable. **PROPS CAN LEAN** about the prop's GROUND ORIGIN, so the base stays planted and the culling sphere
   is unchanged. **AND `env.build` MAY RUN ONCE PER PROCESS** (`envBuilt` panics on the second).
@@ -1352,7 +1353,7 @@ seam.
   both. A TREE IS NOT IN THAT SET, and NEITHER IS THE FOG GATE — its collider IS the sheet, and the sheet is the one
   solid that thins (`veilThins`). `env.wallsNear` gathers the masonry within the boom's reach ONCE a frame and the
   probe reads that list, never the grid; the buffer is `MAX_NEAR` because the box is THREE cells a side and the
-  densest stand on the shipped map hands back 316.
+  densest 2x2 on the shipped map hands back 213 against `MAX_NEAR` 512.
 - **THE BOOM IS MARCHED OUT, NOT IN** — it stops at the NEAREST thing in the way, so a wall is never jumped for the
   open ground behind it, and the `GROUND_PROBE` step it stopped on is HALVED down (`PROBE_HALVINGS`) to a length
   within 8 mm of the face. A boom quantised to the rung walks in visible 0.25 m jerks.
@@ -1814,10 +1815,10 @@ is PURE (seconds and 0..1), so a test runs a day without a window. Weather does 
   behind the light by the strike's own distance (1.7–7.5 s) and arrives even if the rain has stopped.
 - **THE PICTURE IS ONE MESH** (`Rain`) — a cell of `STREAKS` one `CELL_H` tall, drawn STACKED up the camera's
   column and slid by a phase that WRAPS on the cell; the heavier storm draws the same cell again, offset.
-  **7,200 triangles, 4 draw calls gentle and 7 moderate**, test-pinned. Rain as PARTICLES would be thousands of
+  **16,000 triangles, 4 draw calls gentle and 7 moderate**, test-pinned. Rain as PARTICLES would be thousands of
   live motes at one immediate-mode sphere each.
-  - **WHAT COSTS IS FILL, AND FILL IS DENSITY** — streaks per square metre, which a test prints: **0.55/m² out
-    to 24 m**. Spreading the disc IS the thinning, since streaks are laid by area.
+  - **WHAT COSTS IS FILL, AND FILL IS DENSITY** — streaks per square metre, which a test prints: **0.40/m² out
+    to 40 m**. Spreading the disc IS the thinning, since streaks are laid by area.
   - **THE COLUMN STANDS ON THE MAN, NOT ON THE LENS, AND ITS RIM FADES.** Centred on the camera the disc reached
     24 m behind the lens and 19 ahead of the hero — the short side being the side the frame looks at; and it must
     be a point the camera does not ROTATE, since a lead off the camera's forward slides the sheet sideways at

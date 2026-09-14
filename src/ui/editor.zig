@@ -306,7 +306,7 @@ const DIGIT_KEYS: usize = DIGITS.len;
 const RAISE_SWATCH = ui.col(126, 100, 62, 255);
 const LOWER_SWATCH = ui.col(74, 60, 44, 255);
 /// The bar's teal, light and dark like the raise/lower pair — because these two work the CHAMBER and not the land.
-const ROOF_UP_SWATCH = ui.col(110, 178, 168, 255);
+const ROOF_UP_SWATCH = ui.LIVE;
 const ROOF_DOWN_SWATCH = ui.col(58, 96, 92, 255);
 const EVEN_SWATCH = ui.col(96, 100, 104, 255);
 const CLIFF_SWATCH = propart.CLIFF_ROCK;
@@ -634,7 +634,6 @@ comptime {
     }
     std.debug.assert(groundBrushes.len == @typeInfo(GroundBrush).@"enum".fields.len);
     std.debug.assert(caveBrushes.len == @typeInfo(CaveBrush).@"enum".fields.len);
-    // The two on the end are Reset and Erase.
     std.debug.assert(groundBrushes.len == GROUND_SOIL_0 + (wf.Soil.N - 1) + wf.Liquid.N + 3);
     for (0..wf.Liquid.N) |i| {
         std.debug.assert(liquidOf(@enumFromInt(GROUND_SOIL_0 + wf.Soil.N - 1 + i)).? == @as(wf.Liquid, @enumFromInt(i)));
@@ -983,7 +982,6 @@ fn aiTip(a: wf.FoeAi) [:0]const u8 {
     };
 }
 
-/// Smallest a clearing may be dragged or stepped down to, in metres.
 const MIN_CLEARING_R: f32 = 2.0;
 
 /// The payload is WHICH HANDLE: a rect's corner 0..3 in `(x,z) (x1,z) (x1,z1) (x,z1)` order, a room's corner index, or the clearing's rim. `null` — and `false` for the clearing — is the BODY.
@@ -1019,7 +1017,6 @@ fn hasSpan(k: wf.OpKind) bool {
     };
 }
 
-/// An op and the scatter block that belongs with it, before either is in a map.
 const Row = struct { o: wf.Op, s: wf.Scatter };
 
 fn opAnchor(o: *const wf.Op, s: *const wf.Scatter) rl.Vector3 {
@@ -1031,7 +1028,6 @@ fn opAnchorAt(m: *const wf.Map, i: usize) rl.Vector3 {
     return opAnchor(&m.ops[i], m.scatAt(i));
 }
 
-/// A detached op and its block — the clipboard's pair, and what a duplicate is built from.
 fn translatePair(o: *wf.Op, s: *wf.Scatter, dx: f32, dz: f32) void {
     o.x += dx;
     o.z += dz;
@@ -1102,9 +1098,7 @@ pub const Editor = struct {
     groundTools: GroundTools = .cliffs,
     /// THE LEVEL HE WORKS ON, kept across layers: which surface the cursor lands on, which one a body placed here stands on, and whether the hill over every chamber is drawn. The Caves layer turns it on; nothing turns it off but him.
     under: bool = false,
-    /// `env.caveAny` as of this frame, so the brush strip can be filtered without a hand on the world.
     hasCave: bool = false,
-    /// Where an Entrance stroke began, so its floor can grade down from the ground it started on.
     entranceFrom: ?rl.Vector3 = null,
     caveStroke: bool = false,
     /// A CARVE SOLVES ITS OWN FLOOR: where the stepper's floor cannot roof the hill at the click, the stroke takes `caves.fitFloor` instead and says so. On, because the arithmetic is the last thing left for the author to do.
@@ -1172,9 +1166,7 @@ pub const Editor = struct {
     marquee: bool = false,
     hover: Hover = .none,
     hoverLive: bool = false,
-    /// The cliff piece the gizmo pass coloured this frame, for the status line's numbers.
     seatRead: ?cliffseat.Seat = null,
-    /// The scale a stamped cliff piece is placed at in the Props layer.
     cliffScale: f32 = 1,
     /// The base the Level brush floods a body to, in metres over the datum; the sheet rides `env.WATER_SKIM` above it.
     waterLevel: f32 = 0,
@@ -1246,7 +1238,6 @@ pub const Editor = struct {
     status: [ui.MSG_CAP]u8 = undefined,
     statusLen: usize = 0,
     statusT: f32 = 0,
-    /// Set by the panel's own button; the key handler is the one place that turns it into an action.
     sparWanted: bool = false,
 
     pub fn auditioning(self: *const Editor) bool {
@@ -1353,7 +1344,6 @@ pub const Editor = struct {
         self.say(std.fmt.bufPrint(&buf, fmt, args) catch fmt);
     }
 
-    /// THE CREATURE THE FIGHT IS AGAINST: the one selected if there is one, else the one the brush is holding.
     pub fn sparTarget(self: *const Editor, m: *const wf.Map) ?wf.FoeKind {
         if (self.selUnit) |s| switch (s) {
             .foe => |i| if (i < m.nfoes) return m.foes[i].kind,
@@ -1450,7 +1440,6 @@ pub const Editor = struct {
             "SURFACE - the land as the player sees it");
     }
 
-    /// The Ground layer's brushes work the chamber floor: underground, and there is a chamber to work.
     fn floorSculpting(self: *const Editor) bool {
         return self.under and self.hasCave;
     }
@@ -1575,7 +1564,6 @@ pub const Editor = struct {
         return under and self.hasCave and !caves.sampleAt(caves.fieldsOf(m), x, z).hollow();
     }
 
-    /// Whether a body placed here stands in the chamber under the cursor.
     fn underAt(self: *const Editor, m: *const wf.Map, x: f32, z: f32) bool {
         return self.under and caves.sampleAt(caves.fieldsOf(m), x, z).hollow();
     }
@@ -1743,7 +1731,6 @@ pub const Editor = struct {
         return envmod.groundY();
     }
 
-    /// The height of the level's surface here — the chamber floor underground where there is one, the land otherwise.
     fn levelHeight(self: *const Editor, x: f32, z: f32) f32 {
         if (self.world) |w| return w.surfaceY(x, z, self.under);
         return envmod.groundY();
@@ -2602,9 +2589,6 @@ pub const Editor = struct {
         }
     }
 
-    /// BACK TO BARE FLOOR, EVERY LAYER AT ONCE: the ground to the datum with no feather, the cliff flags, the cave, the
-    /// water, the soil, and everything standing in the disc. Zones, locations, arenas and clearings stay — a disc cannot
-    /// say which part of a rectangle to take.
     /// The cliff piece whose footprint holds the cursor, nearest foot first.
     fn cliffUnder(env: *const envmod.Env, g: rl.Vector3) ?*const envmod.Prop {
         var best: ?*const envmod.Prop = null;
@@ -4004,7 +3988,6 @@ pub const Editor = struct {
         }
     }
 
-    /// The window close button and Alt+F4 come in from the main loop, not from a widget.
     pub fn requestQuit(self: *Editor) void {
         self.request(.quit);
     }
@@ -4636,8 +4619,8 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .shieldman => ui.col(176, 178, 190, 255),
         .greatsword => ui.col(214, 216, 232, 255),
         .shade => ui.col(138, 116, 208, 255),
-        .mourner => ui.col(174, 162, 194, 255),
-        .slumber_bloom => ui.col(142, 152, 212, 255),
+        .mourner => hud.ailTint(.stupefy),
+        .slumber_bloom => hud.ailTint(.sleep),
         .cinder_wake => ui.col(226, 116, 52, 255),
         .rotgorger => ui.col(148, 132, 86, 255),
         .birchwight => ui.col(206, 202, 190, 255),
@@ -4670,7 +4653,6 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
 }
 
 var gizmoWorld: ?*const envmod.Env = null;
-/// The level a gizmo is projected onto: the chamber floor where there is one, else the land. `draw3D` sets it per body off the body's own `under`.
 var gizmoUnder: bool = false;
 /// The frustum `gizmoShows` culls against, set once per `draw3D`. Null leaves every gizmo drawn (tests, the shot harness).
 var gizmoView: ?envmod.View = null;
@@ -4687,7 +4669,6 @@ fn gizmoShows(at: rl.Vector3, rad: f32) bool {
     return vw.visible(at, rad + GIZMO_RELIEF, envmod.GROUND_HALF);
 }
 
-/// The same test where the caller has no lifted point yet, and one tap is the whole saving.
 fn gizmoShowsAt(x: f32, z: f32, rad: f32) bool {
     if (gizmoView == null) return true;
     return gizmoShows(liftAt(x, z, 0), rad);
@@ -4929,7 +4910,7 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
     ui.panel(ctx, ui.rect(0, 0, sw, BARS_H), null);
     var row = BarRow{ .ctx = ctx, .x = 8 };
     if (row.verb(.new, "New - start an empty map (Ctrl+N)")) ed.request(.new);
-    if (row.verb(.open, "Open - a map from worlds/ (Ctrl+O)")) ed.request(.open);
+    if (row.verb(.open, "Open - a map from " ++ wf.DIR ++ "/ (Ctrl+O)")) ed.request(.open);
     if (row.verb(.save, "Save - write the map to disk (Ctrl+S)")) _ = ed.saveNow(m);
     if (row.verb(.saveas, "Save As - write it under a new name (Ctrl+Shift+S)")) {
         ed.nameLen = 0;
@@ -6403,7 +6384,7 @@ const EDIT_HOUR_RATE: f32 = 6.0;
 const EDIT_HOUR_FAST: f32 = 24.0;
 
 const CRIBS = [_][:0]const u8{
-    "LMB brush   Shift+LMB marquee   RMB menu / deselect, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   U level   Ctrl+Z/Y undo   Ctrl+C/X/V copy   Ctrl+A all   Del delete   R re-roll   G grid   [ ] size   ,/. time   Ctrl+S save   F5 play   F6 fight one   Esc back",
+    "LMB brush   Shift+LMB marquee   RMB menu / deselect, drag rotates   wheel zoom   WASD+arrows pan   Tab layer   U level   Ctrl+Z/Y undo   Ctrl+C/X/V copy   Ctrl+A all   Del delete   R re-roll   G grid   [ ] size   ,/. time   I inside   Ins split wall   Ctrl+S save   Ctrl+Shift+S save as   Ctrl+N new   Ctrl+O open   F5 play   F6 fight one   Esc back",
     "LMB brush   Shift+LMB marquee   RMB menu/rotate   wheel zoom   WASD pan   Tab layer   U level   Ctrl+Z undo   Ctrl+C/V copy   Del delete   G grid   [ ] size   ,/. time   F5 play   F6 fight one   Esc back",
     "LMB brush   Shift+LMB marquee   RMB menu/rotate   wheel zoom   WASD pan   Tab layer   Ctrl+Z undo   Del delete   G grid   F5 play   F6 fight one",
     "LMB brush   Shift+LMB marquee   RMB menu, drag rotates   wheel zoom   WASD pan   Tab layer   ,/. time",
@@ -6807,7 +6788,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             const isNew = ed.modal == .new_map;
             const box = ui.beginModal(ctx, 460, 180, if (isNew) "New map" else "Save map as");
             hud.mono("name", box.x + DLG_PAD, box.y + 58, hud.MONO, ui.LABEL);
-            _ = ui.textField(ctx, ui.rect(box.x + DLG_PAD, box.y + 82, 412, 30), &ed.nameBuf, &ed.nameLen, KB_FILE_NAME, true, "The file name. It lands in worlds/ with .world on the end");
+            _ = ui.textField(ctx, ui.rect(box.x + DLG_PAD, box.y + 82, 412, 30), &ed.nameBuf, &ed.nameLen, KB_FILE_NAME, true, "The file name. It lands in " ++ wf.DIR ++ "/ with " ++ wf.EXT ++ " on the end");
             var buf: [wf.PATH_CAP]u8 = undefined;
             const p = wf.pathFor(&buf, ed.nameBuf[0..ed.nameLen]);
             var pz: [wf.PATH_CAP + 4]u8 = undefined;
@@ -6827,7 +6808,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             var labels: [wf.MAX_FILES][:0]const u8 = undefined;
             for (0..listing.n) |i| labels[i] = listing.name(i);
             if (listing.n == 0) {
-                hud.mono("no maps in worlds/", box.x + DLG_PAD, box.y + 62, hud.MONO, ui.LABEL);
+                hud.mono("no maps in " ++ wf.DIR ++ "/", box.x + DLG_PAD, box.y + 62, hud.MONO, ui.LABEL);
             } else if (ui.list(ctx, ui.rect(box.x + DLG_PAD, box.y + 54, 412, 258), labels[0..listing.n], ed.fileSel, &ed.fileScroll, "The maps in worlds/. Click one, then Open")) |i| {
                 ed.fileSel = i;
             }
@@ -7421,7 +7402,7 @@ fn drawScriptModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, confirm: bool) void {
             var t = wf.Trigger{};
             var nb: [wf.ID_CAP]u8 = undefined;
             const nm = std.fmt.bufPrint(&nb, "trig{d}", .{m.ntrigs + 1}) catch "trig";
-            @memcpy(t.id[0..@min(nm.len, wf.ID_CAP)], nm[0..@min(nm.len, wf.ID_CAP)]);
+            wf.setNameIn(&t.id, nm);
             t.conds[0] = .{ .kind = .always };
             t.nconds = 1;
             t.nacts = 0;
@@ -7461,8 +7442,7 @@ fn drawScriptModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, confirm: bool) void {
     ry += hud.monoLineH(hud.MONO) + 2;
     if (nameField(ed, ctx, rx, ry, rw, &ed.trigNameBuf, &ed.trigNameLen, t.label(), KB_TRIG_ID, ed.modal == .script, "What this trigger is called. Spaces and # become _")) |typed| {
         ed.bankTyping(m, KB_TRIG_ID);
-        t.id = [_]u8{0} ** wf.ID_CAP;
-        @memcpy(t.id[0..@min(typed.len, wf.ID_CAP)], typed[0..@min(typed.len, wf.ID_CAP)]);
+        wf.setNameIn(&t.id, typed);
         ed.dirty = true;
     }
     ry += 32;
@@ -7601,6 +7581,13 @@ fn coinName(ed: *Editor, m: *wf.Map, comptime what: []const u8) ?u16 {
     var i: usize = 1;
     while (i < 100) : (i += 1) {
         const nm = std.fmt.bufPrint(&nb, what ++ "{d}", .{i}) catch return null;
+        const taken = if (comptime std.mem.eql(u8, what, "flag"))
+            m.findFlag(nm) != null
+        else if (comptime std.mem.eql(u8, what, "counter"))
+            m.findCounter(nm) != null
+        else
+            m.findTimer(nm) != null;
+        if (taken) continue;
         const got = (if (comptime std.mem.eql(u8, what, "flag"))
             m.internFlag(nm)
         else if (comptime std.mem.eql(u8, what, "counter"))

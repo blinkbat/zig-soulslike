@@ -207,8 +207,8 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     const perk = v.tree.bonus();
     const sheet = sheetOf(l, perk);
     const tier = l.tier;
-    const light = heromod.weigh(if (bow) heromod.arrowBlow(l.ammo, false, perk) else heromod.ATK_LIGHT_HIT, row, sheet, tier);
-    const heavy = heromod.weigh(if (bow) heromod.arrowBlow(l.ammo, true, perk) else heromod.ATK_HEAVY_HIT, row, sheet, tier);
+    const light = if (bow) heromod.bowBlow(l.ammo, false, perk, row, sheet, tier) else heromod.weigh(heromod.ATK_LIGHT_HIT, row, sheet, tier);
+    const heavy = if (bow) heromod.bowBlow(l.ammo, true, perk, row, sheet, tier) else heromod.weigh(heromod.ATK_HEAVY_HIT, row, sheet, tier);
     var d: [ND]f32 = undefined;
     d[@intFromEnum(Der.light)] = if (attacks) light.dmg else 0;
     d[@intFromEnum(Der.heavy)] = if (attacks) heavy.dmg else 0;
@@ -1707,9 +1707,7 @@ fn armInSocket(w: item.Wear) ?heromod.Armament {
 }
 
 /// STANCE comes off the HEAVY: a light stroke carries none (`hero.ATK_LIGHT_HIT`), and the row would read 0.
-fn setBlow(d: *Dials, lightHit: combat.Hit, heavyHit: combat.Hit, row: item.Arm, sheet: stats.Sheet, tier: u8) void {
-    const lo = heromod.weigh(lightHit, row, sheet, tier);
-    const hi = heromod.weigh(heavyHit, row, sheet, tier);
+fn setBlow(d: *Dials, lo: combat.Hit, hi: combat.Hit) void {
     d.set(.dmg_light, lo.dmg);
     d.set(.dmg_heavy, hi.dmg);
     d.set(.poise, hi.poise);
@@ -1760,10 +1758,11 @@ fn dialsOf(k: ?item.Kind, socket: ?item.Wear, v: View) Dials {
         .none, .bind => {},
         .arm => |a| {
             if (a.slot == .hand_bow) {
-                setBlow(&d, heromod.arrowBlow(v.quiver.sel, false, perk), heromod.arrowBlow(v.quiver.sel, true, perk), a, v.sheet.*, v.tierOf(.bow));
+                setBlow(&d, heromod.bowBlow(v.quiver.sel, false, perk, a, v.sheet.*, v.tierOf(.bow)), heromod.bowBlow(v.quiver.sel, true, perk, a, v.sheet.*, v.tierOf(.bow)));
                 d.set(.swing, heromod.drawSecs(true, a));
             } else if (heromod.bladeForWear(a.slot)) |b| {
-                setBlow(&d, heromod.ATK_LIGHT_HIT, heromod.ATK_HEAVY_HIT, a, v.sheet.*, v.tierOf(armInSocket(a.slot) orelse .sword));
+                const tier = v.tierOf(armInSocket(a.slot) orelse .sword);
+                setBlow(&d, heromod.weigh(heromod.ATK_LIGHT_HIT, a, v.sheet.*, tier), heromod.weigh(heromod.ATK_HEAVY_HIT, a, v.sheet.*, tier));
                 d.set(.swing, heromod.swingSecs(b, true, a));
             }
             if (a.venom > 0) d.set(.venom, a.venom);
@@ -2018,7 +2017,6 @@ fn cardBoxIn(col: Box, v: View, f: Facing, says: [:0]const u8) Box {
     return .{ .x = col.x, .y = col.y, .w = col.w, .h = @min(want, room) };
 }
 
-/// The piece in the socket under the cursor, read like a shop tag: its name, its tags, its dials by section.
 fn drawGearCard(box: Box, v: View, f: Facing, says: [:0]const u8) void {
     const inner = panel(box, "");
     const d = dialsOf(f.now, f.socket, v);

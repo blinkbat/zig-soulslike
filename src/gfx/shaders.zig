@@ -1104,7 +1104,9 @@ pub const skyFS =
     \\  float d0 = mix(0.9993, 0.99855, stars);
     \\  float d1 = mix(0.9998, 0.99925, stars);
     \\  col += skyDisc*smoothstep(d0, d1, sunAmt);
-    \\  col += skyDisc*pow(sunAmt, 900.0)*0.22*stars;                  // …and the lunar corona around it
+    \\  // …and the lunar corona around it. Behind the night gate: a 900-power over the whole sky costs two
+    \\  // transcendentals a fragment, and by day it is multiplied by a `stars` of 0.
+    \\  if (stars > 0.002) col += skyDisc*pow(sunAmt, 900.0)*0.22*stars;
     \\  if (ray.y > 0.0){
     \\    vec2 cp = ray.xz/(ray.y + 0.32);          // low deck: streaks reach the horizon
     \\    float cl = fbm(cp*vec2(1.1,2.2) + vec2(3.1,-6.7));

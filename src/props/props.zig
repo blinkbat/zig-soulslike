@@ -161,7 +161,7 @@ pub const Kind = enum(u8) {
     bracket,
     glowcap,
     sporepod,
-    // (`enumFromName`/`@tagName`), never by ordinal. What IS ordinal-locked is every `[NK]` table in this file: `INFO` is comptime-pinned row for row (`INFO[i].kind == i`), so a kind added anywhere but beside its own row is a compile error.
+    // A kind may be added anywhere: the map file names it (`enumFromName`/`@tagName`), never by ordinal. What IS ordinal-locked is every `[NK]` table in this file: `INFO` is comptime-pinned row for row (`INFO[i].kind == i`), so a kind added anywhere but beside its own row is a compile error.
     giltarch,
     muqarnas,
     giltdome,
@@ -1463,7 +1463,7 @@ pub const INFO = [NK]Info{
     .{ .kind = .wildflowers, .build = flora.wildflowersMesh, .bound = 1.5, .top = 0.65, .view = 105, .flora = true, .casts = false },
     .{ .kind = .ivy, .build = flora.ivyMesh, .bound = 2.4, .top = 2.0, .view = 150, .flora = true, .casts = false },
     // BOLE THEN CROWN: one cylinder cannot be narrow at the foot and wide at the boughs. Sized off `bigTreeMesh`'s own numbers.
-    // BOLE AND BUTTRESS ROOTS: each big tree throws six root flares a metre tall and half a metre out, at its own bearings.
+    // BOLE AND BUTTRESS ROOTS: each big tree throws seven root flares (`propwood.rootsInto`'s `n`) a metre tall and half a metre out, at its own bearings.
     .{ .kind = .bigtree, .build = wood.bigTree1, .bound = 13.5, .top = 11.0, .view = FAR, .parts = &.{
         .{ .r = 0.95, .h = 6.0 },
         .{ .ax = -0.95, .az = -0.60, .bx = -1.50, .bz = -0.85, .r = 0.20, .h = 1.3 },
@@ -1701,10 +1701,10 @@ pub const INFO = [NK]Info{
         .{ .ax = -palace.GATE_PIER_X, .bx = -palace.GATE_PIER_X, .r = palace.GATE_PIER_HALF + 0.10, .h = palace.GATE_SPRING, .flat = true },
         .{ .ax = palace.GATE_PIER_X, .bx = palace.GATE_PIER_X, .r = palace.GATE_PIER_HALF + 0.10, .h = palace.GATE_SPRING, .flat = true },
     } },
-    .{ .kind = .palacehall, .build = palace.palaceHallMesh, .bound = 13.2, .top = palace.HALL_TOP, .view = FAR, .solid = true, .parts = &HALL_PARTS },
+    .{ .kind = .palacehall, .build = palace.palaceHallMesh, .bound = 16.0, .top = palace.HALL_TOP, .view = FAR, .solid = true, .parts = &HALL_PARTS },
     .{ .kind = .emeraldvault, .build = palace.emeraldVaultMesh, .bound = 13.6, .top = palace.VAULT_TOP, .view = FAR, .solid = true, .parts = &VAULT_RING, .light = .{ .y = 1.95, .col = palace.GEM_LIGHT, .radius = 12.0, .flicker = 0.04 } },
     .{ .kind = .palacestair, .build = palace.palaceStairMesh, .bound = palace.PSTAIR_RUN + 0.8, .top = palace.PSTAIR_SEG, .view = 320, .stack = palace.PSTAIR_SEG, .flight = .{ .run = palace.PSTAIR_RUN, .halfW = palace.PSTAIR_HALF, .treads = palace.PSTAIR_TREADS }, .surf = .stone },
-    .{ .kind = .palacewall, .build = palace.palaceWallMesh, .bound = palace.PWALL_HALF + 1.8, .top = palace.PWALL_TOP, .view = FAR, .solid = true, .parts = &.{
+    .{ .kind = .palacewall, .build = palace.palaceWallMesh, .bound = palace.PWALL_HALF + 5.0, .top = palace.PWALL_TOP, .view = FAR, .solid = true, .parts = &.{
         .{ .ax = -palace.PWALL_HALF + 0.6, .bx = palace.PWALL_BREACH_X, .r = 0.60, .h = palace.PWALL_H + 0.40, .flat = true },
         .{ .ax = palace.PWALL_BREACH_X, .bx = palace.PWALL_HALF - 0.58, .r = 0.58, .h = palace.PWALL_BREACH_H + 0.40, .flat = true },
     } },
@@ -1713,7 +1713,7 @@ pub const INFO = [NK]Info{
         .{ .ax = -2.30, .bx = 2.55, .r = 0.88, .h = 1.60 },
         .{ .ax = palace.PFALL_CAP_X, .bx = palace.PFALL_CAP_X, .r = 1.15, .h = 1.00, .flat = true },
     } },
-    .{ .kind = .palaceterrace, .build = palace.palaceTerraceMesh, .bound = palace.TERR_R + 1.4, .top = palace.TERR_TOP, .view = FAR, .solid = true, .parts = &TERR_PARTS, .decks = &.{.{ .r = palace.TERR_IN * 0.99, .y = palace.TERR_DECK }} },
+    .{ .kind = .palaceterrace, .build = palace.palaceTerraceMesh, .bound = palace.TERR_R + 2.5, .top = palace.TERR_TOP, .view = FAR, .solid = true, .parts = &TERR_PARTS, .decks = &.{.{ .r = palace.TERR_IN * 0.99, .y = palace.TERR_DECK }} },
     .{ .kind = .watcheridol, .build = palace.watcherIdolMesh, .bound = palace.IDOL_TOP + 0.8, .top = palace.IDOL_TOP, .view = FAR, .solid = true, .parts = &.{.{ .r = 2.30, .h = 2.15, .flat = true }} },
     .{ .kind = .sunobelisk, .build = palace.sunObeliskMesh, .bound = palace.OBEL_TOP + 0.8, .top = palace.OBEL_TOP, .view = FAR, .parts = &.{.{ .r = 1.10, .h = palace.OBEL_H, .flat = true }} },
     .{ .kind = .starbasin, .build = palace.starBasinMesh, .bound = palace.BASIN_R * 2.0, .top = palace.BASIN_TOP, .view = 280, .parts = circleParts(2.95, 1.25) },

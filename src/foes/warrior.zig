@@ -984,7 +984,8 @@ pub const Warrior = struct {
             b.hit = combat.guardChip(blade.hit, combat.GUARD_NEGATE);
 
         } else if (self.hyperArmor()) {
-            b.hit = .{ .dmg = blade.hit.dmg, .elem = blade.hit.elem };
+            b.hit.poise = 0;
+            b.hit.stance = 0;
         }
         const hyper = !blocked and self.hyperArmor();
         const poiseWas = self.vit.poise;
@@ -1412,11 +1413,7 @@ pub const Warrior = struct {
                 .{ .t = 1, .v = 0 },
             }, self.t / combat.foeStunDur(heavy));
         }
-        return switch (self.state) {
-            .stunlight => foe.stunCurve(self.t, false),
-            .stunheavy, .guardbreak => foe.stunCurve(self.t, true),
-            else => 0,
-        };
+        return if (self.state == .guardbreak) foe.stunCurve(self.t, true) else 0;
     }
 
     fn kneelAmount(self: *const Warrior) f32 {
@@ -1752,11 +1749,7 @@ pub const Muster = struct {
     }
 
     pub fn update(self: *Muster, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
-        var blow: ?foe.Blow = null;
-        for (self.live()) |*w| {
-            if (w.update(dt, w.threat.aim(hero), bounds, blade)) |h| foe.worseBlow(&blow, h, w.pos, &w.threat);
-        }
-        return blow;
+        return foe.groupBlow(self.live(), dt, hero, bounds, blade);
     }
 };
 

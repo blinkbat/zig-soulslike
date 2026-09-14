@@ -111,6 +111,7 @@ comptime {
     std.debug.assert(std.mem.indexOf(u8, glsl.sceneFS, "lightPos[16]") != null);
     std.debug.assert(std.mem.indexOf(u8, glsl.sceneFS, "lightCol[16]") != null);
     std.debug.assert(std.mem.indexOf(u8, glsl.sceneFS, "lightRad[16]") != null);
+    std.debug.assert(std.mem.indexOf(u8, glsl.sceneFS, "lightUnder[16]") != null);
 }
 pub const Light = struct {
     pos: rl.Vector3,

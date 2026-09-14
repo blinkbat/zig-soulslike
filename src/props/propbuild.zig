@@ -226,7 +226,7 @@ pub const Storey = struct {
     }
 };
 
-/// THE FIRST TWO DID NOT MOVE WHEN THE SHAFT DOUBLED: the shipped map's flights are authored against 4.69 and 11.90 (`worlds/01_fallen_plain.world`), and the comptime block below is what says the two still agree.
+/// THE FIRST TWO DID NOT MOVE WHEN THE SHAFT DOUBLED, so a map's authored flights still meet them.
 pub const WATCH_STOREYS = [_]Storey{
     .{ .y = 4.62, .hz = WATCH_HATCH_Z },
     .{ .y = 11.83, .hz = -WATCH_HATCH_Z },

@@ -354,11 +354,7 @@ pub const Mastodon = struct {
     }
     pub fn navWant(self: *const Mastodon, hero: rl.Vector3) ?rl.Vector3 {
         return switch (self.state) {
-            .idle, .walk => blk: {
-                if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) break :blk hero;
-                if (foe.postAim(self)) |go| break :blk go;
-                break :blk if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) foe.tetherFor(self) else null;
-            },
+            .idle, .walk => foe.navChase(self, hero, AGGRO_R, HOME_R),
             else => null,
         };
     }
@@ -447,8 +443,9 @@ pub const Mastodon = struct {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 if (self.t < BITE_WIND) self.faceToward(hero, dt);
                 const s = self.t - BITE_WIND;
+                const lunge = mathx.sliceIn(self.t, dt, BITE_WIND, BITE_WIND + BITE_STRIKE);
+                if (lunge > 0) mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), BITE_LUNGE * self.scale * lunge / BITE_STRIKE, bounds);
                 if (s >= 0 and s < BITE_STRIKE) {
-                    mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), BITE_LUNGE * self.scale * dt / BITE_STRIKE, bounds);
                     if (s >= BITE_STRIKE * BITE_IMPACT_K) self.tryFront(hero, BITE_HIT, BITE_R, BITE_FRONT_DOT);
                 }
                 if (s >= BITE_STRIKE and s - dt < BITE_STRIKE) {
@@ -511,7 +508,7 @@ pub const Mastodon = struct {
             },
             .lunge_air => {
                 const u = mathx.clampF(self.t / LUNGE_AIR, 0, 1);
-                const step = mathx.lenV(self.launch) / LUNGE_AIR * dt;
+                const step = mathx.lenV(self.launch) * (u - mathx.clampF((self.t - dt) / LUNGE_AIR, 0, 1));
                 mathx.stepXZ(&self.pos, mathx.normV(self.launch), step, bounds);
                 moved = step;
                 self.lift = LUNGE_UP * mathx.sinf(std.math.pi * u) * self.scale;

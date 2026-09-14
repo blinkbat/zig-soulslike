@@ -317,9 +317,7 @@ pub const Mimic = struct {
 
     pub fn navWant(self: *const Mimic, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle and self.state != .walk) return null;
-        if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
-        if (foe.postAim(self)) |go| return go;
-        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) foe.tetherFor(self) else null;
+        return foe.navChase(self, hero, AGGRO_R, HOME_R);
     }
 
     fn faceToward(self: *Mimic, at: rl.Vector3, dt: f32) void {
@@ -416,9 +414,10 @@ pub const Mimic = struct {
                 if (self.t < BITE_WIND) self.faceToward(hero, dt);
                 self.speed = 0;
                 self.lid = self.gapeAmt();
-                if (self.t >= BITE_WIND * BITE_LUNGE_FROM and self.t < BITE_WIND + BITE_STRIKE) {
-                    const span = BITE_WIND * (1.0 - BITE_LUNGE_FROM) + BITE_STRIKE;
-                    const step = BITE_LUNGE * self.scale * (dt / span);
+                const span = BITE_WIND * (1.0 - BITE_LUNGE_FROM) + BITE_STRIKE;
+                const lunge = mathx.sliceIn(self.t, dt, BITE_WIND * BITE_LUNGE_FROM, BITE_WIND + BITE_STRIKE);
+                if (lunge > 0) {
+                    const step = BITE_LUNGE * self.scale * (lunge / span);
                     mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), step, bounds);
                     moved = step;
                 }

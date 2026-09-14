@@ -666,12 +666,14 @@ pub const Mage = struct {
         self.enter(if (heavy) .stunheavy else .stunlight);
         self.yelped = true;
         self.cup = 0;
+        self.lobbed = false;
     }
 
     fn enterDeath(self: *Mage) void {
         if (self.state == .dead) return;
         self.enter(.dead);
         self.cup = 0;
+        self.lobbed = false;
         self.justDied = true;
     }
 

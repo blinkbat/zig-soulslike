@@ -247,11 +247,7 @@ pub const Gorger = struct {
     pub fn navWant(self: *const Gorger, quarry: rl.Vector3) ?rl.Vector3 {
         return switch (self.state) {
             .rush => self.mealAt,
-            .idle, .prowl => blk: {
-                if (foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R) <= AGGRO_R) break :blk quarry;
-                if (foe.postAim(self)) |go| break :blk go;
-                break :blk if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
-            },
+            .idle, .prowl => foe.navChase(self, quarry, AGGRO_R, HOME_R),
             else => null,
         };
     }

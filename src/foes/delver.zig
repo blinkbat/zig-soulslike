@@ -382,14 +382,7 @@ pub const Delver = struct {
         return foe.markOn(self.xf[HEAD], v3(0, 0.06, 0.10));
     }
     pub fn topWorld(self: *const Delver) rl.Vector3 {
-        var top = self.centerWorld();
-        for (HULLS) |hull| {
-            const xf = self.xf[hull.bone];
-            const c = foe.markOn(xf, hull.center);
-            const r = hull.radii;
-            top.y = @max(top.y, c.y + foe.hullHalfY(xf, r));
-        }
-        return top;
+        return foe.hullsTop(self.centerWorld(), &self.xf, &HULLS);
     }
     pub fn hurtRadius(self: *const Delver) f32 {
         const center = self.centerWorld();
@@ -454,9 +447,7 @@ pub const Delver = struct {
     pub fn navWant(self: *const Delver, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .walk and self.state != .idle) return null;
         if (self.airborne()) return null;
-        if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
-        if (foe.postAim(self)) |go| return go;
-        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
+        return foe.navChase(self, hero, AGGRO_R, HOME_R);
     }
 
     fn faceToward(self: *Delver, target: rl.Vector3, rate: f32, dt: f32) void {
@@ -1000,10 +991,7 @@ pub const Delver = struct {
     }
 
     fn hullTouches(self: *const Delver, a: rl.Vector3, b: rl.Vector3, radius: f32) bool {
-        for (HULLS) |hull| {
-            if (foe.hullTouches(self.xf[hull.bone], hull.center, hull.radii, a, b, radius)) return true;
-        }
-        return false;
+        return foe.hullsTouch(&self.xf, &HULLS, a, b, radius);
     }
     pub fn tryHit(self: *Delver, blade: foe.Blade) void {
         if (self.state == .dead) return;
@@ -1411,7 +1399,6 @@ fn rockMesh() rl.Mesh {
     return b.toMesh();
 }
 
-/// The same stone as a model, for the arrow pool to draw in flight.
 pub fn rockModel(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     rockInto(&b);

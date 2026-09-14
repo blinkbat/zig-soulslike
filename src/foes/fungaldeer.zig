@@ -498,9 +498,7 @@ pub const Deer = struct {
     pub fn navWant(self: *const Deer, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle and self.state != .move and self.state != .flee) return null;
         if (self.state == .flee) return mathx.addV(self.pos, mathx.scaleV(mathx.dirXZ(self.pos, hero), -1.0));
-        if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
-        if (foe.postAim(self)) |go| return go;
-        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
+        return foe.navChase(self, hero, AGGRO_R, HOME_R);
     }
 
     fn faceToward(self: *Deer, at: rl.Vector3, dt: f32) void {
@@ -595,8 +593,9 @@ pub const Deer = struct {
 
         if (self.state == .butt) {
             if (self.t < BUTT_WIND) self.faceToward(hero, dt);
+            const drive = mathx.sliceIn(self.t, dt, BUTT_WIND, BUTT_WIND + BUTT_STRIKE);
+            if (drive > 0) mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), BUTT_DRIVE * self.scale * (drive / BUTT_STRIKE), bounds);
             if (self.t >= BUTT_WIND and self.t < BUTT_WIND + BUTT_STRIKE) {
-                mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), BUTT_DRIVE * self.scale * (dt / BUTT_STRIKE), bounds);
                 // Billed from the impact `toImpact` names, not the drive's first frame.
                 if (self.t >= BUTT_WIND + BUTT_STRIKE * BUTT_IMPACT_K) self.tryButt(hero);
             }
@@ -727,6 +726,7 @@ pub const Deer = struct {
         self.t = 0;
         self.heavyStun = heavy;
         self.yelped = true;
+        self.spat = false;
     }
 
     fn enterDeath(self: *Deer) void {
@@ -735,6 +735,7 @@ pub const Deer = struct {
         self.state = .dead;
         self.t = 0;
         self.justDied = true;
+        self.spat = false;
     }
 
     pub fn stagger(self: *Deer, heavy: bool) void {

@@ -407,7 +407,7 @@ pub const Bat = struct {
         self.startled = false;
         self.justDied = false;
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
-        defer grip.hold(&self.pos);
+        defer if (!self.warp) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
         if (grip.downed) self.stagger(true);
         self.vit.tick(dt);
@@ -630,7 +630,7 @@ pub const Bat = struct {
     }
 
     pub fn fedOn(self: *Bat, landed: bool) void {
-        if (self.state == .dead) return;
+        if (self.state == .dead or self.staggered()) return;
         if (!landed) {
             self.enter(.repelled);
             self.blinkCd = mathx.maxF(self.blinkCd, FEED_BLINK_LOCK);

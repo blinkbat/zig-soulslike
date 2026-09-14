@@ -104,7 +104,7 @@ const EMBER = rgba(252, 196, 84, 150);
 const EMBER_COOL = rgba(214, 92, 26, 90);
 const SPIT = rgba(176, 190, 150, 140);
 const SPIT_DRY = rgba(120, 138, 104, 110);
-const BLOOD = rgba(112, 22, 16, 235);
+const BLOOD = foe.BLOOD;
 /// **THE FAN IS WHAT OPENS A WOUND, NOT THE THROW.** At 0.8 m/s of fan against 2.6 of throw every drop went the same way and five frames on it was still one blob (`shots/29b`); the parry's shower reads because its tangential spread is the BIGGER number. Drag pays for the speed — 3.6/s, so it dies down inside a body-length.
 const BLOOD_SPRAY = foe.Spray{
     .fanLo = 0.6,  .fanHi = 3.8,
@@ -112,7 +112,7 @@ const BLOOD_SPRAY = foe.Spray{
     .lifeLo = 0.45, .lifeHi = 0.85,
     .rLo = 0.028,  .rHi = 0.055,
     .r1 = 0.008,   .col = BLOOD, .grav = foe.BLOOD_GRAV,
-    .col1 = rgba(52, 9, 7, 225), .stretch = foe.BLOOD_STRETCH, .splat = 3.0, .drag = foe.BLOOD_DRAG,
+    .col1 = foe.BLOOD_DEEP, .stretch = foe.BLOOD_STRETCH, .splat = 3.0, .drag = foe.BLOOD_DRAG,
 };
 const BLOOD_LIGHT = 9;
 const BLOOD_HEAVY = 18;
@@ -313,9 +313,7 @@ pub const Frog = struct {
 
     pub fn navWant(self: *const Frog, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .idle) return null;
-        if (foe.senseHero(&self.leash, self.pos, hero, AGGRO_R) <= AGGRO_R) return hero;
-        if (foe.postAim(self)) |go| return go;
-        return if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) self.home else null;
+        return foe.navChase(self, hero, AGGRO_R, HOME_R);
     }
 
     pub fn startHop(self: *Frog, to: rl.Vector3, bounds: f32, lunge: bool) void {

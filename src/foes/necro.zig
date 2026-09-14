@@ -533,10 +533,7 @@ pub const Necro = struct {
         return radius;
     }
     fn hullTouches(self: *const Necro, a: rl.Vector3, b: rl.Vector3, radius: f32) bool {
-        for (HULLS) |hull| {
-            if (foe.hullTouches(self.xf[hull.bone], hull.center, hull.radii, a, b, radius)) return true;
-        }
-        return false;
+        return foe.hullsTouch(&self.xf, &HULLS, a, b, radius);
     }
     pub fn bodyR(self: *const Necro) f32 {
         return BODY_R * self.scale;
@@ -546,14 +543,7 @@ pub const Necro = struct {
     }
     /// MEASURED OFF THE POSE, not off a stature fraction: a hop, a bow over a corpse and a collapse all move the crown, and a fixed height puts the lock and the camera solve where the body is not.
     pub fn topWorld(self: *const Necro) rl.Vector3 {
-        var top = self.centerWorld();
-        for (HULLS) |hull| {
-            const xf = self.xf[hull.bone];
-            const c = foe.markOn(xf, hull.center);
-            const r = hull.radii;
-            top.y = @max(top.y, c.y + foe.hullHalfY(xf, r));
-        }
-        return top;
+        return foe.hullsTop(self.centerWorld(), &self.xf, &HULLS);
     }
     pub fn alive(self: *const Necro) bool {
         return !self.gone;
@@ -836,7 +826,7 @@ pub const Necro = struct {
                 const side: f32 = if (self.seed < 0.5) 1.0 else -1.0;
                 const out = mathx.scaleV(f, -1.0);
                 const lat = mathx.scaleV(mathx.perpXZ(f), side);
-                if (dist < LEAP_R and self.leapCd <= 0) {
+                if (dist < LEAP_R and self.leapCd <= 0 and foe.canLeap(&self.root)) {
                     self.leapCd = LEAP_CD;
                     self.moveDir = mathx.normV(mathx.addV(out, mathx.scaleV(lat, 0.35)));
                     return self.enter(.leap);

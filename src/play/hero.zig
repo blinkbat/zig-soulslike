@@ -66,19 +66,22 @@ const SWORD = HELD;
 
 pub const PARENT = [N]i32{ -1, ROOT, SPINE, CHEST, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CHEST, SHL, ELL, CHEST, SHR, ELR, WRR };
 
+pub const HIP_Y: f32 = 0.530;
+pub const ANKLE_Y: f32 = 0.039;
+
 pub fn restHumanoid(hx: f32, sx: f32, stature: f32) [N]rl.Vector3 {
     var r: [N]rl.Vector3 = undefined;
-    r[ROOT] = v3(0, 0.530, 0);
+    r[ROOT] = v3(0, HIP_Y, 0);
     r[SPINE] = v3(0, 0.640, 0);
     r[CHEST] = v3(0, 0.760, 0);
     r[NECK] = v3(0, 0.815, 0);
     r[HEAD] = v3(0, 0.885, 0);
-    r[HIPL] = v3(hx, 0.530, 0);
+    r[HIPL] = v3(hx, HIP_Y, 0);
     r[KNEEL] = v3(hx, 0.285, 0);
-    r[ANKL] = v3(hx, 0.039, 0);
-    r[HIPR] = v3(-hx, 0.530, 0);
+    r[ANKL] = v3(hx, ANKLE_Y, 0);
+    r[HIPR] = v3(-hx, HIP_Y, 0);
     r[KNEER] = v3(-hx, 0.285, 0);
-    r[ANKR] = v3(-hx, 0.039, 0);
+    r[ANKR] = v3(-hx, ANKLE_Y, 0);
     r[SHL] = v3(sx, 0.818, 0);
     r[ELL] = v3(sx, 0.630, 0);
     r[WRL] = v3(sx, 0.485, 0);
@@ -383,12 +386,14 @@ pub fn fireTipped(h: combat.Hit) combat.Hit {
     return out;
 }
 
-pub fn arrowBlow(k: combat.ArrowKind, aimed: bool, perk: ptree.Bonus) combat.Hit {
+/// THE BOW'S ONE BLOW, asked by the shot, the card and the compare. The perks land BEFORE the row, where the sword's
+/// land after, so `TIER_FLAT` is unperked here and perked there; that asymmetry is a retune, not a bug, and is left alone.
+pub fn bowBlow(k: combat.ArrowKind, aimed: bool, perk: ptree.Bonus, row: item.Arm, sheet: statsmod.Sheet, tier: u8) combat.Hit {
     const base = (if (aimed) BOW_AIMED_HIT else BOW_QUICK_HIT).scaled(perk.bowDmg * perk.dmg);
-    return switch (k) {
+    return weigh(switch (k) {
         .plain => base,
         .fire => fireTipped(base),
-    };
+    }, row, sheet, tier);
 }
 
 pub fn arrowShot(k: combat.ArrowKind) archer.Shot {
@@ -751,7 +756,7 @@ pub fn suitOf(worn: Worn) Suit {
                     ch.fpFrac += c.fpFrac;
                     ch.spiritFp *= c.spiritFp;
                 },
-                else => {},
+                .none, .arm, .boon, .bind => {},
             }
         }
     }
@@ -790,7 +795,7 @@ pub fn boonsOnto(worn: Worn, sheet: *statsmod.Sheet) void {
         if (worn.at(@enumFromInt(f.value))) |k| {
             switch (item.equip(k)) {
                 .boon => |b| sheet.add(b.attr, b.n),
-                else => {},
+                .none, .arm, .plate, .charm, .bind => {},
             }
         }
     }
@@ -1241,7 +1246,7 @@ const STRAFE_SWAY = 0.012 * H;
 const STRAFE_LEAN = 2.5;
 const BACK_STRIDE = 0.85;
 
-pub const LEG_LEN = (0.530 - 0.039) * H;
+pub const LEG_LEN = (HIP_Y - ANKLE_Y) * H;
 const STRAFE_REACH = LEG_LEN * @sin(mathx.radians(STRAFE_ABD));
 const STRAFE_CYCLE = 2.0 * STRAFE_REACH / STRAFE_STANCE;
 pub const STRAFE_DIP = LEG_LEN - @sqrt((LEG_LEN - STRAFE_SINK) * (LEG_LEN - STRAFE_SINK) - STRAFE_REACH * STRAFE_REACH);
@@ -1326,8 +1331,8 @@ pub fn soleDepth(wx: []const rl.Matrix, patches: []const SolePatch) f32 {
 
 // Measured off `footMesh`: the sole cube spans z −0.05·H…+0.14·H, x ±0.0425·H, underside on the ankle plane.
 pub const BOOT_SOLE = [_]SolePatch{
-    .{ .bone = ANKL, .heel = 0.05 * H, .toe = 0.14 * H, .halfW = 0.0425 * H, .drop = 0.039 * H },
-    .{ .bone = ANKR, .heel = 0.05 * H, .toe = 0.14 * H, .halfW = 0.0425 * H, .drop = 0.039 * H },
+    .{ .bone = ANKL, .heel = 0.05 * H, .toe = 0.14 * H, .halfW = 0.0425 * H, .drop = ANKLE_Y * H },
+    .{ .bone = ANKR, .heel = 0.05 * H, .toe = 0.14 * H, .halfW = 0.0425 * H, .drop = ANKLE_Y * H },
 };
 
 pub fn strafeProt(ph: f32, lat: f32, m: f32) f32 {
@@ -2770,7 +2775,10 @@ pub const Hero = struct {
     }
 
     pub fn shotBlow(self: *const Hero) combat.Hit {
-        return weigh(arrowBlow(self.shotArrow, self.shotAimed, self.perk), self.drawRow(), self.sheet, self.tierOf(.bow));
+        return self.shotBlowOf(self.shotArrow, self.shotAimed);
+    }
+    pub fn shotBlowOf(self: *const Hero, k: combat.ArrowKind, aimed: bool) combat.Hit {
+        return bowBlow(k, aimed, self.perk, self.drawRow(), self.sheet, self.tierOf(.bow));
     }
     pub fn shotShaft(self: *const Hero) archer.Shot {
         return arrowShot(self.shotArrow);
@@ -3300,7 +3308,7 @@ pub const Hero = struct {
 
     fn refitBars(self: *Hero) void {
         self.refitHp();
-        refitPool(&self.stam.cur, &self.stam.max, self.sheet.stamina());
+        refitPool(&self.stam.cur, &self.stam.max, self.sheet.stamina() * self.perk.stamMax);
         refitPool(&self.fp.cur, &self.fp.max, fpMaxOf(self.sheet, self.worn, self.perk));
     }
 
@@ -4255,17 +4263,17 @@ pub const Hero = struct {
         const beat = t * REST_BEAT;
         const beatU = beat - @floor(beat);
         // Never a sine — a pick moves fast one way and drifts back.
-        const sweep = if (beatU < 0.32) mathx.lerpF(-1.0, 1.0, smoothstep01(beatU / 0.32)) else mathx.lerpF(1.0, -1.0, smoothstep01((beatU - 0.32) / 0.68));
+        const sweep = if (beatU < 0.32) mathx.lerpF(-1.0, 1.0, mathx.smoothstep(0, 1,beatU / 0.32)) else mathx.lerpF(1.0, -1.0, mathx.smoothstep(0, 1,(beatU - 0.32) / 0.68));
         const attack = mathx.maxF(0, 1.0 - beatU / 0.18);
         const breathe = 0.010 * H * mathx.sinf(t * 1.05);
         const lilt = 5.2 * mathx.sinf(t * 0.62) + 1.8 * mathx.sinf(t * 0.29 + 1.1);
         const facingDeg = mathx.degrees(self.facing);
         const shiftN = @floor(t / REST_SHIFT_EVERY);
-        const shiftU = smoothstep01((t - shiftN * REST_SHIFT_EVERY) / REST_SHIFT_DUR);
+        const shiftU = mathx.smoothstep(0, 1,(t - shiftN * REST_SHIFT_EVERY) / REST_SHIFT_DUR);
         const posWas = fretPosition(shiftN - 1.0);
         const posNow = fretPosition(shiftN);
         const fretAlong = mathx.lerpF(posWas, posNow, shiftU) + 0.0035 * mathx.sinf(t * 31.0) * (1.0 - attack) * (1.0 - shiftU * (1.0 - shiftU) * 4.0);
-        const glance = (1.0 - shiftU) * (1.0 - smoothstep01((t - shiftN * REST_SHIFT_EVERY) / (REST_SHIFT_DUR * 2.2)));
+        const glance = (1.0 - shiftU) * (1.0 - mathx.smoothstep(0, 1,(t - shiftN * REST_SHIFT_EVERY) / (REST_SHIFT_DUR * 2.2)));
 
         var wx: [N]rl.Matrix = undefined;
         wx[ROOT] = mul3(
@@ -4554,7 +4562,8 @@ pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, groundY: f32, ph: f32
             }
         }
         if (deepest >= groundY) break;
-        const ankW = rl.math.vector3Transform(v3(0, 0, 0), wx[ank]);
+        // The ankle matrix's translation column IS the joint, and this runs up to five passes a leg a frame.
+        const ankW = v3(wx[ank].m12, wx[ank].m13, wx[ank].m14);
         const lever = mathx.maxF(0.02 * wscale, mathx.lenXZ(mathx.subV(worst, ankW)));
         const step = mathx.degrees(std.math.asin(mathx.clampF((groundY - deepest) / lever, -1, 1)));
         pitch += if (worstZ > 0) -step else step;
@@ -4793,9 +4802,6 @@ const REST_POSITIONS = [_]f32{ 0.80, 0.735, 0.775, 0.69, 0.75, 0.655, 0.79, 0.71
 fn fretPosition(shift: f32) f32 {
     const i: usize = @intFromFloat(@mod(mathx.maxF(shift, 0), @as(f32, @floatFromInt(REST_POSITIONS.len))));
     return REST_POSITIONS[i];
-}
-fn smoothstep01(u: f32) f32 {
-    return mathx.smoothstep(0, 1, mathx.clampF(u, 0, 1));
 }
 
 /// A rotation from the images of the three local axes, in the convention the whole rig transforms by (`vector3Transform`): local X lands on `x`, Y on `y`, Z on `z`.
@@ -5163,8 +5169,7 @@ fn shankMesh() rl.Mesh {
 fn footMesh() rl.Mesh {
     var b = Builder.init();
     b.setMat(.leather);
-    // Boot: sole rests on the ground (ankle joint is ANKLE_Y=0.039 H up), toes forward +Z.
-    const ay = 0.039 * H;
+    const ay = ANKLE_Y * H;
     slab(&b, v3(0, -ay + 0.028 * H, 0.045 * H), v3(0.085 * H, 0.056 * H, 0.19 * H), BOOT);
     slab(&b, v3(0, -ay + 0.075 * H, -0.02 * H), v3(0.075 * H, 0.05 * H, 0.09 * H), BOOT);
     return b.toMesh();

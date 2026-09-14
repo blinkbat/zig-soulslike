@@ -6,6 +6,7 @@ const combat = @import("../play/combat.zig");
 const foe = @import("foe.zig");
 const wf = @import("../world/worldfmt.zig");
 const sfx = @import("../core/audio.zig");
+const art = @import("../props/propart.zig");
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -51,8 +52,9 @@ const CAP_DK = rgba(34, 20, 26, 255);
 const GILL = rgba(150, 132, 128, 255);
 const FLESH = rgba(52, 42, 40, 255);
 const FLESH_DK = rgba(31, 25, 25, 255);
-const MOTE = rgba(206, 112, 158, 105);
-const CORE = rgba(236, 172, 200, 70);
+// The warm half of the Mycelian light, the Bloom's own (`propart`): a retune there has to move the golem with it.
+const MOTE = art.BLOOM_GLOW;
+const CORE = art.BLOOM_CORE;
 const DISSOLVE = foe.Dissolve{ .rate = 54.0, .spread = 1.25, .rise = 0.70, .flake = MOTE };
 
 
@@ -186,7 +188,7 @@ pub const Golem = struct {
         var g = Golem{
             .pos = at,
             .home = at,
-            .facing = mathx.radians(yaw),
+            .facing = yaw,
             .seed = seed,
             .scale = scale * SCALE,
             .fxRng = foe.fxStream(seed, 51413.0, 0x60_1E),
@@ -267,6 +269,7 @@ pub const Golem = struct {
         self.t = 0;
         self.struck = false;
         self.lift = 0;
+        if (s == .stunlight or s == .stunheavy or s == .dead) self.lobFrom = null;
     }
 
     fn enterDeath(self: *Golem) void {
@@ -381,7 +384,7 @@ pub const Golem = struct {
             },
             .slam_air => {
                 const u = mathx.clampF(self.t / SLAM_AIR, 0, 1);
-                const step = mathx.lenV(self.launch) / SLAM_AIR * dt;
+                const step = mathx.lenV(self.launch) * (u - mathx.clampF((self.t - dt) / SLAM_AIR, 0, 1));
                 mathx.stepXZ(&self.pos, mathx.normV(self.launch), step, bounds);
                 moved = step;
                 self.discTell(dt, self.landAt, SLAM_R * self.scale);
@@ -807,7 +810,7 @@ test "THE STAMPED WAY IS ACTUALLY READ, and a slam broken in the air comes down"
     }
     try std.testing.expect(bent.pos.x > g.pos.x + 0.1);
 
-    var away = Golem.spawn(mathx.zero3, 180.0, 1.0, 0.5);
+    var away = Golem.spawn(mathx.zero3, std.math.pi, 1.0, 0.5);
     while (away.state != .walk) _ = away.update(dt, hero, 400, .{});
     const from = away.pos;
     k = 0;

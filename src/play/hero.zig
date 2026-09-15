@@ -386,8 +386,8 @@ pub fn fireTipped(h: combat.Hit) combat.Hit {
     return out;
 }
 
-/// THE BOW'S ONE BLOW, asked by the shot, the card and the compare. The perks land BEFORE the row, where the sword's
-/// land after, so `TIER_FLAT` is unperked here and perked there; that asymmetry is a retune, not a bug, and is left alone.
+/// THE BOW'S ONE BLOW, asked by the shot, the card and the compare. The perks land BEFORE the row where the sword's land after, so `TIER_FLAT` is
+/// unperked here and perked there; that asymmetry is a retune, not a bug.
 pub fn bowBlow(k: combat.ArrowKind, aimed: bool, perk: ptree.Bonus, row: item.Arm, sheet: statsmod.Sheet, tier: u8) combat.Hit {
     const base = (if (aimed) BOW_AIMED_HIT else BOW_QUICK_HIT).scaled(perk.bowDmg * perk.dmg);
     return weigh(switch (k) {
@@ -5019,7 +5019,7 @@ fn torchMesh() rl.Mesh {
 fn torchFlameMesh() rl.Mesh {
     var b = Builder.init();
     var rng = mathx.Rng.init(0x70C49);
-    art.flameInto(&b, &rng, 0, 0, 0, TORCH_FLAME_S);
+    art.flameInto(&b, &rng, 0, 0, 0, TORCH_FLAME_S, art.FIRE);
     return b.toMesh();
 }
 

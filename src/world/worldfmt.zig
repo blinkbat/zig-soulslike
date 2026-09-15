@@ -7,10 +7,9 @@ const item = @import("../play/item.zig");
 
 const Kind = props.Kind;
 
-/// 2 widened `hgt:` to `Hgt` about `HEIGHT_ZERO`; 3 added `CLIFF_FALL` to the `cliff:` grid. A 1 still loads (its bytes are
-/// widened on the way in); a 3 on a build that only knows 2 is a LOAD ERROR, never a clamp. **A NEW VALUE IN AN EXISTING
-/// GRID IS A NEW VERSION** — `readGrid` bounds every byte by its own `*_N`, so growing one makes an older build reject the
-/// map on the BYTE and not on the version line it was told it could read.
+/// 2 widened `hgt:` to `Hgt` about `HEIGHT_ZERO`; 3 added `CLIFF_FALL` to the `cliff:` grid. A 1 still loads (its bytes are widened on the way in);
+/// a 3 on a build that only knows 2 is a LOAD ERROR, never a clamp. **A NEW VALUE IN AN EXISTING GRID IS A NEW VERSION** — `readGrid` bounds every
+/// byte by its own `*_N`, so growing one makes an older build reject the map on the BYTE and not on the version line.
 pub const VERSION: u32 = 3;
 const OLDEST_VERSION: u32 = 1;
 
@@ -616,8 +615,7 @@ pub fn setId(dst: *Id, s: []const u8) !void {
     @memcpy(dst[0..s.len], s);
 }
 
-/// `#` STARTS A COMMENT AND THE FORMAT HAS NO ESCAPE, so an authored byte that would truncate its own line on the
-/// next load is turned here — at the two doors every authored string goes through — rather than at each field.
+/// `#` STARTS A COMMENT AND THE FORMAT HAS NO ESCAPE, so an authored byte that would truncate its own line is turned at the two doors every authored string goes through.
 pub const COMMENT = '#';
 fn uncomment(dst: []u8) void {
     for (dst) |*c| {
@@ -625,9 +623,8 @@ fn uncomment(dst: []u8) void {
     }
 }
 
-/// THE EDITOR'S POLICY, where `setId` is the PARSER'S: a name too long is cut, not refused, and the cap comes off
-/// the destination so an `Id` cell and a `NAME_CAP` cell take the same call. One byte is always held back for the
-/// terminator `nameText` reads.
+/// THE EDITOR'S POLICY, where `setId` is the PARSER'S: a name too long is CUT, not refused, and the cap comes off the destination so an `Id` cell
+/// and a `NAME_CAP` cell take the same call. One byte is always held back for the terminator `nameText` reads.
 pub fn setNameIn(dst: []u8, s: []const u8) void {
     @memset(dst, 0);
     const n = @min(s.len, dst.len - 1);
@@ -1424,15 +1421,13 @@ pub const WATER_CELLS: usize = WATER_N * WATER_N;
 pub const HEIGHT_N: usize = @intCast(gfx.HEIGHT_N);
 pub const HEIGHT_CELLS: usize = HEIGHT_N * HEIGHT_N;
 
-/// THE TERRAIN LATTICE'S SPACING, and the ONE place the phantom column is divided out: `2 * half` over the CELLS
-/// between the points, never over the points. `Map.heightStep` and `Env.lattice` are this on their own half.
+/// THE TERRAIN LATTICE'S SPACING, and the ONE place the phantom column is divided out: `2 * half` over the CELLS between the points, never over the points.
 pub fn heightStepFor(half: f32) f32 {
     return 2 * half / @as(f32, @floatFromInt(HEIGHT_N - 1));
 }
 
 comptime {
-    // `gfx` is BELOW this file and cannot import it, so it carries its own cell-lattice divide (`fieldCell`, which
-    // feeds the soil and water shader uniforms). Pinned here because the two halves of one field must agree.
+    // `gfx` is BELOW this file and cannot import it, so it carries its own cell-lattice divide (`fieldCell`); the two halves of one field must agree.
     std.debug.assert(cellStepFor(DEFAULT_HALF, WATER_N) == gfx.fieldCell(DEFAULT_HALF, gfx.WATER_N));
     std.debug.assert(cellStepFor(DEFAULT_HALF, SOIL_N) == gfx.fieldCell(DEFAULT_HALF, gfx.SOIL_N));
     std.debug.assert(heightStepFor(DEFAULT_HALF) != cellStepFor(DEFAULT_HALF, HEIGHT_N));
@@ -1696,8 +1691,7 @@ pub fn pointSpan(c: f32, r: f32, half: f32, step: f32, n: usize) ?[2]usize {
     return .{ @intFromFloat(lo), @intFromFloat(hi) };
 }
 
-/// THE LATTICE RECT A SWEPT BRUSH OF RADIUS `r` FROM `from` TO `to` CAN TOUCH: the bounding box of the two discs, which
-/// is `pointSpan` about the midpoint at half the run plus the radius. Every swept stroke in the editor wants exactly this.
+/// THE LATTICE RECT A SWEPT BRUSH OF RADIUS `r` FROM `from` TO `to` CAN TOUCH: `pointSpan` about the midpoint at half the run plus the radius.
 pub fn sweptSpan(from: [2]f32, to: [2]f32, r: f32, half: f32, step: f32, n: usize) ?[4]usize {
     const xs = pointSpan((from[0] + to[0]) * 0.5, @abs(to[0] - from[0]) * 0.5 + r, half, step, n) orelse return null;
     const zs = pointSpan((from[1] + to[1]) * 0.5, @abs(to[1] - from[1]) * 0.5 + r, half, step, n) orelse return null;
@@ -1773,11 +1767,8 @@ pub const Map = struct {
         setNameIn(&self.name, s);
     }
 
-    /// EVERYTHING BUT WHERE AND WHAT THE FILE IS. Written out field by field it was a list to forget one from, and
-    /// it had: `nlocations` went in with the `location:` row and never reached here, so a cleared map kept the
-    /// old one's weather bands. Taken off the struct's OWN defaults — which is also the one place the grids'
-    /// datums are written (`@memset(.., 0)` on `height` would drop the ground to `HEIGHT_MIN`) — a field added
-    /// tomorrow is cleared by having a default, and the four kept below are the whole of the exception.
+    /// EVERYTHING BUT WHERE AND WHAT THE FILE IS, taken off the struct's OWN defaults — which is also the one place the grids' datums are written
+    /// (`@memset(.., 0)` on `height` would drop the ground to `HEIGHT_MIN`). A field added tomorrow is cleared by having a default; the four kept below are the exception.
     pub fn clear(self: *Map) void {
         const name = self.name;
         const half = self.half;
@@ -2977,8 +2968,7 @@ var fillSeen: [WATER_CELLS]bool = undefined;
 var regridScratch: [LEGACY_CAVE_N * LEGACY_CAVE_N]u8 align(@alignOf(Hgt)) = undefined;
 
 comptime {
-    // EVERY grid `gridRead` embeds, at its own element size — `waterBase` is the second `Hgt` grid and was not named
-    // here, so a lattice raised on its own would have sliced past the buffer rather than failing to build.
+    // EVERY grid `gridRead` embeds, at its own element size — `waterBase` is the second `Hgt` grid and was not named here, so a lattice raised on its own would have sliced past the buffer.
     std.debug.assert(regridScratch.len >= LEGACY_HEIGHT_N * LEGACY_HEIGHT_N * @sizeOf(Hgt));
     std.debug.assert(regridScratch.len >= LEGACY_WATER_N * LEGACY_WATER_N * @sizeOf(Hgt));
     std.debug.assert(regridScratch.len >= LEGACY_SOIL_N * LEGACY_SOIL_N);
@@ -3617,8 +3607,7 @@ pub const TEXT_CAP: usize =
     MAX_CLEARINGS * 48 +
     MAX_ARENAS * (NAME_CAP + 16 + MAX_SEAL * (longestTag(FoeKind) + 1) + MAX_ARENA_VERTS * 22) +
     MAX_OPS * OP_LINE_TYPICAL +
-    // EVERY grid the writer can emit, at its worst case: soil, coverage and edge; water, its edge, its liquid and its
-    // level; height and cliff; cave coverage, floor and roof. A grid left out is a legal map `save` refuses.
+    // EVERY grid the writer can emit, at its worst case. A grid left out is a legal map `save` refuses.
     (3 * SOIL_CELLS + 4 * WATER_CELLS + 2 * HEIGHT_CELLS + 3 * CAVE_CELLS) * GRID_CELL_CAP +
     MAX_FOES * (longestTag(FoeKind) + 48) +
     (MAX_FLAGS + MAX_COUNTERS + MAX_TIMERS) * (ID_CAP + 2) + 64 +
@@ -3663,9 +3652,7 @@ pub fn loadForTest(path: []const u8, m: *Map, lineOut: *usize) !void {
     };
 }
 
-/// The cap for the OTHER thing `readForTest` is pointed at — a `.zig` file, read by the tests that pin a
-/// declaration against its use. `TEXT_CAP` is solved from the format; this one only has to clear the biggest
-/// source in the tree, and eight call sites each wrote it out.
+/// The cap for the OTHER thing `readForTest` is pointed at — a `.zig` file. `TEXT_CAP` is solved from the format; this one only has to clear the biggest source in the tree.
 pub const SRC_CAP: usize = 1 << 22;
 
 pub fn readForTest(alloc: std.mem.Allocator, path: []const u8, cap: usize) ![]u8 {
@@ -3675,10 +3662,9 @@ pub fn readForTest(alloc: std.mem.Allocator, path: []const u8, cap: usize) ![]u8
     };
 }
 
-/// Does `src` ASSIGN `<recv>.<field>` — the one predicate behind "EVERY FIELD ON `Game`/`Env` IS ASSIGNED", which
-/// both files spelled out for themselves. **AN INDEX IS ONLY A SEAT WHEN SOMETHING IS WRITTEN THROUGH IT**:
-/// `self.props[pi]` is a READ, and taking it for an assignment excuses the fill byte those tests exist to catch.
-/// A pointer handed out (`&self.field`) counts, because the callee is what seats it.
+/// Does `src` ASSIGN `<recv>.<field>` — the one predicate behind "EVERY FIELD ON `Game`/`Env` IS ASSIGNED". **AN INDEX IS ONLY A SEAT WHEN SOMETHING
+/// IS WRITTEN THROUGH IT**: `self.props[pi]` is a READ, and taking it for an assignment excuses the fill byte those tests exist to catch. A pointer
+/// handed out (`&self.field`) counts, because the callee is what seats it.
 pub fn assignsField(src: []const u8, comptime recv: []const u8, comptime field: []const u8) bool {
     const head = recv ++ "." ++ field;
     var at: usize = 0;
@@ -3692,8 +3678,7 @@ pub fn assignsField(src: []const u8, comptime recv: []const u8, comptime field: 
         const rest = src[at..];
         if (std.mem.startsWith(u8, rest, " =") and !std.mem.startsWith(u8, rest, " ==")) return true;
         if (rest.len > 0 and rest[0] == '[') {
-            // Past the MATCHING bracket, not the first one: `e.sgrid_items[cursor[c]] =` nests an index inside the
-            // index — and past EVERY consecutive group, because a grid of grids is seated at `d.bossDead[0][0] =`.
+            // Past the MATCHING bracket, not the first one (`e.sgrid_items[cursor[c]] =`), and past EVERY consecutive group (`d.bossDead[0][0] =`).
             var j: usize = 0;
             while (j < rest.len and rest[j] == '[') {
                 var depth: usize = 0;
@@ -3826,9 +3811,8 @@ fn canTail(comptime k: OpKind, comptime name: []const u8) bool {
 }
 
 comptime {
-    // ONE TAIL NAMESPACE FOR BOTH STRUCTS: `writeOp` and `parseOp` each walk `Op` then `Scatter` against the bare
-    // field name, so a name on both would be written twice and parsed into whichever walk ran last. `FieldOf`
-    // resolves Op first and would mask the other for good.
+    // ONE TAIL NAMESPACE FOR BOTH STRUCTS: `writeOp` and `parseOp` each walk `Op` then `Scatter` against the bare field name, so a name on both would
+    // be written twice and parsed into whichever walk ran last. `FieldOf` resolves Op first and would mask the other for good.
     @setEvalBranchQuota(20000);
     for (@typeInfo(Op).@"struct".fields) |a| {
         for (@typeInfo(Scatter).@"struct".fields) |b| {

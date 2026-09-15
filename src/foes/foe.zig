@@ -14,8 +14,7 @@ const anim = @import("../core/anim.zig");
 const v3 = mathx.v3;
 
 
-/// WHERE THE CREATURES LIVE, for the tests that read the SOURCE to pin a field against its method. Named because
-/// a stale copy does not fail — `openDir` misses and the test SKIPS, so the invariant goes unchecked in silence.
+/// WHERE THE CREATURES LIVE, for the tests that read the SOURCE. A stale copy does not fail — `openDir` misses and the test SKIPS.
 pub const DIR = "src/foes";
 
 pub const FLASH_DUR: f32 = 0.20;
@@ -129,9 +128,7 @@ pub fn traitsOf(k: wf.FoeKind) Traits {
     };
 }
 
-/// SEVERAL KINDS OF ONE CREATURE ARE A CONTIGUOUS RUN IN `wf.FoeKind`, and this is the one place that run is
-/// walked: the role's ordinal is its offset from the kind the run starts at. Each warband wrote both halves out
-/// by hand, and the bound was `SPEC.len` in three of them and the enum's own field count in the fourth.
+/// SEVERAL KINDS OF ONE CREATURE ARE A CONTIGUOUS RUN IN `wf.FoeKind`, and this is the one place that run is walked: the role's ordinal is its offset from the kind the run starts at.
 pub fn roleInRun(comptime Role: type, first: wf.FoeKind, k: wf.FoeKind) ?Role {
     const lo = @intFromEnum(first);
     const i = @intFromEnum(k);
@@ -143,11 +140,8 @@ pub fn kindInRun(comptime Role: type, first: wf.FoeKind, r: Role) wf.FoeKind {
     return @enumFromInt(@intFromEnum(first) + @intFromEnum(r));
 }
 
-/// **AND THE RUN IS PINNED WHERE IT IS WALKED** — the same offset arithmetic, asked at comptime, so a kind INSERTED
-/// into `wf.FoeKind` is a compile error rather than a warband whose roles have all slid one along. `trim` is the
-/// prefix the KIND names carry and the role names do not (the shoal's `fish_`). A creature whose names do not track
-/// its kinds at all pins its own list instead — the brood, whose `mother` is `brood_mother` and whose `broodling`
-/// is `broodling`.
+/// **AND THE RUN IS PINNED WHERE IT IS WALKED** — the same offset arithmetic at comptime, so a kind INSERTED into `wf.FoeKind` is a compile error
+/// rather than a warband whose roles have slid one along. `trim` is the prefix the KIND names carry and the role names do not (the shoal's `fish_`).
 pub fn pinRun(comptime who: []const u8, comptime Role: type, comptime first: wf.FoeKind, comptime trim: usize) void {
     for (@typeInfo(Role).@"enum".fields, 0..) |f, i| {
         const fk = kindInRun(Role, first, @as(Role, @enumFromInt(i)));
@@ -275,10 +269,8 @@ pub fn poolBand(k: wf.FoeKind) ?[2]f32 {
     };
 }
 
-/// THE ROOM A POSTED BODY TAKES, measured off its OWN RIG at the pose it is posted in — not at full stretch, and not
-/// the object viewer's frame. `game`'s `statureOf`/`bodyRadiusOf` are the definition and a test there is the pin: one
-/// body of every kind spawned through the real group reset, over six seeds. What the editor refuses a chamber on
-/// (`caves.roomAt`), which is why a creature that spawns prone reads short — it is short at the moment it is placed.
+/// THE ROOM A POSTED BODY TAKES, measured off its OWN RIG at the pose it is posted in — not at full stretch. `game`'s `statureOf`/`bodyRadiusOf`
+/// are the definition and a test there is the pin. What the editor refuses a chamber on (`caves.roomAt`), so a creature that spawns prone reads short.
 pub const Bulk = struct { tall: f32, girth: f32 };
 
 pub fn bulkOf(k: wf.FoeKind) Bulk {
@@ -347,8 +339,7 @@ pub const PARRY_LEAD: f32 = 0.18;
 /// Per-move fractions stay per-move (the ogre's slam, the mastodon's tail); this is ONE number, so a retune moves them together.
 pub const MELEE_IMPACT_K: f32 = 0.68;
 
-/// THE BONE FAMILY'S FIST IN THE WRIST'S OWN FRAME, as a share of stature — one source for the four skeletons that
-/// each restated it. The HERO's grip is his own (`hero`'s Z is 0.005) and deliberately not this.
+/// THE BONE FAMILY'S FIST IN THE WRIST'S OWN FRAME, as a share of stature. The HERO's grip is his own (`hero`'s Z is 0.005) and deliberately not this.
 pub const FIST_YF: f32 = -0.05;
 pub const FIST_ZF: f32 = 0.02;
 
@@ -842,9 +833,8 @@ pub fn markOn(bone: rl.Matrix, at: rl.Vector3) rl.Vector3 {
     return rl.math.vector3Transform(at, bone);
 }
 
-/// AN ELBOW BENDS ONE WAY, read off the POSED bones rather than the constants: the forearm's lean out of the upper
-/// arm's own line toward that frame's +Z, which is the body's front. +1 is folded fully forward, 0 straight, and
-/// anything negative is an arm bent BEHIND the back — the failure the sign law exists for.
+/// AN ELBOW BENDS ONE WAY, read off the POSED bones rather than the constants: the forearm's lean out of the upper arm's own line toward that
+/// frame's +Z, the body's front. +1 is folded fully forward, 0 straight, anything NEGATIVE an arm bent behind the back.
 pub fn elbowForward(xf: []const rl.Matrix, sh: usize, el: usize, wr: usize) f32 {
     const s = markOn(xf[sh], mathx.zero3);
     const e = markOn(xf[el], mathx.zero3);
@@ -860,9 +850,8 @@ pub fn swingCurve(u: f32) f32 {
     return std.math.pow(f32, mathx.smoothstep(0, 1, u), 1.35);
 }
 
-/// `t` is SECONDS since the stun began, not a share of it — the window is divided out HERE, as `recoilPose` does.
-/// Normalised at the call site the heavy reel only reaches `u` 0.42 by the time the state ends, which is inside the
-/// pulse's own plateau: the body stands at full reel on the frame it snaps back to idle.
+/// `t` is SECONDS since the stun began, not a share of it — the window is divided out HERE. Normalised at the call site the heavy reel only
+/// reaches `u` 0.42 by the time the state ends, so the body stands at full reel on the frame it snaps back to idle.
 pub fn stunCurve(t: f32, heavy: bool) f32 {
     const u = mathx.clampF(t / combat.foeStunDur(heavy), 0, 1);
     if (!heavy) return mathx.sinf(u * std.math.pi);
@@ -935,8 +924,7 @@ pub fn recoilPose(t: f32, heavy: bool) f32 {
     return anim.keyAt(&keys, t);
 }
 
-/// THE BONE FAMILY'S, in the stun's OWN time rather than in seconds: the heavy hangs at the top twice as long as
-/// the light before it drops through and rebounds. Two skeletons had it keyed out side by side.
+/// THE BONE FAMILY'S, in the stun's OWN time rather than in seconds: the heavy hangs at the top twice as long as the light before it drops through.
 pub fn boneRecoil(t: f32, heavy: bool) f32 {
     const keys = [_]anim.Key{
         .{ .t = 0, .v = 0 },
@@ -948,8 +936,7 @@ pub fn boneRecoil(t: f32, heavy: bool) f32 {
     return anim.keyAt(&keys, t / combat.foeStunDur(heavy));
 }
 
-/// WHICH STUN IS RUNNING AND HOW FAR INTO IT — the three lines every `stunAmount` opened with, so a body names only
-/// its SHAPE. The shape is per-creature (`stunCurve`, `recoilPose`, `boneRecoil`); the guard never was.
+/// WHICH STUN IS RUNNING AND HOW FAR INTO IT, so a body names only its SHAPE (`stunCurve`, `recoilPose`, `boneRecoil`).
 pub fn stunShape(self: anytype, comptime shape: fn (f32, bool) f32) f32 {
     return switch (self.state) {
         .stunlight => shape(self.t, false),
@@ -958,24 +945,20 @@ pub fn stunShape(self: anytype, comptime shape: fn (f32, bool) f32) f32 {
     };
 }
 
-/// `stunShape`'s GUARD ON ITS OWN, which is what every `staggered` is built out of: twenty-three wrote the same
-/// pair out verbatim and five more wrote it with one state of their own added on. The EXTRA state stays the
-/// creature's (the bat's `.repelled`, the shieldman's `.guardbreak`), and so does whether death staggers at all.
+/// `stunShape`'s GUARD ON ITS OWN. The EXTRA state stays the creature's (the bat's `.repelled`, the shieldman's `.guardbreak`), and so does whether death staggers at all.
 pub fn inStun(self: anytype) bool {
     return self.state == .stunlight or self.state == .stunheavy;
 }
 
-/// A BLOW ON THE MAN IS THE SAME THREE LINES WHATEVER SHAPE CAUGHT HIM — the blow, the one-hit latch, and the
-/// leash stamp. The GATE is the move's own (a cone, a swept segment, a rear arc, a charge line).
+/// A BLOW ON THE MAN IS THE SAME THREE LINES WHATEVER SHAPE CAUGHT HIM — the blow, the one-hit latch, the leash stamp. The GATE is the move's own.
 pub fn bill(self: anytype, hit: combat.Hit) void {
     self.heroHit = hit;
     self.heroLatch = true;
     self.leash.noteCombat();
 }
 
-/// …AND THE ORDINARY GATE IS A FRONTAL CONE, which fifteen animations each wrote out around their own band.
-/// `reach` is measured from the quarry's HIDE (`hurtReach`), so how a scaled body's band tracks it stays the
-/// creature's own statement. Hands back whether it billed, which is all the creature's own flag needs.
+/// …AND THE ORDINARY GATE IS A FRONTAL CONE. `reach` is measured from the quarry's HIDE (`hurtReach`), so how a scaled body's band tracks it
+/// stays the creature's own statement. Hands back whether it billed.
 pub fn billFront(self: anytype, quarry: rl.Vector3, reach: f32, frontDot: f32, hit: combat.Hit) bool {
     if (self.heroLatch) return false;
     if (!inFront(self.pos, self.facing, quarry, reach, frontDot)) return false;
@@ -983,9 +966,8 @@ pub fn billFront(self: anytype, quarry: rl.Vector3, reach: f32, frontDot: f32, h
     return true;
 }
 
-/// WHAT A CAUGHT BLOW COSTS, in ONE place: whether the catch BROKE THE STANCE. `combat.PARRY_HIT` is stance and
-/// nothing else — `raw()` and `poise` are both pinned at 0 in `combat` — so a catch can never resolve as a death,
-/// and the only question left is which stun the creature enters in its own vocabulary.
+/// WHAT A CAUGHT BLOW COSTS: whether the catch BROKE THE STANCE. `combat.PARRY_HIT` is stance and nothing else — `raw()` and `poise` are both
+/// pinned at 0 in `combat` — so a catch can never resolve as a death.
 pub fn parryBroke(self: anytype) bool {
     return self.vit.hit(combat.PARRY_HIT) == .heavy;
 }
@@ -1018,7 +1000,6 @@ pub fn hullHalfY(xf: rl.Matrix, radii: rl.Vector3) f32 {
     return @sqrt(radii.x * radii.x * xf.m1 * xf.m1 + radii.y * radii.y * xf.m5 * xf.m5 + radii.z * radii.z * xf.m9 * xf.m9);
 }
 
-/// `hullTouches` over a whole rig — the blade against every posed ellipsoid the body is made of.
 pub fn hullsTouch(xf: []const rl.Matrix, hulls: []const Hull, a: rl.Vector3, b: rl.Vector3, radius: f32) bool {
     for (hulls) |hull| {
         if (hullTouches(xf[hull.bone], hull.center, hull.radii, a, b, radius)) return true;
@@ -1026,8 +1007,7 @@ pub fn hullsTouch(xf: []const rl.Matrix, hulls: []const Hull, a: rl.Vector3, b: 
     return false;
 }
 
-/// THE CROWN OFF THE POSED HULLS, which is what `topWorld` owes on a body that has them — never a stature fraction,
-/// and never another creature's. Floored at the centre the caller hands over, so a rig of low hulls still answers above its middle.
+/// THE CROWN OFF THE POSED HULLS, never a stature fraction and never another creature's. Floored at the centre the caller hands over, so a rig of low hulls still answers above its middle.
 pub fn hullsTop(center: rl.Vector3, xf: []const rl.Matrix, hulls: []const Hull) rl.Vector3 {
     var top = center;
     for (hulls) |hull| {
@@ -1980,9 +1960,7 @@ pub fn rigSink(depth: f32, scale: f32, fade: f32) f32 {
     return -depth * scale * fade;
 }
 
-/// THE COLLAPSE'S OWN BLEND, 0 standing to 1 folded — `dissipate`'s law one level down: the DURATION and the SHARE
-/// of it the fold takes are the creature's, the SHAPE is the game's. Nineteen bodies wrote the smoothstep out and
-/// the knight wrote it a second way, so nothing said it was one shape and a change to it had nineteen places to miss.
+/// THE COLLAPSE'S OWN BLEND, 0 standing to 1 folded — `dissipate`'s law one level down: the DURATION and the SHARE of it the fold takes are the creature's, the SHAPE is the game's.
 pub fn deathK(dead: bool, t: f32, dur: f32, share: f32) f32 {
     if (!dead) return 0;
     return mathx.smoothstep(0, share, mathx.clampF(t / dur, 0, 1));
@@ -2198,9 +2176,8 @@ fn farthestFirst(_: void, a: Ordered, b: Ordered) bool {
     return a.depth > b.depth;
 }
 
-/// The same scan that asks whether anything is visible also says WHICH pass has it: `beginBlendMode` flushes rlgl's
-/// batch whether or not the pass draws, and most pools are all matter or all light, so the empty half was paying two
-/// flushes a pool a frame.
+/// The same scan that asks whether anything is visible also says WHICH pass has it: `beginBlendMode` flushes rlgl's batch whether or not the
+/// pass draws, and most pools are all matter or all light, so the empty half was paying two flushes a pool a frame.
 pub fn drawParticles(pool: []const Particle) void {
     var anyAlpha = false;
     var anyAdd = false;
@@ -2442,9 +2419,7 @@ pub fn postAim(self: anytype) ?rl.Vector3 {
     };
 }
 
-/// THE STEERING ARM FIFTEEN CREATURES SHARE, `headHome`'s rule read as a PLACE instead of a verdict: the man once the
-/// body senses him, else wherever its orders point, else the tether once it has strayed past `homeR`. The STATE that
-/// may steer stays the caller's, which is the only part that was ever per-creature.
+/// THE STEERING ARM FIFTEEN CREATURES SHARE, `headHome`'s rule read as a PLACE instead of a verdict: the man once the body senses him, else its orders, else the tether past `homeR`. The STATE that may steer stays the caller's.
 pub fn navChase(self: anytype, quarry: rl.Vector3, aggroR: f32, homeR: f32) ?rl.Vector3 {
     if (senseHero(&self.leash, self.pos, quarry, aggroR) <= aggroR) return quarry;
     if (postAim(self)) |go| return go;
@@ -2510,11 +2485,9 @@ pub fn postAmble(
     return true;
 }
 
-/// A STROKE THAT CANNOT FOLLOW YOU CARRIES THE BODY AT YOU. Across the STRIKE the body drives `dist` world metres
-/// down its facing on the knight's decelerating ease, so the kit arrives with the mass behind it instead of at arm's
-/// length from where the wind ended. Never during the wind: that is when the body is still coming round onto him, and
-/// a drive taken off a facing still turning lands short of the band it promised. `now`/`was` are the stroke's own
-/// clock this frame and last, so a creature whose wind and strike are two states hands over one continuous clock.
+/// A STROKE THAT CANNOT FOLLOW YOU CARRIES THE BODY AT YOU: across the STRIKE the body drives `dist` world metres down its facing on the knight's
+/// decelerating ease. NEVER during the wind — the body is still coming round onto him, and a drive off a turning facing lands short of the band it
+/// promised. `now`/`was` are the stroke's own clock this frame and last, so a wind and strike in two states hand over one continuous clock.
 pub fn strokeStep(self: anytype, bounds: f32, dist: f32, now: f32, was: f32, windDur: f32, strikeDur: f32) f32 {
     if (dist <= 0) return 0;
     const moved = dist * (stepEase(mathx.clampF((now - windDur) / strikeDur, 0, 1)) - stepEase(mathx.clampF((was - windDur) / strikeDur, 0, 1)));
@@ -3031,8 +3004,7 @@ pub fn strikeAt(vit: *combat.Vitals, hitLatch: *bool, part: Part, blade: Blade) 
     const dir = if (mathx.lenXZ(sweep) > 0.03) mathx.normV(sweep) else mathx.dirXZ(contact, center);
     if (blade.cullAt > 0 and !vit.dead and vit.hpFrac() <= blade.cullAt) {
         var out = blade.hit;
-        // ON `gore`, THE ONE CHANNEL `damageFrom` TAKES RAW: through `dmg` the top-up is armour-scaled, and the
-        // spore golem's 80 held a dagger's cull off a kill by ~1 HP.
+        // ON `gore`, THE ONE CHANNEL `damageFrom` TAKES RAW: through `dmg` the top-up is armour-scaled, and the spore golem's 80 held a dagger's cull off a kill by ~1 HP.
         out.gore += vit.hp;
         return .{ .contact = contact, .dir = dir, .reaction = vit.hitPoise(out, part.poiseK) };
     }

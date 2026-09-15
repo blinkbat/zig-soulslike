@@ -114,8 +114,7 @@ pub fn headingXZ(v: rl.Vector3) f32 {
 
 pub const SegNear = struct { t: f32, d: f32 };
 
-/// THE CLAMPED PARAMETER ALONE, which is all a caller after the POINT needs — `segNearXZ` takes a square root for its
-/// distance on top, and every push-out, sight test and swept blade threw that root away.
+/// THE CLAMPED PARAMETER ALONE, which is all a caller after the POINT needs — `segNearXZ` takes a square root for its distance on top.
 pub fn segParamXZ(p: [2]f32, a: [2]f32, b: [2]f32) f32 {
     const abx = b[0] - a[0];
     const abz = b[1] - a[1];
@@ -303,9 +302,8 @@ pub fn approach(cur: f32, target: f32, maxStep: f32) f32 {
     return cur + std.math.sign(d) * maxStep;
 }
 
-/// A CRITICALLY DAMPED SPRING, stable at any `dt` and never overshooting. `secs` is roughly the time to close the
-/// gap, `cap` a ceiling in units a second (0 for none), and `vel` the carried velocity — which is the whole point:
-/// `approach` starts and stops at full speed, so a target that steps puts a step in the MOTION too.
+/// A CRITICALLY DAMPED SPRING, stable at any `dt` and never overshooting. `secs` is roughly the time to close the gap, `cap` a ceiling in units a
+/// second (0 for none), `vel` the carried velocity — `approach` starts and stops at full speed, so a target that steps puts a step in the MOTION too.
 pub fn smoothCD(cur: f32, target: f32, vel: *f32, secs: f32, cap: f32, dt: f32) f32 {
     if (dt <= 0) return cur;
     if (secs <= 1e-4) {
@@ -389,9 +387,8 @@ pub fn wrapDeg(a: f32) f32 {
     return degrees(wrapPi(radians(a)));
 }
 
-/// ONE TURN, [0, 360) — in degrees the whole way, because the radian round-trip `wrapDeg` takes puts float noise on
-/// a yaw the editor writes to a text file. `@mod` is the floored modulus over a positive divisor, so it already answers
-/// inside the turn for a negative angle.
+/// ONE TURN, [0, 360) — in degrees the whole way, because the radian round-trip `wrapDeg` takes puts float noise on a yaw the editor writes to a text
+/// file. `@mod` is the floored modulus over a positive divisor, so it already answers inside the turn for a negative angle.
 pub fn wrapDeg360(a: f32) f32 {
     if (!std.math.isFinite(a)) return 0;
     return @mod(a, 360.0);

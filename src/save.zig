@@ -15,9 +15,7 @@ const soulsmod = @import("play/souls.zig");
 const trigmod = @import("world/trigger.zig");
 const wf = @import("world/worldfmt.zig");
 
-/// THIS FILE, for the tests that read their own SOURCE to pin a declaration against its use. Named because a
-/// stale copy does not fail — `readForTest` turns a missing path into `error.SkipZigTest` and the invariant
-/// goes unchecked in silence. `foe.DIR`'s rule.
+/// THIS FILE, for the tests that read their own SOURCE. A stale copy does not fail — `readForTest` turns a missing path into `error.SkipZigTest`.
 const SRC = "src/save.zig";
 
 pub const VERSION: u32 = 1;
@@ -187,8 +185,7 @@ pub const Head = struct {
 
 pub const Shelf = struct {
     head: [SLOTS]?Head = [_]?Head{null} ** SLOTS,
-    /// A FILE THAT IS THERE AND WILL NOT PARSE IS NOT AN EMPTY SLOT. Read as empty it is offered for a new game and
-    /// overwritten, and the only sign anything was ever there is gone. Held apart so the row can say so instead.
+    /// A FILE THAT IS THERE AND WILL NOT PARSE IS NOT AN EMPTY SLOT: read as empty it is offered for a new game and overwritten.
     unreadable: [SLOTS]bool = [_]bool{false} ** SLOTS,
 
     pub fn any(self: *const Shelf) bool {
@@ -216,6 +213,11 @@ pub const Shelf = struct {
 };
 
 pub fn survey(map: []const u8) Shelf {
+    drain();
+    return surveyRaw(map);
+}
+
+fn surveyRaw(map: []const u8) Shelf {
     var sh = Shelf{};
     for (0..SLOTS) |i| {
         sh.head[i] = peek(map, i);
@@ -243,10 +245,122 @@ pub fn write(i: usize, s: Slot) bool {
 }
 
 pub fn read(i: usize, s: Slot) bool {
+    drain();
     return readFrom(path(i), s);
 }
 
+/// THE DISK IS OFF THE FRAME, AND `gather` IS NOT: the snapshot is taken on the MAIN thread — it reads live game state through the view — and only
+/// the render, the rename and the survey behind them ride the worker.
+const Bg = struct {
+    mtx: std.Thread.Mutex = .{},
+    cond: std.Thread.Condition = .{},
+    thread: ?std.Thread = null,
+    quit: bool = false,
+    /// A snapshot waiting in `data`. A second save while one is in flight REPLACES it rather than queuing: every write is the whole file.
+    pending: bool = false,
+    working: bool = false,
+    slot: usize = 0,
+    data: Data = .{},
+    ready: bool = false,
+    ok: bool = false,
+    doneSlot: usize = 0,
+    shelf: Shelf = .{},
+};
+var bg: Bg = .{};
+
+pub const Done = struct { ok: bool, slot: usize, shelf: Shelf };
+
+pub fn writeAsync(i: usize, s: Slot) void {
+    const d = gather(s);
+    bg.mtx.lock();
+    bg.slot = i;
+    bg.data = d;
+    bg.pending = true;
+    if (bg.thread == null) {
+        bg.thread = std.Thread.spawn(.{}, bgLoop, .{}) catch null;
+        if (bg.thread == null) {
+            bg.pending = false;
+            bg.mtx.unlock();
+            const ok = writeData(path(i), &d);
+            const sh = surveyRaw(d.mapName());
+            bg.mtx.lock();
+            finish(i, ok, sh);
+            bg.mtx.unlock();
+            return;
+        }
+    }
+    bg.mtx.unlock();
+    bg.cond.broadcast();
+}
+
+fn finish(i: usize, ok: bool, sh: Shelf) void {
+    bg.ready = true;
+    bg.ok = ok;
+    bg.doneSlot = i;
+    bg.shelf = sh;
+}
+
+fn bgLoop() void {
+    while (true) {
+        bg.mtx.lock();
+        while (!bg.pending and !bg.quit) bg.cond.wait(&bg.mtx);
+        if (!bg.pending) {
+            bg.mtx.unlock();
+            return;
+        }
+        const i = bg.slot;
+        const d = bg.data;
+        bg.pending = false;
+        bg.working = true;
+        bg.mtx.unlock();
+
+        const ok = writeData(path(i), &d);
+        const sh = surveyRaw(d.mapName());
+
+        bg.mtx.lock();
+        bg.working = false;
+        finish(i, ok, sh);
+        bg.mtx.unlock();
+        bg.cond.broadcast();
+    }
+}
+
+/// What the write COST, taken on the main thread. The shelf the worker surveyed is the one the picker reads.
+pub fn takeDone() ?Done {
+    bg.mtx.lock();
+    defer bg.mtx.unlock();
+    if (!bg.ready) return null;
+    bg.ready = false;
+    return .{ .ok = bg.ok, .slot = bg.doneSlot, .shelf = bg.shelf };
+}
+
+pub fn saving() bool {
+    bg.mtx.lock();
+    defer bg.mtx.unlock();
+    return bg.pending or bg.working;
+}
+
+/// ONE WRITER OF THESE FILES AT A TIME — every main-thread path that reads, surveys or deletes a slot waits here, so a load can never cross a half-written file.
+pub fn drain() void {
+    bg.mtx.lock();
+    while (bg.pending or bg.working) bg.cond.wait(&bg.mtx);
+    bg.mtx.unlock();
+}
+
+pub fn shutdown() void {
+    drain();
+    bg.mtx.lock();
+    bg.quit = true;
+    bg.mtx.unlock();
+    bg.cond.broadcast();
+    if (bg.thread) |t| {
+        t.join();
+        bg.thread = null;
+    }
+}
+
 pub fn erase(i: usize) bool {
+    drain();
     std.fs.cwd().deleteFile(path(i)) catch |e| {
         // The save survived, so its picture stays with it rather than the row going blank over a live file.
         if (e != error.FileNotFound) return false;
@@ -272,13 +386,17 @@ pub fn writeShot(i: usize) bool {
 /// `createFile` truncates first, so a render that failed part-way took the save it was replacing with it.
 pub fn writeTo(file: []const u8, s: Slot) bool {
     if (s.map.len > MAP_CAP) return false;
+    const d = gather(s);
+    return writeData(file, &d);
+}
+
+fn writeData(file: []const u8, d: *const Data) bool {
     var tmpBuf: [MAP_CAP + 16]u8 = undefined;
     const tmp = std.fmt.bufPrint(&tmpBuf, "{s}.tmp", .{file}) catch return false;
-    const d = gather(s);
     {
         const f = std.fs.cwd().createFile(tmp, .{}) catch return false;
         defer f.close();
-        render(f.writer(), &d) catch {
+        render(f.writer(), d) catch {
             std.fs.cwd().deleteFile(tmp) catch {};
             return false;
         };
@@ -815,8 +933,7 @@ fn sample() Data {
 }
 
 test "THE ROUND TRIP IS ONLY WORTH WHAT `sample` FILLS — a field left at its default proves nothing" {
-    // Three had already fallen off it (`crimsonMax`, `flaskTotal`, and the whole explored chart), so the writer
-    // could have dropped any of them and the round-trip test would still have come back green.
+    // Three had already fallen off it (`crimsonMax`, `flaskTotal`, the explored chart), so the writer could have dropped any of them and the round-trip test would still come back green.
     const src = try wf.readForTest(testing.allocator, SRC, wf.SRC_CAP);
     defer testing.allocator.free(src);
     const head = std.mem.indexOf(u8, src, "fn sample() Data {").?;
@@ -824,8 +941,7 @@ test "THE ROUND TRIP IS ONLY WORTH WHAT `sample` FILLS — a field left at its d
     const body = src[head..tail];
     var missing: usize = 0;
     inline for (@typeInfo(Data).@"struct".fields) |f| {
-        // `wf.assignsField`'s rule plus the two more this sample uses: a SLICE handed to `@memcpy`, and a METHOD
-        // that writes the field (`worn.put`). Both seat it as surely as `=` does, and neither reads it.
+        // `wf.assignsField`'s rule plus the two more this sample uses: a SLICE handed to `@memcpy`, and a METHOD that writes the field (`worn.put`).
         const filled = wf.assignsField(body, "d", f.name) or
             std.mem.indexOf(u8, body, "d." ++ f.name ++ "[0..") != null or
             std.mem.indexOf(u8, body, "d." ++ f.name ++ ".put(") != null;
@@ -1363,4 +1479,52 @@ test "A SAVE WRITTEN BEFORE ARROWS WERE FINITE LOADS FULL, which is what it desc
     try parse("version: 1\nmap: " ++ wf.START_MAP ++ "\n", &d);
     try testing.expectEqual(combat.ARROWS_MAX, d.arrows);
     try testing.expectEqual(combat.FIRE_ARROWS_MAX, d.fireArrows);
+}
+
+test "THE WHEEL ONLY PAYS FOR THE SNAPSHOT — what a bonfire pick still costs the frame, against what rode the worker" {
+    var l = Live.blank(4);
+    var t = try std.time.Timer.start();
+    const REPS = 200;
+    var sink: u64 = 0;
+
+    var i: usize = 0;
+    t.reset();
+    while (i < REPS) : (i += 1) {
+        const d = gather(l.slot());
+        sink +%= d.souls;
+    }
+    const gatherNs = t.read() / REPS;
+
+    const d = gather(l.slot());
+    var buf: [CAP]u8 = undefined;
+    var written: usize = 0;
+    i = 0;
+    t.reset();
+    while (i < REPS) : (i += 1) {
+        var fbs = std.io.fixedBufferStream(&buf);
+        try render(fbs.writer(), &d);
+        written = fbs.getWritten().len;
+        sink +%= written;
+    }
+    const renderNs = t.read() / REPS;
+
+    var back = Data{};
+    i = 0;
+    t.reset();
+    while (i < REPS) : (i += 1) {
+        try parse(buf[0..written], &back);
+    }
+    const parseNs = t.read() / REPS;
+
+    std.debug.print(
+        "\n  save: gather {d:.1} us on the frame; render {d:.1} us + survey {d:.1} us ({d} slots) rode the worker, over {d} bytes\n",
+        .{
+            @as(f64, @floatFromInt(gatherNs)) / 1000.0,
+            @as(f64, @floatFromInt(renderNs)) / 1000.0,
+            @as(f64, @floatFromInt(parseNs * SLOTS)) / 1000.0,
+            SLOTS,
+            written,
+        },
+    );
+    try testing.expect(sink != 0);
 }

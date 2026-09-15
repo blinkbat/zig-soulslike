@@ -97,8 +97,7 @@ pub const Spring = struct {
     }
 };
 
-/// THE PAIR A HAND-ROLLED `ease`/`settle` DAMPER MEANT, converted in ONE place: `stiff` is their product and `zeta`
-/// the damping ratio that follows. Two cloths derived it beside themselves off the same two lines.
+/// THE PAIR A HAND-ROLLED `ease`/`settle` DAMPER MEANT, converted in ONE place: `stiff` is their product and `zeta` the damping ratio that follows.
 pub const Rate = struct {
     stiff: f32,
     zeta: f32,

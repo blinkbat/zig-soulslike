@@ -344,9 +344,8 @@ const Recover = enum {
     }
 };
 
-/// THE NEAR EDGE IS THE SAME LIMB, SO IT TAKES THE SAME TRIANGLE (`rooted.nearR`). Held raw against a scaled far
-/// edge the lunge's band is 3.40..3.93 at `wf.FOE_SCALE_LO` — 0.53 m of the 1.95 it is owed, and the small
-/// swordsman stands inside the gap doing nothing.
+/// THE NEAR EDGE IS THE SAME LIMB, SO IT TAKES THE SAME TRIANGLE (`rooted.nearR`). Held raw against a scaled far edge the lunge's band is 3.40..3.93
+/// at `wf.FOE_SCALE_LO` — 0.53 m of the 1.95 it is owed, and the small swordsman stands inside the gap doing nothing.
 fn swNearR(scale: f32) f32 {
     return foe.triggerBand(SW_LUNGE_MIN, SCALE, scale);
 }

@@ -1329,9 +1329,8 @@ pub const Druidess = struct {
     fn tickTrails(self: *Druidess, dt: f32, speed: f32) void {
         const drag = TRAIL_DRAG * mathx.clampF(speed / WALK_SPEED, 0, 1) - TRAIL_FLARE * mathx.clampF(self.hop / LEAP_ARC.up, 0, 1);
         self.trailDrag = easeTo(self.trailDrag, drag, dt * 5.0);
-        // THE HEM'S SPRING, not a second one written out beside it: hand-rolled, this took ONE frame-sized Euler
-        // step, so the ring differed at 30 and at 144 and a hitch past 295 ms detonated it. The target is the
-        // facing carried into each tail's own branch, because the error is the wrapped one and the state is not.
+        // THE HEM'S SPRING, not a second one written out beside it: hand-rolled this took ONE frame-sized Euler step, so the ring differed at 30 and
+        // at 144 and a hitch past 295 ms detonated it. The target is the facing carried into each tail's own branch — the error is wrapped, the state is not.
         for (&self.trailSpring, TRAIL_STIFF) |*s, stiff| {
             _ = s.step(s.v + mathx.wrapPi(self.facing - s.v), stiff, TRAIL_ZETA, dt);
         }

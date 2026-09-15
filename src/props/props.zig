@@ -23,6 +23,7 @@ const forge = @import("propforge.zig");
 const ember = @import("propember.zig");
 const palace = @import("proppalace.zig");
 const desert = @import("propdesert.zig");
+const mason = @import("propmason.zig");
 
 const v3 = mathx.v3;
 
@@ -76,6 +77,10 @@ pub const Kind = enum(u8) {
     brazier,
     campfire,
     campfire_lit,
+    ghostbonfire,
+    ghosttorch,
+    ghostbrazier,
+    ghostcampfire,
     water,
     tuft,
     patch,
@@ -242,6 +247,35 @@ pub const Kind = enum(u8) {
     tumbleweed,
     sanddune,
     sandripples,
+    masonwall,
+    masonworn,
+    masonbroken,
+    masonfooting,
+    masonshort,
+    masonshortworn,
+    masonshortbroken,
+    masonlow,
+    masontall,
+    masonivy,
+    masonwindow,
+    masonpilaster,
+    masondoor,
+    masonarchdoor,
+    masoncorner,
+    masoncornerbroken,
+    doorframe,
+    archdoorframe,
+    gatearch,
+    arcade,
+    ceilingslab,
+    ceilingbroken,
+    barrelvault,
+    manor,
+    greathall,
+    towerhouse,
+    illusory_long,
+    illusory_short,
+    illusory_tall,
 };
 
 pub const Group = enum {
@@ -266,6 +300,7 @@ pub const Group = enum {
     firelands,
     palace,
     desert,
+    masonry,
 
     pub const N = @typeInfo(Group).@"enum".fields.len;
 
@@ -292,6 +327,7 @@ pub const Group = enum {
             .firelands => "Firelands",
             .palace => "Sun Palace",
             .desert => "Desert",
+            .masonry => "Masonry Kit",
         };
     }
 };
@@ -347,6 +383,10 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .brazier => "Brazier",
         .campfire => "Extinguished Campfire",
         .campfire_lit => "Campfire",
+        .ghostbonfire => "Ghostflame Pyre",
+        .ghosttorch => "Ghostflame Torch",
+        .ghostbrazier => "Ghostflame Brazier",
+        .ghostcampfire => "Ghostflame Hearth",
         .water => "Water Sheet",
         .tuft => "Grass Tuft",
         .patch => "Grass Patch",
@@ -512,6 +552,35 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .tumbleweed => "Tumbleweed",
         .sanddune => "Sand Dune",
         .sandripples => "Sand Ripples",
+        .masonwall => "Wall (Long)",
+        .masonworn => "Wall (Long, Weathered)",
+        .masonbroken => "Wall (Long, Broken)",
+        .masonfooting => "Wall (Footing)",
+        .masonshort => "Wall (Short)",
+        .masonshortworn => "Wall (Short, Weathered)",
+        .masonshortbroken => "Wall (Short, Broken)",
+        .masonlow => "Wall (Low)",
+        .masontall => "Wall (Tall)",
+        .masonivy => "Wall (Ivied)",
+        .masonwindow => "Wall (Windowed)",
+        .masonpilaster => "Wall (Pilastered)",
+        .masondoor => "Wall (Doorway)",
+        .masonarchdoor => "Wall (Arched Doorway)",
+        .masoncorner => "Wall Corner",
+        .masoncornerbroken => "Wall Corner (Broken)",
+        .doorframe => "Doorframe",
+        .archdoorframe => "Arched Doorframe",
+        .gatearch => "Gate Arch (Standing)",
+        .arcade => "Arcade",
+        .ceilingslab => "Ceiling Slab",
+        .ceilingbroken => "Ceiling (Collapsed)",
+        .barrelvault => "Barrel Vault",
+        .manor => "Manor House",
+        .greathall => "Great Hall",
+        .towerhouse => "Tower House",
+        .illusory_long => "Illusory Wall (Long)",
+        .illusory_short => "Illusory Wall (Short)",
+        .illusory_tall => "Illusory Wall (Tall)",
     };
 }
 
@@ -541,7 +610,7 @@ pub fn group(k: Kind) Group {
         .altar,
         => .ruins,
         .chapel, .watchtower, .cottage, .tower, .gate, .causeway, .foggate, .ladder, .stairflight => .buildings,
-        .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart, .bonfire => .village,
+        .well, .shrine, .lantern, .fence, .barrels, .woodpile, .cart => .village,
         .anvil, .quenchtrough, .toolrack => .village,
         .chest, .pickup => .treasure,
         .boulder,
@@ -569,7 +638,39 @@ pub fn group(k: Kind) Group {
         .illusory,
         => .rock,
         .tree, .bigtree, .bigtree2, .bigtree3, .willow, .conifer, .birch, .snag, .sapling => .trees,
-        .torch, .brazier, .campfire, .campfire_lit, .forge => .fire,
+        .masonwall,
+        .masonworn,
+        .masonbroken,
+        .masonfooting,
+        .masonshort,
+        .masonshortworn,
+        .masonshortbroken,
+        .masonlow,
+        .masontall,
+        .masonivy,
+        .masonwindow,
+        .masonpilaster,
+        .masondoor,
+        .masonarchdoor,
+        .masoncorner,
+        .masoncornerbroken,
+        .doorframe,
+        .archdoorframe,
+        .gatearch,
+        .arcade,
+        .ceilingslab,
+        .ceilingbroken,
+        .barrelvault,
+        .manor,
+        .greathall,
+        .towerhouse,
+        .illusory_long,
+        .illusory_short,
+        .illusory_tall,
+        => .masonry,
+
+        .bonfire, .torch, .brazier, .campfire, .campfire_lit, .forge => .fire,
+        .ghostbonfire, .ghosttorch, .ghostbrazier, .ghostcampfire => .fire,
         .water => .water,
         .tuft, .patch, .grasstall, .clover, .moss => .grass,
         .flowers, .wildflowers, .foxglove, .thistle, .glow => .flowers,
@@ -637,6 +738,10 @@ pub fn biome(k: Kind) Biome {
         .brazier,
         .campfire,
         .campfire_lit,
+        .ghostbonfire,
+        .ghosttorch,
+        .ghostbrazier,
+        .ghostcampfire,
         .tuft,
         .patch,
         .shrub,
@@ -675,6 +780,37 @@ pub fn biome(k: Kind) Biome {
         .obelisk,
         .plinth,
         .altar,
+        => .ruins,
+
+        .masonwall,
+        .masonworn,
+        .masonbroken,
+        .masonfooting,
+        .masonshort,
+        .masonshortworn,
+        .masonshortbroken,
+        .masonlow,
+        .masontall,
+        .masonivy,
+        .masonwindow,
+        .masonpilaster,
+        .masondoor,
+        .masonarchdoor,
+        .masoncorner,
+        .masoncornerbroken,
+        .doorframe,
+        .archdoorframe,
+        .gatearch,
+        .arcade,
+        .ceilingslab,
+        .ceilingbroken,
+        .barrelvault,
+        .manor,
+        .greathall,
+        .towerhouse,
+        .illusory_long,
+        .illusory_short,
+        .illusory_tall,
         => .ruins,
 
         .bonfire, .cottage, .cart, .well, .shrine, .lantern, .fence, .barrels, .woodpile => .village,
@@ -840,9 +976,13 @@ pub fn inBiome(k: Kind, b: Biome) bool {
 }
 
 pub const IVY_HOSTS = [_]Kind{
-    .wall,     .pillar,  .broken, .block,      .arch,
-    .statue,   .cottage, .chapel, .watchtower, .stairs,
-    .monolith, .obelisk, .plinth, .altar,
+    .wall,          .pillar,       .broken,        .block,         .arch,
+    .statue,        .cottage,      .chapel,        .watchtower,    .stairs,
+    .monolith,      .obelisk,      .plinth,        .altar,         .masonwall,
+    .masonworn,     .masonbroken,  .masonshort,    .masonshortworn, .masonshortbroken,
+    .masonlow,      .masontall,    .masonwindow,   .masonpilaster, .masondoor,
+    .masonarchdoor, .masoncorner,  .masoncornerbroken, .doorframe, .archdoorframe,
+    .gatearch,      .arcade,       .manor,         .greathall,     .towerhouse,
 };
 
 pub fn ivyClimbs(k: Kind) bool {
@@ -1103,6 +1243,73 @@ const WALL_BOUND: f32 = 5.0;
 const WALL_TOP: f32 = 3.6;
 const WALL_VIEW: f32 = 220;
 const wallParts = [_]Part{.{ .ax = -3.55, .az = -0.01, .bx = 3.25, .bz = -0.01, .r = 0.37, .h = 3.0, .flat = true }};
+
+const MASON_R: f32 = mason.TH * 0.5 + 0.06;
+const MASON_LONG_BOUND: f32 = mason.MOD * 0.5 + 2.4;
+const MASON_SHORT_BOUND: f32 = mason.WALL_H + 1.2;
+const MASON_TALL_BOUND: f32 = mason.TALL_H + 1.2;
+
+/// EVERY WALL IN THE KIT IS ONE FLAT RUN ON LOCAL X, so its collider is derived from the piece's own two numbers rather than transcribed.
+fn masonRun(run: f32, h: f32) [1]Part {
+    return .{.{ .ax = -run * 0.5 + MASON_R, .bx = run * 0.5 - MASON_R, .r = MASON_R, .h = h, .flat = true }};
+}
+
+/// The break falls toward +x, so the tall half keeps its full stop and the low half is a knee-high one.
+fn masonBreak(run: f32, h: f32) [2]Part {
+    return .{
+        .{ .ax = -run * 0.5 + MASON_R, .bx = -run * 0.08, .r = MASON_R, .h = h * 0.86, .flat = true },
+        .{ .ax = -run * 0.08, .bx = run * 0.5 - MASON_R, .r = MASON_R, .h = h * 0.34, .flat = true },
+    };
+}
+
+/// The gap is `mason.DOOR_W` wide and the head is solid above it — a doorway that reads open is open.
+fn masonDoorway(run: f32, h: f32) [3]Part {
+    return .{
+        .{ .ax = -run * 0.5 + MASON_R, .bx = -mason.DOOR_W * 0.5 - 0.10, .r = MASON_R, .h = h, .flat = true },
+        .{ .ax = mason.DOOR_W * 0.5 + 0.10, .bx = run * 0.5 - MASON_R, .r = MASON_R, .h = h, .flat = true },
+        .{ .ax = -mason.DOOR_W * 0.5, .bx = mason.DOOR_W * 0.5, .r = MASON_R, .h = h, .y0 = mason.DOOR_H, .flat = true },
+    };
+}
+
+const MASON_CORNER_PARTS = [_]Part{
+    .{ .ax = MASON_R, .bx = mason.HALF - MASON_R, .r = MASON_R, .h = mason.WALL_H, .flat = true },
+    .{ .az = MASON_R, .bz = mason.HALF - MASON_R, .r = MASON_R, .h = mason.WALL_H, .flat = true },
+};
+
+const MASON_JAMB_PARTS = [_]Part{
+    .{ .ax = -mason.DOOR_W * 0.5 - 0.16, .bx = -mason.DOOR_W * 0.5 - 0.16, .r = 0.30, .h = mason.DOOR_H, .flat = true },
+    .{ .ax = mason.DOOR_W * 0.5 + 0.16, .bx = mason.DOOR_W * 0.5 + 0.16, .r = 0.30, .h = mason.DOOR_H, .flat = true },
+};
+
+const MASON_GATE_PARTS = [_]Part{
+    .{ .ax = -mason.GATE_SPAN * 0.5 - 0.45, .bx = -mason.GATE_SPAN * 0.5 - 0.45, .r = 0.52, .h = mason.GATE_SPRING, .flat = true },
+    .{ .ax = mason.GATE_SPAN * 0.5 + 0.45, .bx = mason.GATE_SPAN * 0.5 + 0.45, .r = 0.52, .h = mason.GATE_SPRING, .flat = true },
+};
+
+const MASON_ARCADE_PARTS = blk: {
+    var out: [mason.ARCADE_BAYS + 1]Part = undefined;
+    for (0..mason.ARCADE_BAYS + 1) |i| {
+        const x = (@as(f32, @floatFromInt(i)) - @as(f32, mason.ARCADE_BAYS) * 0.5) * mason.ARCADE_PITCH;
+        out[i] = .{ .ax = x, .bx = x, .r = mason.ARCADE_PIER * 0.62, .h = 2.60, .flat = true };
+    }
+    break :blk out;
+};
+
+const MASON_SLAB_DECK = [_]Deck{.{ .r = mason.SLAB * 0.5, .y = mason.SLAB_T }};
+
+fn shellParts(hw: f32, hl: f32, h: f32, doorX0: f32, doorX1: f32) [5]Part {
+    return .{
+        .{ .ax = -hw, .az = -hl + MASON_R, .bx = -hw, .bz = hl - MASON_R, .r = MASON_R, .h = h, .flat = true },
+        .{ .ax = hw, .az = -hl + MASON_R, .bx = hw, .bz = hl - MASON_R, .r = MASON_R, .h = h, .flat = true },
+        .{ .ax = -hw, .az = hl, .bx = hw, .bz = hl, .r = MASON_R, .h = h, .flat = true },
+        .{ .ax = -hw, .az = -hl, .bx = doorX0 - 0.10, .bz = -hl, .r = MASON_R, .h = h, .flat = true },
+        .{ .ax = doorX1 + 0.10, .az = -hl, .bx = hw, .bz = -hl, .r = MASON_R, .h = h, .flat = true },
+    };
+}
+
+const MANOR_PARTS = shellParts(mason.MANOR_HW, mason.MANOR_HL, mason.MANOR_EAVE, mason.MANOR_DOOR_X0, mason.MANOR_DOOR_X1);
+const GREATHALL_PARTS = shellParts(mason.HALL_HW, mason.HALL_HL, mason.HALL_EAVE, mason.HALL_DOOR_X0, mason.HALL_DOOR_X1);
+const TOWERHOUSE_PARTS = shellParts(mason.TOWERHOUSE_HALF, mason.TOWERHOUSE_HALF, mason.TOWERHOUSE_EAVE, mason.TOWERHOUSE_DOOR_X0, mason.TOWERHOUSE_DOOR_X1);
 const vineParts = [_]Part{.{ .ax = -flora.VINE_W * 0.5 + 0.05, .az = 0, .bx = flora.VINE_W * 0.5 - 0.05, .bz = 0, .r = 0.24, .h = flora.VINE_H - 0.1, .flat = true }};
 /// A coarse pair that keeps the rows' comptime checks honest; `partsOf` hands out the set fitted off the rock itself.
 const cliffParts = [_]Part{
@@ -1345,7 +1552,7 @@ pub const INFO = [NK]Info{
         .{ .ax = 0.50, .az = 0.80, .bx = 0.50, .bz = 0.80, .r = 0.30, .h = 1.0 },
     } },
     .{ .kind = .sword, .build = ruins.swordMesh, .bound = 1.6, .top = 1.35, .view = 120 },
-    .{ .kind = .bonfire, .build = ruins.bonfireMesh, .veil = ruins.bonfireVeilMesh, .stow = ruins.bonfireGuitarMesh, .bound = 7.2, .top = 5.4, .view = 300, .solid = true, .light = .{ .y = 0.45, .col = v3(0.86, 0.48, 0.18), .radius = 11.0, .flicker = 0.17 } },
+    .{ .kind = .bonfire, .build = ruins.bonfireMesh, .veil = ruins.bonfireVeilMesh, .stow = ruins.bonfireGuitarMesh, .bound = 7.2, .top = 5.4, .view = 300, .solid = true, .interact = true, .light = .{ .y = 0.45, .col = v3(0.86, 0.42, 0.18), .radius = 11.0, .flicker = 0.17 } },
     // A SQUARE keep, 7.7 m a side, with a buttress running out to +z. The 3.4 m disc left every corner 2 m in the open.
     .{ .kind = .tower, .build = ruins.towerMesh, .bound = 17.5, .top = 17.2, .view = FAR, .solid = true, .parts = &.{
         .{ .ax = -0.10, .az = 0.05, .bx = 0.10, .bz = 0.05, .r = 3.85, .h = 14.0, .flat = true },
@@ -1422,8 +1629,8 @@ pub const INFO = [NK]Info{
     .{ .kind = .stump, .build = wood.stumpMesh, .bound = 1.7, .top = 1.25, .view = 150, .parts = circleParts(0.46, 1.2), .surf = .wood },
     .{ .kind = .log, .build = wood.logMesh, .bound = 3.0, .top = 0.75, .view = 160, .parts = &.{.{ .ax = -1.9, .bx = 1.9, .r = 0.36, .h = 0.75 }}, .surf = .wood },
     .{ .kind = .well, .build = village.wellMesh, .bound = 2.6, .top = 2.4, .view = 240, .parts = circleParts(1.05, 1.15) },
-    .{ .kind = .shrine, .build = village.shrineMesh, .bound = 2.8, .top = 2.5, .view = 240, .parts = circleParts(0.72, 1.9), .light = .{ .y = 1.20, .col = v3(0.56, 0.32, 0.13), .radius = 5.5, .flicker = 0.19 } },
-    .{ .kind = .lantern, .build = village.lanternMesh, .bound = 3.4, .top = 3.1, .view = 230, .parts = circleParts(0.17, 3.0), .light = .{ .y = 2.62, .col = v3(1.05, 0.60, 0.25), .radius = 11.5, .flicker = 0.08 }, .surf = .metal },
+    .{ .kind = .shrine, .build = village.shrineMesh, .bound = 2.8, .top = 2.5, .view = 240, .parts = circleParts(0.72, 1.9), .light = .{ .y = 1.20, .col = v3(0.56, 0.36, 0.13), .radius = 5.5, .flicker = 0.19 } },
+    .{ .kind = .lantern, .build = village.lanternMesh, .bound = 3.4, .top = 3.1, .view = 230, .parts = circleParts(0.17, 3.0), .light = .{ .y = 2.62, .col = v3(1.05, 0.68, 0.25), .radius = 11.5, .flicker = 0.08 }, .surf = .metal },
     .{ .kind = .fence, .build = village.fenceMesh, .bound = 3.6, .top = 1.25, .view = 180, .parts = &.{.{ .ax = -3.0, .bx = 3.0, .r = 0.16, .h = 1.25 }}, .surf = .wood },
     .{ .kind = .barrels, .build = village.barrelsMesh, .bound = 1.8, .top = 1.35, .view = 170, .parts = &.{
         .{ .ax = -0.75, .az = -0.45, .bx = -0.75, .bz = -0.45, .r = 0.34, .h = 1.2 },
@@ -1449,12 +1656,17 @@ pub const INFO = [NK]Info{
     .{ .kind = .chest, .build = village.chestMesh, .bound = 1.6, .top = village.CHEST_TOP + 0.34, .view = 150, .solid = true, .interact = true, .parts = &.{.{ .r = 0.56, .h = village.CHEST_HINGE_Y }}, .surf = .wood },
     .{ .kind = .outcrop, .build = rock.outcropMesh, .bound = 3.4, .top = 1.1, .view = 200, .parts = &.{.{ .ax = -1.0, .az = -0.30, .bx = 1.0, .bz = -0.30, .r = 0.80, .h = 1.05 }} },
     .{ .kind = .scree, .build = rock.screeMesh, .bound = 2.6, .top = 0.35, .view = 160 },
-    .{ .kind = .torch, .build = fx.torchMesh, .bound = 2.6, .top = 2.35, .view = 200, .parts = circleParts(0.18, 2.0), .light = .{ .y = 1.98, .col = v3(0.64, 0.34, 0.13), .radius = 6.0, .flicker = 0.15 }, .surf = .metal },
-    .{ .kind = .brazier, .build = fx.brazierMesh, .bound = 1.9, .top = 1.55, .view = 210, .parts = circleParts(0.50, 1.2), .light = .{ .y = 1.14, .col = v3(1.55, 0.84, 0.29), .radius = 16.0, .flicker = 0.13 }, .surf = .metal },
+    .{ .kind = .torch, .build = fx.torchMesh, .bound = 2.6, .top = 2.35, .view = 200, .parts = circleParts(0.18, 2.0), .light = .{ .y = 1.98, .col = v3(0.64, 0.40, 0.13), .radius = 6.0, .flicker = 0.15 }, .surf = .metal },
+    .{ .kind = .brazier, .build = fx.brazierMesh, .bound = 1.9, .top = 1.55, .view = 210, .parts = circleParts(0.50, 1.2), .light = .{ .y = 1.14, .col = v3(1.55, 0.96, 0.29), .radius = 16.0, .flicker = 0.13 }, .surf = .metal },
     .{ .kind = .campfire, .build = fx.deadCampfireMesh, .bound = 1.5, .top = 0.6, .view = 200, .parts = circleParts(0.45, 0.5), .surf = .stone },
     // …AND ONE YOU CAN SIT AT. `interact` shelves it under the editor's Interactables layer; `rest.isRestKind` is what makes it a bonfire.
     // THE BOUND AND THE VIEW ARE THE SMOKE'S NOW, NOT THE STONES': at 2.6/1.1 the column was culled the moment the hearth left frame. The bonfire's row is 7.2/5.4/300.
-    .{ .kind = .campfire_lit, .build = fx.campfireMesh, .veil = fx.campfireVeilMesh, .stow = fx.campfireGuitarMesh, .bound = 5.6, .top = 4.2, .view = 300, .interact = true, .solid = true, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.52, 0.17), .radius = 13.0, .flicker = 0.18 } },
+    .{ .kind = .campfire_lit, .build = fx.campfireMesh, .veil = fx.campfireVeilMesh, .stow = fx.campfireGuitarMesh, .bound = 5.6, .top = 4.2, .view = 300, .interact = true, .solid = true, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(1.05, 0.48, 0.17), .radius = 13.0, .flicker = 0.18 } },
+    // GHOSTFLAME MIRRORS THE FIRE PROPS: same body, bound, radius and flicker, the hue turned round. None is a rest kind — you cannot sit at a cold fire.
+    .{ .kind = .ghostbonfire, .build = ruins.ghostBonfireMesh, .veil = ruins.ghostBonfireVeilMesh, .bound = 7.2, .top = 5.4, .view = 300, .solid = true, .light = .{ .y = 0.45, .col = v3(0.30, 0.58, 0.88), .radius = 11.0, .flicker = 0.17 } },
+    .{ .kind = .ghosttorch, .build = fx.ghostTorchMesh, .bound = 2.6, .top = 2.35, .view = 200, .parts = circleParts(0.18, 2.0), .light = .{ .y = 1.98, .col = v3(0.22, 0.44, 0.66), .radius = 6.0, .flicker = 0.15 }, .surf = .metal },
+    .{ .kind = .ghostbrazier, .build = fx.ghostBrazierMesh, .bound = 1.9, .top = 1.55, .view = 210, .parts = circleParts(0.50, 1.2), .light = .{ .y = 1.14, .col = v3(0.54, 1.06, 1.60), .radius = 16.0, .flicker = 0.13 }, .surf = .metal },
+    .{ .kind = .ghostcampfire, .build = fx.ghostCampfireMesh, .veil = fx.ghostCampfireVeilMesh, .bound = 5.6, .top = 4.2, .view = 300, .solid = true, .parts = circleParts(0.45, 0.5), .light = .{ .y = 0.52, .col = v3(0.36, 0.70, 1.08), .radius = 13.0, .flicker = 0.18 } },
     .{ .kind = .water, .build = fx.waterMesh, .bound = 30.0, .top = 0.1, .view = FAR, .solid = true, .casts = false },
     .{ .kind = .tuft, .build = flora.tuftMesh, .bound = 0.9, .top = 0.8, .view = 85, .flora = true, .casts = false },
     .{ .kind = .patch, .build = flora.patchMesh, .bound = 2.2, .top = 0.8, .view = 95, .flora = true, .casts = false },
@@ -1683,7 +1895,7 @@ pub const INFO = [NK]Info{
     .{ .kind = .anvil, .build = forge.anvilMesh, .bound = forge.ANVIL_R + 0.3, .top = forge.ANVIL_TOP, .view = 190, .parts = circleParts(forge.STUMP_R + 0.01, forge.ANVIL_TOP), .surf = .stone },
     .{ .kind = .forge, .build = forge.forgeMesh, .bound = forge.FORGE_R + 1.3, .top = forge.FORGE_TOP, .view = 300, .solid = true, .parts = &.{
         .{ .ax = -0.50, .az = -0.20, .bx = 0.45, .bz = -0.20, .r = 0.48, .h = 1.10, .flat = true },
-    }, .light = .{ .y = forge.FORGE_LIGHT_Y, .col = v3(1.0, 0.52, 0.18), .radius = forge.FORGE_LIGHT_R, .flicker = 0.16 } },
+    }, .light = .{ .y = forge.FORGE_LIGHT_Y, .col = v3(1.0, 0.62, 0.18), .radius = forge.FORGE_LIGHT_R, .flicker = 0.16 } },
     .{ .kind = .quenchtrough, .build = forge.quenchMesh, .bound = forge.QUENCH_R + 0.2, .top = forge.QUENCH_TOP, .view = 170, .parts = &.{.{ .ax = -0.62, .bx = 0.62, .r = 0.30, .h = forge.QUENCH_TOP }}, .surf = .wood },
     .{ .kind = .toolrack, .build = forge.toolRackMesh, .bound = forge.RACK_TOP + 0.6, .top = forge.RACK_TOP, .view = 220, .parts = &.{.{ .ax = -forge.RACK_HW, .bx = forge.RACK_HW, .r = 0.22, .h = forge.RACK_TOP * 0.9 }}, .surf = .wood },
     .{ .kind = .stairflight, .build = build.stairMesh, .bound = build.STAIR_RUN + 0.4, .top = build.STAIR_SEG, .view = 240, .stack = build.STAIR_SEG, .flight = .{ .run = build.STAIR_RUN, .halfW = build.STAIR_HALF, .treads = build.STAIR_TREADS }, .surf = .stone },
@@ -1763,6 +1975,38 @@ pub const INFO = [NK]Info{
     // `over` is 0), and the price of that is the low sand at the toes being walked into: a lens has no box.
     .{ .kind = .sanddune, .build = desert.sandDuneMesh, .bound = 10.8, .top = desert.DUNE_TOP, .view = FAR, .parts = &.{.{ .ax = -3.00, .az = desert.DUNE_CREST_Z - 0.30, .bx = 3.00, .bz = desert.DUNE_CREST_Z - 0.30, .r = 1.15, .h = 2.05, .flat = true }}, .surf = .stone },
     .{ .kind = .sandripples, .build = desert.sandRipplesMesh, .bound = desert.RIPPLE_R + 0.5, .top = 0.12, .view = 130, .flora = true, .casts = false, .surf = .stone },
+
+    // THE MASONRY KIT. Every piece is cut to `mason.MOD` and stands on the local origin, so the editor's snap is enough to close a room.
+    .{ .kind = .masonwall, .build = mason.longWallMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.MOD, mason.WALL_H) },
+    .{ .kind = .masonworn, .build = mason.longWornMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H, .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.MOD, mason.WALL_H) },
+    .{ .kind = .masonbroken, .build = mason.longBrokenMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H, .view = WALL_VIEW, .solid = true, .parts = &masonBreak(mason.MOD, mason.WALL_H) },
+    .{ .kind = .masonfooting, .build = mason.footingMesh, .bound = MASON_LONG_BOUND, .top = mason.STUB_H, .view = 200, .solid = true, .parts = &masonRun(mason.MOD, mason.STUB_H) },
+    .{ .kind = .masonshort, .build = mason.shortWallMesh, .bound = MASON_SHORT_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.HALF, mason.WALL_H) },
+    .{ .kind = .masonshortworn, .build = mason.shortWornMesh, .bound = MASON_SHORT_BOUND, .top = mason.WALL_H, .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.HALF, mason.WALL_H) },
+    .{ .kind = .masonshortbroken, .build = mason.shortBrokenMesh, .bound = MASON_SHORT_BOUND, .top = mason.WALL_H, .view = WALL_VIEW, .solid = true, .parts = &masonBreak(mason.HALF, mason.WALL_H) },
+    .{ .kind = .masonlow, .build = mason.lowWallMesh, .bound = MASON_LONG_BOUND, .top = mason.LOW_H + 0.3, .view = 220, .solid = true, .parts = &masonRun(mason.MOD, mason.LOW_H) },
+    .{ .kind = .masontall, .build = mason.tallWallMesh, .bound = MASON_TALL_BOUND, .top = mason.TALL_H + 0.3, .view = FAR, .solid = true, .parts = &masonRun(mason.MOD, mason.TALL_H) },
+    .{ .kind = .masonivy, .build = mason.ivyWallMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H, .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.MOD, mason.WALL_H) },
+    .{ .kind = .masonwindow, .build = mason.windowWallMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.MOD, mason.WALL_H) },
+    .{ .kind = .masonpilaster, .build = mason.pilasterWallMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.MOD, mason.WALL_H) },
+    .{ .kind = .masondoor, .build = mason.doorWallMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .solid = true, .parts = &masonDoorway(mason.MOD, mason.WALL_H) },
+    .{ .kind = .masonarchdoor, .build = mason.archDoorWallMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .solid = true, .parts = &masonDoorway(mason.MOD, mason.WALL_H) },
+    .{ .kind = .masoncorner, .build = mason.cornerMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H, .view = WALL_VIEW, .solid = true, .parts = &MASON_CORNER_PARTS },
+    .{ .kind = .masoncornerbroken, .build = mason.cornerBrokenMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H, .view = WALL_VIEW, .solid = true, .parts = &MASON_CORNER_PARTS },
+    .{ .kind = .doorframe, .build = mason.doorframeMesh, .bound = 4.2, .top = mason.FRAME_H, .view = 240, .solid = true, .parts = &MASON_JAMB_PARTS },
+    .{ .kind = .archdoorframe, .build = mason.archDoorframeMesh, .bound = 4.2, .top = mason.FRAME_H, .view = 240, .solid = true, .parts = &MASON_JAMB_PARTS },
+    .{ .kind = .gatearch, .build = mason.gateArchMesh, .bound = mason.GATE_TOP + 1.0, .top = mason.GATE_TOP, .view = FAR, .solid = true, .parts = &MASON_GATE_PARTS },
+    .{ .kind = .arcade, .build = mason.arcadeMesh, .bound = mason.ARCADE_RUN * 0.5 + 1.5, .top = mason.ARCADE_TOP, .view = FAR, .solid = true, .parts = &MASON_ARCADE_PARTS },
+    // A CEILING IS FLOWN ON THE OP'S `r1` LIFT, so its underside is y=0 and the piece itself is never solid — what you stand on is the deck.
+    .{ .kind = .ceilingslab, .build = mason.ceilingMesh, .bound = mason.SLAB, .top = mason.SLAB_T, .view = FAR, .decks = &MASON_SLAB_DECK, .surf = .stone },
+    .{ .kind = .ceilingbroken, .build = mason.ceilingBrokenMesh, .bound = mason.SLAB, .top = mason.SLAB_T + 0.4, .view = FAR, .surf = .stone },
+    .{ .kind = .barrelvault, .build = mason.vaultMesh, .bound = mason.VAULT_SPAN, .top = mason.VAULT_RISE + 0.4, .view = FAR, .surf = .stone },
+    .{ .kind = .manor, .build = mason.manorMesh, .bound = 16.0, .top = mason.MANOR_TOP, .view = FAR, .solid = true, .parts = &MANOR_PARTS },
+    .{ .kind = .greathall, .build = mason.greatHallMesh, .bound = 22.0, .top = mason.HALL_TOP, .view = FAR, .solid = true, .parts = &GREATHALL_PARTS },
+    .{ .kind = .towerhouse, .build = mason.towerHouseMesh, .bound = 14.0, .top = mason.TOWERHOUSE_TOP, .view = FAR, .solid = true, .parts = &TOWERHOUSE_PARTS },
+    .{ .kind = .illusory_long, .build = mason.illusoryLongMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .interact = true, .solid = true, .breach = .illusion, .parts = &masonRun(mason.MOD, mason.WALL_H) },
+    .{ .kind = .illusory_short, .build = mason.illusoryShortMesh, .bound = MASON_SHORT_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .interact = true, .solid = true, .breach = .illusion, .parts = &masonRun(mason.HALF, mason.WALL_H) },
+    .{ .kind = .illusory_tall, .build = mason.illusoryTallMesh, .bound = MASON_TALL_BOUND, .top = mason.TALL_H + 0.3, .view = FAR, .interact = true, .solid = true, .breach = .illusion, .parts = &masonRun(mason.MOD, mason.TALL_H) },
 };
 
 pub fn info(k: Kind) *const Info {

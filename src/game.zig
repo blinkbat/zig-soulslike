@@ -74,9 +74,7 @@ const savemod = @import("save.zig");
 const tune = @import("play/tune.zig");
 const sfx = @import("core/audio.zig");
 
-/// THIS FILE, for the tests that read their own SOURCE to pin a declaration against its use. Named because a
-/// stale copy does not fail — `readForTest` turns a missing path into `error.SkipZigTest` and the invariant
-/// goes unchecked in silence. `foe.DIR`'s rule.
+/// THIS FILE, for the tests that read their own SOURCE. A stale copy does not fail — `readForTest` turns a missing path into `error.SkipZigTest`.
 const SRC = "src/game.zig";
 
 const v3 = mathx.v3;
@@ -936,8 +934,7 @@ test "EVERY CREATURE'S RIG IS CULLABLE — `foe.posed` at the head of its `pose`
 }
 
 test "EVERY GROUP IS DRIVEN — placement, draw, gate and settle come free off the fold, and the UPDATE does not" {
-    // The `inline for (FOE_GROUPS)` folds spawn a new group, draw it, gate its feet and shoulder it apart, so a row
-    // added without a hand-written update is a cohort that stands on the map and never moves. Nothing but this says so.
+    // The `inline for (FOE_GROUPS)` folds spawn a new group, draw it, gate its feet and shoulder it apart, so a row added without a hand-written update is a cohort that stands on the map and never moves.
     const src = try worldfmt.readForTest(std.testing.allocator, SRC, worldfmt.SRC_CAP);
     defer std.testing.allocator.free(src);
     var missing: usize = 0;
@@ -1075,7 +1072,7 @@ fn onScaffold(comptime field: []const u8) bool {
     return @hasField(T, "xf") and @typeInfo(@FieldType(T, "xf")).array.len == heromod.N and @hasDecl(T, "update");
 }
 
-// Every humanoid on the shared scaffold, driven through its REAL update, with both elbows read off the posed bones every frame: the constants a file pins can agree with themselves and still fold an arm behind the back through a negation the pose forgot.
+// The constants a file pins can agree with themselves and still fold an arm behind the back through a negation the pose forgot.
 test "AN ELBOW BENDS ONE WAY ON EVERY HUMANOID — read off the posed bones through a walk and a fight, never off the constants" {
     const dt: f32 = 1.0 / 60.0;
     // Hyperextension a few degrees past straight is a real elbow; past this it is folded the wrong way.
@@ -1306,9 +1303,8 @@ comptime {
         if (@hasDecl(B, "lockParts") != @hasDecl(B, "lockPointAt")) @compileError("game: `" ++ gr.field ++
             "` has one of `lockParts`/`lockPointAt` and not the other — the extra lock points are dead either way");
     }
-    // A RAISABLE BODY IS THREE THINGS OR NONE. `rekindle` writes `heldOpen`, so `raisable` without the field is a
-    // compile error already; the field WITHOUT `raisable` is the silent half — `foe.dissipate` opts in on it, and
-    // `markVigil` never reaches the body to clear it, so a corpse nobody can raise is held open for ever.
+    // A RAISABLE BODY IS THREE THINGS OR NONE. `rekindle` writes `heldOpen`, so `raisable` without the field is a compile error already; the field
+    // WITHOUT `raisable` is the silent half — `markVigil` never reaches the body to clear it, so a corpse nobody can raise is held open for ever.
     for (FOE_GROUPS) |gr| {
         const B = memberOf(gr.field);
         if (@hasField(B, "heldOpen") != @hasDecl(B, "raisable")) @compileError("game: `" ++ gr.field ++
@@ -2248,16 +2244,13 @@ pub fn envGroundAt(e: *const envmod.Env, x: f32, z: f32) f32 {
     return e.groundAt(x, z);
 }
 
-/// A wall is indexed into every cell its radius touches, so the gather is the boom's whole reach in one pass
-/// instead of a grid walk per probe sample. **IT IS `MAX_NEAR` AND NOTHING SMALLER**: the box is 2 x `camReach`
-/// wide against a 16 m cell, so the walk covers THREE cells a side where `arrowCover`'s covers two, and a solid is
-/// taken once per cell it is indexed into. At 128 the densest stand on the shipped map handed back 316 and
-/// `gatherSolids` DROPPED THE REST SILENTLY — the boom stopped shortening exactly where the masonry is thickest.
+/// A wall is indexed into every cell its radius touches, so the gather is the boom's whole reach in one pass instead of a grid walk per probe sample.
+/// **IT IS `MAX_NEAR` AND NOTHING SMALLER**: the box is 2 x `camReach` against a 16 m cell, so the walk covers THREE cells a side. At 128 the densest
+/// stand on the shipped map handed back 316 and `gatherSolids` DROPPED THE REST SILENTLY.
 pub const CamWalls = [envmod.MAX_NEAR]collision.Solid;
 
-// THE EYE'S CLEARANCE IS THE NEAR PLANE'S, NOT A PICKED NUMBER — the plane's CORNER is what enters the stone
-// first, so the bar is its half-diagonal at `CLIP_NEAR`, and that is a function of the lens AND the window's
-// aspect. Both live here; `camera.zig` cannot see either, so the assert does.
+// THE EYE'S CLEARANCE IS THE NEAR PLANE'S, NOT A PICKED NUMBER — the plane's CORNER enters the stone first, so the bar is its half-diagonal at
+// `CLIP_NEAR`, a function of the lens AND the window's aspect. Both live here; `camera.zig` cannot see either, so the assert does.
 comptime {
     std.debug.assert(cameramod.EYE_R >= eyeRFor(@as(f32, SCREEN_W) / @as(f32, SCREEN_H)));
 }
@@ -2271,9 +2264,8 @@ fn eyeRFor(aspect: f32) f32 {
 /// The widest panel the clearance is claimed to cover — 32:9, which is as wide as a monitor is sold.
 const WIDEST_ASPECT: f32 = 32.0 / 9.0;
 
-/// **AND THE ASPECT IS THE LIVE ONE, NOT `SCREEN_W`/`SCREEN_H`** — the window is resizable and Alt+Enter puts it
-/// borderless at the monitor's own shape, so the constant solved for 1280x800 leaves the plane's corner 34 mm
-/// inside the stone at 16:9 and 177 mm at 21:9. `EYE_R` stays the floor, so the authored window is unchanged.
+/// **AND THE ASPECT IS THE LIVE ONE, NOT `SCREEN_W`/`SCREEN_H`** — the window is resizable and Alt+Enter goes borderless, so the constant solved for
+/// 1280x800 leaves the plane's corner 34 mm inside the stone at 16:9 and 177 mm at 21:9. `EYE_R` stays the floor, so the authored window is unchanged.
 fn eyeR() f32 {
     const h = @max(rl.getScreenHeight(), 1);
     const aspect = @as(f32, @floatFromInt(@max(rl.getScreenWidth(), 1))) / @as(f32, @floatFromInt(h));
@@ -2305,8 +2297,7 @@ pub const CamFloor = struct {
     }
 };
 
-/// `arrow_cover_buf`'s law: the gather is spent inside the one call that asked for it, so the buffer is the file's
-/// and neither caller carries it. It is also a `MAX_NEAR` array — a frame-loop local is 22 KB of stack a frame.
+/// `arrow_cover_buf`'s law: the gather is spent inside the one call that asked for it. A `MAX_NEAR` array is 22 KB of stack a frame as a loop local.
 var cam_walls_buf: CamWalls = undefined;
 
 pub fn camFloor(g: *const Game) CamFloor {
@@ -2373,11 +2364,8 @@ test "THE BOOM'S OWN GATHER CANNOT OVERFLOW — it drops the rest SILENTLY, and 
     try std.testing.expect(worst > 0);
     try std.testing.expect(worst < buf.len);
 
-    // WHAT THE WHOLE RIG COSTS AT THAT STAND, which is the worst one there is — the gather is 0.43 us of it and the
-    // MARCH is the rest: the fully-zoomed boom walks (MAX_DIST - MIN_DIST) / GROUND_PROBE rungs and each rung scans
-    // every wall the gather handed back, so the shape is rungs x walls. At the 316-wall stand that is 7.8 us a frame
-    // in ReleaseFast (70 in Debug, which is what this line prints). Culling the list against the boom's own segment
-    // once a frame would make it rungs + walls; at 0.047% of a frame it is not worth the second pass.
+    // WHAT THE WHOLE RIG COSTS AT THE WORST STAND: the gather is 0.43 us of it and the MARCH is the rest — (MAX_DIST - MIN_DIST) / GROUND_PROBE rungs,
+    // each scanning every wall handed back, so the shape is rungs x walls. At the 316-wall stand, 7.8 us a frame in ReleaseFast (70 in Debug, printed here).
     const foot = e.groundAt(at.x, at.z);
     const shoulder = v3(at.x, foot + 1.4, at.z);
     var rig = cameramod.CamRig{ .cam = undefined, .yaw = 0, .pitch = cameramod.DEFAULT_PITCH, .dist = cameramod.MAX_DIST };
@@ -2402,8 +2390,7 @@ fn snapshotPos(foes: anytype, out: []rl.Vector3) void {
     }
 }
 
-/// `under` is the SURFACE the body was standing on, and it is the whole of `arenaIndexOn`'s point: a room on the
-/// hill may not wall in a passage beneath it, and a sealed chamber has to wall in the bodies that are actually in it.
+/// `under` is the SURFACE the body was standing on, and it is the whole of `arenaIndexOn`'s point: a room on the hill may not wall in a passage beneath it.
 fn holdInRoom(m: *const worldfmt.Map, shut: []const bool, was: rl.Vector3, under: bool, p: rl.Vector3, r: f32) rl.Vector3 {
     const i = m.arenaIndexOn(was.x, was.z, under) orelse return p;
     if (i >= shut.len or !shut[i]) return p;
@@ -2709,10 +2696,8 @@ fn setCasterShaders(g: *Game, sh: rl.Shader) void {
     g.pack.setShader(sh);
 }
 
-/// DEV SENSOR (`Env.checkModels` is the same watch over the world's prototypes): a foe's `model` is written
-/// ONCE, by `init`, and never again — so a mesh or material that has MOVED means something walked over the
-/// `Game`, and the fault that follows lands inside `DrawMesh`, where the cause is unreadable. The material's
-/// SHADER is left out on purpose: `setCasterShaders` swaps that twice a frame.
+/// DEV SENSOR (`Env.checkModels` is the same watch over the world's prototypes): a foe's `model` is written ONCE, by `init`, so a mesh or material
+/// that has MOVED means something walked over the `Game` and the fault lands inside `DrawMesh`. The material's SHADER is left out — `setCasterShaders` swaps it twice a frame.
 var foeStamp: [FOE_GROUPS.len]u64 = [_]u64{0} ** FOE_GROUPS.len;
 var foeWatched = false;
 
@@ -4062,13 +4047,19 @@ const SaveShot = enum { withShot, noShot };
 fn saveNow(g: *Game, shot: SaveShot) void {
     if (editormod.Editor.sparring()) return;
     snapBosses(g);
-    if (!savemod.write(g.slot, slotOf(g))) {
-        std.debug.print("SAVE FAILED: could not write {s}\n", .{savemod.path(g.slot)});
-        return;
-    }
-    g.shelf = savemod.survey(saveMap(g));
+    savemod.writeAsync(g.slot, slotOf(g));
     if (shot == .withShot) g.shotOwed = true;
     g.saveT = hud_.SAVE_SHOW;
+}
+
+/// ONE DRIVER, above every branch that `continue`s: the write landed on a worker, so the shelf it surveyed and the failure it hit both come back here.
+fn pumpSave(g: *Game) void {
+    const done = savemod.takeDone() orelse return;
+    if (!done.ok) {
+        std.debug.print("SAVE FAILED: could not write {s}\n", .{savemod.path(done.slot)});
+        return;
+    }
+    g.shelf = done.shelf;
 }
 
 fn saveMark(g: *Game, dt: f32) void {
@@ -5634,6 +5625,7 @@ pub fn run(mode: Mode) void {
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .vsync_hint = true, .window_hidden = shot, .window_resizable = true });
     rl.initWindow(SCREEN_W, SCREEN_H, "Gloamfall");
     defer rl.closeWindow();
+    defer savemod.shutdown();
     rl.setExitKey(.null);
     stamp(&runTimer, "window");
 
@@ -5726,6 +5718,7 @@ pub fn run(mode: Mode) void {
         // ONE DRIVER, above every branch that `continue`s: the editor and the boot menu did not pump the streams, so a title track fading out under either stalled.
         tickAudioFades(g, rawDt);
         sfx.tickStreams();
+        pumpSave(g);
 
         if (!g.editor.on and !g.rest.active() and !g.talk.active()) {
             if (rl.isKeyPressed(.escape)) g.menu.onEscape();

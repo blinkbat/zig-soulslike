@@ -300,9 +300,8 @@ const Particle = foe.Particle;
 
 const State = enum { idle, approach, windup, slam, swipewind, swipe, backwind, backswipe, drivewind, drive, recover, stunlight, stunheavy, dead };
 
-/// THE FOUR STATES THAT ARE A BLOW, named ONCE (`knight.STROKE`'s rule): the same four were listed at the enter,
-/// at the bill, at the parry and again inside a `switch` whose `else` was `unreachable`, and a fifth stroke added
-/// to some of them and not the rest is a panic mid-fight.
+/// THE FOUR STATES THAT ARE A BLOW, named ONCE (`knight.STROKE`'s rule): the same four were listed at the enter, at the bill, at the parry and again
+/// inside a `switch` whose `else` was `unreachable`.
 const Blow = enum { slam, swipe, backswipe, drive };
 
 fn blowOf(s: State) ?Blow {

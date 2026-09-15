@@ -1151,8 +1151,7 @@ comptime {
     }
     std.debug.assert(CHOOSE_N <= MOVES.len and SWEEP2_I >= CHOOSE_N and SWAT_I >= CHOOSE_N);
     if (STROKE.len != MOVES.len) @compileError("knight: STROKE has a row per MOVES row and no longer does");
-    // `windFor` INDEXES `STROKE` by the move, so row i must be move i. Reordering `MOVES_BANK` alone would hand
-    // every stroke its neighbour's gather, and the uniqueness checks below would still pass.
+    // `windFor` INDEXES `STROKE` by the move, so row i must be move i. Reordering `MOVES_BANK` alone hands every stroke its neighbour's gather, and the uniqueness checks below still pass.
     for (.{ .{ SWEEP_I, State.sweepwind }, .{ OVER_I, State.overwind }, .{ THRUST_I, State.thrustwind }, .{ BASH_I, State.bashwind }, .{ SWEEP2_I, State.chainwind }, .{ SWAT_I, State.swatwind } }) |row| {
         if (STROKE[row[0]].wind != row[1]) @compileError("knight: a STROKE row no longer sits at its own move's index");
     }
@@ -1171,8 +1170,7 @@ comptime {
 }
 const CHOOSE_N = 4;
 
-/// EVERY STROKE, AND THE SWAT ON BOTH SHOULDERS — the roster the throw-it-for-real probes walk. Pinned to `MOVES`
-/// so a stroke added there cannot leave a probe measuring six of seven and passing.
+/// EVERY STROKE, AND THE SWAT ON BOTH SHOULDERS — the roster the throw-it-for-real probes walk, pinned to `MOVES` so a stroke added there cannot leave a probe measuring six of seven.
 const THROWN = [_]struct { mv: usize, shield: bool }{
     .{ .mv = SWEEP_I, .shield = false },
     .{ .mv = OVER_I, .shield = false },
@@ -1228,9 +1226,8 @@ const QUAKE_STEP: f32 = 0.07;
 /// HALF THE DISTANCE BETWEEN HIS BOOTS, pre-scale.
 const TURN_STANCE_HALF: f32 = 0.105;
 
-/// ONE ROW PER STROKE, in `MOVES_BANK`'s own order: the gather it enters and the swing that gather breaks into.
-/// Three lists were kept in lockstep — this mapping, the gather prong in `update`, and the gather->swing switch
-/// inside it, whose `else` was `unreachable`. A stroke added to one and not the others panicked mid-fight.
+/// ONE ROW PER STROKE, in `MOVES_BANK`'s own order: the gather it enters and the swing that gather breaks into. Three lists were kept in lockstep —
+/// this, the gather prong in `update`, and the gather->swing switch inside it, whose `else` was `unreachable`.
 const STROKE = [_]struct { wind: State, swing: State }{
     .{ .wind = .sweepwind, .swing = .sweep },
     .{ .wind = .overwind, .swing = .over },
@@ -1244,7 +1241,6 @@ fn windFor(mv: usize) State {
     return STROKE[if (mv < STROKE.len) mv else BASH_I].wind;
 }
 
-/// The swing a gather breaks into, or null for a state that is not a gather.
 fn swingFor(s: State) ?State {
     for (STROKE) |row| {
         if (row.wind == s) return row.swing;
@@ -1252,8 +1248,7 @@ fn swingFor(s: State) ?State {
     return null;
 }
 
-/// Still inside a stroke — the gather or the swing it breaks into. Off `STROKE`, so a stroke added there cannot
-/// leave a probe listing the twelve states by hand breaking out early and measuring nothing.
+/// Still inside a stroke — the gather or the swing it breaks into. Off `STROKE`, so a stroke added there cannot leave a probe listing the states by hand measuring nothing.
 fn inStroke(s: State) bool {
     for (STROKE) |row| {
         if (row.wind == s or row.swing == s) return true;

@@ -627,7 +627,8 @@ pub fn wildflowersMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// A CURTAIN OF VINES ACROSS A MOUTH — nothing is built at the top, it hangs off whatever the map stands it under. `VINE_W` wide, `VINE_H` tall, local +Z the open side. Every strand is one CURL applied segment by segment (a slow lean off plumb and a slower turn round it, so it sags into an arc rather than standing as a pole), tapering to a whip, ragged at the hem, leaves alternating down it and thinning toward the ground, the odd one gone gold. A blade cuts it (`props.Breach.vines`).
+/// A CURTAIN OF VINES ACROSS A MOUTH — nothing is built at the top; it hangs off whatever the map stands it under. `VINE_W` wide, `VINE_H` tall,
+/// local +Z the open side. A blade cuts it (`props.Breach.vines`).
 pub const VINE_W: f32 = 3.0;
 pub const VINE_H: f32 = 3.2;
 pub fn vineCurtainMesh(shader: rl.Shader) rl.Model {
@@ -667,9 +668,8 @@ pub fn vineCurtainMesh(shader: rl.Shader) rl.Model {
                     const lr = rng.range(0.078, 0.145);
                     const gold = rng.float() < 0.07;
                     b.setMat(.plant);
-                    // FLAT IN Z, the open side: flat in Y instead, the same leaves covered 9% of the 3.0x3.2 m face and
-                    // the curtain read as bare canes. 540 at this size raise it to 85%. THREE BANDS, NOT TWO — a
-                    // two-band blob is a bipyramid, and face-on through the mouth every leaf read as a hard diamond.
+                    // FLAT IN Z, the open side: flat in Y instead, the same leaves covered 9% of the 3.0x3.2 m face and the curtain read as bare canes;
+                    // 540 at this size raise it to 85%. THREE BANDS, NOT TWO — a two-band blob is a bipyramid, and face-on every leaf read as a hard diamond.
                     b.addBlob(v3(c.x + side * lr * 0.9 + rng.signed() * 0.02, c.y - lr * 0.35, c.z + rng.signed() * lr * 0.35), v3(lr, lr * 0.85, lr * 0.30), 3, 4, if (gold) LEAF_GOLD else if (rng.float() < 0.35) LEAF_DK else if (rng.float() < 0.5) IVY_GRN else LEAF);
                 }
             }
@@ -678,7 +678,6 @@ pub fn vineCurtainMesh(shader: rl.Shader) rl.Model {
             from = to;
         }
     }
-    // A few tendrils looped between neighbours near the top, sagging between their ends, so the curtain reads as one growth and not a row.
     var c: i32 = 0;
     while (c < 7) : (c += 1) {
         const xa = rng.range(-VINE_W * 0.5 + 0.2, VINE_W * 0.5 - 0.6);

@@ -213,8 +213,7 @@ pub fn legs(
     }
 }
 
-/// HOW LONG BONE `i`'s SEGMENT IS, in stature units — the gap to its one child down `PARENT`, 0 at a tip. The
-/// walk is the scaffold's, so a mesh is cut to the rest pose it is actually posed on; two quadrupeds had it twice.
+/// HOW LONG BONE `i`'s SEGMENT IS, in stature units — the gap to its one child down `PARENT`, 0 at a tip. The walk is the scaffold's, so a mesh is cut to the rest pose it is actually posed on.
 pub fn segLen(rest: [N]rl.Vector3, i: usize, w: f32) f32 {
     for (0..N) |c| {
         if (PARENT[c] == @as(i32, @intCast(i))) return mathx.lenV(mathx.subV(rest[i], rest[c])) / w;

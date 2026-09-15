@@ -43,17 +43,14 @@ const REBUILD_QUIET: f32 = 0.28;
 const ERASE_HZ: f32 = 5.0;
 const ERASE_STEP: f32 = 0.6;
 const MAX_MARKERS: usize = 500;
-/// Orphan rings the overlay will draw. The COUNT the panel prints is the true one; past this the rest go unringed,
-/// because a map with more than this many stranded placements is read off the number, not by hunting rings.
+/// Orphan rings the overlay will draw; past this the rest go unringed. The COUNT the panel prints is the true one.
 const MAX_ORPHAN_MARKS: usize = 256;
 
 const WATER_EDGE: wf.Edge = .speckle;
 
 const Unit = union(enum) { foe: usize, npc: usize };
 
-/// THE UNITS LAYER MARKS BOTH KINDS IN ONE LIST, the way `hoverInLayer` already addresses them — a folk is its index
-/// past `wf.MAX_FOES`. Marking creatures alone, the marquee still said "{d} selected", Ctrl+A still said "all", and
-/// every body that talks was quietly left out of the move, the copy and the delete.
+/// THE UNITS LAYER MARKS BOTH KINDS IN ONE LIST, the way `hoverInLayer` already addresses them — a folk is its index past `wf.MAX_FOES`.
 const NPC_MARK: usize = wf.MAX_FOES;
 
 fn markedNpc(i: usize) ?usize {
@@ -97,8 +94,7 @@ var undoAt: usize = 0;
 var reachMark: [caves.CELLS]u8 = undefined;
 var reachQueue: [caves.CELLS]u32 = undefined;
 
-/// Every cursor march the process has run. One increment on a walk of the heightfield, and it is what lets a test
-/// say the draw pass costs a SECOND one — the kind of regression neither the picture nor a timing line shows.
+/// Every cursor march the process has run, so a test can say the draw pass costs a SECOND one.
 var marches: usize = 0;
 
 fn undoSlot(i: usize) *wf.Map {
@@ -122,8 +118,7 @@ var clipScats: [MAX_MARKED]wf.Scatter = undefined;
 var nClipOps: usize = 0;
 var clipFoes: [MAX_MARKED]wf.Foe = undefined;
 var nClipFoes: usize = 0;
-/// A folk carries two `Span`s into its OWN map's text arena, so the clipboard holds the resolved name instead and
-/// `paste` interns it again wherever it lands.
+/// A folk carries two `Span`s into its OWN map's text arena, so the clipboard holds the resolved name and `paste` interns it again.
 var clipNpcs: [wf.MAX_NPCS]wf.Npc = undefined;
 var clipCalls: [wf.MAX_NPCS][wf.NAME_CAP]u8 = undefined;
 var clipCallLen: [wf.MAX_NPCS]usize = undefined;
@@ -270,8 +265,7 @@ const MAX_BRUSHES: usize = blk: {
     break :blk most;
 };
 
-/// The two seams the strip draws a heading at, TAKEN OFF THE ENUM: the run between them is the relief tools, and a
-/// count written down here is a count to bump by hand the next time one lands.
+/// The two seams the strip draws a heading at, TAKEN OFF THE ENUM: a count written down here is a count to bump by hand.
 const GROUND_CLIFF_0: usize = @intFromEnum(GroundBrush.cliff);
 const GROUND_SOIL_0: usize = @intFromEnum(GroundBrush.dirt);
 
@@ -530,7 +524,7 @@ comptime {
 }
 
 fn brushShown(ed: *const Editor, i: usize) bool {
-    // UNDERGROUND THE GROUND LAYER SHAPES THE CHAMBER, and only the sculpts have anything to shape: soil, liquid and cliff are the land's own fields. The two roof brushes are the mirror of that - there is no ceiling on the surface.
+    // UNDERGROUND THE GROUND LAYER SHAPES THE CHAMBER, and only the sculpts have anything to shape: soil, liquid and cliff are the land's own fields. There is no ceiling on the surface.
     if (ed.layer == .ground) {
         const b: GroundBrush = @enumFromInt(i);
         if (ed.floorSculpting()) return shaping(b) or roofing(b);
@@ -657,8 +651,7 @@ comptime {
 
 pub const GroundBrush = enum { raise, lower, smooth, flat, roof_up, roof_down, pool, cliff, stair, ramp, slope, conform, plateau, indent, waterfall, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, sand, water, oil, fungal, lava, level, reset, erase };
 
-/// `groundBrushes` is PINNED to the enum's own tags (`pinBrushes`), so a brush whose strip name is not its tag says so
-/// here — and the panel title beside it reads the same two words.
+/// `groundBrushes` is PINNED to the enum's own tags (`pinBrushes`), so a brush whose strip name is not its tag says so here.
 fn groundLabel(b: GroundBrush, tag: [:0]const u8) [:0]const u8 {
     return switch (b) {
         .cliff => "Raise cliff",
@@ -671,8 +664,7 @@ fn roofing(b: GroundBrush) bool {
     return b == .roof_up or b == .roof_down;
 }
 
-/// THE FOUR THAT MOVE A SURFACE — the chamber floor's underground, the land's on top. `pool` shapes the land only
-/// and the two roof brushes the ceiling only, so each names itself beside this rather than riding an ordinal range.
+/// THE FOUR THAT MOVE A SURFACE — the chamber floor's underground, the land's on top. Each names itself rather than riding an ordinal range.
 fn shaping(b: GroundBrush) bool {
     return b == .raise or b == .lower or b == .smooth or b == .flat;
 }
@@ -702,8 +694,7 @@ fn liquidOf(b: GroundBrush) ?wf.Liquid {
         else => null,
     };
 }
-/// Which of the ground layer's brushes the side rail shows. `GROUND_TOOL_LABELS` is its tab row, pinned to it in
-/// the comptime block — the labels are not the tags (`all` is "All tools"), so only the LENGTH can be checked.
+/// Which of the ground layer's brushes the side rail shows. `GROUND_TOOL_LABELS` is not the tags (`all` is "All tools"), so only the LENGTH is pinned.
 const GroundTools = enum { cliffs, sculpt, paint, all };
 const GROUND_TOOL_LABELS = [_][:0]const u8{ "Cliffs", "Sculpt", "Paint", "All tools" };
 
@@ -1096,12 +1087,12 @@ pub const Editor = struct {
     cliffHeight: f32 = 6,
     cliffTarget: f32 = 6,
     groundTools: GroundTools = .cliffs,
-    /// THE LEVEL HE WORKS ON, kept across layers: which surface the cursor lands on, which one a body placed here stands on, and whether the hill over every chamber is drawn. The Caves layer turns it on; nothing turns it off but him.
+    /// THE LEVEL HE WORKS ON, kept across layers: which surface the cursor lands on, which one a body placed here stands on, and whether the hill over every chamber is drawn.
     under: bool = false,
     hasCave: bool = false,
     entranceFrom: ?rl.Vector3 = null,
     caveStroke: bool = false,
-    /// A CARVE SOLVES ITS OWN FLOOR: where the stepper's floor cannot roof the hill at the click, the stroke takes `caves.fitFloor` instead and says so. On, because the arithmetic is the last thing left for the author to do.
+    /// A CARVE SOLVES ITS OWN FLOOR: where the stepper's floor cannot roof the hill at the click, the stroke takes `caves.fitFloor` instead and says so.
     caveAutoFit: bool = true,
     /// What the last rebuild's walk-in found. A flood over 638,401 points is a rebuild's work, not a frame's.
     caveReach: caves.Reach = .{},
@@ -1109,10 +1100,8 @@ pub const Editor = struct {
     caveOrphans: usize = 0,
     orphanOps: [MAX_ORPHAN_MARKS]u32 = undefined,
     nOrphanOps: usize = 0,
-    /// Set by `resolveCursor` and SPENT by `resolveCursorOnce` — a token, not a frame number. As a frame counter
-    /// bumped in `update` it said "already done" for the whole of a `--shot` run, since the harness drives the
-    /// overlay without ever calling `update`, and every editor shot after the first would have drawn the first
-    /// one's cursor. The token is spent by the draw, so a second draw off the same resolve marches again.
+    /// Set by `resolveCursor` and SPENT by `resolveCursorOnce` — a token, not a frame number. As a frame counter bumped in `update` it said
+    /// "already done" for a whole `--shot` run, since the harness drives the overlay without ever calling `update`.
     cursorFresh: bool = false,
     cursorWorld: ?*const envmod.Env = null,
     /// An entry inherits a world `game` already built, so the survey owes one pass that no stroke asked for.
@@ -1418,8 +1407,7 @@ pub const Editor = struct {
         if (self.dragging or self.painting or self.wipe.on) return;
         if (self.layer != l) {
             self.nMarked = 0;
-            // Both panels hold LAST frame's content height, so a tall layer left scrolled would show the short one
-            // that follows it scrolled off for a frame before the clamp caught up.
+            // Both panels hold LAST frame's content height, so a tall layer left scrolled would show the short one that follows it scrolled off for a frame.
             self.sideScroll = 0;
             self.propScroll = 0;
         }
@@ -1455,10 +1443,8 @@ pub const Editor = struct {
         self.caveFloorY = self.fittedFloor(env, at);
     }
 
-    /// PUT THE EYE IN THE CHAMBER: on the floor under the cursor at eye height, looking the way the passage runs.
-    /// A PASSAGE RUNS ACROSS ITS OWN COVERAGE GRADIENT — the air thins toward the walls, never along the way out — so
-    /// the bearing is that gradient turned a quarter, taken in whichever of its two directions stays hollow the longer.
-    /// The framing is DERIVED from where the chamber ends, so it survives a re-carve.
+    /// PUT THE EYE IN THE CHAMBER. A PASSAGE RUNS ACROSS ITS OWN COVERAGE GRADIENT — the air thins toward the walls, never along the
+    /// way out — so the bearing is that gradient turned a quarter, in whichever of its two directions stays hollow the longer.
     fn lookInside(self: *Editor, env: *const envmod.Env) void {
         const at = self.groundAt() orelse return;
         const f = env.caveFields();
@@ -1496,8 +1482,7 @@ pub const Editor = struct {
         self.sayFmt("inside: floor {d:.2} m, room {d:.2} m, {d:.1} m of passage ahead", .{ here.floor - envmod.groundY(), here.headroom(), run });
     }
 
-    /// THE WALK IN, AND THE PLACEMENTS THE CARVE HAS STRANDED — both asked at REBUILD, because the flood is over 638,401
-    /// points and the orphan sweep over every op, foe, folk and the start. A sealed chamber is one nothing walks into.
+    /// THE WALK IN, AND THE PLACEMENTS THE CARVE HAS STRANDED — both asked at REBUILD: the flood is over 638,401 points and the orphan sweep over every op, foe, folk and the start.
     fn surveyCaves(self: *Editor, m: *const wf.Map, env: *const envmod.Env) void {
         if (!env.caveAny) {
             self.caveReach = .{};
@@ -1515,8 +1500,7 @@ pub const Editor = struct {
         for (m.npcs[0..m.nnpcs]) |x| {
             if (x.under and !caves.sampleAt(f, x.x, x.z).hollow()) n += 1;
         }
-        // THE OPS ARE KEPT, NOT JUST COUNTED: `drawOrphans` re-asked this same cave sample of all 17,168 ops every
-        // frame to find the handful that answer yes. The count still walks them all; only the drawing reads the list.
+        // THE OPS ARE KEPT, NOT JUST COUNTED: `drawOrphans` re-asked this cave sample of all 17,168 ops every frame to find the handful that answer yes.
         self.nOrphanOps = 0;
         for (m.ops[0..m.nops], 0..) |*o, i| {
             if (!(o.under and !caves.sampleAt(f, o.x, o.z).hollow())) continue;
@@ -1529,7 +1513,7 @@ pub const Editor = struct {
         self.caveOrphans = n;
     }
 
-    /// WHICH SURFACE A PLACEMENT STANDS ON, flipped where it already is. Underground is refused where there is nothing hollow to stand on, because that is an orphan the moment it is made.
+    /// Underground is refused where there is nothing hollow to stand on — that is an orphan the moment it is made.
     fn flipLevel(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
         const was = levelOf(self, m) orelse return;
         const at = self.selAnchor(m) orelse return;
@@ -1568,7 +1552,6 @@ pub const Editor = struct {
         return self.under and caves.sampleAt(caves.fieldsOf(m), x, z).hollow();
     }
 
-    /// WHAT THE LEVEL SHOWS AND LETS YOU PICK: an underground body only from Underground, a surface body from Surface always, and from Underground only where the hill under it is still standing.
     fn onLevel(self: *const Editor, env: *const envmod.Env, under: bool, x: f32, z: f32) bool {
         if (under) return self.under;
         return !self.under or !env.caveOpenAt(x, z);
@@ -1596,9 +1579,7 @@ pub const Editor = struct {
         return mathx.normV(v3(-f.z, 0, f.x));
     }
 
-    /// The eye rides the LEVEL's floor, not the land's: underground it stops on the chamber floor, so you can orbit
-    /// inside a carve and look at its walls and ceiling. Over solid ground the level's surface IS the hill, so there is
-    /// still no pushing the eye into a hillside. Clear of the 0.55 m near plane.
+    /// The eye rides the LEVEL's floor, not the land's, so you can orbit inside a carve. Clear of the 0.55 m near plane.
     const CAM_CLEAR: f32 = 0.6;
 
     fn applyCam(self: *Editor) void {
@@ -1669,10 +1650,8 @@ pub const Editor = struct {
         self.cursor = self.traceGround();
     }
 
-    /// ONE MARCH A FRAME. `update` and `drawOverlay` both want the cursor, off a mouse and a camera that cannot
-    /// move between them, and the march is a walk of the heightfield (or of the cave field, at a 0.35 m stride).
-    /// `setCutaway` still runs every time — the draw pass reads it — and a world arriving for the first time forces
-    /// the ray, since `update` resolved against nothing.
+    /// ONE MARCH A FRAME: `update` and `drawOverlay` both want the cursor off a mouse and camera that cannot move between them, and the march
+    /// is a walk of the heightfield (or of the cave field, at a 0.35 m stride). A world arriving for the first time forces the ray.
     fn resolveCursorOnce(self: *Editor) void {
         if (self.cursorFresh and self.cursorWorld == self.world) {
             if (self.world) |w| envmod.Env.setCutaway(self.under, w);
@@ -1683,10 +1662,8 @@ pub const Editor = struct {
         self.cursorFresh = false;
     }
 
-    /// A STROKE RIDES THE PLANE IT STARTED ON: once a carve or a cliff drag is down, the cursor is the ray against a
-    /// level plane at the anchor's own height, so the brush cannot fall into the hole it has just opened or climb the
-    /// step it has just raised. Off a stroke it picks the surface of the LEVEL — underground, the chamber floor
-    /// through the cut-away hill.
+    /// A STROKE RIDES THE PLANE IT STARTED ON: once a carve or a cliff drag is down, the cursor is the ray against a level plane at the
+    /// anchor's own height, so the brush cannot fall into the hole it just opened or climb the step it just raised.
     fn traceGround(self: *const Editor) ?rl.Vector3 {
         const ray = rl.getScreenToWorldRay(rl.getMousePosition(), self.cam);
         if (ray.direction.y > -1e-4) return null;
@@ -2224,8 +2201,7 @@ pub const Editor = struct {
         loadField(&self.zoneNameBuf, &self.zoneNameLen, if (i < m.nzones) m.zones[i].label() else "");
     }
 
-    /// EVERY FIELD THE WORLD PANEL EDITS, or the undo step is taken with that field already moved. The start was
-    /// missing, so `Ctrl+Z` after nudging the spawn put the half-extent back and left the spawn where it was.
+    /// EVERY FIELD THE WORLD PANEL EDITS, or the undo step is taken with that field already moved.
     fn bankWorld(self: *Editor, m: *wf.Map, half: f32, runway: wf.Runway, start: wf.Start) void {
         if (self.editing) return;
         const liveHalf = m.half;
@@ -2255,9 +2231,8 @@ pub const Editor = struct {
         self.editing = true;
     }
 
-    /// ONE UNDO STEP PER NAME, NOT PER KEYSTROKE. `nameField` answers on every frame the buffer differs from the
-    /// record, so a twelve-character rename banked twelve times and half a 24-slot ring was gone. Called BEFORE the
-    /// rename, so the snapshot is the map as it stood; the latch is dropped when the field loses the keyboard.
+    /// ONE UNDO STEP PER NAME, NOT PER KEYSTROKE: `nameField` answers on every frame the buffer differs, so a twelve-character rename banked
+    /// twelve times of a 24-slot ring. Called BEFORE the rename; the latch drops when the field loses the keyboard.
     fn bankTyping(self: *Editor, m: *wf.Map, id: u32) void {
         if (self.typingId) |t| {
             if (t == id) return;
@@ -2387,8 +2362,7 @@ pub const Editor = struct {
         if (self.layer == .ground and !self.selecting) {
             if (rl.isMouseButtonDown(.left) and (self.painting or !blocked)) {
                 if (ground) |g| {
-                    // A press begun over a panel reaches this block with the button already DOWN, so a drag's
-                    // origin is where painting starts and never `isMouseButtonPressed`, which is long past.
+                    // A press begun over a panel reaches this block with the button already DOWN, so a drag's origin is where painting starts and never `isMouseButtonPressed`.
                     const started = !self.painting;
                     if (started) {
                         self.bank(m);
@@ -2485,8 +2459,7 @@ pub const Editor = struct {
                                 self.wetStroke = true;
                             }
                         },
-                        // THE SOIL RUN IS NAMED, NOT SWEPT UP IN AN `else`: under one, a brush appended to
-                        // `GroundBrush` compiled clean and hit `soilOf`'s null at the first stroke.
+                        // THE SOIL RUN IS NAMED, NOT SWEPT UP IN AN `else`: under one, a brush appended to `GroundBrush` compiled clean and hit `soilOf`'s null at the first stroke.
                         .dirt, .turf, .stone, .silt, .ash, .moss, .bone, .cinder, .spore, .bloom, .sand => |b| {
                             if (m.paintSoil(g.x, g.z, self.radius, soilOf(b).?, self.soilOpacity, self.brushEdge)) env.uploadSoil(m);
                         },
@@ -2590,7 +2563,6 @@ pub const Editor = struct {
         }
     }
 
-    /// The cliff piece whose footprint holds the cursor, nearest foot first.
     fn cliffUnder(env: *const envmod.Env, g: rl.Vector3) ?*const envmod.Prop {
         var best: ?*const envmod.Prop = null;
         var bestD: f32 = 1e9;
@@ -2821,8 +2793,7 @@ pub const Editor = struct {
         if (self.layer == .units) {
             const g = self.groundAt() orelse return .none;
             var near = mathx.Nearest.within(FOE_PICK_R);
-            // THE DISC BEFORE THE LEVEL: `onLevel` asks the cave field of a surface body, and all but the one or two
-            // under the cursor are already out on a distance test that is two subtractions.
+            // THE DISC BEFORE THE LEVEL: `onLevel` asks the cave field of a surface body, and all but the one or two under the cursor are already out on two subtractions.
             const pick2 = FOE_PICK_R * FOE_PICK_R;
             for (m.foes[0..m.nfoes], 0..) |f, i| {
                 if (mathx.dist2XZ(v3(f.x, 0, f.z), g) >= pick2) continue;
@@ -2979,8 +2950,7 @@ pub const Editor = struct {
                         z.mix = src.mix;
                         z.nmix = src.nmix;
                     } else {
-                        // `zoneAt` is null only on the FIRST zone of a map, and `parseZone` refuses an empty mix, so
-                        // left at none that zone saved a file the editor could no longer open. `mixRemove`'s rule.
+                        // `zoneAt` is null only on the FIRST zone of a map and `parseZone` refuses an empty mix, so left at none that zone saved a file the editor could no longer open.
                         z.mix[0] = props.FLORA_KINDS[0];
                         z.nmix = 1;
                     }
@@ -3470,8 +3440,7 @@ pub const Editor = struct {
         return true;
     }
 
-    /// A CREATURE TOO BIG FOR THE PASSAGE IS REFUSED, the same way a water dweller out of its band is, and the panel
-    /// gives its own measured size against the room's. `foe.bulkOf` is the body's rig; `caves.roomAt` taps the girth too.
+    /// A CREATURE TOO BIG FOR THE PASSAGE IS REFUSED, the same way a water dweller out of its band is. `foe.bulkOf` is the body's rig; `caves.roomAt` taps the girth too.
     fn cramped(self: *Editor, env: *const envmod.Env, at: rl.Vector3) bool {
         if (!self.under) return false;
         const bi = self.brushIdx();
@@ -3727,7 +3696,6 @@ pub const Editor = struct {
         self.sayFmt("duplicated #{d} -> #{d}", .{ s, idx });
     }
 
-    /// Where a mark stands, whichever kind it names. `null` for one whose record has since gone.
     fn markedAt(self: *const Editor, m: *const wf.Map, i: usize) ?rl.Vector3 {
         if (self.layer == .units) {
             if (markedNpc(i)) |n| return if (n < m.nnpcs) v3(m.npcs[n].x, 0, m.npcs[n].z) else null;
@@ -3912,8 +3880,7 @@ pub const Editor = struct {
             np.x += at.x;
             np.z += at.z;
             np.under = self.underAt(m, np.x, np.z);
-            // BOTH SPANS ARE OFFSETS INTO THE MAP THEY CAME FROM. The conversation is named again by index, and the
-            // call by the text the clipboard carried; either that or a pasted body reads another map's bytes.
+            // BOTH SPANS ARE OFFSETS INTO THE MAP THEY CAME FROM: the conversation is named again by index and the call by the text the clipboard carried, or a pasted body reads another map's bytes.
             np.dlg = if (np.dlg != wf.NO_DIALOG and np.dlg < m.ndialogs) np.dlg else wf.NO_DIALOG;
             np.dlgRef = if (np.dlg == wf.NO_DIALOG) wf.Span{} else (m.addText(m.dialogs[np.dlg].label()) catch wf.Span{});
             np.call = if (clipCallLen[ci] == 0) wf.Span{} else (m.addText(clipCalls[ci][0..clipCallLen[ci]]) catch wf.Span{});
@@ -3964,8 +3931,7 @@ pub const Editor = struct {
         var removed: usize = 0;
         var broke: usize = 0;
         var folk = false;
-        // Descending, so a folk mark (past `wf.MAX_FOES`) is taken before every creature and each removal shifts
-        // only records this loop has already passed.
+        // Descending, so a folk mark (past `wf.MAX_FOES`) is taken before every creature and each removal shifts only records already passed.
         for (idx[0..self.nMarked]) |i| {
             if (self.layer == .units) {
                 if (markedNpc(i)) |k| {
@@ -4082,8 +4048,7 @@ pub const Editor = struct {
     }
 
     fn saveNow(self: *Editor, m: *const wf.Map) bool {
-        // The arena is built in memory for one fight and his own map is the thing set aside; writing it here reports
-        // a save he did not ask for and leaves `test_spar.world` in the Open list.
+        // The arena is built in memory for one fight and his own map is set aside; writing it here reports a save he did not ask for.
         if (sparHeld) {
             self.say("this is the sparring room, not your map - leave the fight first (the menu's Editor brings it back)");
             return false;
@@ -4232,8 +4197,7 @@ pub const Editor = struct {
                 const ordered = f.ai != .hold;
                 const col = if (sel) ui.HOT else if (ordered) ui.alpha(ui.LIVE, unitA) else ui.alpha(foeSwatch(f.kind), unitA);
                 const at = liftAt(f.x, f.z, y + FOE_BOX_H * 0.5);
-                // The body's own tap pays for the cull too, so a foe off screen costs one and its roam ring costs none.
-                // The SELECTED one is never culled: its patrol legs run wherever they were authored, well past any ring.
+                // The body's own tap pays for the cull too. The SELECTED one is never culled: its patrol legs run wherever they were authored, past any ring.
                 if (!sel and !gizmoShows(at, foemod.ROAM_R)) continue;
                 rl.drawCubeWires(at, FOE_BOX_W, FOE_BOX_H, FOE_BOX_W, col);
                 if (ordered and self.layer == .units and f.ai == .roam) {
@@ -4407,8 +4371,7 @@ pub const Editor = struct {
         self.drawPlayPost(env);
     }
 
-    /// WHERE F5 WILL STAND HIM: a post his own height at the camera's target, in the level's colour, so the answer to
-    /// "where does Play put me" is on screen before the key. `playtest` takes exactly this point (`game`'s `.playtest`).
+    /// WHERE F5 WILL STAND HIM: `playtest` takes exactly this point (`game`'s `.playtest`).
     fn drawPlayPost(self: *const Editor, env: *const envmod.Env) void {
         const x = self.cam.target.x;
         const z = self.cam.target.z;
@@ -4420,8 +4383,7 @@ pub const Editor = struct {
         ringAtY(x, z, foemod.HERO_R, foot + heromod.H, col, 16);
     }
 
-    /// A PLACEMENT WHOSE CHAMBER HAS BEEN FILLED IN, in the removal colour: `caves.homeY` stands it back on the land
-    /// without a word, so the only way it ever showed was by playing the map and finding it on a hillside.
+    /// A PLACEMENT WHOSE CHAMBER HAS BEEN FILLED IN, in the removal colour: `caves.homeY` stands it back on the land without a word.
     fn drawOrphans(self: *const Editor, m: *const wf.Map, y: f32) void {
         if (self.caveOrphans == 0) return;
         defer gizmoUnder = self.under;
@@ -4441,8 +4403,7 @@ pub const Editor = struct {
         }
     }
 
-    /// SEE IT BEFORE YOU DO IT. Drawn with the DEPTH TEST OFF, because the whole point is the box a carve would leave
-    /// UNDER a hill that is still standing in front of it. Every colour here is the verdict the panel gives in words.
+    /// Drawn with the DEPTH TEST OFF, because the point is the box a carve would leave UNDER a hill still standing in front of it.
     fn drawCavePreview(self: *const Editor, m: *const wf.Map, env: *const envmod.Env) void {
         const at = self.groundAt() orelse return;
         rl.gl.rlDisableDepthTest();
@@ -4469,12 +4430,10 @@ pub const Editor = struct {
         }
     }
 
-    /// One tap along an Entrance run: the floor its grade lays there, whether the hill has thinned enough to open, and
-    /// how far OVER an existing chamber's floor the grade still is — which is the "arrives too high to step down" failure.
+    /// One tap along an Entrance run. `over` is how far the grade still is OVER an existing chamber's floor — the "arrives too high to step down" failure.
     const Tap = struct { x: f32, z: f32, floor: f32, opens: bool, over: f32 };
 
-    /// THE PART OF AN ENTRANCE RUN THAT IS NOT THE TAP: solved once for the whole guide. Read per tap it cost a
-    /// heightfield sample at the mouth and a cave sample at the far end on every one of a 60 m run's 120 steps.
+    /// Solved once for the whole guide: read per tap it cost a heightfield sample at the mouth and a cave sample at the far end on each of a 60 m run's 120 steps.
     const Run = struct { len: f32, start: f32, end: f32 };
 
     fn entranceRun(self: *const Editor, env: *const envmod.Env, from: rl.Vector3) Run {
@@ -4557,7 +4516,7 @@ pub const Editor = struct {
     }
 };
 
-/// THE CARVE PREVIEW'S THREE ANSWERS, and the panel gives the same three in words: rock enough to roof it, too thin to roof it, open to the sky. Not `GONE`, which means a stroke that removes something and nothing else.
+/// THE CARVE PREVIEW'S THREE ANSWERS: rock enough to roof it, too thin to roof it, open to the sky. Not `GONE`, which means a stroke that only removes.
 const CARVE_ROOFED = ui.LIVE;
 const CARVE_THIN = ui.col(226, 166, 74, 255);
 const CARVE_SKY = ui.col(214, 84, 62, 255);
@@ -4569,7 +4528,7 @@ fn carveTint(overhead: f32) rl.Color {
     return if (overhead > 0) CARVE_THIN else CARVE_SKY;
 }
 
-/// A ring at ONE world height. `ringXZ` lifts off whatever surface is under it, and a chamber's floor and roof are heights, not offsets from the hill.
+/// A ring at ONE world height — a chamber's floor and roof are heights, not offsets from the hill the way `ringXZ` lifts.
 fn ringAtY(cx: f32, cz: f32, r: f32, y: f32, col: rl.Color, seg: i32) void {
     if (r < 0.02) return;
     var i: i32 = 0;
@@ -4663,13 +4622,10 @@ var gizmoUnder: bool = false;
 /// The frustum `gizmoShows` culls against, set once per `draw3D`. Null leaves every gizmo drawn (tests, the shot harness).
 var gizmoView: ?envmod.View = null;
 
-/// Metres of slack on a gizmo's cull sphere: the centre is one heightfield tap and the rim sits on ground that tap
-/// never saw, so the sphere is grown by more than a cliff before it is asked. Never a far clip — an author who zooms
-/// out is asking to see the far side of the map.
+/// Metres of slack on a gizmo's cull sphere: the centre is one heightfield tap and the rim sits on ground that tap never saw. Never a far clip — an author who zooms out wants the far side of the map.
 const GIZMO_RELIEF: f32 = 16.0;
 
-/// A WIRE OFF SCREEN COSTS A HEIGHTFIELD TAP A VERTEX AND SHOWS NOTHING — a ring is 48 of them and an outline 52.
-/// `at` is the gizmo's own anchor, already lifted; `rad` its reach in XZ.
+/// A WIRE OFF SCREEN COSTS A HEIGHTFIELD TAP A VERTEX AND SHOWS NOTHING — a ring is 48 of them and an outline 52. `at` is the gizmo's own anchor, already lifted; `rad` its reach in XZ.
 fn gizmoShows(at: rl.Vector3, rad: f32) bool {
     const vw = gizmoView orelse return true;
     return vw.visible(at, rad + GIZMO_RELIEF, envmod.GROUND_HALF);
@@ -4694,7 +4650,6 @@ fn handlePost(x: f32, z: f32, y: f32, held: bool) void {
 fn arenaWall(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void {
     const SEG = GROUND_SEG;
     const top = ui.alpha(col, @intFromFloat(@as(f32, @floatFromInt(col.a)) * 0.55));
-    // ONE TAP A POST: the head is the foot plus the wall's height, and the next post's foot is carried into it.
     var foot = liftAt(x0, z0, lift);
     if (!gizmoShows(foot, mathx.lenXZ(v3(x1 - x0, 0, z1 - z0)) + ARENA_WALL_H)) return;
     var i: i32 = 0;
@@ -4714,7 +4669,6 @@ const GROUND_SEG: i32 = 12;
 
 fn groundLine(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void {
     const SEG = GROUND_SEG;
-    // CARRIED, not re-sampled: a segment's far end is the next one's near end, and `liftAt` is a heightfield tap.
     var prev = liftAt(x0, z0, lift);
     var i: i32 = 1;
     while (i <= SEG) : (i += 1) {
@@ -4744,8 +4698,7 @@ fn outline(x0: f32, z0: f32, x1: f32, z1: f32, y: f32, col: rl.Color) void {
     groundLine(x0, z1, x0, z0, y, col);
 }
 
-/// Metres of rim a segment covers. A flat 48 spent the same 48 heightfield taps on a 0.9 m cursor ring as on a
-/// 50 m clearing, and at 0.12 m a segment the small one was drawing under the width of its own line.
+/// Metres of rim a segment covers. A flat 48 spent the same 48 heightfield taps on a 0.9 m cursor ring as on a 50 m clearing, and at 0.12 m a segment the small one drew under its own line width.
 const RING_ARC: f32 = 2.5;
 const RING_SEG_MIN: i32 = 12;
 const RING_SEG_MAX: i32 = 48;
@@ -4757,7 +4710,6 @@ fn ringXZ(cx: f32, cz: f32, r: f32, y: f32, col: rl.Color) void {
 
 fn ringSeg(cx: f32, cz: f32, r: f32, y: f32, col: rl.Color, seg: i32) void {
     if (r < 0.02) return;
-    // CARRIED like `groundLine`, and the last spoke closes on the first point rather than re-taking it at tau.
     const first = liftAt(cx + r, cz, y);
     // The rim point already taken is the cull anchor, and every other point of the ring is inside `2r` of it.
     if (!gizmoShows(first, 2 * r)) return;
@@ -4816,10 +4768,8 @@ fn edgeTip(e: wf.Edge, wet: bool) [:0]const u8 {
 
 const ROW_H: i32 = ui.ROW_H;
 
-/// A PANEL WHOSE CONTENT RUNS PAST ITS BOTTOM SCROLLS, because the rows past the bottom cannot be clicked at all:
-/// the Ground layer alone lays out 29 brushes over 5 sections, 1038 px of strip in a 704 px panel, and the last
-/// nine tools — Water through Erase — were off the screen. `held` is what the LAST frame measured, since a layout
-/// is only known once it has been walked; on a panel that fits, `maxScroll` is 0 and nothing changes.
+/// A PANEL WHOSE CONTENT RUNS PAST ITS BOTTOM SCROLLS, because the rows past the bottom cannot be clicked at all: the Ground layer lays out
+/// 29 brushes over 5 sections, 1038 px of strip in a 704 px panel. `held` is what the LAST frame measured; on a panel that fits, `maxScroll` is 0.
 const PANEL_WHEEL: f32 = 34;
 
 fn beginScroll(ctx: *ui.Ctx, r: rl.Rectangle, scroll: *i32, held: i32) ?rl.Rectangle {
@@ -4827,8 +4777,7 @@ fn beginScroll(ctx: *ui.Ctx, r: rl.Rectangle, scroll: *i32, held: i32) ?rl.Recta
     return ctx.pushClip(r);
 }
 
-/// The wheel is taken on the way OUT, because a list drawn inside the panel gets first refusal on it and is only
-/// polled once the panel has been walked. One frame of lag on the offset, which is a held value anyway.
+/// The wheel is taken on the way OUT, because a list drawn inside the panel gets first refusal on it and is only polled once the panel has been walked.
 fn endScroll(ctx: *ui.Ctx, r: rl.Rectangle, scroll: *i32, held: i32, was: ?rl.Rectangle) void {
     ctx.popClip(was);
     const view: i32 = @intFromFloat(r.height);
@@ -5315,7 +5264,6 @@ fn gradientRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op, s: *wf.Scatter
     return ch;
 }
 
-/// THE WALK IN, SAID OUT LOUD. A carve is not a cave until something can get into it, and nothing else in the editor ever said so.
 fn drawCaveWalk(ed: *Editor, env: *const envmod.Env, ctx: *ui.Ctx, x: i32, y0: i32, w: i32) i32 {
     var y = y0;
     var buf: [96]u8 = undefined;
@@ -5338,8 +5286,6 @@ fn drawCaveWalk(ed: *Editor, env: *const envmod.Env, ctx: *ui.Ctx, x: i32, y0: i
     return y + ROW_H + 4;
 }
 
-/// WHAT THE BRUSH WOULD PUT A BODY ON, said before the click: the chamber floor and the room over it, and the armed
-/// creature's own measured bulk where it will not fit. Only underground has anything to say - on the surface it is the land.
 fn drawPlaceHere(ed: *Editor, env: *const envmod.Env, x: i32, y0: i32) i32 {
     var y = y0;
     if (!ed.under) return y;
@@ -5375,7 +5321,6 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     const w = PROP_W - 20;
     const top = BARS_H + 8 - ed.propScroll;
     var y = top;
-    // The panel returns from a dozen places, so the height it walked and the scissor are both taken on the way out.
     defer {
         ed.propHeld = y - top + 10;
         endScroll(ctx, view, &ed.propScroll, ed.propHeld, was);
@@ -6223,8 +6168,7 @@ fn paintMinimap(m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, inne
     }
 }
 
-/// THE CHAMBERS' FOOTPRINT, sampled once a pixel: the cave lattice is 640,000 points and the face is 33,000 pixels.
-/// A MOUTH IS THE ONE THING WORTH FINDING AT A GLANCE, so it takes the same teal at full strength.
+/// THE CHAMBERS' FOOTPRINT, sampled once a pixel: the cave lattice is 640,000 points and the face is 33,000 pixels. A mouth takes the same teal at full strength.
 fn paintCaves(m: *const wf.Map, env: *const envmod.Env, px: i32, py: i32, inner: f32) void {
     if (!env.caveAny) return;
     const f = env.caveFields();
@@ -6374,7 +6318,6 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
         hud.mono(line, CHROME_PAD, ty, hud.MONO, if (st.ok()) uiart.GOOD else uiart.BAD);
         return;
     }
-    // THE CAVES LAYER GETS ITS OWN CRIB, because its verbs are an ORDER and not a keyboard: nothing about "Fit, then Carve, then Entrance" is discoverable from a strip of four buttons.
     const list: []const [:0]const u8 = if (ed.layer == .caves) &CAVE_CRIBS else &CRIBS;
     const widths: []i32 = if (ed.layer == .caves) &caveCribW else &cribW;
     for (list, 0..) |c, i| {
@@ -6899,9 +6842,8 @@ var gateOps: usize = std.math.maxInt(usize);
 var gateKey: u64 = 0;
 var gateWas: bool = false;
 
-/// `unfilledCount`'s law for the Rooms panel's gate line: drawn every frame, it re-read all 17,232 ops of the
-/// shipped map for one bool — 30.9 us, and the cap is 40,960. The key carries the room's own CORNERS as well as
-/// the ops, because a drag banks once and then moves the wall for as many frames as the mouse is down.
+/// `unfilledCount`'s law for the Rooms panel's gate line: drawn every frame, it re-read all 17,232 ops of the shipped map for one bool — 30.9 us against a
+/// 40,960 cap. The key carries the room's own CORNERS as well as the ops, because a drag banks once and then moves the wall while the mouse is down.
 fn hasGateOnWall(ed: *const Editor, m: *const wf.Map, a: *const wf.Arena) bool {
     var key: u64 = a.n;
     for (0..a.verts()) |i| {
@@ -7721,7 +7663,6 @@ fn dialogRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, span: *wf.Span, x: i32, y: i
 }
 
 /// A NUMBER IN THE SCRIPT PANEL IS ONE UNDO STEP FOR THE WHOLE GESTURE, the way every other number in the editor is.
-/// Seven of them banked nothing at all — a counter's target, a `near` radius and every duration were outside undo.
 fn trigF(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, step: f32, lo: f32, hi: f32, tip: [:0]const u8) bool {
     const was = v.*;
     if (!ui.stepperF(ctx, x, y, w, label, v, step, lo, hi, tip)) return false;
@@ -7736,9 +7677,8 @@ fn trigI(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y: i32, w: i32, label: [
     return true;
 }
 
-/// EVERY NUMERIC ROW IN THE SCRIPT MODAL, ONE TABLE. `condFields`/`actFields` place them off this and the overhang
-/// test at the foot of the file measures the same rows, so a width moved in the panel cannot pass a test still
-/// holding the old one. `cap` sizes a box rather than stretching it; 0 fills what is left of `w`.
+/// EVERY NUMERIC ROW IN THE SCRIPT MODAL, ONE TABLE. `condFields`/`actFields` place them off this and the overhang test measures the same rows.
+/// `cap` sizes a box rather than stretching it; 0 fills what is left of `w`.
 const ScriptNum = enum { counter_n, elapsed_s, near_r, deaths_n, act_count, act_timer, act_wait };
 
 const SCRIPT_NUMS = [_]struct { name: []const u8, at: i32, gap: i32, cap: i32 = 0 }{
@@ -7978,7 +7918,6 @@ fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
     };
 }
 
-/// THE SELECTION'S OWN LEVEL, where the selection has one — an op, a creature and a folk all carry `under`.
 fn levelOf(ed: *const Editor, m: *const wf.Map) ?bool {
     if (ed.layer == .units) {
         return switch (ed.selUnit orelse return null) {
@@ -8241,7 +8180,6 @@ test "A RENAME IS ONE UNDO STEP, NOT ONE A KEYSTROKE" {
     for (0..12) |_| ed.bankTyping(m, KB_LOC_NAME);
     try std.testing.expectEqual(@as(usize, 1), undoN);
 
-    // The field gave the keyboard up; the next rename is its own step.
     ed.typingId = null;
     ed.bankTyping(m, KB_LOC_NAME);
     try std.testing.expectEqual(@as(usize, 2), undoN);
@@ -8552,14 +8490,12 @@ test "THE CURSOR IS MARCHED ONCE A DRAW, AND A DRAW WITH NO RESOLVE BEHIND IT ST
     var ed = Editor{};
     ed.applyCam();
 
-    // The live loop: `update` resolves, the draw spends what it left. One march between them.
     const a = marches;
     ed.resolveCursor();
     ed.resolveCursorOnce();
     try std.testing.expectEqual(@as(usize, 1), marches - a);
 
-    // The shot harness never calls `update`, so the second draw has nothing banked and must march again. Keyed on a
-    // frame counter only `update` bumped, this said "already done" for the whole run.
+    // The shot harness never calls `update`, so the second draw has nothing banked and must march again.
     const b = marches;
     ed.resolveCursorOnce();
     ed.resolveCursorOnce();

@@ -152,8 +152,7 @@ pub const Hit = struct {
         return out;
     }
 
-    /// THE MAGNITUDES SCALE AND THE REST RIDES ALONG — written as a COPY, not a fresh literal, so a field added to
-    /// `Hit` comes through a scaled blow instead of coming out at its default with nothing saying so.
+    /// THE MAGNITUDES SCALE AND THE REST RIDES ALONG — written as a COPY, not a fresh literal, so a field added to `Hit` comes through a scaled blow.
     pub fn scaled(self: Hit, k: f32) Hit {
         var out = self;
         out.dmg *= k;

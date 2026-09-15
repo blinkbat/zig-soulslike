@@ -155,8 +155,8 @@ pub fn burningRockMesh(shader: rl.Shader) rl.Model {
     while (i < 4) : (i += 1) veinOn(&b, &rng, c, r, 5, 0.036);
     art.chipsInto(&b, &rng, 0, 0, 1.5, 0.07, 0.18, 5);
     coalsInto(&b, &rng, 0, 0, 1.3, 6);
-    art.flameInto(&b, &rng, 0, 1.14, 0, 1.30);
-    art.flameInto(&b, &rng, 0.14, 1.12, -0.10, 0.80);
+    art.flameInto(&b, &rng, 0, 1.14, 0, 1.30, art.FIRE);
+    art.flameInto(&b, &rng, 0.14, 1.12, -0.10, 0.80, art.FIRE);
     return b.toModel(shader);
 }
 
@@ -194,7 +194,7 @@ pub fn cinderConeMesh(shader: rl.Shader) rl.Model {
         seamAlong(&b, &rng, top, foot, 0.040, 0.06);
     }
     coalsInto(&b, &rng, 0, 0, CONE_R * 1.15, 8);
-    art.smokeInto(&b, &rng, CONE_VENT_Y, 1.6);
+    art.smokeInto(&b, &rng, CONE_VENT_Y, 1.6, art.SMOKE);
     return b.toModel(shader);
 }
 
@@ -241,8 +241,8 @@ pub fn fireSpireMesh(shader: rl.Shader) rl.Model {
     }
     art.chipsInto(&b, &rng, 0, 0, 2.2, 0.08, 0.20, 7);
     coalsInto(&b, &rng, 0, 0, 2.0, 6);
-    art.flameInto(&b, &rng, top.x, top.y - 0.02, top.z, 1.60);
-    art.smokeInto(&b, &rng, top.y + 0.20, 1.3);
+    art.flameInto(&b, &rng, top.x, top.y - 0.02, top.z, 1.60, art.FIRE);
+    art.smokeInto(&b, &rng, top.y + 0.20, 1.3, art.SMOKE);
     return b.toModel(shader);
 }
 

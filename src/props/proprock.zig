@@ -150,7 +150,6 @@ var fitStore: [CLIFF_PROPS.len][FIT_CAP]art.Part = undefined;
 var fitN: [CLIFF_PROPS.len]usize = [_]usize{0} ** CLIFF_PROPS.len;
 var fitDone: [CLIFF_PROPS.len]bool = [_]bool{false} ** CLIFF_PROPS.len;
 
-/// A row's colliders, fitted once off its own shape.
 pub fn cliffColliders(i: usize) []const art.Part {
     if (!fitDone[i]) {
         fitN[i] = fitParts(&cliffShape(i).masses, 1.0, &fitStore[i]).len;
@@ -166,7 +165,6 @@ pub const CliffShape = struct {
     hi: rl.Vector3,
     all: [MASS_CAP + SKY_CAP]CliffBody,
 
-    /// Every body that has a face: the colliding masses and the skyline, as `cliffFaceZ` reads them.
     pub fn bodies(self: *const CliffShape) []const CliffBody {
         return self.all[0 .. self.masses.n + self.masses.nsky];
     }
@@ -225,7 +223,8 @@ pub fn cliffBuild(seed: u64, k: CliffKind) Builder {
     return cliffBuildOpt(seed, k, null);
 }
 
-/// THE ROCK A CUT IS DRESSED WITH, one mass. A cliff piece is a 15 m wall and cannot be the unit a 3 m face is built from; these are what a hand places against a bank — 2.4-4.4 m across, faceted, sunk most of the way in. `blocky` runs 0 (rounded) to 1 (slabbed) and picks the ring and side counts.
+/// THE ROCK A CUT IS DRESSED WITH, one mass: 2.4-4.4 m across, faceted, sunk most of the way in — what a hand places against a bank, where a cliff
+/// piece is a 15 m wall. `blocky` runs 0 (rounded) to 1 (slabbed) and picks the ring and side counts.
 pub const FACE_ROCK_SEEDS = [_]u64{ 70001, 70019, 70037, 70061, 70079, 70103, 70121, 70141 };
 
 pub fn faceRockBuild(seed: u64, masses: ?*Masses) Builder {

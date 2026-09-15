@@ -43,11 +43,41 @@ pub const SPRUCE = rgba(59, 46, 30, 255);
 pub const THATCH = rgba(74, 60, 30, 255);
 pub const THATCH_DK = rgba(52, 42, 22, 255);
 pub const EMBER = rgba(252, 184, 80, 14);
-pub const WISP = rgba(250, 196, 110, 120);
-pub const FLAME_CORE = rgba(226, 190, 128, 25);
-pub const FLAME_MID = rgba(214, 138, 48, 40);
-pub const FLAME_TIP = rgba(176, 82, 24, 90);
-pub const COAL = rgba(196, 78, 22, 70);
+// ORDINARY FIRE, SIX DEGREES OF HUE YELLOWER THAN THE FIRE YOU SIT AT (`REST_FIRE` is six the other way, so the two stand 12 apart at every stop). Red and blue hold; only green moves.
+pub const WISP = rgba(250, 210, 110, 120);
+pub const FLAME_CORE = rgba(226, 200, 128, 25);
+pub const FLAME_MID = rgba(214, 155, 48, 40);
+pub const FLAME_TIP = rgba(176, 97, 24, 90);
+pub const COAL = rgba(196, 95, 22, 70);
+
+/// WHICH FIRE THIS IS. A flame is one body (`flameInto`) and the palette is what tells a hearth from a bonfire from a ghostflame — never a second copy of the geometry.
+pub const Flame = struct {
+    coal: rl.Color,
+    core: rl.Color,
+    mid: rl.Color,
+    tip: rl.Color,
+    wisp: rl.Color,
+};
+
+pub const FIRE: Flame = .{ .coal = COAL, .core = FLAME_CORE, .mid = FLAME_MID, .tip = FLAME_TIP, .wisp = WISP };
+
+/// THE FIRE YOU SIT AT IS THE ORANGE ONE — it has to read as a different fire from across a field.
+pub const REST_FIRE: Flame = .{
+    .coal = rgba(196, 61, 22, 70),
+    .core = rgba(226, 180, 128, 25),
+    .mid = rgba(214, 121, 48, 40),
+    .tip = rgba(176, 67, 24, 90),
+    .wisp = rgba(250, 182, 110, 120),
+};
+
+/// GHOSTFLAME: the same body, burning cold. Pale blue through to a white core, and it gives the same light a fire does with the hue turned round.
+pub const GHOST_FIRE: Flame = .{
+    .coal = rgba(34, 96, 164, 70),
+    .core = rgba(206, 232, 246, 25),
+    .mid = rgba(96, 172, 226, 40),
+    .tip = rgba(46, 112, 190, 90),
+    .wisp = rgba(168, 220, 250, 120),
+};
 pub const SMOKE_HOT = rgba(64, 54, 46, 255);
 pub const SMOKE_MID = rgba(58, 55, 52, 255);
 pub const SMOKE_COLD = rgba(52, 52, 55, 255);
@@ -645,7 +675,26 @@ pub fn bedrollInto(b: *Builder, rng: *mathx.Rng, cx: f32, cz: f32, yaw: f32) voi
     b.setMat(.plain);
 }
 
-pub fn smokeInto(b: *Builder, rng: *mathx.Rng, src: f32, s: f32) void {
+/// WHAT RISES OFF THE FIRE — smoke and the motes in it. Paired with a `Flame`: a ghostflame gives off vapour, not soot.
+pub const Vapour = struct {
+    hot: rl.Color,
+    mid: rl.Color,
+    cold: rl.Color,
+    ember: rl.Color,
+    wisp: rl.Color,
+};
+
+pub const SMOKE: Vapour = .{ .hot = SMOKE_HOT, .mid = SMOKE_MID, .cold = SMOKE_COLD, .ember = EMBER, .wisp = WISP };
+
+pub const GHOST_VAPOUR: Vapour = .{
+    .hot = rgba(58, 74, 92, 255),
+    .mid = rgba(52, 64, 80, 255),
+    .cold = rgba(48, 54, 66, 255),
+    .ember = rgba(150, 214, 252, 14),
+    .wisp = rgba(186, 230, 252, 120),
+};
+
+pub fn smokeInto(b: *Builder, rng: *mathx.Rng, src: f32, s: f32, pal: Vapour) void {
     const PUFFS = 14;
     b.setMat(.smoke);
     var i: i32 = 0;
@@ -658,7 +707,7 @@ pub fn smokeInto(b: *Builder, rng: *mathx.Rng, src: f32, s: f32) void {
             v3(r, r * rng.range(0.72, 0.98), r * rng.range(0.85, 1.20)),
             3,
             7,
-            if (phase < 0.3) SMOKE_HOT else if (phase < 0.65) SMOKE_MID else SMOKE_COLD,
+            if (phase < 0.3) pal.hot else if (phase < 0.65) pal.mid else pal.cold,
         );
     }
     b.setMat(.ember);
@@ -674,18 +723,18 @@ pub fn smokeInto(b: *Builder, rng: *mathx.Rng, src: f32, s: f32) void {
             v3(sz, sz, sz),
             2,
             5,
-            if (rng.float() < 0.75) EMBER else WISP,
+            if (rng.float() < 0.75) pal.ember else pal.wisp,
         );
     }
     b.setAnimY(0);
     b.setMat(.plain);
 }
 
-pub fn flameInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, s: f32) void {
+pub fn flameInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, s: f32, pal: Flame) void {
     b.setMat(.flame);
     b.setAnimY(cy);
-    b.addBlob(v3(cx, cy + 0.015 * s, cz), v3(0.175 * s, 0.045 * s, 0.175 * s), 3, 9, COAL);
-    b.addBlob(v3(cx, cy + 0.055 * s, cz), v3(0.078 * s, 0.048 * s, 0.078 * s), 3, 8, FLAME_CORE);
+    b.addBlob(v3(cx, cy + 0.015 * s, cz), v3(0.175 * s, 0.045 * s, 0.175 * s), 3, 9, pal.coal);
+    b.addBlob(v3(cx, cy + 0.055 * s, cz), v3(0.078 * s, 0.048 * s, 0.078 * s), 3, 8, pal.core);
     var t: i32 = 0;
     while (t < 6) : (t += 1) {
         const a = rng.angle();
@@ -706,14 +755,14 @@ pub fn flameInto(b: *Builder, rng: *mathx.Rng, cx: f32, cy: f32, cz: f32, s: f32
             w,
             w * 0.82,
             7,
-            if (t == 0) FLAME_MID else if (rng.float() < 0.55) FLAME_MID else FLAME_TIP,
+            if (t == 0) pal.mid else if (rng.float() < 0.55) pal.mid else pal.tip,
         );
-        b.addCapsule(v3(mx, y0 + h * 0.52, mz), v3(tx, y0 + h, tz), w * 0.80, w * 0.26, 6, FLAME_TIP);
+        b.addCapsule(v3(mx, y0 + h * 0.52, mz), v3(tx, y0 + h, tz), w * 0.80, w * 0.26, 6, pal.tip);
     }
     var i: i32 = 0;
     while (i < 4) : (i += 1) {
         const r = rng.range(0.010, 0.022) * s;
-        b.addBlob(v3(cx + rng.signed() * 0.16 * s, cy + rng.range(0.30, 0.62) * s, cz + rng.signed() * 0.16 * s), v3(r, r, r), 3, 5, WISP);
+        b.addBlob(v3(cx + rng.signed() * 0.16 * s, cy + rng.range(0.30, 0.62) * s, cz + rng.signed() * 0.16 * s), v3(r, r, r), 3, 5, pal.wisp);
     }
     b.setAnimY(0);
 }

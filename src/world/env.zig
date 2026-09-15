@@ -18,9 +18,7 @@ const pickupmod = @import("../play/pickup.zig");
 const restmod = @import("../play/rest.zig");
 const foemod = @import("../foes/foe.zig");
 
-/// THIS FILE, for the tests that read their own SOURCE to pin a declaration against its use. Named because a
-/// stale copy does not fail — `readForTest` turns a missing path into `error.SkipZigTest` and the invariant
-/// goes unchecked in silence. `foe.DIR`'s rule.
+/// THIS FILE, for the tests that read their own SOURCE. A stale copy does not fail — `readForTest` turns a missing path into `error.SkipZigTest`.
 const SRC = "src/world/env.zig";
 
 const v3 = mathx.v3;
@@ -62,7 +60,7 @@ pub fn breachFade(b: props.Breach) f32 {
         .vines => 0.6,
     };
 }
-/// WHAT OPENS A BREACH — all of them the hero's; a foe opens nothing. Which key a kind answers is `props.Breach`'s whole definition.
+/// WHAT OPENS A BREACH — all of them the hero's; a foe opens nothing.
 pub const Key = enum { blade, roll, arrow, burst };
 pub fn opens(b: props.Breach, key: Key) bool {
     return switch (b) {
@@ -106,22 +104,17 @@ fn shadowBox() f32 {
 
 const LIGHT_REACH: f32 = 90.0;
 
-/// Metres of alpha ramp inside EVERY distance cull, so nothing cuts in. 1.4 s of sprint, and the last metres of a
-/// reach where the haze has already eaten most of the thing: at a tuft's 85 m it fades 0 → 31% of the sky.
+/// Metres of alpha ramp inside EVERY distance cull — 1.4 s of sprint; at a tuft's 85 m reach it fades 0 → 31% of the sky.
 const FADE_BAND: f32 = 7.0;
 
-/// A light's place in the queue for one of the shader's 15 slots: metres from the eye to its SPHERE, so one you are
-/// standing inside wins outright — plus how far that sphere sits outside the frame, since a torch at your back still
-/// lights the ground ahead. BOTH TERMS MOVE SMOOTHLY as you walk and turn; an in/out frustum test does not, and frees
-/// a slot the instant a light crosses the screen edge.
+/// A light's place in the queue for one of the shader's 15 slots: metres from the eye to its SPHERE plus how far that sphere sits
+/// outside the frame. BOTH TERMS MOVE SMOOTHLY; an in/out frustum test frees a slot the instant a light crosses the screen edge.
 fn lightKey(view: *const View, wl: WorldLight) f32 {
     return mathx.lenV(mathx.subV(wl.base.pos, view.pos)) - wl.base.radius + view.outside(wl.base.pos);
 }
 
-/// THE CULL THAT BITES IS THE SLOT COUNT, NOT THE 90 M REACH: 367 lights stand in the shipping map for 15 slots, so
-/// a light arrives when it wins the queue, tens of metres inside any distance ramp. `cut` is the key of the nearest
-/// light that MISSED a slot — the pair trading places are both AT it, so a band up to it lands the newcomer at zero
-/// and takes the one it displaced out at zero.
+/// THE CULL THAT BITES IS THE SLOT COUNT, NOT THE 90 M REACH: 367 lights stand in the shipping map for 15 slots. `cut` is the key of
+/// the nearest light that MISSED a slot, so a band up to it lands the newcomer at zero and takes the one it displaced out at zero.
 fn slotFade(k: f32, cut: f32) f32 {
     if (cut >= std.math.floatMax(f32)) return 1;
     return 1.0 - mathx.smoothstep(cut - FADE_BAND, cut, k);
@@ -277,7 +270,6 @@ fn coastBand(e: wf.Edge) f32 {
     };
 }
 
-/// One type for chests and pickups both — they are the same placement, and two copies of it drifted apart field by field.
 pub const Site = struct {
     pos: rl.Vector3,
     yaw: f32,
@@ -304,7 +296,7 @@ pub const Prop = struct {
     rise: f32 = 0,
     /// 0 standing, 1 gone: the alpha an illusory wall has lost, kept apart from `shrink` so the face fades in place instead of sinking.
     dissolve: f32 = 0,
-    /// Planted on a chamber floor. The editor's cutaway hides a SURFACE prop standing over an open cell, since the hill under it is not drawn.
+    /// Planted on a chamber floor. The editor's cutaway hides a SURFACE prop standing over an open cell.
     under: bool = false,
 };
 
@@ -490,8 +482,7 @@ pub const View = struct {
         } };
     }
 
-    /// 1 solid, 0 AT THE CULL EDGE — the ramp `visible` would otherwise cut. Off the same `far`, so it reaches zero
-    /// exactly where the draw stops and a body never appears at an alpha it did not walk up to.
+    /// 1 solid, 0 AT THE CULL EDGE. Off the same `far` as `visible`, so it reaches zero exactly where the draw stops.
     pub fn nearness(self: *const View, c: rl.Vector3, rad: f32, maxDist: f32) f32 {
         const far = mathx.maxF(maxDist, self.floor) + rad;
         const inner = far - FADE_BAND;
@@ -501,8 +492,7 @@ pub const View = struct {
         return 1.0 - mathx.smoothstep(inner, far, @sqrt(d2));
     }
 
-    /// Metres the point sits outside the frame, 0 anywhere inside it — the same four planes `visible` tests, read as
-    /// a distance instead of a verdict.
+    /// Metres the point sits outside the frame, 0 anywhere inside it — `visible`'s four planes read as a distance.
     pub fn outside(self: *const View, c: rl.Vector3) f32 {
         const d = mathx.subV(c, self.pos);
         var worst: f32 = 0;
@@ -547,9 +537,7 @@ pub fn waterBuildCount() usize {
     return waterBuilds;
 }
 
-/// AN `Env` WITH NO GPU IN IT, for the tests that stand one up headless: `ground` and `models` are the only two
-/// fields with no default, and sixty-four sites named both by hand. A third such field is a compile error at every
-/// one of them, which is why this is the door rather than a rule in a comment.
+/// AN `Env` WITH NO GPU IN IT: `ground` and `models` are the only two fields with no default, so a third is a compile error at every caller.
 pub fn blankForTest(e: *Env) void {
     e.* = .{ .ground = undefined, .models = undefined };
 }
@@ -568,9 +556,8 @@ pub const Env = struct {
     npickups: usize = 0,
     restItems: [restmod.CAP]u32 = undefined,
     nrests: usize = 0,
-    /// THE PROPS A CUT-FACE STATION CAN BE REFUSED BY — climbs, flights and seated cliff pieces, a couple of hundred
-    /// out of the tens of thousands a map places. Derived in `indexProps`, because asked per station a full rebuild of
-    /// the shipped map walked the whole prop list twice at each of ~4,700 stations over 729 tiles.
+    /// THE PROPS A CUT-FACE STATION CAN BE REFUSED BY — climbs, flights and seated cliff pieces. Derived in `indexProps`: asked per
+    /// station, a rebuild of the shipped map walked the whole prop list twice at each of ~4,700 stations over 729 tiles.
     faceSkip: [MAX_PROPS]u32 = undefined,
     nfaceSkip: usize = 0,
     scene: ?*gfx.Scene = null,
@@ -671,7 +658,7 @@ pub const Env = struct {
     /// The tile's cliff plates MINUS the ones standing over a chamber. Without it a cutaway leaves a face hanging in the air over the hole it just opened.
     cutFaces: [NTILES]rl.Model = undefined,
     cutFaceBuilt: [NTILES]bool = [_]bool{false} ** NTILES,
-    /// Whether the cutaway drops any plate in this tile AT ALL — separate from whether a model was made, because a tile whose every plate stands over a chamber leaves nothing to build and must still draw nothing.
+    /// Whether the cutaway drops any plate in this tile AT ALL — a tile whose every plate stands over a chamber builds no model and must still draw nothing.
     cutFaceCut: [NTILES]bool = [_]bool{false} ** NTILES,
     skirt: rl.Model = undefined,
     skirtBuilt: bool = false,
@@ -715,8 +702,7 @@ pub const Env = struct {
         self.shellBuilt = [_]bool{false} ** NTILES;
         self.roofBuilt = [_]bool{false} ** NTILES;
         self.waterfallBuilt = [_]bool{false} ** NTILES;
-        // `replay` asks `caveStale` BEFORE `adoptCave` writes these, and on a map with no elevation `heightStale` is
-        // false so the `or` does not short-circuit past it — an unassigned `caveAny` is a bool read out of malloc.
+        // `replay` asks `caveStale` BEFORE `adoptCave` writes these, and on a flat map `heightStale` is false, so the `or` does not short-circuit past an unassigned `caveAny` read out of malloc.
         self.caveCovSrc = [_]u8{0} ** wf.CAVE_CELLS;
         self.caveFloorSrc = [_]u8{wf.CAVE_H_ZERO} ** wf.CAVE_CELLS;
         self.caveRoofSrc = [_]u8{wf.CAVE_H_ZERO} ** wf.CAVE_CELLS;
@@ -826,9 +812,7 @@ pub const Env = struct {
                 for (ix -| 1..@min(ix + 2, caves.N)) |x| cov = @max(cov, self.caveCovSrc[z * caves.N + x]);
             }
         }
-        // NOTHING PAINTED IN THAT 3x3 IS ALREADY THE ANSWER: `ghostHeight` scans the same neighbourhood for a painted
-        // corner and, finding none, hands back this point's own byte — and `caveByte(caveH(b))` is `b`. Over a whole
-        // field that is 638,401 second scans and float round-trips skipped for the rock no cave is anywhere near.
+        // `ghostHeight` finding no painted corner hands back this point's own byte, and `caveByte(caveH(b))` is `b` — 638,401 second scans skipped for rock no cave is near.
         self.caveRoofShade[i] = if (cov == 0) self.caveRoofSrc[i] else wf.caveByte(caves.roofAtPoint(self.caveFields(), ix, iz) - GROUND_Y);
         if (cov < caves.EDGE) {
             self.caveShelterSrc[i] = 0;
@@ -1026,9 +1010,8 @@ pub const Env = struct {
         }
     }
 
-    /// COVERAGE FIRST, and under `cutAll` it is the WHOLE question: the hill comes off wherever a chamber reaches, so
-    /// the cell's shape is never asked. Read the other way round this built a whole `CaveCell` — four terrain samples
-    /// and two ghost-fill scans a corner — for every sub-cell of every cell of all 729 tiles, and threw the answer away.
+    /// COVERAGE FIRST, and under `cutAll` it is the WHOLE question. Read the other way round this built a whole `CaveCell` — four
+    /// terrain samples and two ghost-fill scans a corner — for every sub-cell of every cell of all 729 tiles, and threw it away.
     fn mouthCell(self: *const Env, ix: usize, iz: usize, cutAll: bool) bool {
         if (!self.caveAny) return false;
         for (0..2) |sz| {
@@ -1096,8 +1079,7 @@ pub const Env = struct {
         }
     }
 
-    /// THE WHOLE CELL AS ONE QUAD, wound like `wf.CLIFF_RING`. The terrain tile and the editor's cutaway draw the
-    /// same surface, so neither spells it out: a winding or a normal changed in one place cannot drift from the other.
+    /// THE WHOLE CELL AS ONE QUAD, wound like `wf.CLIFF_RING`. The terrain tile and the editor's cutaway draw the same surface, so a winding or a normal cannot drift between them.
     fn landQuad(self: *const Env, bl: *gfx.Builder, ix: usize, iz: usize, a: [2]f32, c: [2]f32, h: [4]f32) void {
         bl.quadSmooth(
             v3(a[0], h[0], a[1]),
@@ -1154,9 +1136,7 @@ pub const Env = struct {
                 const t = wf.cliffTiers(ha, hb, hc, hd);
                 yLo = @min(yLo, t.lo);
                 yHi = @max(yHi, t.hi);
-                // A plate over an excavated cell is what the cutaway leaves hanging, so the cut face model takes every
-                // OTHER cell's stone and none of that one's. Asked ONCE: the cutaway terrain and the cut faces read
-                // the same answer, and it is four sub-cell probes of the cave fields.
+                // The cut face model takes every OTHER cell's stone and none of an excavated cell's. Asked ONCE, at four sub-cell probes: the cutaway terrain and the cut faces read the same answer.
                 const overCave = self.caveAny and self.mouthCell(ix, iz, true);
                 if (self.caveAny) {
                     if (overCave) {
@@ -1209,8 +1189,7 @@ pub const Env = struct {
                     }
                     continue;
                 }
-                // `overCave` is the SAME scan with `cutAll` on, so it is a superset: false there is false here, and
-                // the gate spares the 16 coverage taps on every cell of a map that has a cave somewhere else.
+                // `overCave` is the SAME scan with `cutAll` on, so it is a superset: the gate spares the 16 coverage taps on every cell of a map whose cave is elsewhere.
                 if (overCave and self.mouthCell(ix, iz, false)) {
                     self.mouthTerrain(&b, ix, iz, false);
                     continue;
@@ -1347,8 +1326,7 @@ pub const Env = struct {
         return wf.cliffFace(self.caseAt(ix, iz)) and self.cellCuts(ix, iz);
     }
 
-    /// Clamped to the CELL range, not the point range: `caseAt` names a cell by its low corner, so `HEIGHT_N - 1` is a
-    /// phantom column and a point in the map's last cell would read `CLIFF_NONE` off it.
+    /// Clamped to the CELL range, not the point range: `caseAt` names a cell by its low corner, so `HEIGHT_N - 1` is a phantom column reading `CLIFF_NONE`.
     pub fn caseAtWorld(self: *const Env, x: f32, z: f32) u8 {
         const step = self.lattice();
         const last: f32 = @floatFromInt(wf.HEIGHT_N - 2);
@@ -1466,7 +1444,7 @@ pub const Env = struct {
         }
     }
 
-    /// THE SHEET IS ONE FLAT STRIP PER RUN OF CELLS AT ONE LEVEL, over every cell the shore fade can reach, so two bodies at different levels meet at a step and nowhere is the water a slope.
+    /// ONE FLAT STRIP PER RUN OF CELLS AT ONE LEVEL: two bodies at different levels meet at a step and nowhere is the water a slope.
     pub const Strip = struct { x0: f32, x1: f32, z0: f32, z1: f32, y: f32 };
     const MAX_STRIPS = 1 << 16;
 
@@ -1550,7 +1528,6 @@ pub const Env = struct {
         }
     }
 
-    /// The water's height over a point: the body's own level where one is painted or near, the datum's sheet everywhere else.
     pub fn waterLevelAt(self: *const Env, x: f32, z: f32) f32 {
         const i = wf.gridIndex(self.waterHalf, wf.WATER_N, x, z) orelse return WATER_Y;
         return levelOf(self.waterBaseField[i]);
@@ -1591,9 +1568,8 @@ pub const Env = struct {
         indexProps(self);
     }
 
-    /// WHERE EVERY `Op` FIELD COMES FROM WHEN A GENERATOR IS BROKEN APART — `prop` off the instance that was
-    /// placed, `src` off the op that placed it, `drop` meaning an `at` has no such thing. `under` and `gold` were
-    /// each silently dropped for a release, so the walk below is a compile error on a field nobody has classified.
+    /// WHERE EVERY `Op` FIELD COMES FROM WHEN A GENERATOR IS BROKEN APART — `prop` off the instance placed, `src` off the op that
+    /// placed it, `drop` meaning an `at` has no such thing. `under` and `gold` were each silently dropped for a release.
     const EXPLODE_FROM = [_]struct { field: []const u8, from: enum { prop, src, drop }, why: []const u8 = "" }{
         .{ .field = "op", .from = .drop, .why = "every row becomes an `at`" },
         .{ .field = "kind", .from = .prop, .why = "a `mix=` op places several, so the INSTANCE says which" },
@@ -1873,8 +1849,7 @@ pub const Env = struct {
         return self.gatherSolids(p, r, out, false);
     }
 
-    /// THE MASONRY NEAR A POINT and nothing else: a tree's collider is in the same index, but a tree answers the lens
-    /// by THINNING (`markOccluders`), and a boom that also shortened for one would fight that.
+    /// THE MASONRY NEAR A POINT and nothing else: a tree is in the same index but answers the lens by THINNING (`markOccluders`), and a boom that also shortened for one would fight that.
     pub fn wallsNear(self: *const Env, p: rl.Vector3, r: f32, out: []collision.Solid) []const collision.Solid {
         return self.gatherSolids(p, r, out, true);
     }
@@ -2160,8 +2135,7 @@ pub const Env = struct {
     pub fn shelterAt(self: *const Env, x: f32, y: f32, z: f32) f32 {
         if (!self.caveAny) return 0;
         const f = self.caveFields();
-        // `groundAt` is only an ARGUMENT here, and on a painted cliff cell it is four 3x3 level scans. Out under the
-        // sky the answer is 0 whatever the land reads, and every light within reach asks this once a frame.
+        // `groundAt` is only an ARGUMENT here, and on a painted cliff cell it is four 3x3 level scans; every light within reach asks this once a frame.
         if (caves.openAt(f, x, z) < caves.EDGE_F) return 0;
         return caves.shelterAt(f, self.groundAt(x, z), x, y, z);
     }
@@ -2175,7 +2149,6 @@ pub const Env = struct {
         return self.caveAny and caves.openAt(self.caveFields(), x, z) >= caves.EDGE_F;
     }
 
-    /// The surface a body on the given LEVEL stands on: the chamber floor where there is one, the land otherwise.
     pub fn surfaceY(self: *const Env, x: f32, z: f32, under: bool) f32 {
         if (under and self.caveAny) {
             if (self.caveStandAt(x, z)) |y| return y;
@@ -2184,9 +2157,8 @@ pub const Env = struct {
     }
 
     pub fn pickUnder(self: *const Env, origin: rl.Vector3, dir: rl.Vector3) ?caves.Pick {
-        // The same slab bound `rayGround` takes: `PICK_REACH` is 400 m at a 0.35 m stride, so a ray laid off the
-        // edge of the world walked 1,143 steps of `groundAt` under the cursor every frame to answer null — and the
-        // steps taken OUTSIDE read a `groundAt` and an `openAt` clamped to the rim, which is a pick in the void.
+        // The same slab bound `rayGround` takes: `PICK_REACH` is 400 m at a 0.35 m stride, so a ray laid off the edge of the world
+        // walked 1,143 steps of `groundAt` every frame to answer null, and the steps outside read a rim-clamped height — a pick in the void.
         const out = groundOut(mathx.maxF(self.mapHalf, self.heightHalf));
         const enter = @max(slabEnter(origin.x, dir.x, out), slabEnter(origin.z, dir.z, out));
         const exit = @min(
@@ -2199,14 +2171,11 @@ pub const Env = struct {
         return caves.pickUnder(self.caveFields(), self, .{ at.x, at.y, at.z }, .{ dir.x, dir.y, dir.z }, exit - enter);
     }
 
-    /// A surface prop over an open cell hangs in the air once the cutaway takes the hill from under it.
     fn floats(self: *const Env, pr: *const Prop) bool {
         return cutaway() and !pr.under and self.caveOpenAt(pr.pos.x, pr.pos.z);
     }
 
-    /// THE SAME GATE FOR A BODY, and it asks nothing of the body but where its FEET are: the ceiling already decides
-    /// which world a body is in (`supportAt`), so a creature standing on the LAND over an excavated cell is exactly the
-    /// one the cutaway has left hanging. Foes, folk and chests all answer this; a body in the chamber is the point of the view.
+    /// THE SAME GATE FOR A BODY, off its FEET alone: the ceiling already decides which world a body is in (`supportAt`), so one standing on the LAND over an excavated cell is the one the cutaway has left hanging.
     pub fn floatsAt(self: *const Env, x: f32, z: f32, footY: f32) bool {
         if (!cutaway() or !self.caveOpenAt(x, z)) return false;
         return !self.underground(x, z, footY);
@@ -2384,14 +2353,12 @@ pub const Env = struct {
         return gx * gx + gz * gz <= MAX_SLOPE * MAX_SLOPE;
     }
 
-    /// Where a ray leaves the `±out` slab on one axis, `cap` for an axis it never crosses. Negative when the ray
-    /// starts outside and is already leaving, which is what makes the march refuse to run at all.
+    /// Where a ray leaves the `±out` slab on one axis, `cap` for an axis it never crosses. NEGATIVE when the ray starts outside and is already leaving, which is what makes the march refuse to run.
     fn slabExit(o: f32, d: f32, out: f32, cap: f32) f32 {
         if (@abs(d) < 1e-6) return if (@abs(o) <= out) cap else -1;
         return @max((out - o) / d, (-out - o) / d);
     }
 
-    /// Where a ray enters the `±out` slab on one axis; 0 where it starts inside or runs parallel to the walls.
     fn slabEnter(o: f32, d: f32, out: f32) f32 {
         if (@abs(d) < 1e-6) return 0;
         return @max(@min((out - o) / d, (-out - o) / d), 0);
@@ -2407,11 +2374,8 @@ pub const Env = struct {
         const step = self.lattice();
         const horiz = mathx.lenXZ(dir);
         const dt = if (horiz > 1e-4) step * 0.5 / horiz else step * 0.5;
-        // THE MARCH RUNS ONLY WHERE THE GROUND IS. Past the apron there is no surface drawn to cross, and a ray laid
-        // along the horizon otherwise walked the whole 2.3 km of the cap — some 1,400 heightfield taps — to answer
-        // null, once a frame under the editor's cursor. Outside the field `sampleHeight` clamps to the rim, so a walk
-        // that ran out there could also report a hit standing in the void beyond anything `drawGround` puts: the
-        // ENTRY is what refuses that, and the exit alone never did.
+        // THE MARCH RUNS ONLY WHERE THE GROUND IS. A ray laid along the horizon otherwise walked the whole 2.3 km of the cap — some
+        // 1,400 heightfield taps — to answer null, and outside the field `sampleHeight` clamps to the rim, so it could report a hit in the void.
         const cap: f32 = 4.0 * GROUND_HALF;
         const out = groundOut(mathx.maxF(self.mapHalf, self.heightHalf));
         const MAX_T: f32 = @min(cap, @max(slabExit(origin.x, dir.x, out, cap), 0), @max(slabExit(origin.z, dir.z, out, cap), 0));
@@ -2558,7 +2522,7 @@ pub const Env = struct {
         return deep > limit and deep > self.wadeDepth(fromX, fromZ);
     }
 
-    /// How far off the ray a point stands, squared, measuring from the origin for anything behind it.
+    /// Squared perpendicular distance off the ray; measured from the ORIGIN for anything behind it.
     fn rayPerp2(origin: rl.Vector3, dir: rl.Vector3, at: rl.Vector3) f32 {
         const oc = mathx.subV(at, origin);
         const along = mathx.maxF(oc.x * dir.x + oc.y * dir.y + oc.z * dir.z, 0);
@@ -2569,9 +2533,7 @@ pub const Env = struct {
         return true;
     }
 
-    /// THE ONE WALK OVER BOTH INDEXES — cells the lens can see, then props the lens can see. `cellOk` is the only
-    /// thing a caller may add and it is asked per CELL, before its props are touched; the prop test is `View`'s and
-    /// stays here, so the two callers cannot drift apart on what "visible" means.
+    /// THE ONE WALK OVER BOTH INDEXES. `cellOk` is the only thing a caller may add and it is asked per CELL, before its props are touched, so the two callers cannot drift on what "visible" means.
     fn eachVisible(
         self: *const Env,
         view: *const View,
@@ -2598,11 +2560,8 @@ pub const Env = struct {
         }
     }
 
-    /// THE CELLS THE RAY PASSES THROUGH, out of the ones the lens can see. The frustum walk is the same one pass
-    /// `eachInView` makes; the extra test is the cell's own sphere against the LINE rather than against the cone,
-    /// which is what a cursor actually asks. On a full map that is a scan of the props in a dozen cells instead of
-    /// every prop on screen. A DDA over the grid loses to this: a prop sits in the one cell its origin falls in,
-    /// so the walk would have to be padded by the widest `bound` and would rescan the overlap at every step.
+    /// THE CELLS THE RAY PASSES THROUGH, out of the ones the lens can see: `eachInView`'s frustum walk plus the cell's own sphere
+    /// against the LINE. A DDA loses to this — a prop sits in the one cell its origin falls in, so the walk would need padding by the widest `bound`.
     fn eachPropOnRay(
         self: *const Env,
         view: *const View,
@@ -2714,13 +2673,12 @@ pub const Env = struct {
     }
 
     /// The editor's underground view: where a tile has a cutaway, the hill over its chambers is not drawn.
-    /// DERIVED, never stored: a flag beside `cutOf` is a second half that can be set on its own, and a cutaway
-    /// with no world behind it draws the hill off the chambers and leaves every body standing on it in the air.
+    /// DERIVED, never stored: a flag beside `cutOf` is a second half that can be set on its own, and a cutaway with no world behind it leaves every body on the hill in the air.
     pub fn cutaway() bool {
         return cutOf != null;
     }
 
-    /// Set it with the world it is a cutaway OF, so `bodyDrawn` — a free function with no `self` — can ask which surface a body stands on.
+    /// Takes the world it is a cutaway OF, so `bodyDrawn` — a free function with no `self` — can ask which surface a body stands on.
     pub fn setCutaway(on: bool, of: *const Env) void {
         cutOf = if (on) of else null;
     }
@@ -2882,8 +2840,7 @@ pub const Env = struct {
     pub fn solidCount(self: *const Env) usize {
         return self.nsolids;
     }
-    /// The face rock's own colliders and the cap that PANICS on load past it — `--shot-land` prints the headroom, because
-    /// a tile build wants a GL context and no unit test can take this census.
+    /// The face rock's own colliders and the cap that PANICS on load past it — `--shot-land` prints the headroom, because a tile build wants a GL context.
     pub fn cliffSolidCount(self: *const Env) struct { n: usize, cap: usize } {
         return .{ .n = self.ncliffSolids, .cap = MAX_CLIFF_SOLIDS };
     }
@@ -3354,9 +3311,7 @@ pub fn castsInto(focus: rl.Vector3, pos: rl.Vector3, bound: f32, top: f32) bool 
 }
 
 /// `drawIndexed`'s per-prop test for a MOVING body, which has no cell to be culled by first.
-/// THE ONE GATE EVERY BODY ANSWERS — foes, folk and chests. Besides the pass's own cull it answers the editor's cutaway:
-/// with the hill off a chamber a body standing on the LAND over it hangs in the air, exactly as a surface prop did, and
-/// its shadow with it. `at` is the body's FEET, which is what decides which world it is in.
+/// THE ONE GATE EVERY BODY ANSWERS — foes, folk and chests. `at` is the body's FEET, which is what decides which world it is in.
 pub fn bodyDrawn(cull: Cull, at: rl.Vector3, bound: f32, reach: f32) bool {
     if (cutOf) |e| {
         if (e.floatsAt(at.x, at.z, at.y)) return false;
@@ -3609,7 +3564,6 @@ fn fadeQuadUp(b: *gfx.Builder, p0: rl.Vector3, p1: rl.Vector3, q1: rl.Vector3, q
     }
 }
 
-/// The wall is a plain sheet; the rock is `proprock.faceRockBuild` stamped in a lattice over the run and up the face, each mass at its authored size and sunk most of the way in. Each prototype is built ONCE and stamped.
 var rockProto: [proprock.FACE_ROCK_SEEDS.len]?gfx.Builder = [_]?gfx.Builder{null} ** proprock.FACE_ROCK_SEEDS.len;
 var rockMass: [proprock.FACE_ROCK_SEEDS.len]proprock.Masses = [_]proprock.Masses{.{}} ** proprock.FACE_ROCK_SEEDS.len;
 
@@ -3618,7 +3572,7 @@ fn rockProtoOf(i: usize) *const gfx.Builder {
     return &rockProto[i].?;
 }
 
-/// HOW ONE ROCK SITS AGAINST A CUT: at its own size, bedded to the row's height, standing a share of its own depth out of the wall. Nothing here reads the drop, so the same stone dresses a 2 m face and a 12 m one.
+/// Nothing here reads the drop, so the same stone dresses a 2 m face and a 12 m one.
 const RockFit = struct { sc: f32, proud: f32 };
 
 fn rockFit(kk: u32) RockFit {
@@ -3639,8 +3593,7 @@ fn faceStep(f: Face, px: f32, pz: f32, nx: f32, nz: f32, out: f32) struct { drop
 /// Why a station along a run stood no stone, counted since the last whole-terrain rebuild; `--shot-land` prints it.
 pub var faceTally = struct { chords: u32 = 0, flat: u32 = 0, oblique: u32 = 0, tried: u32 = 0, shallow: u32 = 0, climb: u32 = 0, piece: u32 = 0, crest: u32 = 0, stood: u32 = 0 }{};
 
-/// `sill` is the lowest bed a column may take — `-inf` for a cut that stands off the ground, a mouth's lintel for
-/// the brow over it, where the rows start ON the sill rather than footed into it.
+/// `sill` is the lowest bed a column may take — `-inf` for a cut off the ground, a mouth's lintel for the brow over it, where the rows start ON the sill.
 fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi: f32, len: f32, cell: f32, sill: f32) void {
     faceTally.chords += 1;
     const drop = hi - lo;
@@ -3699,8 +3652,7 @@ fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi
             standRock(f, rk, at, bed);
             y = bed + FACE_ROCK_RISE * rk.sc;
         }
-        // The rows step by their own height and give up short of the lip, which leaves a bare band along the
-        // top of the cut. One last rock is hung with its crown ON the lip to close it.
+        // The rows step by their own height and give up short of the lip; one last rock is hung with its crown ON the lip to close the bare band.
         if (rockStand(ck ^ 0xCA9, yaw)) |rk| {
             const bed = lip - rk.tall;
             // No deeper than the bottom row is bedded, or a drop shorter than the rock plants a whole boulder in the grass.
@@ -3709,10 +3661,8 @@ fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi
     }
 }
 
-/// A point on the cut and the frame there: the outward normal, the along-run direction and the floor on the low side.
 const Station = struct { px: f32, pz: f32, nx: f32, nz: f32, alongX: f32, alongZ: f32, lo: f32, lifted: bool = false };
 
-/// WHAT ONE HASH KEY STANDS: which rock, at what size, how far it sinks into the wall, and its two jitters. Null when the prototype carries no stone.
 const RockStand = struct { proto: *const gfx.Builder, mass: *const proprock.Masses, sc: f32, tall: f32, sink: f32, turn: f32, drift: f32 };
 
 fn rockStand(kk: u32, yaw: f32) ?RockStand {
@@ -3779,7 +3729,6 @@ fn stampSolids(sl: *StampSolids, ms: *const proprock.Masses, ox: f32, oz: f32, t
     }
 }
 
-/// A hand-placed cliff piece already stands over this point of the cut, so the automatic face puts no second stone there.
 fn pieceCovers(e: *const Env, x: f32, z: f32) bool {
     for (e.faceSkip[0..e.nfaceSkip]) |i| {
         if (cliffseat.covers(&e.props[i], x, z)) return true;
@@ -3922,8 +3871,7 @@ test "terrain editor: cliff faces leave a real opening through the cave air" {
     }
     try std.testing.expectApproxEqAbs((8 - (3 + GROUND_Y)) * 4, area, 0.001);
 
-    // THE CLIP IS CORNER-LINEAR, so a triangle with all three corners in rock loses nothing — which is what lets the
-    // coverage read stand in for three full `sampleAt`s. Pinned, because the fast path is nearly every triangle.
+    // THE CLIP IS CORNER-LINEAR, so a triangle with all three corners in rock loses nothing — which is what lets the coverage read stand in for three full `sampleAt`s.
     const far = [3]rl.Vector3{ v3(40, 0, 40), v3(44, 0, 40), v3(44, 8, 40) };
     for (far) |v| try std.testing.expect(caves.openAt(e.caveFields(), v.x, v.z) < caves.EDGE_F);
     var solid = gfx.Builder.init();
@@ -3939,7 +3887,6 @@ test "terrain editor: cliff faces leave a real opening through the cave air" {
 
 const WFCAVE_BENCH = wf.DIR ++ "/test_wfcave" ++ wf.EXT;
 
-/// Walks a hero-sized body `dir`-ward the way `game` does — the terrain gate, the push-out and the level under his feet — until it stalls or has covered `limit`.
 fn walkUntilStalled(e: *const Env, from: rl.Vector3, dir: rl.Vector3, heroR: f32, limit: f32) rl.Vector3 {
     var p = from;
     var steps: usize = 0;
@@ -4208,9 +4155,7 @@ fn cliffWall(f: Face, ch: Chord, loEnd: [2]f32, hiEnd: [2]f32, highRef: [2]f32, 
     if (!f.dress or f.env == null) return;
     const room = caves.sampleAt(f.env.?.caveFields(), mx, mz);
     if (room.hollow() and room.floor <= lo + wf.STEP_UP and room.roof > lo) {
-        // A MOUTH LEFT BARE IS A RECTANGLE PUNCHED IN A SHEET. The band over the opening is dressed like any other
-        // cut, bedded on the lintel so the head stays clear — behind a fall too, where the sheet passes in front of
-        // the brow. The rim rubble below is not: it would scatter stone across the doorway.
+        // A MOUTH LEFT BARE IS A RECTANGLE PUNCHED IN A SHEET. The band over the opening is bedded on the lintel so the head stays clear; the rim rubble below is not, it would scatter stone across the doorway.
         faceStamp(f, u, ex / len, ez / len, nx, nz, lo, hi, len, cell, room.roof);
         return;
     }
@@ -4546,7 +4491,7 @@ pub const PropFrame = struct {
     pub fn outward(self: PropFrame) [2]f32 {
         return .{ -self.sn, -self.c };
     }
-    /// The inverse of `atXZ`, but in WORLD metres along the prop's own axes — the scale is NOT divided out, so a lattice point tests against scaled extents.
+    /// The inverse of `atXZ` in WORLD metres along the prop's own axes — the scale is NOT divided out, so a lattice point tests against scaled extents.
     pub fn local(self: PropFrame, wx: f32, wz: f32) [2]f32 {
         const dx = wx - self.pr.pos.x;
         const dz = wz - self.pr.pos.z;
@@ -4565,9 +4510,8 @@ fn veilThins(nfo: *const props.Info) bool {
     return nfo.ward;
 }
 
-/// WHAT THE LENS WILL NOT THIN, AND SO WHAT THE BOOM PULLS IN FOR (`collision.Solid.arch`) — ONE predicate, read by
-/// `markOccluders` and stamped onto the collider in `buildSolids`. The fog gate is why it is not just `Info.solid`:
-/// its collider IS the sheet, the sheet is the thing that thins, and a boom shortening for it would fight that.
+/// WHAT THE LENS WILL NOT THIN, AND SO WHAT THE BOOM PULLS IN FOR (`collision.Solid.arch`) — ONE predicate, read by `markOccluders`
+/// and stamped onto the collider in `buildSolids`. The fog gate is why it is not just `Info.solid`: its collider IS the sheet that thins.
 fn masonry(nfo: *const props.Info) bool {
     return nfo.solid and !veilThins(nfo);
 }
@@ -4934,8 +4878,7 @@ fn buildSolids(e: *Env) void {
             e.solid_buf[e.nsolids] = sol;
             e.nsolids += 1;
         }
-        // The SPAN IS WHAT THE LOOP WROTE, not what the kind could have written: a seated part is dropped
-        // (`seatedPart` returns null), and a length taken off `parts.len` would run on into the next prop's solids.
+        // The SPAN IS WHAT THE LOOP WROTE, not what the kind could have written: a seated part is dropped (`seatedPart` returns null), and a length off `parts.len` would run into the next prop's solids.
         const wrote: u8 = @intCast(e.nsolids - solid0);
         if (ward != 0) e.wardSolidN[ward - 1] = wrote;
         if (breach != 0) e.breachSolidN[breach - 1] = wrote;
@@ -4968,7 +4911,7 @@ fn buildSolids(e: *Env) void {
     }
 }
 
-/// A seated cliff's lobe against the cut through it (`zc`, local, +z into the hill): buried past `FACE_SOLID_MIN` it owes nothing; an end behind the cut is walked up to it; a lobe whose centre is behind but whose flank shows becomes the slab that shows, as `stampSolids` does for the painted faces.
+/// A seated cliff's lobe against the cut through it (`zc` local, +z into the hill): buried past `FACE_SOLID_MIN` it owes nothing, and a lobe whose centre is behind but whose flank shows becomes the slab that shows.
 fn seatedPart(p: props.Part, zc: f32) ?props.Part {
     const near = @min(p.az, p.bz) - p.r;
     const front = zc - near;
@@ -5081,8 +5024,7 @@ fn buildDecks(e: *Env) void {
     }
 }
 
-/// One prop onto one index list, PANICKING past the cap rather than dropping it: five lists were each spelling out
-/// the same bounds test, and the one that skipped it lost a prop silently.
+/// One prop onto one index list, PANICKING past the cap rather than dropping it: five lists each spelled out the same bounds test, and the one that skipped it lost a prop silently.
 fn indexOnto(list: []u32, n: *usize, i: u32, comptime what: []const u8) void {
     if (n.* >= list.len) @panic("env: " ++ what ++ " index full — raise the cap");
     list[n.*] = i;
@@ -5162,7 +5104,6 @@ test "THE ROCK A CUT IS DRESSED WITH IS THE SAME ROCK AT EVERY DROP — nothing 
         try std.testing.expect(bb.hi.y > 1.0 and bb.hi.y < 4.0);
     }
 
-    // One station, four cuts: the fit may not move.
     const bb = rockProtoOf(0).boundsOf(.stone);
     const kk: u32 = 0x51F;
     const ft = rockFit(kk);
@@ -5170,7 +5111,6 @@ test "THE ROCK A CUT IS DRESSED WITH IS THE SAME ROCK AT EVERY DROP — nothing 
     try std.testing.expect(ft.sc > 0.5 and ft.sc < 1.5);
     try std.testing.expect(ft.proud > 0 and ft.proud < 1);
 
-    // Rows per column, which is the only thing the drop is allowed to change.
     std.debug.print("      drop   rows\n", .{});
     var last: u32 = 0;
     for ([_]f32{ 2.0, 3.0, 6.0, 12.0 }) |drop| {
@@ -5615,8 +5555,7 @@ test "THE BOOM GATHERS MASONRY AND NOTHING ELSE — a tree's collider is in the 
     blankForTest(e);
     e.props[0] = .{ .kind = .wall, .pos = v3(0, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
     e.props[1] = .{ .kind = .conifer, .pos = v3(3, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
-    // SOLID **AND** A VEIL: its collider is the sheet, `markOccluders` thins the sheet, so the boom may not pull in
-    // for it — the two would fight on the one prop the whole `veilThins` split exists for.
+    // SOLID **AND** A VEIL: its collider is the sheet, `markOccluders` thins the sheet, so the boom may not pull in for it.
     e.props[2] = .{ .kind = .foggate, .pos = v3(-3, 0, 0), .yaw = 0, .scale = 1, .op = 0 };
     e.nprops = 3;
     buildSolids(e);
@@ -6150,16 +6089,13 @@ test "A RAY THAT LEAVES THE WORLD STOPS THERE — the march is not walked out in
     const e = try envWithRamp(0.5);
     defer std.testing.allocator.destroy(e);
     const out = groundOut(mathx.maxF(e.mapHalf, e.heightHalf));
-    // Already outside the apron and still going: refused without a tap, where the march walked its whole cap.
     try std.testing.expect(e.rayGround(v3(out + 50, 100, 0), mathx.normV(v3(1, -1, 0))) == null);
     try std.testing.expect(e.rayGround(v3(0, 100, out + 50), mathx.normV(v3(0, -1, 1))) == null);
-    // Aimed back in over the apron it still lands, and on the real surface.
     const back = e.rayGround(v3(out + 50, 600, 0), mathx.normV(v3(-1, -1, 0))) orelse return error.NoHit;
     try std.testing.expect(@abs(back.x) <= out);
     try std.testing.expectApproxEqAbs(e.groundAt(back.x, back.z), back.y, 0.05);
-    // A SHALLOW RAY FROM OUTSIDE MAY NOT LAND IN THE VOID: `sampleHeight` clamps to the rim out there, so a march
-    // that started at the origin instead of at the slab's ENTRY crossed the clamped height and reported that point.
-    // The ramp rises with +x, so this comes in low over the high side, where the clamped rim is highest.
+    // A SHALLOW RAY FROM OUTSIDE MAY NOT LAND IN THE VOID: `sampleHeight` clamps to the rim out there, so a march starting at the
+    // origin rather than at the slab's ENTRY crossed the clamped height and reported that point. +x is the high side.
     for ([_]f32{ 0.004, 0.02, 0.08 }) |slope| {
         const shallow = e.rayGround(v3(out + 300, e.groundAt(out, 0) + 4, 0), mathx.normV(v3(-1, -slope, 0))) orelse continue;
         try std.testing.expect(@abs(shallow.x) <= out and @abs(shallow.z) <= out);
@@ -7490,8 +7426,7 @@ test "EVERY FIELD ON `Env` IS ASSIGNED — `Game` is `alloc.create`d and `Env` s
     defer std.testing.allocator.free(src);
     var defaulted: usize = 0;
     var missing: usize = 0;
-    // BOTH RECEIVER NAMES: methods take `self` and the free functions take `e`, so a scan for `self.` alone excuses
-    // any field only a free function ever seats — which is the fill byte this test exists to catch.
+    // BOTH RECEIVER NAMES: methods take `self` and free functions take `e`, so a scan for `self.` alone excuses any field only a free function seats.
     inline for (@typeInfo(Env).@"struct".fields) |f| {
         if (f.default_value_ptr != null) defaulted += 1;
         var seated = false;

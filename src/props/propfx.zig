@@ -24,6 +24,15 @@ const flameInto = art.flameInto;
 
 
 pub fn torchMesh(shader: rl.Shader) rl.Model {
+    return torchInto(shader, art.FIRE);
+}
+
+/// THE GHOSTFLAME IS THE SAME IRON, THE SAME BODY, A DIFFERENT PALETTE. One mesh per fire prop, two palettes through it — a second copy of the geometry is what drifts.
+pub fn ghostTorchMesh(shader: rl.Shader) rl.Model {
+    return torchInto(shader, art.GHOST_FIRE);
+}
+
+fn torchInto(shader: rl.Shader, pal: art.Flame) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(9001);
     b.setMat(.steel);
@@ -42,11 +51,19 @@ pub fn torchMesh(shader: rl.Shader) rl.Model {
     b.addCylinder(v3(0, 1.96, 0), v3(0, 2.00, 0), 0.165, 0.165, 8, IRON);
     b.setMat(.wood);
     b.addBlob(v3(0, 1.82, 0), v3(0.11, 0.10, 0.11), 3, 6, BARK_DK);
-    flameInto(&b, &rng, 0, 1.90, 0, 1.0);
+    flameInto(&b, &rng, 0, 1.90, 0, 1.0, pal);
     return b.toModel(shader);
 }
 
 pub fn brazierMesh(shader: rl.Shader) rl.Model {
+    return brazierInto(shader, art.FIRE);
+}
+
+pub fn ghostBrazierMesh(shader: rl.Shader) rl.Model {
+    return brazierInto(shader, art.GHOST_FIRE);
+}
+
+fn brazierInto(shader: rl.Shader, pal: art.Flame) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(9002);
     b.setMat(.steel);
@@ -60,9 +77,9 @@ pub fn brazierMesh(shader: rl.Shader) rl.Model {
     b.addCylinder(v3(0, 1.02, 0), v3(0, 1.08, 0), 0.55, 0.55, 10, STEEL);
     b.addDome(v3(0, 0.86, 0), v3(0, -1, 0), 0.34, 10, IRON);
     b.setMat(.plain);
-    b.addBlob(v3(0, 1.00, 0), v3(0.44, 0.10, 0.44), 3, 8, COAL);
-    flameInto(&b, &rng, 0, 1.06, 0, 1.45);
-    flameInto(&b, &rng, 0.16, 1.02, -0.12, 0.85);
+    b.addBlob(v3(0, 1.00, 0), v3(0.44, 0.10, 0.44), 3, 8, pal.coal);
+    flameInto(&b, &rng, 0, 1.06, 0, 1.45, pal);
+    flameInto(&b, &rng, 0.16, 1.02, -0.12, 0.85, pal);
     return b.toModel(shader);
 }
 
@@ -99,6 +116,15 @@ fn hearthInto(b: *Builder, rng: *mathx.Rng, cold: bool) void {
 const CAMP_S: f32 = 0.72;
 const SMOKE_SRC: f32 = 0.62;
 pub fn campfireMesh(shader: rl.Shader) rl.Model {
+    return hearthMesh(shader, art.REST_FIRE, true);
+}
+
+/// A COLD HEARTH NOBODY CAMPS AT — no bedroll and no guitar, because a ghostflame is not a place to sit (`rest.isRestKind` never names it).
+pub fn ghostCampfireMesh(shader: rl.Shader) rl.Model {
+    return hearthMesh(shader, art.GHOST_FIRE, false);
+}
+
+fn hearthMesh(shader: rl.Shader, pal: art.Flame, camp: bool) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(9003);
     hearthInto(&b, &rng, false);
@@ -119,20 +145,30 @@ pub fn campfireMesh(shader: rl.Shader) rl.Model {
             if (rng.float() < 0.4) ASH_LT else if (rng.float() < 0.6) ASH_DK else ASH,
         );
     }
-    b.addBlob(v3(0, 0.10, 0), v3(0.30, 0.05, 0.30), 3, 7, COAL);
+    b.addBlob(v3(0, 0.10, 0), v3(0.30, 0.05, 0.30), 3, 7, pal.coal);
     const F = art.HEARTH_FLAMES;
-    flameInto(&b, &rng, rng.signed() * 0.04, 0.11, rng.signed() * 0.04, F[0] * CAMP_S);
-    flameInto(&b, &rng, rng.signed() * 0.22, 0.09, rng.signed() * 0.22, F[1] * CAMP_S);
-    flameInto(&b, &rng, rng.signed() * 0.25, 0.08, rng.signed() * 0.25, F[2] * CAMP_S);
-    art.bedrollInto(&b, &rng, 1.45, -0.90, 1.02);
-    art.guitarRockInto(&b, &rng, GUITAR_CX, GUITAR_CZ);
+    flameInto(&b, &rng, rng.signed() * 0.04, 0.11, rng.signed() * 0.04, F[0] * CAMP_S, pal);
+    flameInto(&b, &rng, rng.signed() * 0.22, 0.09, rng.signed() * 0.22, F[1] * CAMP_S, pal);
+    flameInto(&b, &rng, rng.signed() * 0.25, 0.08, rng.signed() * 0.25, F[2] * CAMP_S, pal);
+    if (camp) {
+        art.bedrollInto(&b, &rng, 1.45, -0.90, 1.02);
+        art.guitarRockInto(&b, &rng, GUITAR_CX, GUITAR_CZ);
+    }
     return b.toModel(shader);
 }
 
 pub fn campfireVeilMesh(shader: rl.Shader) rl.Model {
+    return hearthVeil(shader, art.SMOKE);
+}
+
+pub fn ghostCampfireVeilMesh(shader: rl.Shader) rl.Model {
+    return hearthVeil(shader, art.GHOST_VAPOUR);
+}
+
+fn hearthVeil(shader: rl.Shader, pal: art.Vapour) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(9013);
-    art.smokeInto(&b, &rng, SMOKE_SRC, CAMP_S);
+    art.smokeInto(&b, &rng, SMOKE_SRC, CAMP_S, pal);
     return b.toModel(shader);
 }
 

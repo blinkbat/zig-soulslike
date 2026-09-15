@@ -240,7 +240,9 @@ pub const Conform = struct {
     lip: f32 = 0,
 };
 
-/// THE LAND BENDS TO THE PIECE. Inside the piece's own rectangle every lattice point in front of the seat plane goes to the foot and every point behind it to the top, and each cell the plane crosses is painted `CLIFF_FACE` — one line, two heights, no feather. The lattice can only draw the cut at cell-edge midpoints, so the piece is then walked along its normal by the mean residual and left where the seat is exact.
+/// THE LAND BENDS TO THE PIECE: inside the piece's rectangle every lattice point in front of the seat plane goes to the foot and every point behind
+/// it to the top, each crossed cell painted `CLIFF_FACE` — no feather. The lattice can only draw the cut at cell-edge midpoints, so the piece is then
+/// walked along its normal by the mean residual.
 pub fn conform(m: *wf.Map, pr: *const Prop, span: *[4]usize) Conform {
     var out = Conform{};
     span.* = wf.EMPTY_SPAN;
@@ -359,8 +361,7 @@ fn grown(sp: [4]usize) [4]usize {
     return .{ sp[0] -| 1, sp[1] -| 1, @min(sp[2] + 1, wf.HEIGHT_N - 1), @min(sp[3] + 1, wf.HEIGHT_N - 1) };
 }
 
-/// THE FOUR CELLS A LATTICE POINT CORNERS, set to one case. A cell is named by its LOW corner, so the point's own cell
-/// and the three behind it are what a height moved here can cut; `HEIGHT_N - 1` is the phantom column and is skipped.
+/// THE FOUR CELLS A LATTICE POINT CORNERS. A cell is named by its LOW corner, so the point's own cell and the three behind it are what a height moved here can cut; `HEIGHT_N - 1` is the phantom column.
 fn markCells(m: *wf.Map, ix: usize, iz: usize, case: u8) bool {
     var changed = false;
     for (iz -| 1..@min(iz + 1, wf.HEIGHT_N - 1)) |cz| {
@@ -384,8 +385,7 @@ pub fn paint(m: *wf.Map, from: [2]f32, to: [2]f32, radius: f32, target: f32, spa
     for (sp[1]..sp[3] + 1) |iz| {
         for (sp[0]..sp[2] + 1) |ix| {
             const p = m.heightPoint(ix, iz);
-            // A SWEPT BOX, not a swept disc (the brush's own width, `Editor.cliffHeight`'s rule): the slab test over
-            // both axes at once, so a corner of the drag is square and a stroke joins its own last sample.
+            // A SWEPT BOX, not a swept disc (`Editor.cliffHeight`'s rule): the slab test over both axes at once, so a corner of the drag is square and a stroke joins its own last sample.
             var lo: f32 = 0;
             var hi: f32 = 1;
             for (0..2) |axis| {
@@ -535,7 +535,8 @@ test "terrain editor: a ramp connects two cliff levels without a lip or a wall i
     }
 }
 
-/// ONE FLAT LEVEL INSIDE A RECTANGLE AND A CUT ROUND IT. Every lattice point inside goes to `target` and every cell the edge crosses is painted `CLIFF_FACE`; the plateau brush hands a height above the ground it started on, the indent brush one below. Straight rims on the lattice's own lines, no feather.
+/// ONE FLAT LEVEL INSIDE A RECTANGLE AND A CUT ROUND IT: every lattice point inside goes to `target`, every cell the edge crosses is painted
+/// `CLIFF_FACE`. Plateau hands a height above the ground it started on, indent one below. Straight rims on the lattice's own lines, no feather.
 pub fn terrace(m: *wf.Map, r: Rect, target: f32, span: *[4]usize) ?Rim {
     span.* = wf.EMPTY_SPAN;
     const cell = m.heightStep();

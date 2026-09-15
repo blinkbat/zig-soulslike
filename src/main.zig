@@ -660,4 +660,5 @@ test {
     _ = @import("props/propgold.zig");
     _ = @import("props/propember.zig");
     _ = @import("props/propdesert.zig");
+    _ = @import("props/propmason.zig");
 }

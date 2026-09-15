@@ -22,8 +22,7 @@ pub const Solid = struct {
     breach: u8 = 0,
     /// SQUARE ENDS: the solid is the capsule's bounding rectangle in the segment's frame — `r` across, the segment plus `r` each way along.
     flat: bool = false,
-    /// MASONRY — `env.masonry` (`Info.solid`, less the one veil that thins) and the cliff stamps. The boom shortens
-    /// on these and on nothing else; everything else answers the lens by going thin (`env.markOccluders`).
+    /// MASONRY — `env.masonry` (`Info.solid`, less the one veil that thins) and the cliff stamps. The boom shortens on these and on nothing else.
     arch: bool = false,
 };
 
@@ -147,8 +146,7 @@ pub fn blockerAt(p: rl.Vector3, margin: f32, solids: []const Solid) ?Surface {
 
 // A LOOK IS A SEGMENT, TESTED EXACTLY: sampling means a step that costs real time over 20 m, or one a fence post fits through.
 
-/// SQUARED, because its one caller compares against a radius: the four ends each cost a root otherwise, and `env.sees`
-/// asks this of every solid along a 20 m line.
+/// SQUARED, because its one caller compares against a radius: the four ends each cost a root otherwise, and `env.sees` asks this of every solid along a 20 m line.
 fn segDist2XZ(a0: rl.Vector3, a1: rl.Vector3, b0: rl.Vector3, b1: rl.Vector3) f32 {
     if (segsCrossXZ(a0, a1, b0, b1)) return 0;
     var best = mathx.dist2XZ(a0, mathx.closestOnSegXZ(a0, b0, b1));
@@ -316,10 +314,8 @@ test "blocksPoint respects the blocking height: hits below the top, clears above
     try std.testing.expect(!blocksPoint(v3(2.0, 1.2, 0), 0.05, s));
 }
 
-// MEASURED, AND IT IS THE SHAPE THAT MATTERS: `game.settleGroup` shoulders every body in a group against every
-// other, and a group's slab holds `wf.MAX_PER_KIND` — a map may legally spend the whole foe budget on one kind.
-// The fix is not a distance reject guessed here: a body is a SEGMENT when it lies down, and a bound too tight is
-// a walk-through (`padXZ`'s lesson). It wants a real broad phase or a smaller cap, which is the owner's call.
+// MEASURED, AND IT IS THE SHAPE THAT MATTERS: `game.settleGroup` walks its own group for every body in it, and a group's slab holds `wf.MAX_PER_KIND`.
+// Not fixable by a distance reject guessed here — a body is a SEGMENT when it lies down, and a bound too tight is a walk-through (`padXZ`'s lesson).
 test "WHAT ALL-PAIRS SHOULDERING COSTS A FRAME — `game.settleGroup` walks its own group for every body in it" {
     var rng = mathx.Rng.init(0x5E77);
     var bodies: [512]Solid = undefined;

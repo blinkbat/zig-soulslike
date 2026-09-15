@@ -82,8 +82,7 @@ const SEG_UPARM = heromod.SEG_UPARM;
 const SEG_FOREARM = heromod.SEG_FOREARM;
 
 pub const SCALE: f32 = 1.12;
-/// HIS FIST IN THE WRIST'S OWN FRAME, as a share of stature: the bone family's drop (`foe.FIST_YF`) on a shorter
-/// reach forward, since every haft he holds is gripped closer in than a skeleton's. Ten sites wrote it out.
+/// HIS FIST IN THE WRIST'S OWN FRAME, as a share of stature: the bone family's drop (`foe.FIST_YF`) on a shorter reach forward, since every haft he holds is gripped closer in than a skeleton's.
 const GRIP_ZF: f32 = 0.006;
 fn gripAt(s: f32) rl.Vector3 {
     return v3(0, foe.FIST_YF * s, GRIP_ZF * s);

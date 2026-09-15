@@ -1053,9 +1053,10 @@ const SAVE_W: i32 = 46;
 const SAVE_H: i32 = 58;
 const SAVE_GAP: i32 = 10;
 const SAVE_LIMBS: usize = 4;
-const SAVE_BARK = rgba(58, 47, 38, 255);
-const SAVE_BARK_LT = rgba(92, 76, 58, 255);
-const SAVE_HEART = rgba(142, 126, 100, 255);
+// THE SAME THREE GOLDS THE SOULS TREE IS DRAWN IN (`passivetree.drawPage`), so the mark of a save and the wheel it was taken at read as one thing.
+const SAVE_BARK = uiart.GILT_DIM;
+const SAVE_BARK_LT = uiart.GILT;
+const SAVE_HEART = uiart.GILT_BRIGHT;
 
 fn saveEase(p: f32) f32 {
     return mathx.smoothstep(0, 1, p);
@@ -1078,6 +1079,8 @@ pub fn saveTree(left: f32) void {
 
     var rng = mathx.Rng.init(0x54EED);
     const lean: f32 = -0.19;
+    const bark = mathx.withAlpha(SAVE_BARK, au8(255, a));
+    const lit = mathx.withAlpha(mathx.lerpColor(SAVE_BARK, SAVE_BARK_LT, 0.45), au8(255, a));
 
     rl.drawEllipse(x + @divTrunc(SAVE_W, 2), baseY, 10.0 * grow, 2.4 * grow, rgba(0, 0, 0, au8(88, a)));
 
@@ -1093,11 +1096,11 @@ pub fn saveTree(left: f32) void {
             v2(mathx.lerpF(bx, topX, f0), mathx.lerpF(by, topY, f0)),
             v2(mathx.lerpF(bx, topX, f1) + wob, mathx.lerpF(by, topY, f1)),
             mathx.lerpF(5.6, 2.4, f0) * grow,
-            mathx.lerpColor(SAVE_BARK, SAVE_BARK_LT, f0 * 0.7),
+            mathx.withAlpha(mathx.lerpColor(SAVE_BARK, SAVE_BARK_LT, f0 * 0.7), au8(255, a)),
         );
     }
     inline for (.{ -1.0, 1.0 }) |sx| {
-        rl.drawLineEx(v2(bx + 4.4 * sx * grow, by), v2(bx, by - 5.0 * grow), 2.2 * grow, SAVE_BARK);
+        rl.drawLineEx(v2(bx + 4.4 * sx * grow, by), v2(bx, by - 5.0 * grow), 2.2 * grow, bark);
     }
 
     var i: usize = 0;
@@ -1113,9 +1116,9 @@ pub fn saveTree(left: f32) void {
         const wide = 3.0 - 0.45 * fi_;
 
         const elbow = v2(root.x + len * 0.44 * sx, root.y - len * 0.44);
-        rl.drawLineEx(root, elbow, wide * bg, SAVE_BARK);
+        rl.drawLineEx(root, elbow, wide * bg, bark);
         const snap = v2(elbow.x + len * 0.58 * sx, elbow.y + len * 0.30);
-        rl.drawLineEx(elbow, snap, wide * 0.68 * bg, mathx.lerpColor(SAVE_BARK, SAVE_BARK_LT, 0.45));
+        rl.drawLineEx(elbow, snap, wide * 0.68 * bg, lit);
         rl.drawCircleV(snap, wide * 0.34 * bg, mathx.withAlpha(SAVE_HEART, au8(228, a)));
 
         const twigs: usize = if (i < 2) 2 else 1;
@@ -1125,7 +1128,7 @@ pub fn saveTree(left: f32) void {
             const from = v2(mathx.lerpF(elbow.x, snap.x, at), mathx.lerpF(elbow.y, snap.y, at));
             const tl = len * rng.range(0.22, 0.36) * bg;
             const to = v2(from.x + tl * sx * rng.range(0.7, 1.1), from.y - tl * rng.range(0.1, 0.6));
-            rl.drawLineEx(from, to, mathx.maxF(1.0, wide * 0.30 * bg), SAVE_BARK);
+            rl.drawLineEx(from, to, mathx.maxF(1.0, wide * 0.30 * bg), bark);
         }
     }
 
@@ -1135,8 +1138,8 @@ pub fn saveTree(left: f32) void {
             const len = h * 0.20 * cg * share;
             const el = v2(topX + len * 0.42 * sx, topY - len * 0.62);
             const snap = v2(el.x + len * 0.52 * sx, el.y - len * 0.10);
-            rl.drawLineEx(v2(topX, topY), el, 2.1 * cg, SAVE_BARK);
-            rl.drawLineEx(el, snap, 1.5 * cg, mathx.lerpColor(SAVE_BARK, SAVE_BARK_LT, 0.45));
+            rl.drawLineEx(v2(topX, topY), el, 2.1 * cg, bark);
+            rl.drawLineEx(el, snap, 1.5 * cg, lit);
             rl.drawCircleV(snap, 1.15 * cg, mathx.withAlpha(SAVE_HEART, au8(222, a)));
         }
     }
@@ -1302,9 +1305,8 @@ pub fn fmt(comptime f: []const u8, args: anytype) [:0]const u8 {
     return std.fmt.bufPrintZ(&scratch[scratchAt], f, args) catch "?";
 }
 
-/// TEXT INTO A FIXED BUFFER, TRUNCATED RATHER THAN REFUSED, and this file is where the rule lives because it is
-/// the only path to draw text. Returns the bytes taken; one byte is always held back for a terminator, so a
-/// caller that keeps a LENGTH and one that keeps a `[:0]` are the same call.
+/// TEXT INTO A FIXED BUFFER, TRUNCATED RATHER THAN REFUSED, and this file is where the rule lives because it is the only path to draw text. Returns
+/// the bytes taken; one byte is always held back for a terminator.
 pub fn copyInto(buf: []u8, s: []const u8) usize {
     const n = @min(s.len, buf.len - 1);
     @memcpy(buf[0..n], s[0..n]);

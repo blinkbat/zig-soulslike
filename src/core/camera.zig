@@ -29,17 +29,14 @@ const GROUND_PROBE = 0.25;
 const GROUND_RISE = 0.2;
 /// Halvings of the step the march stopped on, so the boom lands within 8 mm of what stopped it instead of on a 0.25 m rung.
 const PROBE_HALVINGS = 5;
-/// FLOOR on the metres the eye keeps off masonry — the near plane's own half-DIAGONAL at the AUTHORED window, which
-/// at `game.CLIP_NEAR` on this lens is 0.540 m. The window resizes, so `game.eyeR` widens it to the live aspect and
-/// `game.zig` owns the lens, the near plane and both asserts.
+/// FLOOR on the metres the eye keeps off masonry — the near plane's own half-DIAGONAL at the AUTHORED window, 0.540 m at `game.CLIP_NEAR` on this
+/// lens. The window resizes, so `game.eyeR` widens it to the live aspect; `game.zig` owns the lens, the near plane and both asserts.
 pub const EYE_R = 0.55;
-/// A CEILING IN METRES A SECOND on the boom being GIVEN BACK, not a rate: shortening is immediate, because the eye
-/// may never be in the rock. `REGAIN_SECS` is the spring's own time constant under it.
+/// A CEILING IN METRES A SECOND on the boom being GIVEN BACK, not a rate: shortening is immediate, because the eye may never be in the rock.
 const CLEAR_REGAIN = 8.0;
 const REGAIN_SECS = 0.28;
 
-/// Seconds the focus takes to cover a step in his footing. A tread is a STEP in `pos.y` even after `game.groundActor`
-/// eases it, and the eye may not inherit that sawtooth.
+/// Seconds the focus takes to cover a step in his footing. A tread is a STEP in `pos.y` even after `game.groundActor` eases it.
 const FOCUS_RISE = 0.16;
 /// The flat axes are damped only enough to take the edge off a corrected step — a roll may not leave the man behind.
 const FOCUS_FLAT = 0.05;
@@ -200,12 +197,9 @@ pub const CamRig = struct {
         return .{ .origin = c.cam.position, .dir = mathx.normV(mathx.subV(c.cam.target, c.cam.position)) };
     }
 
-    /// UNDER A ROOF THE EYE IS PINNED BOTH WAYS: the floor it may not sink through is the chamber's, and the ceiling
-    /// it may not rise through is the rock. `world` answers three questions about a point — `at(x, z)` the floor
-    /// under it, `roof(x, z)` the rock over it or `null` under the sky, and `wall(p)` whether masonry stands there.
-    ///
-    /// THE BOOM IS MARCHED OUT, NOT IN: it stops at the NEAREST thing in the way, so a wall is never jumped for the
-    /// open ground behind it, and the step it stopped on is halved down to a continuous length.
+    /// UNDER A ROOF THE EYE IS PINNED BOTH WAYS. `world` answers three questions about a point — `at(x, z)` the floor under it, `roof(x, z)` the rock
+    /// over it or `null` under the sky, and `wall(p)` whether masonry stands there. THE BOOM IS MARCHED OUT, NOT IN: it stops at the NEAREST thing in
+    /// the way, and the step it stopped on is halved down to a continuous length.
     pub fn followRoofed(c: *CamRig, shoulder: rl.Vector3, world: anytype, dt: f32) void {
         const target = c.targetFor(c.focusOn(shoulder, dt));
         const back = c.backDir();
@@ -251,9 +245,8 @@ pub const CamRig = struct {
     fn clearAt(target: rl.Vector3, back: rl.Vector3, d: f32, g0: f32, world: anytype) bool {
         const p = mathx.addV(target, mathx.scaleV(back, d));
         const floor = world.at(p.x, p.z) + GROUND_CLEAR;
-        // **MASONRY IS ASKED AT THE HEIGHT THE EYE WILL END AT**, which the floor lifts it to. Asked at the raw `p.y`
-        // a hard up-tilt runs the line along the turf and a chest or a campfire behind him shortens the boom.
-        // Asked BEFORE the roof, because a chamber's ceiling costs a second `supportAt` and a wall answers for free.
+        // **MASONRY IS ASKED AT THE HEIGHT THE EYE WILL END AT**, which the floor lifts it to: asked at the raw `p.y` a hard up-tilt runs the line
+        // along the turf and a chest behind him shortens the boom. BEFORE the roof, because a ceiling costs a second `supportAt` and a wall answers free.
         if (world.wall(v3(p.x, mathx.maxF(p.y, floor), p.z))) return false;
         if (world.roof(p.x, p.z)) |r| {
             if (p.y > r - GROUND_CLEAR) return false;

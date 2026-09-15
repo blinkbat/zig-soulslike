@@ -27,8 +27,7 @@ pub const HEIGHT_N: i32 = 400;
 /// Half the terrain's cell, sharing its lattice points.
 pub const CAVE_N: i32 = 2 * HEIGHT_N - 1;
 
-/// A CELL FIELD'S SPACING, the one the soil and water shader uniforms are fed — `2 * half` over `n`, no phantom
-/// column. The POINT lattices divide by `n - 1` (`worldfmt.heightStepFor`), and the two are one keystroke apart.
+/// A CELL FIELD'S SPACING, the one the soil and water shader uniforms are fed — `2 * half` over `n`, no phantom column. The POINT lattices divide by `n - 1` (`worldfmt.heightStepFor`).
 pub fn fieldCell(half: f32, n: i32) f32 {
     return 2.0 * half / @as(f32, @floatFromInt(n));
 }

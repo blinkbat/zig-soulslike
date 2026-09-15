@@ -321,7 +321,7 @@ pub fn illusoryWallMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// The same wall, CRACKED THROUGH — deep fissures on both faces running down through the middle course, a spill of rubble at its foot, dusted toward dead mortar (`art.CRACKED_WASH`). A burst brings it down (`props.Breach.cracked`).
+/// The same wall, CRACKED THROUGH, dusted toward dead mortar (`art.CRACKED_WASH`). A burst brings it down (`props.Breach.cracked`).
 pub fn crackedWallBuild() Builder {
     var b = wallBuild();
     var rng = mathx.Rng.init(4811);
@@ -483,6 +483,15 @@ pub fn swordMesh(shader: rl.Shader) rl.Model {
 }
 
 pub fn bonfireMesh(shader: rl.Shader) rl.Model {
+    return pyreMesh(shader, art.REST_FIRE, true);
+}
+
+/// THE PYRE BURNING COLD. Same stones, same logs, no camp — a ghostflame is not a place to sit.
+pub fn ghostBonfireMesh(shader: rl.Shader) rl.Model {
+    return pyreMesh(shader, art.GHOST_FIRE, false);
+}
+
+fn pyreMesh(shader: rl.Shader, pal: art.Flame, camp: bool) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4809);
     b.setMat(.stone);
@@ -546,12 +555,14 @@ pub fn bonfireMesh(shader: rl.Shader) rl.Model {
         );
     }
     const F = art.HEARTH_FLAMES;
-    flameInto(&b, &rng, rng.signed() * 0.05, 0.16, rng.signed() * 0.05, F[0]);
-    flameInto(&b, &rng, rng.signed() * 0.30, 0.13, rng.signed() * 0.30, F[1]);
-    flameInto(&b, &rng, rng.signed() * 0.34, 0.12, rng.signed() * 0.34, F[2]);
-    // Tangential to the ring, its near edge 1.55 m out against a stone circle that reaches 1.08: pointed AT the fire (yaw 2.42) the head end lay in the flames.
-    art.bedrollInto(&b, &rng, 1.62, -1.02, 1.02);
-    art.guitarRockInto(&b, &rng, GUITAR_CX, GUITAR_CZ);
+    flameInto(&b, &rng, rng.signed() * 0.05, 0.16, rng.signed() * 0.05, F[0], pal);
+    flameInto(&b, &rng, rng.signed() * 0.30, 0.13, rng.signed() * 0.30, F[1], pal);
+    flameInto(&b, &rng, rng.signed() * 0.34, 0.12, rng.signed() * 0.34, F[2], pal);
+    if (camp) {
+        // Tangential to the ring, its near edge 1.55 m out against a stone circle that reaches 1.08: pointed AT the fire (yaw 2.42) the head end lay in the flames.
+        art.bedrollInto(&b, &rng, 1.62, -1.02, 1.02);
+        art.guitarRockInto(&b, &rng, GUITAR_CX, GUITAR_CZ);
+    }
     b.setMat(.plant);
     tuftInto(&b, &rng, rng.signed() * 1.05, rng.signed() * 1.05, 0.55);
     lichenInto(&b, &rng, v3(rng.signed() * 0.6, 0.07, rng.signed() * 0.6), v3(0.24, 0.02, 0.22), 3);
@@ -560,9 +571,17 @@ pub fn bonfireMesh(shader: rl.Shader) rl.Model {
 
 const SMOKE_SRC: f32 = 1.0;
 pub fn bonfireVeilMesh(shader: rl.Shader) rl.Model {
+    return pyreVeil(shader, art.SMOKE);
+}
+
+pub fn ghostBonfireVeilMesh(shader: rl.Shader) rl.Model {
+    return pyreVeil(shader, art.GHOST_VAPOUR);
+}
+
+fn pyreVeil(shader: rl.Shader, pal: art.Vapour) rl.Model {
     var b = Builder.init();
     var rng = mathx.Rng.init(4811);
-    art.smokeInto(&b, &rng, SMOKE_SRC, 1.0);
+    art.smokeInto(&b, &rng, SMOKE_SRC, 1.0, pal);
     return b.toModel(shader);
 }
 

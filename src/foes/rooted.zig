@@ -133,9 +133,8 @@ const CLAW_R = 15;
 const SEGS = 3;
 const LIMBS = [_]usize{ LIMB_L, LIMB_R, LIMB_H };
 
-/// THE SPRING BANK'S LAYOUT, DERIVED AND NOT COUNTED: two body channels, then rx/ry for every limb of every
-/// segment. Written out by hand the stride was a literal `6` at three sites and the width a literal `20`, and both
-/// happen to equal `SEGS * 2` today only because there are as many segments as limbs.
+/// THE SPRING BANK'S LAYOUT, DERIVED AND NOT COUNTED: two body channels, then rx/ry for every limb of every segment. Written out by hand the stride
+/// was a literal `6` and the width a literal `20`, which happen to equal `SEGS * 2` only because there are as many segments as limbs.
 const CH_BODY = 2;
 const CH_STRIDE = LIMBS.len * 2;
 const NCH = CH_BODY + SEGS * CH_STRIDE;

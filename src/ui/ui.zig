@@ -34,8 +34,7 @@ pub const alpha = mathx.withAlpha;
 pub const col = rgba;
 
 var dragOwner: ?rl.Rectangle = null;
-/// Where a gauge's track was GRABBED. A click alone must not move it: the label rides the track, and on a coordinate
-/// row a stray press near the left edge would fling the op the width of the map.
+/// Where a gauge's track was GRABBED. A click alone must not move it: the label rides the track, and on a coordinate row a stray press near the left edge would fling the op the width of the map.
 var trackFrom: f32 = 0;
 
 pub const Ctx = struct {
@@ -54,8 +53,7 @@ pub const Ctx = struct {
     tipBuf: [MSG_CAP]u8 = undefined,
     tipLen: usize = 0,
 
-    /// A SCROLLED PANEL SCISSORS ITS DRAWING AND MUST SCISSOR ITS POINTER TOO: a row pushed above the panel's top is
-    /// still laid out and still tests the mouse, so without this the invisible rows keep taking the clicks.
+    /// A SCROLLED PANEL SCISSORS ITS DRAWING AND MUST SCISSOR ITS POINTER TOO: a row pushed above the panel's top is still laid out and still tests the mouse.
     clip: ?rl.Rectangle = null,
     /// A LIST INSIDE A SCROLLED PANEL OWNS THE WHEEL OVER IT, or one notch moves the list AND the panel under it.
     wheelTaken: bool = false,
@@ -139,8 +137,7 @@ pub const Ctx = struct {
 
 pub const rect = uiart.rect;
 
-/// `rl.endScissorMode` clears the scissor OUTRIGHT, so a widget that scissors its own text inside a scrolled panel
-/// has to put the panel's own back or everything drawn after it spills past the panel.
+/// `rl.endScissorMode` clears the scissor OUTRIGHT, so a widget that scissors its own text inside a scrolled panel has to put the panel's own back.
 fn endInnerScissor(ctx: *const Ctx) void {
     rl.endScissorMode();
     if (ctx.clip) |c| rl.beginScissorMode(@intFromFloat(c.x), @intFromFloat(c.y), @intFromFloat(c.width), @intFromFloat(c.height));
@@ -386,9 +383,8 @@ fn writeStepped(comptime T: type, v: *T, d: T, lo: T, hi: T, wrap: bool) bool {
     return true;
 }
 
-/// THE TRACK HALF OF A NUMERIC ROW, on its own because a panel that draws its own readout still owes a sweep.
-/// Answers WHERE ALONG IT the grab is, 0..1 — and only once the grab has moved, since the label rides the bar and a
-/// stray press near the left edge would fling a world coordinate the width of the map.
+/// THE TRACK HALF OF A NUMERIC ROW, on its own because a panel that draws its own readout still owes a sweep. Answers WHERE ALONG IT the grab is,
+/// 0..1, and only once the grab has moved.
 pub fn track(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, tint: rl.Color, frac: f32) ?f32 {
     const x: i32 = @intFromFloat(r.x);
     const y: i32 = @intFromFloat(r.y);
@@ -415,11 +411,8 @@ pub fn track(ctx: *Ctx, r: rl.Rectangle, label: [:0]const u8, tint: rl.Color, fr
     return mathx.clampF((ctx.mouse.x - r.x) / r.width, 0, 1);
 }
 
-/// A NUMERIC ROW IS A TRACK AND A CLICKER, never one or the other: the track sweeps the whole range in one gesture
-/// and the buttons walk it a `step` at a time. The track is the row's own left-hand side with the label drawn over
-/// it, so it costs no height a stepper was not already spending on the gap between its label and its buttons.
-/// `wrap` gives an ANGLE its own track — one turn, [0, 360) — since a range wide enough to step through is a track
-/// nobody can aim, and past the end an angle comes back round rather than stopping.
+/// A NUMERIC ROW IS A TRACK AND A CLICKER, never one or the other: the track sweeps the whole range in one gesture and the buttons walk it a `step`
+/// at a time, over the row's own left-hand side so it costs no height. `wrap` gives an ANGLE its own track — one turn, [0, 360) — and past the end it comes back round.
 fn gauge(comptime T: type, ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *T, step: T, lo: T, hi: T, wrap: bool, tip: [:0]const u8) bool {
     tipFor(ctx, rect(x, y, w, GAUGE_H), tip);
     const bx = x + w - STEP_FURNITURE;
@@ -442,8 +435,7 @@ fn gauge(comptime T: type, ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u
         if (writeStepped(T, v, -step, lo, hi, wrap)) changed = true;
     }
     var buf: [24]u8 = undefined;
-    // TWO DECIMALS WHERE ONE CANNOT RESOLVE THE STEP: at `{d:.1}` a 0.05 scale shows the same 1.0 for four clicks
-    // running, and a 0.25 floor reads back 0.2 for a height the file stores as 0.25.
+    // TWO DECIMALS WHERE ONE CANNOT RESOLVE THE STEP: at `{d:.1}` a 0.05 scale shows the same 1.0 for four clicks running, and a 0.25 floor reads back 0.2 for a height the file stores as 0.25.
     const s: [:0]const u8 = if (T == f32)
         (if (@abs(step) < 0.5)
             (std.fmt.bufPrintZ(&buf, "{d:.2}", .{v.*}) catch "?")
@@ -466,8 +458,6 @@ pub fn stepperI(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *i32,
     return gauge(i32, ctx, x, y, w, label, v, step, lo, hi, false, tip);
 }
 
-/// A HEADING IN DEGREES. Its track is one turn and its value comes back inside it, so a yaw is one sweep rather
-/// than twenty-four clicks and never accumulates a number no reader can place.
 pub fn angleF(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, step: f32, tip: [:0]const u8) bool {
     return gauge(f32, ctx, x, y, w, label, v, step, 0, 360, true, tip);
 }
@@ -481,8 +471,7 @@ fn niceStep(span: f32) f32 {
     return mathx.nice125(n) * p;
 }
 
-/// THE SAME ROW UNDER ANOTHER NAME — a continuous value still owes a fine clicker, and a stepped one still owes a
-/// sweep. The step is derived because a range like 0..1 has no natural one.
+/// THE SAME ROW UNDER ANOTHER NAME. The step is derived because a range like 0..1 has no natural one.
 pub fn slider(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, lo: f32, hi: f32, tip: [:0]const u8) bool {
     return gauge(f32, ctx, x, y, w, label, v, niceStep(hi - lo), lo, hi, false, tip);
 }

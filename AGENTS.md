@@ -45,8 +45,9 @@ push or branch unless asked.
 
 ## Build & verify
 
-- `zig` is NOT on PATH. `build.cmd` / `build-release.cmd`; toolchain
-  `..\.zigtoolchain\zig-x86_64-windows-0.14.1\zig.exe`. `zig build test` runs unit tests.
+- `zig` is NOT on PATH. `build.cmd` / `build-release.cmd`; the toolchain
+  (`..\.zigtoolchain\zig-x86_64-windows-0.14.1\zig.exe`) is named ONCE, in `_zig.cmd`, which every script
+  `call`s — a bump is one edit. `zig build test` runs unit tests.
 - **AN ERROR LOOP DOES NOT NEED A BINARY** — `check.cmd` type-checks exe AND test roots in 2.7 s against a 10 s
   build. Loop on it until clean, then build once.
 - **Do NOT launch the interactive window** — the owner plays it himself and holds the exe open. `--prefix

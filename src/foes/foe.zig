@@ -2181,30 +2181,40 @@ const STREAK_MIN_RADII: f32 = 1.6;
 /// The alpha pool sorts back to front, and the depth off the lens is solved ONCE A MOTE rather than once a
 /// COMPARE: at 1,536 motes that is 1,536 dot products a frame against ~33,000, measured 0.196 ms against 0.552.
 const Ordered = struct { depth: f32, at: u32 };
-var particleOrder = std.ArrayList(Ordered).init(std.heap.page_allocator);
+/// ONE WALK OF THE POOL FILLS BOTH PASSES. Which passes have anything is what the flush-avoidance below needs
+/// (`beginBlendMode` flushes rlgl's batch whether or not the pass draws), and it is the LISTS' own lengths —
+/// asking it first and then walking the pool again per pass paid `motesVisible` twice over every mote.
+var matterOrder = std.ArrayList(Ordered).init(std.heap.page_allocator);
+var lightOrder = std.ArrayList(Ordered).init(std.heap.page_allocator);
 
 fn farthestFirst(_: void, a: Ordered, b: Ordered) bool {
     return a.depth > b.depth;
 }
 
-/// The same scan that asks whether anything is visible also says WHICH pass has it: `beginBlendMode` flushes rlgl's batch whether or not the
+/// Alpha MATTER back to front, then additive LIGHT in pool order. No raylib in here, so a test can ask what a pool costs and what each pass got.
+fn orderMotes(pool: []const Particle) void {
+    matterOrder.clearRetainingCapacity();
+    lightOrder.clearRetainingCapacity();
+    for (pool, 0..) |*q, i| {
+        if (q.life <= 0 or !motesVisible(q.p, q.r0 + q.r1)) continue;
+        const row = Ordered{ .depth = mathx.dotV(mathx.subV(q.p, lensAt), lensFwd), .at = @intCast(i) };
+        (if (q.add) &lightOrder else &matterOrder).append(row) catch @panic("particle order");
+    }
+    std.sort.pdq(Ordered, matterOrder.items, {}, farthestFirst);
+}
+
+/// The same scan that orders the motes also says WHICH pass has any: `beginBlendMode` flushes rlgl's batch whether or not the
 /// pass draws, and most pools are all matter or all light, so the empty half was paying two flushes a pool a frame.
 pub fn drawParticles(pool: []const Particle) void {
-    var anyAlpha = false;
-    var anyAdd = false;
-    for (pool) |*q| {
-        if (q.life <= 0 or !motesVisible(q.p, q.r0 + q.r1)) continue;
-        if (q.add) anyAdd = true else anyAlpha = true;
-        if (anyAlpha and anyAdd) break;
-    }
-    if (!anyAlpha and !anyAdd) return;
+    orderMotes(pool);
+    if (matterOrder.items.len == 0 and lightOrder.items.len == 0) return;
     _ = particleart.texture();
     rl.gl.rlDisableBackfaceCulling();
     rl.gl.rlDisableDepthMask();
-    if (anyAlpha) drawPass(pool, false);
-    if (anyAdd) {
+    if (matterOrder.items.len > 0) drawPass(pool, matterOrder.items);
+    if (lightOrder.items.len > 0) {
         rl.beginBlendMode(.additive);
-        drawPass(pool, true);
+        drawPass(pool, lightOrder.items);
         rl.endBlendMode();
     }
     rl.gl.rlEnableDepthMask();
@@ -2223,18 +2233,10 @@ fn cloudStyle(style: ParticleStyle) bool {
     return style == .smoke or style == .spore or style == .chaos;
 }
 
-fn drawPass(pool: []const Particle, add: bool) void {
-    particleOrder.clearRetainingCapacity();
-    for (pool, 0..) |*q, i| {
-        if (q.life <= 0 or q.add != add or !motesVisible(q.p, q.r0 + q.r1)) continue;
-        const depth = mathx.dotV(mathx.subV(q.p, lensAt), lensFwd);
-        particleOrder.append(.{ .depth = depth, .at = @intCast(i) }) catch @panic("particle order");
-    }
-    if (particleOrder.items.len == 0) return;
-    if (!add) std.sort.pdq(Ordered, particleOrder.items, {}, farthestFirst);
+fn drawPass(pool: []const Particle, order: []const Ordered) void {
     rl.gl.rlSetTexture(particleart.texture().id);
     rl.gl.rlBegin(rl.gl.rl_quads);
-    for (particleOrder.items) |row| {
+    for (order) |row| {
         const q = &pool[row.at];
         const frac = mathx.clampF(q.life / q.max, 0, 1);
         const rad = mathx.lerpF(q.r1, q.r0, frac);
@@ -2292,6 +2294,48 @@ fn drawPass(pool: []const Particle, add: bool) void {
     }
     rl.gl.rlEnd();
     rl.gl.rlSetTexture(0);
+}
+
+test "ONE WALK ORDERS BOTH PASSES — matter back to front, light in pool order, and what the walk costs" {
+    const N = 4096;
+    const pool = try std.testing.allocator.create([N]Particle);
+    defer std.testing.allocator.destroy(pool);
+    var rng = mathx.Rng.init(0x503717);
+    for (pool, 0..) |*q, i| {
+        q.* = .{ .p = v3(rng.range(-20, 20), rng.range(0, 6), rng.range(2, 40)), .r0 = 0.2, .r1 = 0.3, .add = i % 3 == 0 };
+        q.life = if (i % 7 == 0) 0 else 1.0;
+    }
+    setLens(mathx.zero3, v3(0, 0, 1));
+
+    orderMotes(pool);
+    var live: usize = 0;
+    for (pool) |*q| live += @intFromBool(q.life > 0 and motesVisible(q.p, q.r0 + q.r1));
+    try std.testing.expectEqual(live, matterOrder.items.len + lightOrder.items.len);
+    try std.testing.expect(matterOrder.items.len > 0 and lightOrder.items.len > 0);
+    for (matterOrder.items) |row| try std.testing.expect(!pool[row.at].add);
+    for (lightOrder.items) |row| try std.testing.expect(pool[row.at].add);
+    // MATTER SORTS BACK TO FRONT so it composites right; LIGHT is additive and needs no order, so it keeps the pool's.
+    for (matterOrder.items[1..], matterOrder.items[0 .. matterOrder.items.len - 1]) |b, a| try std.testing.expect(a.depth >= b.depth);
+    for (lightOrder.items[1..], lightOrder.items[0 .. lightOrder.items.len - 1]) |b, a| try std.testing.expect(a.at < b.at);
+
+    // The gate used to be ASKED FIRST over the whole pool and then again per pass, so this walk is what one walk saves.
+    const REPS = 200;
+    var t = try std.time.Timer.start();
+    var seen: usize = 0;
+    for (0..REPS) |_| {
+        for (pool) |*q| {
+            if (q.life <= 0 or !motesVisible(q.p, q.r0 + q.r1)) continue;
+            seen += 1;
+        }
+    }
+    const gate = @as(f64, @floatFromInt(t.read())) / 1000.0 / @as(f64, REPS);
+    std.mem.doNotOptimizeAway(seen);
+    t.reset();
+    for (0..REPS) |_| orderMotes(pool);
+    const whole = @as(f64, @floatFromInt(t.read())) / 1000.0 / @as(f64, REPS);
+    std.debug.print("\n  mote order: {d} in the pool ({d} matter, {d} light) — {d:.2} us for the walk+sort, and the gate pass it no longer pays twice is {d:.2} us ({d:.3}% of a 16.7 ms frame)\n", .{
+        N, matterOrder.items.len, lightOrder.items.len, whole, gate, 100.0 * gate / 16666.0,
+    });
 }
 
 pub const CloudLook = struct {

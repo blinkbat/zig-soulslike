@@ -230,6 +230,13 @@ pub const Shelf = struct {
     pub fn holds(self: *const Shelf, i: usize) bool {
         return self.head[i] != null or self.unreadable[i];
     }
+
+    /// A SLOT THE GAME REFUSED TO LOAD IS NOT A FREE ONE EITHER: the file parses (so `peek` filled `head`) but the
+    /// run behind it will not open, and clearing `head` alone offers it for a new game over the top of a live save.
+    pub fn refused(self: *Shelf, i: usize) void {
+        self.head[i] = null;
+        self.unreadable[i] = onDisk(i);
+    }
 };
 
 pub fn survey() Shelf {
@@ -1385,6 +1392,31 @@ test "AN UNREADABLE SLOT IS NOT A FREE ONE — offered for a new game it is over
     var d = Data{};
     try testing.expect(!parseFile(tmp, &d));
     try std.fs.cwd().access(tmp, .{});
+}
+
+test "A SLOT THE GAME REFUSED IS NOT A FREE ONE — the file reads fine and the RUN behind it is what would not open" {
+    defer useDevShelf(false);
+    useDevShelf(true);
+    const i = SLOTS - 1;
+    defer std.fs.cwd().deleteFile(path(i)) catch {};
+    try std.fs.cwd().writeFile(.{ .sub_path = path(i), .data = "version: 1\nmap: " ++ wf.DIR ++ "/test_gone" ++ wf.EXT ++ "\n" });
+
+    var sh = Shelf{};
+    for (sh.head[0..i]) |*h| h.* = .{ .level = 1, .souls = 0, .playtime = 1 };
+    sh.head[i] = peek(i);
+    try testing.expect(sh.head[i] != null and sh.full());
+
+    // `game.loadGame` refuses this one: the file parses, its `map:` names no world that will load.
+    sh.refused(i);
+    try testing.expectEqual(@as(?Head, null), sh.head[i]);
+    try testing.expect(sh.unreadable[i] and sh.holds(i));
+    try testing.expectEqual(@as(?usize, null), sh.firstFree());
+
+    // …and once the file really is gone the same call hands the slot back.
+    try std.fs.cwd().deleteFile(path(i));
+    sh.refused(i);
+    try testing.expect(!sh.holds(i));
+    try testing.expectEqual(@as(?usize, i), sh.firstFree());
 }
 
 test "A SLOT IS WRITTEN BESIDE ITSELF AND RENAMED OVER — a refused save never takes the one it was replacing" {

@@ -1286,7 +1286,8 @@ fn buildMeshes() [N]rl.Mesh {
     return mesh;
 }
 
-pub fn boneMeshes() [N]rl.Mesh {
+/// THE ARCHER SKELETON WITHOUT ITS QUIVER, which is what the warrior stands on. Not `foe.boneMeshes`, which is a different thing a package away.
+pub fn bareSkeleton() [N]rl.Mesh {
     return skeletonMeshes(false);
 }
 

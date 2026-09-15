@@ -414,7 +414,7 @@ pub const Model = struct {
     pub fn init(shader: rl.Shader) Model {
         const mat = gfx.material(shader, "warrior");
         const kit = [_]rl.Mesh{ maceMesh(), greatswordMesh() };
-        var bone = archermod.boneMeshes();
+        var bone = archermod.bareSkeleton();
         bone[WPN] = kit[0];
         return .{ .bone = bone, .kit = kit, .shield = shieldMesh(), .mat = mat };
     }

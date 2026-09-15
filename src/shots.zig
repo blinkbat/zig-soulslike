@@ -210,7 +210,7 @@ fn fogGateShots(g: *Game, dt: f32) void {
         std.debug.print("shots: no fog gate in {s} — skipping the gate stage\n", .{worldfmt.startMap()});
         return;
     }
-    const pr = &g.env.props[g.env.wardProps[0]];
+    const pr = g.env.wardProp(0);
     const at = pr.pos;
     const tall = props.info(.foggate).top * pr.scale;
     const back = mathx.headingDir(mathx.radians(LIT_YAW)); // off the SUN's bearing, or the sheet is in its own shadow

@@ -609,7 +609,7 @@ fn enterNow(g: *Game, act: Enter) void {
                 g.slot = i;
                 g.menu.started();
             } else {
-                g.shelf.head[i] = null;
+                g.shelf.refused(i);
                 std.debug.print("LOAD FAILED: {s} is not a save this build can read\n", .{savemod.path(i)});
             }
         },
@@ -3827,7 +3827,7 @@ fn solveArenaSeals(m: *const worldfmt.Map, alive: [worldfmt.NFOE]u32, shut: []bo
 fn markWards(g: *Game, alive: [worldfmt.NFOE]u32, dt: f32) void {
     solveArenaSeals(&g.map, alive, &g.arenaShut);
     for (0..g.env.nwards) |i| {
-        const pr = &g.env.props[g.env.wardProps[i]];
+        const pr = g.env.wardProp(i);
         const seal = if (pr.op < g.map.nops) g.map.ops[pr.op].seal() else &.{};
         const standing = worldfmt.sealStanding(seal, &alive);
         const shut = g.env.wardIn[i] and standing and g.env.wardClear(@intCast(i), g.hero.pos, HERO_R);

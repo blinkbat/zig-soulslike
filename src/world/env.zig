@@ -1955,13 +1955,20 @@ pub const Env = struct {
         return .{ .dir = dir, .to = mathx.addV(p, mathx.scaleV(dir, span)) };
     }
 
+    /// THE PROP A WARD IS — `breachKind`'s opposite number, so nothing outside here spells out the two-step
+    /// `props[wardProps[i]]`. `game.markWards` drives its fade through this and `shots` frames off it.
+    pub fn wardProp(self: *Env, i: usize) *Prop {
+        return &self.props[self.wardProps[i]];
+    }
+
     pub fn openWards(self: *Env) void {
         self.wardIn = [_]bool{false} ** MAX_WARDS;
         self.wardShut = [_]bool{false} ** MAX_WARDS;
         self.wardLife = [_]f32{1} ** MAX_WARDS;
-        for (self.wardProps[0..self.nwards]) |pi| {
-            self.props[pi].shrink = 1;
-            self.props[pi].gone = false;
+        for (0..self.nwards) |i| {
+            const pr = self.wardProp(i);
+            pr.shrink = 1;
+            pr.gone = false;
         }
     }
 

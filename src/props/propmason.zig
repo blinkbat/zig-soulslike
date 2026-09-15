@@ -54,6 +54,20 @@ const WIN_HEAD: f32 = 3.05;
 /// The break's low end, as a share of the wall's height. `broken` falls from full at one end to this at the other.
 const BREAK_LOW: f32 = 0.26;
 
+/// THE COPING ON AN INTACT HEAD — where its slab sits over the wall's own height and how thick it is.
+const CAP_Y: f32 = 0.09;
+const CAP_HALF: f32 = 0.10;
+/// WHAT A CAPPED PIECE REACHES OVER ITS OWN HEIGHT, and the only thing `props.INFO` has to know about the coping: eleven rows spelled `+ 0.3` by hand.
+pub const CAP_PROUD: f32 = 0.30;
+
+comptime {
+    std.debug.assert(CAP_PROUD >= CAP_Y + CAP_HALF);
+}
+
+pub fn wallTop(h: f32) f32 {
+    return h + CAP_PROUD;
+}
+
 pub const Ruin = enum { intact, worn, broken, stub };
 
 const Wall = struct {
@@ -148,7 +162,7 @@ fn wallInto(b: *Builder, rng: *Rng, w: Wall) void {
     }
     if (w.cap and w.ruin == .intact) {
         b.setMat(.stone);
-        b.addBox(v3(0, h + 0.09, 0), v3(half + 0.05, rng.signed() * 0.010, 0), v3(0, 0.10, 0), v3(0, 0, TH * 1.18), STONE_LT);
+        b.addBox(v3(0, h + CAP_Y, 0), v3(half + 0.05, rng.signed() * 0.010, 0), v3(0, CAP_HALF, 0), v3(0, 0, TH * 1.18), STONE_LT);
     }
 
     weatherInto(b, rng, w.run, h, w.ruin);

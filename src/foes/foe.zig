@@ -833,6 +833,17 @@ pub fn markOn(bone: rl.Matrix, at: rl.Vector3) rl.Vector3 {
     return rl.math.vector3Transform(at, bone);
 }
 
+/// ONE MESH PER BONE OFF THE REST POSE, for a rig whose whole body is built by index rather than part by part — the creature owes `buildBone` and nothing else.
+pub fn boneMeshes(comptime N: usize, rest: [N]rl.Vector3, comptime buildBone: fn (*gfx.Builder, usize, [N]rl.Vector3) void) [N]rl.Mesh {
+    var mesh: [N]rl.Mesh = undefined;
+    for (0..N) |i| {
+        var b = gfx.Builder.init();
+        buildBone(&b, i, rest);
+        mesh[i] = b.toMesh();
+    }
+    return mesh;
+}
+
 /// AN ELBOW BENDS ONE WAY, read off the POSED bones rather than the constants: the forearm's lean out of the upper arm's own line toward that
 /// frame's +Z, the body's front. +1 is folded fully forward, 0 straight, anything NEGATIVE an arm bent behind the back.
 pub fn elbowForward(xf: []const rl.Matrix, sh: usize, el: usize, wr: usize) f32 {

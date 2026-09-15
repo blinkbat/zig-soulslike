@@ -1991,20 +1991,20 @@ pub const INFO = [NK]Info{
     .{ .kind = .sandripples, .build = desert.sandRipplesMesh, .bound = desert.RIPPLE_R + 0.5, .top = 0.12, .view = 130, .flora = true, .casts = false, .surf = .stone },
 
     // THE MASONRY KIT. Every piece is cut to `mason.MOD` and stands on the local origin, so the editor's snap is enough to close a room.
-    .{ .kind = .masonwall, .build = mason.longWallMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.MOD, mason.WALL_H) },
+    .{ .kind = .masonwall, .build = mason.longWallMesh, .bound = MASON_LONG_BOUND, .top = mason.wallTop(mason.WALL_H), .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.MOD, mason.WALL_H) },
     .{ .kind = .masonworn, .build = mason.longWornMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H, .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.MOD, mason.WALL_H) },
     .{ .kind = .masonbroken, .build = mason.longBrokenMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H, .view = WALL_VIEW, .solid = true, .parts = &masonBreak(mason.MOD, mason.WALL_H) },
     .{ .kind = .masonfooting, .build = mason.footingMesh, .bound = MASON_LONG_BOUND, .top = mason.STUB_H, .view = 200, .solid = true, .parts = &masonRun(mason.MOD, mason.STUB_H) },
-    .{ .kind = .masonshort, .build = mason.shortWallMesh, .bound = MASON_SHORT_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.HALF, mason.WALL_H) },
+    .{ .kind = .masonshort, .build = mason.shortWallMesh, .bound = MASON_SHORT_BOUND, .top = mason.wallTop(mason.WALL_H), .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.HALF, mason.WALL_H) },
     .{ .kind = .masonshortworn, .build = mason.shortWornMesh, .bound = MASON_SHORT_BOUND, .top = mason.WALL_H, .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.HALF, mason.WALL_H) },
     .{ .kind = .masonshortbroken, .build = mason.shortBrokenMesh, .bound = MASON_SHORT_BOUND, .top = mason.WALL_H, .view = WALL_VIEW, .solid = true, .parts = &masonBreak(mason.HALF, mason.WALL_H) },
-    .{ .kind = .masonlow, .build = mason.lowWallMesh, .bound = MASON_LONG_BOUND, .top = mason.LOW_H + 0.3, .view = 220, .solid = true, .parts = &masonRun(mason.MOD, mason.LOW_H) },
-    .{ .kind = .masontall, .build = mason.tallWallMesh, .bound = MASON_TALL_BOUND, .top = mason.TALL_H + 0.3, .view = FAR, .solid = true, .parts = &masonRun(mason.MOD, mason.TALL_H) },
+    .{ .kind = .masonlow, .build = mason.lowWallMesh, .bound = MASON_LONG_BOUND, .top = mason.wallTop(mason.LOW_H), .view = 220, .solid = true, .parts = &masonRun(mason.MOD, mason.LOW_H) },
+    .{ .kind = .masontall, .build = mason.tallWallMesh, .bound = MASON_TALL_BOUND, .top = mason.wallTop(mason.TALL_H), .view = FAR, .solid = true, .parts = &masonRun(mason.MOD, mason.TALL_H) },
     .{ .kind = .masonivy, .build = mason.ivyWallMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H, .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.MOD, mason.WALL_H) },
-    .{ .kind = .masonwindow, .build = mason.windowWallMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.MOD, mason.WALL_H) },
-    .{ .kind = .masonpilaster, .build = mason.pilasterWallMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.MOD, mason.WALL_H) },
-    .{ .kind = .masondoor, .build = mason.doorWallMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .solid = true, .parts = &masonDoorway(mason.MOD, mason.WALL_H) },
-    .{ .kind = .masonarchdoor, .build = mason.archDoorWallMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .solid = true, .parts = &masonDoorway(mason.MOD, mason.WALL_H) },
+    .{ .kind = .masonwindow, .build = mason.windowWallMesh, .bound = MASON_LONG_BOUND, .top = mason.wallTop(mason.WALL_H), .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.MOD, mason.WALL_H) },
+    .{ .kind = .masonpilaster, .build = mason.pilasterWallMesh, .bound = MASON_LONG_BOUND, .top = mason.wallTop(mason.WALL_H), .view = WALL_VIEW, .solid = true, .parts = &masonRun(mason.MOD, mason.WALL_H) },
+    .{ .kind = .masondoor, .build = mason.doorWallMesh, .bound = MASON_LONG_BOUND, .top = mason.wallTop(mason.WALL_H), .view = WALL_VIEW, .solid = true, .parts = &masonDoorway(mason.MOD, mason.WALL_H) },
+    .{ .kind = .masonarchdoor, .build = mason.archDoorWallMesh, .bound = MASON_LONG_BOUND, .top = mason.wallTop(mason.WALL_H), .view = WALL_VIEW, .solid = true, .parts = &masonDoorway(mason.MOD, mason.WALL_H) },
     .{ .kind = .masoncorner, .build = mason.cornerMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H, .view = WALL_VIEW, .solid = true, .parts = &MASON_CORNER_PARTS },
     .{ .kind = .masoncornerbroken, .build = mason.cornerBrokenMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H, .view = WALL_VIEW, .solid = true, .parts = &MASON_CORNER_PARTS },
     .{ .kind = .doorframe, .build = mason.doorframeMesh, .bound = 4.2, .top = mason.FRAME_H, .view = 240, .solid = true, .parts = &MASON_JAMB_PARTS },
@@ -2018,9 +2018,9 @@ pub const INFO = [NK]Info{
     .{ .kind = .manor, .build = mason.manorMesh, .bound = shellBound(mason.MANOR_HW, mason.MANOR_HL, mason.MANOR_TOP), .top = mason.MANOR_TOP, .view = FAR, .solid = true, .parts = &MANOR_PARTS },
     .{ .kind = .greathall, .build = mason.greatHallMesh, .bound = shellBound(mason.HALL_HW, mason.HALL_HL, mason.HALL_TOP), .top = mason.HALL_TOP, .view = FAR, .solid = true, .parts = &GREATHALL_PARTS },
     .{ .kind = .towerhouse, .build = mason.towerHouseMesh, .bound = shellBound(mason.TOWERHOUSE_HALF, mason.TOWERHOUSE_HALF, mason.TOWERHOUSE_TOP), .top = mason.TOWERHOUSE_TOP, .view = FAR, .solid = true, .parts = &TOWERHOUSE_PARTS },
-    .{ .kind = .illusory_long, .build = mason.illusoryLongMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .interact = true, .solid = true, .breach = .illusion, .parts = &masonRun(mason.MOD, mason.WALL_H) },
-    .{ .kind = .illusory_short, .build = mason.illusoryShortMesh, .bound = MASON_SHORT_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .interact = true, .solid = true, .breach = .illusion, .parts = &masonRun(mason.HALF, mason.WALL_H) },
-    .{ .kind = .illusory_tall, .build = mason.illusoryTallMesh, .bound = MASON_TALL_BOUND, .top = mason.TALL_H + 0.3, .view = FAR, .interact = true, .solid = true, .breach = .illusion, .parts = &masonRun(mason.MOD, mason.TALL_H) },
+    .{ .kind = .illusory_long, .build = mason.illusoryLongMesh, .bound = MASON_LONG_BOUND, .top = mason.wallTop(mason.WALL_H), .view = WALL_VIEW, .interact = true, .solid = true, .breach = .illusion, .parts = &masonRun(mason.MOD, mason.WALL_H) },
+    .{ .kind = .illusory_short, .build = mason.illusoryShortMesh, .bound = MASON_SHORT_BOUND, .top = mason.wallTop(mason.WALL_H), .view = WALL_VIEW, .interact = true, .solid = true, .breach = .illusion, .parts = &masonRun(mason.HALF, mason.WALL_H) },
+    .{ .kind = .illusory_tall, .build = mason.illusoryTallMesh, .bound = MASON_TALL_BOUND, .top = mason.wallTop(mason.TALL_H), .view = FAR, .interact = true, .solid = true, .breach = .illusion, .parts = &masonRun(mason.MOD, mason.TALL_H) },
 };
 
 pub fn info(k: Kind) *const Info {
@@ -2076,8 +2076,11 @@ test "every kind row sits at its own index and carries a mesh builder" {
 test "collider parts stay inside their kind's bounding sphere" {
     for (INFO) |row| {
         for (partsOf(row.kind)) |part| {
-            const ra = @sqrt(part.ax * part.ax + part.az * part.az) + part.r;
-            const rb = @sqrt(part.bx * part.bx + part.bz * part.bz) + part.r;
+            // A SQUARE END DOES NOT FIT IN `r` (`collision.padXZ`, which every broad phase already asks) — measured at
+            // the radius alone this guard let a turned or degenerate `flat` part hang up to 0.41*r past the sphere.
+            const pad = collision.padXZ(partSolid(part));
+            const ra = @sqrt(part.ax * part.ax + part.az * part.az) + pad;
+            const rb = @sqrt(part.bx * part.bx + part.bz * part.bz) + pad;
             try std.testing.expect(@max(ra, rb) <= row.bound + 0.001);
         }
     }

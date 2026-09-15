@@ -1057,14 +1057,7 @@ pub const Herd = struct {
 };
 
 fn buildMeshes() [N]rl.Mesh {
-    var mesh: [N]rl.Mesh = undefined;
-    const rest = restPose();
-    for (0..N) |i| {
-        var b = Builder.init();
-        buildBone(&b, i, rest);
-        mesh[i] = b.toMesh();
-    }
-    return mesh;
+    return foe.boneMeshes(N, restPose(), buildBone);
 }
 
 fn buildBone(b: *Builder, i: usize, rest: [N]rl.Vector3) void {

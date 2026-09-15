@@ -69,10 +69,29 @@ pub const Slot = struct {
     map: []const u8,
 };
 
-const MAP_CAP = wf.PATH_CAP;
+pub const MAP_CAP = wf.PATH_CAP;
 comptime {
     if (wf.START_MAP.len > MAP_CAP) @compileError("save: MAP_CAP is shorter than the map path it has to hold");
 }
+
+pub const MapName = struct {
+    buf: [MAP_CAP]u8 = [_]u8{0} ** MAP_CAP,
+    len: usize = 0,
+
+    pub fn of(p: []const u8) MapName {
+        var m = MapName{ .len = @min(p.len, MAP_CAP) };
+        @memcpy(m.buf[0..m.len], p[0..m.len]);
+        return m;
+    }
+
+    pub fn name(self: *const MapName) []const u8 {
+        return self.buf[0..self.len];
+    }
+
+    pub fn is(self: *const MapName, p: []const u8) bool {
+        return std.mem.eql(u8, self.name(), p);
+    }
+};
 
 /// RAIL 0 IS THE FILE'S ORIGINAL `bosses:` ROW AND STAYS THAT WAY: a save written before the duo existed describes one rail, and a row nobody wrote reads back as nobody dead.
 pub const BOSS_RAILS: usize = 4;
@@ -181,6 +200,7 @@ pub const Head = struct {
     level: u32,
     souls: u32,
     playtime: f32,
+    map: MapName = .{},
 };
 
 pub const Shelf = struct {
@@ -212,15 +232,15 @@ pub const Shelf = struct {
     }
 };
 
-pub fn survey(map: []const u8) Shelf {
+pub fn survey() Shelf {
     drain();
-    return surveyRaw(map);
+    return surveyRaw();
 }
 
-fn surveyRaw(map: []const u8) Shelf {
+fn surveyRaw() Shelf {
     var sh = Shelf{};
     for (0..SLOTS) |i| {
-        sh.head[i] = peek(map, i);
+        sh.head[i] = peek(i);
         sh.unreadable[i] = sh.head[i] == null and onDisk(i);
     }
     return sh;
@@ -231,13 +251,23 @@ fn onDisk(i: usize) bool {
     return true;
 }
 
-pub fn peek(map: []const u8, i: usize) ?Head {
+pub fn peek(i: usize) ?Head {
     var d = Data{};
     if (!parseFile(path(i), &d)) return null;
-    if (!std.mem.eql(u8, d.mapName(), map)) return null;
     var taken: u32 = 0;
     for (d.tree) |t| taken += @intFromBool(t);
-    return .{ .level = taken + 1, .souls = d.souls, .playtime = d.elapsed };
+    return .{ .level = taken + 1, .souls = d.souls, .playtime = d.elapsed, .map = MapName.of(d.mapName()) };
+}
+
+/// THE WORLD A SLOT WAS WRITTEN IN, READ WITHOUT LOADING THE RUN — `game.loadGame` opens this map before it scatters the file, so a save brings its own world with it.
+pub fn mapOf(i: usize) ?MapName {
+    return mapOfFile(path(i));
+}
+
+pub fn mapOfFile(file: []const u8) ?MapName {
+    var d = Data{};
+    if (!parseFile(file, &d)) return null;
+    return MapName.of(d.mapName());
 }
 
 pub fn write(i: usize, s: Slot) bool {
@@ -270,14 +300,14 @@ var bg: Bg = .{};
 
 pub const Done = struct { ok: bool, slot: usize, shelf: Shelf };
 
-/// A map path too long to hold is refused OUTRIGHT, never truncated: `gather` clamps it, and a clamped name no longer matches the map it names, so the
-/// slot would write clean and then read back as an unreadable file. BOTH write paths ask here.
-fn tooLong(s: Slot) bool {
-    return s.map.len > MAP_CAP;
+/// A map path too long to hold is refused OUTRIGHT, never truncated: `MapName.of` clamps it, and a clamped name no longer matches the map it names, so
+/// the slot would write clean and then read back as an unreadable file. EVERY writer of a map name asks here — both write paths and `game.nameable`.
+pub fn tooLong(map: []const u8) bool {
+    return map.len > MAP_CAP;
 }
 
 pub fn writeAsync(i: usize, s: Slot) void {
-    if (tooLong(s)) {
+    if (tooLong(s.map)) {
         bg.mtx.lock();
         defer bg.mtx.unlock();
         finish(i, false, bg.shelf);
@@ -294,7 +324,7 @@ pub fn writeAsync(i: usize, s: Slot) void {
             bg.pending = false;
             bg.mtx.unlock();
             const ok = writeData(path(i), &d);
-            const sh = surveyRaw(d.mapName());
+            const sh = surveyRaw();
             bg.mtx.lock();
             finish(i, ok, sh);
             bg.mtx.unlock();
@@ -327,7 +357,7 @@ fn bgLoop() void {
         bg.mtx.unlock();
 
         const ok = writeData(path(i), &d);
-        const sh = surveyRaw(d.mapName());
+        const sh = surveyRaw();
 
         bg.mtx.lock();
         bg.working = false;
@@ -397,7 +427,7 @@ pub fn writeShot(i: usize) bool {
 /// WRITE BESIDE IT AND RENAME OVER IT (`worldfmt.save`'s rule, and this is the other file the game writes):
 /// `createFile` truncates first, so a render that failed part-way took the save it was replacing with it.
 pub fn writeTo(file: []const u8, s: Slot) bool {
-    if (tooLong(s)) return false;
+    if (tooLong(s.map)) return false;
     const d = gather(s);
     return writeData(file, &d);
 }
@@ -671,7 +701,11 @@ pub fn parse(text: []const u8, d: *Data) !void {
         } else if (std.mem.eql(u8, key, "gold:")) {
             d.gold = try int(u32, &it);
         } else if (std.mem.eql(u8, key, "tiers:")) {
-            for (&d.tiers) |*t| t.* = int(u8, &it) catch break;
+            // A SHORT ROW IS AN OLDER `Armament`, A BAD TOKEN IS A BAD FILE — `catch break` read both as the end of the row, so `tiers: 3 x 1` loaded clean with every tier past the first at zero. The `hands:`/`ready:` rule: a missing trailing field is allowed, a malformed one never is.
+            for (&d.tiers) |*t| {
+                const tok = it.next() orelse break;
+                t.* = std.fmt.parseInt(u8, tok, 10) catch return Error.BadField;
+            }
         } else if (std.mem.eql(u8, key, "hands:")) {
             d.arm = try tagged(heromod.Armament, &it);
             d.off = try tagged(heromod.Armament, &it);
@@ -1067,6 +1101,14 @@ test "a short run pads with the default and a long one is refused" {
     try testing.expectError(Error.BadField, parse(text, &d));
 }
 
+test "A SHORT `tiers:` IS AN OLDER ARMAMENT LIST, A BAD ONE IS A BAD FILE" {
+    var d = Data{};
+    try parse("version: 1\ntiers: 3\n", &d);
+    try testing.expectEqual(@as(u8, 3), d.tiers[0]);
+    try testing.expectEqual(@as(u8, 0), d.tiers[heromod.NARM - 1]);
+    try testing.expectError(Error.BadField, parse("version: 1\ntiers: 3 x 1\n", &d));
+}
+
 test "A NON-FINITE NUMBER IS REFUSED IN EVERY RUN, not just the scalar rows" {
     var d = Data{};
     try testing.expectError(Error.BadField, parse("version: 1\nat: nan 0 0 0\n", &d));
@@ -1304,6 +1346,25 @@ test "the file itself round-trips, and one written for another map is refused" {
     try testing.expectEqual(@as(u32, 0), c.hero.souls.total);
 
     try testing.expect(!readFrom("save.no_such_file.dat", b.slot()));
+}
+
+test "A SAVE CARRIES ITS OWN WORLD — the map is readable without loading the run, and one written elsewhere is still a save" {
+    const tmp = "save.test.map.dat";
+    defer std.fs.cwd().deleteFile(tmp) catch {};
+    const ELSEWHERE = wf.DIR ++ "/test_elsewhere" ++ wf.EXT;
+
+    var a = Live.blank(1);
+    var s = a.slot();
+    s.map = ELSEWHERE;
+    try testing.expect(writeTo(tmp, s));
+
+    const got = mapOfFile(tmp) orelse return error.TestUnexpectedResult;
+    try testing.expect(got.is(ELSEWHERE));
+    try testing.expect(!got.is(wf.START_MAP));
+    try testing.expect(wf.namesAMap(got.name()));
+    std.debug.print("\n  a slot names its own world: {s}\n", .{got.name()});
+
+    try testing.expectEqual(@as(?MapName, null), mapOfFile("save.no_such_file.dat"));
 }
 
 test "AN UNREADABLE SLOT IS NOT A FREE ONE — offered for a new game it is overwritten, and nothing ever said it was there" {

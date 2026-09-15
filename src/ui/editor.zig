@@ -1319,7 +1319,7 @@ pub const Editor = struct {
         self.pathLen = n;
     }
 
-    fn curPath(self: *const Editor) []const u8 {
+    pub fn curPath(self: *const Editor) []const u8 {
         return self.path[0..self.pathLen];
     }
 

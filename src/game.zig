@@ -232,6 +232,8 @@ pub const Game = struct {
     retro: gfx.Retro,
     menu: menumod.Menu,
     map: worldfmt.Map,
+    /// THE WORLD THE RUN IS ACTUALLY STANDING IN, not the one the exe booted — what a slot is labelled with.
+    mapAt: savemod.MapName = .{},
     editor: editormod.Editor,
     env: envmod.Env,
     hero: heromod.Hero,
@@ -378,6 +380,8 @@ pub const Game = struct {
         g.menu = .{};
         phase(&initTimer, "gfx");
         worldfmt.loadOrPanic(worldfmt.startMap(), &g.map);
+        if (!nameable(worldfmt.startMap())) @panic("game: the boot map's path is too long to label a save with");
+        g.mapAt = savemod.MapName.of(worldfmt.startMap());
         PLAY_HALF = playHalfOf(g.map.half);
         phase(&initTimer, "map");
         g.env.build(&g.scene);
@@ -467,7 +471,7 @@ pub const Game = struct {
         g.liquidSoak = .{};
         g.popT = [_]f32{0} ** worldfmt.Liquid.N;
         g.searT = 0;
-        g.shelf = savemod.survey(saveMap(g));
+        g.shelf = savemod.survey();
         g.slot = 0;
         g.shotOwed = false;
         g.enterOut = 0;
@@ -595,6 +599,7 @@ fn beginEnter(g: *Game, act: Enter) void {
 fn enterNow(g: *Game, act: Enter) void {
     switch (act) {
         .fresh => |i| {
+            if (!g.mapAt.is(worldfmt.startMap()) and !swapMap(g, worldfmt.startMap())) @panic("game: the start map will not load");
             beginGame(g);
             g.slot = i;
             g.menu.started();
@@ -613,10 +618,29 @@ fn enterNow(g: *Game, act: Enter) void {
     g.enterIn = ENTER_IN;
 }
 
-fn enterMap(g: *Game, path: []const u8, at: rl.Vector3, facing: f32) void {
-    worldfmt.loadOrPanic(path, &g.map);
+/// A NAME `savemod.MapName` WOULD HAVE TO CLAMP IS REFUSED, NOT TRUNCATED — clamped, it no longer matches the map it names, so every slot written in that world reads back unloadable. `--map` is the other way in, so `init` asks too.
+fn nameable(path: []const u8) bool {
+    if (!savemod.tooLong(path)) return true;
+    std.debug.print("world: {s} is too long a path to save against ({d} > {d})\n", .{ path, path.len, savemod.MAP_CAP });
+    return false;
+}
+
+/// THE WORLD SWAPPED UNDER THE RUN — everything downstream of `g.map` moves with it, `g.mapAt` included, so the next slot written is labelled with the map it actually holds. The caller decides whether a refusal is fatal.
+fn swapMap(g: *Game, path: []const u8) bool {
+    if (!nameable(path)) return false;
+    var line: usize = 0;
+    worldfmt.load(path, &g.map, &line) catch |e| {
+        std.debug.print("world: cannot load {s} — {s} (line {d})\n", .{ path, @errorName(e), line });
+        return false;
+    };
+    g.mapAt = savemod.MapName.of(path);
     PLAY_HALF = playHalfOf(g.map.half);
     g.env.replay(&g.map);
+    return true;
+}
+
+fn enterMap(g: *Game, path: []const u8, at: rl.Vector3, facing: f32) void {
+    if (!swapMap(g, path)) @panic("game: a map trigger names a world that will not load");
     leavePlace(g);
     g.hero.pos = inBounds(mathx.ground(at.x, at.z));
     g.hero.facing = facing;
@@ -658,14 +682,23 @@ fn tickEnter(g: *Game, dt: f32) void {
     g.enterIn = mathx.maxF(0, g.enterIn - dt);
 }
 
-/// A SLOT ONLY EVER DESCRIBES THE START MAP: `savemod.readFrom` refuses a file whose `map:` differs, so wiring `Enter.map` up without giving this the map actually loaded writes a save labelled with one map and holding another's hero position.
+/// `savemod.readFrom` still refuses a file whose `map:` differs from this, which is what catches a world swapped without `swapMap`: the save would be labelled with one map and hold another's hero position.
 fn saveMap(g: *const Game) []const u8 {
-    _ = g;
-    return worldfmt.startMap();
+    return g.mapAt.name();
 }
 
 comptime {
     if (BOSS_RAILS.len > savemod.BOSS_RAILS) @compileError("game: more boss rails than the save file has rows for");
+}
+
+test "A MAP NAME IS REFUSED, NEVER CLAMPED — the boot path and a swap ask the same question" {
+    const over = worldfmt.DIR ++ "/" ++ "x" ** (savemod.MAP_CAP) ++ worldfmt.EXT;
+    try std.testing.expect(nameable(worldfmt.START_MAP) and nameable(worldfmt.startMap()));
+    std.debug.print("\n  a {d}-char map path is refused against a {d} cap", .{ over.len, savemod.MAP_CAP });
+    try std.testing.expect(!nameable(over));
+    // The refusal is the whole guard: clamped, the name no longer opens the file it came from.
+    try std.testing.expect(!std.mem.eql(u8, savemod.MapName.of(over).name(), over));
+    std.debug.print(" (clamped it would read {d} chars)\n", .{savemod.MapName.of(over).name().len});
 }
 
 /// A RAIL ONLY EVER GAINS A BIT, AND THE RUN'S START IS WHAT CLEARS IT (`beginGame`). The bonfire empties every group (`clearFoes`) BEFORE `saveNow`, so re-derived off the live bodies a killed knight was written back alive.
@@ -727,9 +760,19 @@ fn slotOf(g: *Game) savemod.Slot {
     };
 }
 
+/// A SLOT BRINGS ITS OWN WORLD — the file's `map:` is opened BEFORE `beginGame`, which plants the hero and rehomes every foe off `g.map`.
 fn loadGame(g: *Game, i: usize) bool {
+    const want = savemod.mapOf(i) orelse return false;
+    if (!worldfmt.namesAMap(want.name())) return false;
+    const was = g.mapAt;
+    const swapped = !want.is(was.name());
+    if (swapped and !swapMap(g, want.name())) return false;
     beginGame(g);
-    if (!savemod.read(i, slotOf(g))) return false;
+    if (!savemod.read(i, slotOf(g))) {
+        // A refused file must not leave him standing in the world it named with no run in it.
+        if (swapped and swapMap(g, was.name())) beginGame(g);
+        return false;
+    }
     applyBosses(g);
     hidePickups(g);
     applyTree(g);
@@ -5735,7 +5778,10 @@ pub fn run(mode: Mode) void {
 
         if (g.editor.on) {
             rl.showCursor();
-            switch (g.editor.update(&g.map, &g.env, &g.day, rawDt)) {
+            const edAct = g.editor.update(&g.map, &g.env, &g.day, rawDt);
+            // Read AFTER the step: Open/New/Save As swap the world, and a save taken the same frame would be labelled with the map he just left.
+            if (g.editor.curPath().len > 0) g.mapAt = savemod.MapName.of(g.editor.curPath());
+            switch (edAct) {
                 .none => {},
                 .leave => {
                     g.editor.flushRebuild(&g.map, &g.env);
@@ -5819,7 +5865,7 @@ pub fn run(mode: Mode) void {
                 .loadGame => |i| beginEnter(g, .{ .load = i }),
                 .deleteSlot => |i| {
                     if (savemod.erase(i)) {
-                        g.shelf = savemod.survey(saveMap(g));
+                        g.shelf = savemod.survey();
                         g.menu.slotsChanged();
                     } else std.debug.print("DELETE FAILED: could not remove {s}\n", .{savemod.path(i)});
                 },
@@ -7130,6 +7176,26 @@ fn openBreach(g: *Game, i: u8, at: rl.Vector3) void {
 fn tickBreaches(g: *Game, dt: f32) void {
     g.env.tickBreaches(dt);
     foemod.tickParticles(&g.breachMotes, dt, -1e9);
+}
+
+test "THE BREACH POOL IS WALKED EVERY FRAME WHETHER OR NOT ANYTHING IS IN IT — what the ring costs cold" {
+    const pool = try std.testing.allocator.create([BREACH_MOTES]foemod.Particle);
+    defer std.testing.allocator.destroy(pool);
+    pool.* = [_]foemod.Particle{.{}} ** BREACH_MOTES;
+    const REPS = 300;
+    var t = try std.time.Timer.start();
+    for (0..REPS) |_| foemod.tickParticles(pool, 1.0 / 60.0, -1e9);
+    const cold = @as(f64, @floatFromInt(t.read())) / 1000.0 / @as(f64, REPS);
+    var head: usize = 0;
+    var rng = mathx.Rng.init(0x1117A11);
+    while (head < BREACH_MOTES - BREACH_PUFF_N) foemod.puff(pool, &head, &rng, v3(0, 1, 0), BREACH_PUFF_N, 1.4, 0.9, 1.0, RUBBLE_PUFF);
+    t.reset();
+    for (0..REPS) |_| foemod.tickParticles(pool, 0, -1e9);
+    const full = @as(f64, @floatFromInt(t.read())) / 1000.0 / @as(f64, REPS);
+    std.debug.print("\n  breach motes: {d} in the ring ({d} KB) — {d:.2} us a frame cold, {d:.2} us full ({d:.3}% / {d:.3}% of a 16.7 ms frame)\n", .{
+        BREACH_MOTES,           @sizeOf([BREACH_MOTES]foemod.Particle) / 1024, cold, full,
+        100.0 * cold / 16666.0, 100.0 * full / 16666.0,
+    });
 }
 
 fn inBounds(p: rl.Vector3) rl.Vector3 {

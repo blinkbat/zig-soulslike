@@ -46,7 +46,7 @@ fishman shoal (3 roles), blinkbat, the fungal duo (second boss, two bars), the o
 when you walk up to it), the corrupted druidess (third boss), the bone mimic, the mastodon and the corrupt ent, plus the spirit wolf that fights on your side. Shared leash, sight, parry, nav-steering
 and dissipation contracts in `foe.zig`.
 
-**World.** 1000 m square ringed by cliffs, ten regions, 212 prop kinds in three layers each. Sculptable
+**World.** 1000 m square ringed by cliffs, ten regions, 247 prop kinds in three layers each. Sculptable
 heightfield (40° slope limit, 0.55 m step). Caves are a second surface under it — carve a floor and a headroom,
 cut an entrance through a hillside, and the hill overhead stays walkable; rock is opaque, so nothing on it sees
 or shoots what is in the chamber below. Painted soil with coverage and eight edge shapes; painted liquid

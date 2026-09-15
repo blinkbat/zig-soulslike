@@ -3594,6 +3594,27 @@ pub fn setStartMap(path: []const u8) void {
     bootMap = path;
 }
 
+/// A `map:` LINE OFF A SAVE FILE IS DATA, NOT A PATH WE WROTE — a hand-edited one would otherwise open anything on the disk, so a name has to sit directly in `worlds/` and end in `.world`.
+pub fn namesAMap(path: []const u8) bool {
+    if (path.len <= DIR.len + 1 + EXT.len) return false;
+    if (!std.mem.startsWith(u8, path, DIR ++ "/")) return false;
+    if (!std.mem.endsWith(u8, path, EXT)) return false;
+    const stem = path[DIR.len + 1 .. path.len - EXT.len];
+    for (stem) |c| {
+        if (c == '/' or c == '\\' or c == ':') return false;
+    }
+    return true;
+}
+
+test "a map path off a save file may only name a file in worlds/" {
+    try std.testing.expect(namesAMap(START_MAP));
+    try std.testing.expect(namesAMap(DIR ++ "/test_wfcave" ++ EXT));
+    try std.testing.expect(!namesAMap(DIR ++ "/../../etc/passwd" ++ EXT));
+    try std.testing.expect(!namesAMap("C:/windows/system32" ++ EXT));
+    try std.testing.expect(!namesAMap(DIR ++ "/01_fallen_plain"));
+    try std.testing.expect(!namesAMap(DIR ++ "/" ++ EXT));
+}
+
 /// Bytes an `at:` line spends on the shipped maps, rounded up from a measured 49.7 and pinned by a test.
 const OP_LINE_TYPICAL: usize = 64;
 /// Worst-case bytes an RLE grid cell spends: `" 255x1"` plus a share of the per-16-run label.

@@ -112,7 +112,7 @@ contents change together is fine.
 | `world/caves.zig` · `spar.zig` | a second surface UNDER the heightfield · F6, one walled room and one creature |
 | `world/trigger.zig` · `dialog.zig` | SC1's conditions + actions, switches/counters/timers · one conversation, node walk + panel |
 | `props/props.zig` | prop vocabulary + `INFO`; `displayName`/`group`/`biome` exhaustive; `decks`/`stack`/`climb` |
-| `props/prop*.zig` | meshes by family — `propart` (palette + weathering), `ruins`, `gold`, `build`, `village`, `market`, `forge`, `rock`, `wood`, `flora`, `fungus`, `coral`, `ash`, `bone`, `ember`, `palace`+`desert`, `fx` |
+| `props/prop*.zig` | meshes by family — `propart` (palette + weathering), `ruins`, `mason` (the cut-stone KIT, one grid), `gold`, `build`, `village`, `market`, `forge`, `rock`, `wood`, `flora`, `fungus`, `coral`, `ash`, `bone`, `ember`, `palace`+`desert`, `fx` |
 | `foes/foe.zig` | THE FOE STANDARD — contract, `Blade`/`strike`/`Blow`, particles, `Leash`, `Nav`, `Post`, `grip` |
 | `foes/foestat.zig` · `behave.zig` | one stat multiplier per kind · `Routine` + named scripts (`DISENGAGE`/`FLANK`/`KITE`) |
 | `foes/npc.zig` | THE FOLK on the hero's scaffold — wanderer, caravaneer, MOSSBEARD (whose idle IS a hammer stroke) |
@@ -2115,8 +2115,13 @@ every foe inside `game.sightR()` — the widest ring in `FOE_GROUPS` plus a metr
 `game.tickRest`'s `justEntered` is the one line that writes one, and it lands in whatever slot is being played
 without asking. **THREE SLOTS**, `save1.dat`…`save3.dat`, each with a `save<n>.png` beside it.
 
-- **THE FILE IS TEXT IN THE MAP'S OWN GRAMMAR** (`key: value`, `version:` first). Unknown key, bad version or
-  another map's name are LOAD ERRORS — **a save is refused whole rather than applied in half.**
+- **THE FILE IS TEXT IN THE MAP'S OWN GRAMMAR** (`key: value`, `version:` first). Unknown key or bad version is a
+  LOAD ERROR — **a save is refused whole rather than applied in half.**
+- **A SAVE BRINGS ITS OWN WORLD** (`save.mapOf`, `game.swapMap`) — `loadGame` opens the file's `map:` BEFORE
+  `beginGame`, which plants the hero and rehomes every foe off `g.map`, and the shelf lists all three slots
+  whatever world each was written in. `game.saveMap` is `g.mapAt`, the map actually standing, not `startMap()`;
+  `readFrom` still refuses a file whose `map:` differs from it, and THAT is the tripwire for a world swapped
+  without `swapMap`. A `map:` off disk is untrusted — `worldfmt.namesAMap` holds it to a file in `worlds/`.
 - **A SLOT IS WRITTEN BESIDE ITSELF AND RENAMED OVER IT** (`worldfmt.save`'s rule, and this is the other file the
   game writes): `createFile` truncates first, so a render that failed part-way took the save it was replacing.
 - **A FILE THAT WILL NOT PARSE IS NOT AN EMPTY SLOT** (`Shelf.unreadable`/`holds`) — read as empty it is offered

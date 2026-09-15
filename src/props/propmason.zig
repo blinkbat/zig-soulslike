@@ -135,11 +135,11 @@ fn wallInto(b: *Builder, rng: *Rng, w: Wall) void {
     b.setMat(.stone);
     if (w.door) {
         jambsInto(b, rng, DOOR_W, DOOR_H);
-        if (w.arched) voussoirsInto(b, rng, 0, DOOR_H - 0.06, DOOR_W * 0.5 + 0.10, TH * 1.06) else lintelInto(b, rng, 0, DOOR_H, DOOR_W + 0.74);
+        if (w.arched) ringInto(b, rng, .{ .y = DOOR_H - 0.06, .r = DOOR_W * 0.5 + 0.10, .dep = TH * 1.06 }) else lintelInto(b, rng, 0, DOOR_H, DOOR_W + 0.74);
     }
     if (w.window) {
         b.addBox(v3(0, WIN_SILL - 0.10, 0), v3(WIN_W * 0.5 + 0.22, rng.signed() * 0.008, 0), v3(0, 0.11, 0), v3(0, 0, TH * 1.14), STONE_LT);
-        voussoirsInto(b, rng, WIN_HEAD - 0.06, WIN_W * 0.5 + 0.08, TH * 1.02, 0);
+        ringInto(b, rng, .{ .y = WIN_HEAD - 0.06, .r = WIN_W * 0.5 + 0.08, .dep = TH * 1.02 });
     }
     if (w.pilaster) {
         for ([_]f32{ -half * 0.62, half * 0.62 }) |px| {
@@ -155,26 +155,38 @@ fn wallInto(b: *Builder, rng: *Rng, w: Wall) void {
     if (w.ivy) ivyCoatInto(b, rng, w.run, h);
 }
 
-/// `voussoirsInto` is the same ring the gate arch is cut from — a doorhead and a window head are the same stones at two radii.
-fn voussoirsInto(b: *Builder, rng: *Rng, y: f32, r: f32, dep: f32, _unused: f32) void {
-    _ = _unused;
-    const NV = 11;
+/// ONE RING, AND EVERY ARCH IN THE KIT IS CUT FROM IT — a window head, a doorhead and a gate span are the same stones at three radii. `n` is ODD so
+/// the crown is a KEYSTONE and not a joint, and the defaults are the wall head's: a bay hands over its own stone size, count and jitter.
+const Ring = struct {
+    cx: f32 = 0,
+    y: f32,
+    r: f32,
+    dep: f32,
+    rad: f32 = 0.30,
+    n: i32 = 11,
+    jit: f32 = 0.012,
+    lt: f32 = 0.28,
+    dk: f32 = 0.46,
+};
+
+fn ringInto(b: *Builder, rng: *Rng, s: Ring) void {
     b.setMat(.stone);
+    const nf: f32 = @floatFromInt(s.n);
     var i: i32 = 0;
-    while (i < NV) : (i += 1) {
-        const t = (@as(f32, @floatFromInt(i)) + 0.5) / @as(f32, NV);
+    while (i < s.n) : (i += 1) {
+        const t = (@as(f32, @floatFromInt(i)) + 0.5) / nf;
         const a = std.math.pi * t;
-        const key = i == NV / 2;
+        const key = i == @divTrunc(s.n, 2);
         const ca = mathx.cosf(a);
         const sa = mathx.sinf(a);
-        const halfW = (std.math.pi * r / @as(f32, NV)) * 0.5 * rng.range(1.05, 1.18);
-        const rad = 0.30 * (if (key) @as(f32, 1.26) else rng.range(0.94, 1.06));
+        const halfW = (std.math.pi * s.r / nf) * 0.5 * rng.range(1.05, 1.18);
+        const rad = s.rad * (if (key) @as(f32, 1.26) else rng.range(0.94, 1.06));
         b.addBox(
-            v3(-ca * (r + rad * 0.10), y + sa * (r + rad * 0.10), rng.signed() * 0.012),
+            v3(s.cx - ca * (s.r + rad * 0.10), s.y + sa * (s.r + rad * 0.10), rng.signed() * s.jit),
             v3(sa * halfW, ca * halfW, 0),
             v3(-ca * rad, sa * rad, 0),
-            v3(0, 0, dep * (if (key) @as(f32, 1.10) else 1.0)),
-            if (key) STONE_LT else if (rng.float() < 0.28) STONE_LT else if (rng.float() < 0.46) STONE_DK else STONE,
+            v3(0, 0, s.dep * (if (key) @as(f32, 1.10) else 1.0)),
+            if (key) STONE_LT else if (rng.float() < s.lt) STONE_LT else if (rng.float() < s.dk) STONE_DK else STONE,
         );
     }
 }
@@ -193,29 +205,27 @@ fn jambsInto(b: *Builder, rng: *Rng, w: f32, h: f32) void {
 
 fn weatherInto(b: *Builder, rng: *Rng, run: f32, h: f32, ruin: Ruin) void {
     const half = run * 0.5;
-    if (ruin != .intact) {
-        const n: i32 = switch (ruin) {
-            .worn => 3,
-            .broken => 6,
-            .stub => 5,
-            .intact => 0,
-        };
-        var i: i32 = 0;
-        while (i < n) : (i += 1) {
-            chipsInto(b, rng, rng.range(-half, half), rng.signed() * 0.9, 1.5, 0.10, 0.34, 5);
-        }
-        b.setMat(.stone);
-        var k: i32 = 0;
-        while (k < n) : (k += 1) {
-            const r = rng.range(0.16, 0.40);
-            b.addBlob(
-                v3(rng.range(-half, half), r * 0.58, rng.signed() * (TH * 0.5 + rng.range(0.20, 1.10))),
-                v3(r, r * rng.range(0.55, 0.80), r * rng.range(0.85, 1.25)),
-                3,
-                5,
-                if (rng.float() < 0.35) STONE_MOSS else if (rng.float() < 0.5) ROCK_DEEP else STONE_DK,
-            );
-        }
+    const n: i32 = switch (ruin) {
+        .intact => 0,
+        .worn => 3,
+        .broken => 6,
+        .stub => 5,
+    };
+    var i: i32 = 0;
+    while (i < n) : (i += 1) {
+        chipsInto(b, rng, rng.range(-half, half), rng.signed() * 0.9, 1.5, 0.10, 0.34, 5);
+    }
+    b.setMat(.stone);
+    var k: i32 = 0;
+    while (k < n) : (k += 1) {
+        const r = rng.range(0.16, 0.40);
+        b.addBlob(
+            v3(rng.range(-half, half), r * 0.58, rng.signed() * (TH * 0.5 + rng.range(0.20, 1.10))),
+            v3(r, r * rng.range(0.55, 0.80), r * rng.range(0.85, 1.25)),
+            3,
+            5,
+            if (rng.float() < 0.35) STONE_MOSS else if (rng.float() < 0.5) ROCK_DEEP else STONE_DK,
+        );
     }
     crackInto(b, v3(rng.range(-half * 0.7, half * 0.7), rng.range(0.15, h * 0.35), TH * 0.52), v3(rng.signed() * 0.3, 0.95, 0), v3(1, 0, 0), rng.range(0.9, 1.9), 0.024, 0.04);
     lichenInto(b, rng, v3(rng.range(-half, half), rng.range(h * 0.45, h * 0.85), TH * 0.5), v3(0.62, 0.06, 0.30), 4);
@@ -274,8 +284,16 @@ fn wallModel(shader: rl.Shader, seed: u64, w: Wall) rl.Model {
     return b.toModel(shader);
 }
 
+/// THE THREE AN ILLUSION IS CUT FROM, named once: `illusoryLongMesh` and friends build the SAME seed and the SAME spec, which is the whole of the
+/// disguise. Written out at both ends the twins drifted apart the first time one of them was retuned.
+const PLAIN_LONG = Twin{ .seed = 7101, .wall = .{ .run = MOD } };
+const PLAIN_SHORT = Twin{ .seed = 7105, .wall = .{ .run = HALF } };
+const PLAIN_TALL = Twin{ .seed = 7109, .wall = .{ .run = MOD, .h = TALL_H } };
+
+const Twin = struct { seed: u64, wall: Wall };
+
 pub fn longWallMesh(shader: rl.Shader) rl.Model {
-    return wallModel(shader, 7101, .{ .run = MOD });
+    return wallModel(shader, PLAIN_LONG.seed, PLAIN_LONG.wall);
 }
 pub fn longWornMesh(shader: rl.Shader) rl.Model {
     return wallModel(shader, 7102, .{ .run = MOD, .ruin = .worn });
@@ -287,7 +305,7 @@ pub fn footingMesh(shader: rl.Shader) rl.Model {
     return wallModel(shader, 7104, .{ .run = MOD, .ruin = .stub, .cap = false });
 }
 pub fn shortWallMesh(shader: rl.Shader) rl.Model {
-    return wallModel(shader, 7105, .{ .run = HALF });
+    return wallModel(shader, PLAIN_SHORT.seed, PLAIN_SHORT.wall);
 }
 pub fn shortWornMesh(shader: rl.Shader) rl.Model {
     return wallModel(shader, 7106, .{ .run = HALF, .ruin = .worn });
@@ -299,7 +317,7 @@ pub fn lowWallMesh(shader: rl.Shader) rl.Model {
     return wallModel(shader, 7108, .{ .run = MOD, .h = LOW_H });
 }
 pub fn tallWallMesh(shader: rl.Shader) rl.Model {
-    return wallModel(shader, 7109, .{ .run = MOD, .h = TALL_H });
+    return wallModel(shader, PLAIN_TALL.seed, PLAIN_TALL.wall);
 }
 pub fn ivyWallMesh(shader: rl.Shader) rl.Model {
     return wallModel(shader, 7110, .{ .run = MOD, .ruin = .worn, .ivy = true });
@@ -318,22 +336,22 @@ pub fn archDoorWallMesh(shader: rl.Shader) rl.Model {
 }
 
 /// THE WASH IS THE ONLY DIFFERENCE (`art.ILLUSION_WASH`) — an illusory piece must be the same masonry as the piece beside it.
-fn illusionOf(shader: rl.Shader, seed: u64, w: Wall) rl.Model {
+fn illusionOf(shader: rl.Shader, t: Twin) rl.Model {
     var b = Builder.init();
-    var rng = Rng.init(seed);
-    wallInto(&b, &rng, w);
+    var rng = Rng.init(t.seed);
+    wallInto(&b, &rng, t.wall);
     b.wash(art.ILLUSION_WASH, art.ILLUSION_WASH_T);
     return b.toModel(shader);
 }
 
 pub fn illusoryLongMesh(shader: rl.Shader) rl.Model {
-    return illusionOf(shader, 7101, .{ .run = MOD });
+    return illusionOf(shader, PLAIN_LONG);
 }
 pub fn illusoryShortMesh(shader: rl.Shader) rl.Model {
-    return illusionOf(shader, 7105, .{ .run = HALF });
+    return illusionOf(shader, PLAIN_SHORT);
 }
 pub fn illusoryTallMesh(shader: rl.Shader) rl.Model {
-    return illusionOf(shader, 7109, .{ .run = MOD, .h = TALL_H });
+    return illusionOf(shader, PLAIN_TALL);
 }
 
 // A corner is two half runs meeting on the local origin, opening toward +x and +z.
@@ -389,13 +407,14 @@ pub fn archDoorframeMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = Rng.init(7131);
     jambsInto(&b, &rng, DOOR_W, DOOR_H);
-    voussoirsInto(&b, &rng, DOOR_H - 0.06, DOOR_W * 0.5 + 0.16, TH * 1.14, 0);
+    ringInto(&b, &rng, .{ .y = DOOR_H - 0.06, .r = DOOR_W * 0.5 + 0.16, .dep = TH * 1.14 });
     weatherInto(&b, &rng, FRAME_W, FRAME_H, .worn);
     return b.toModel(shader);
 }
 
 pub const GATE_SPAN: f32 = 3.40;
 pub const GATE_SPRING: f32 = 3.20;
+pub const GATE_PIER: f32 = 0.90;
 pub const GATE_TOP: f32 = GATE_SPRING + GATE_SPAN * 0.5 + 0.90;
 
 fn bayArchInto(b: *Builder, rng: *Rng, cx: f32, pierW: f32, span: f32, spring: f32, dep: f32) void {
@@ -406,31 +425,23 @@ fn bayArchInto(b: *Builder, rng: *Rng, cx: f32, pierW: f32, span: f32, spring: f
         b.setMat(.stone);
         b.addBox(v3(x, spring + 0.10, 0), v3(pierW * 0.62, rng.signed() * 0.010, 0), v3(0, 0.12, 0), v3(0, 0, dep * 0.64), STONE_LT);
     }
-    const NV = 13;
-    const r = span * 0.5;
-    var i: i32 = 0;
-    while (i < NV) : (i += 1) {
-        const t = (@as(f32, @floatFromInt(i)) + 0.5) / @as(f32, NV);
-        const a = std.math.pi * t;
-        const key = i == NV / 2;
-        const ca = mathx.cosf(a);
-        const sa = mathx.sinf(a);
-        const halfW = (std.math.pi * r / @as(f32, NV)) * 0.5 * rng.range(1.05, 1.18);
-        const rad = 0.40 * (if (key) @as(f32, 1.26) else rng.range(0.94, 1.06));
-        b.addBox(
-            v3(cx - ca * (r + rad * 0.10), spring + 0.22 + sa * (r + rad * 0.10), rng.signed() * 0.014),
-            v3(sa * halfW, ca * halfW, 0),
-            v3(-ca * rad, sa * rad, 0),
-            v3(0, 0, dep * 0.5 * (if (key) @as(f32, 1.10) else 1.0)),
-            if (key) STONE_LT else if (rng.float() < 0.26) STONE_LT else if (rng.float() < 0.45) STONE_DK else STONE,
-        );
-    }
+    ringInto(b, rng, .{
+        .cx = cx,
+        .y = spring + 0.22,
+        .r = span * 0.5,
+        .dep = dep * 0.5,
+        .rad = 0.40,
+        .n = 13,
+        .jit = 0.014,
+        .lt = 0.26,
+        .dk = 0.45,
+    });
 }
 
 pub fn gateArchMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     var rng = Rng.init(7140);
-    bayArchInto(&b, &rng, 0, 0.90, GATE_SPAN, GATE_SPRING, TH * 1.6);
+    bayArchInto(&b, &rng, 0, GATE_PIER, GATE_SPAN, GATE_SPRING, TH * 1.6);
     b.setMat(.stone);
     b.addBox(v3(0, GATE_SPRING + GATE_SPAN * 0.5 + 0.72, 0), v3(GATE_SPAN * 0.5 + 0.95, rng.signed() * 0.012, 0), v3(0, 0.22, 0), v3(0, 0, TH * 0.86), STONE_LT);
     weatherInto(&b, &rng, GATE_SPAN + 1.8, GATE_TOP, .worn);
@@ -440,9 +451,10 @@ pub fn gateArchMesh(shader: rl.Shader) rl.Model {
 pub const ARCADE_BAYS: i32 = 3;
 pub const ARCADE_PIER: f32 = 0.86;
 pub const ARCADE_SPAN: f32 = 2.40;
+pub const ARCADE_SPRING: f32 = 2.60;
 pub const ARCADE_PITCH: f32 = ARCADE_SPAN + ARCADE_PIER;
 pub const ARCADE_RUN: f32 = ARCADE_PITCH * @as(f32, ARCADE_BAYS);
-pub const ARCADE_TOP: f32 = 2.60 + ARCADE_SPAN * 0.5 + 0.86;
+pub const ARCADE_TOP: f32 = ARCADE_SPRING + ARCADE_SPAN * 0.5 + 0.86;
 
 pub fn arcadeMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
@@ -450,10 +462,10 @@ pub fn arcadeMesh(shader: rl.Shader) rl.Model {
     var i: i32 = 0;
     while (i < ARCADE_BAYS) : (i += 1) {
         const cx = (@as(f32, @floatFromInt(i)) + 0.5 - @as(f32, ARCADE_BAYS) * 0.5) * ARCADE_PITCH;
-        bayArchInto(&b, &rng, cx, ARCADE_PIER, ARCADE_SPAN, 2.60, TH * 1.3);
+        bayArchInto(&b, &rng, cx, ARCADE_PIER, ARCADE_SPAN, ARCADE_SPRING, TH * 1.3);
     }
     b.setMat(.stone);
-    b.addBox(v3(0, 2.60 + ARCADE_SPAN * 0.5 + 0.66, 0), v3(ARCADE_RUN * 0.5, rng.signed() * 0.012, 0), v3(0, 0.20, 0), v3(0, 0, TH * 0.78), STONE_LT);
+    b.addBox(v3(0, ARCADE_SPRING + ARCADE_SPAN * 0.5 + 0.66, 0), v3(ARCADE_RUN * 0.5, rng.signed() * 0.012, 0), v3(0, 0.20, 0), v3(0, 0, TH * 0.78), STONE_LT);
     weatherInto(&b, &rng, ARCADE_RUN, ARCADE_TOP, .worn);
     return b.toModel(shader);
 }
@@ -591,7 +603,7 @@ fn roofInto(b: *Builder, rng: *Rng, hw: f32, hl: f32, eave: f32, ridge: f32) voi
             const x = s * hw * (1.0 - t);
             b.addBox(
                 v3(x, y, 0),
-                v3(hw / @as(f32, COURSES) * 0.62, -(ridge - eave) / @as(f32, COURSES) * 0.5 * s * s, 0),
+                v3(hw / @as(f32, COURSES) * 0.62, -(ridge - eave) / @as(f32, COURSES) * 0.5 * s, 0),
                 v3(0, 0.055, 0),
                 v3(0, 0, hl + 0.34),
                 if (rng.float() < 0.3) SLATE else if (rng.float() < 0.5) STONE_DK else STONE,
@@ -646,6 +658,14 @@ pub const HALL_EAVE: f32 = 5.40;
 pub const HALL_TOP: f32 = 8.90;
 pub const HALL_DOOR_X0: f32 = -1.05;
 pub const HALL_DOOR_X1: f32 = 1.05;
+/// Side-wall panels per side and the share of the half-length each one runs; the gaps between them are the hall's light slots, so the run must stay under the pitch.
+const HALL_BAYS: i32 = 4;
+const HALL_BAY_RUN: f32 = 0.42;
+const HALL_PIERS: i32 = 5;
+
+comptime {
+    std.debug.assert(HALL_BAY_RUN < 2.0 / @as(f32, HALL_BAYS));
+}
 
 pub fn greatHallMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
@@ -656,15 +676,15 @@ pub fn greatHallMesh(shader: rl.Shader) rl.Model {
     storeyRun(&b, &rng, -hw, hl, hw, hl, HALL_EAVE, 0, -0.80, 0.80, 2.2, 4.1);
     for ([_]f32{ -1, 1 }) |s| {
         var i: i32 = 0;
-        while (i < 4) : (i += 1) {
-            const t = (@as(f32, @floatFromInt(i)) + 0.5) / 4.0;
-            const z0 = -hl + t * 2 * hl - hl * 0.42;
-            const z1 = z0 + hl * 0.42;
+        while (i < HALL_BAYS) : (i += 1) {
+            const t = (@as(f32, @floatFromInt(i)) + 0.5) / @as(f32, HALL_BAYS);
+            const z0 = -hl + t * 2 * hl - HALL_BAY_RUN * hl * 0.5;
+            const z1 = z0 + HALL_BAY_RUN * hl;
             storeyRun(&b, &rng, s * hw, z0, s * hw, z1, HALL_EAVE, 0, -0.62, 0.62, 2.3, 4.2);
         }
         var p: i32 = 0;
-        while (p < 5) : (p += 1) {
-            const z = -hl + (@as(f32, @floatFromInt(p)) + 0.5) * (2 * hl / 5.0);
+        while (p < HALL_PIERS) : (p += 1) {
+            const z = -hl + (@as(f32, @floatFromInt(p)) + 0.5) * (2 * hl / @as(f32, HALL_PIERS));
             _ = art.courseStack(&b, &rng, s * (hw + 0.40), 0, z, 0.72, 0.70, 0.52, coursesFor(HALL_EAVE * 0.72), 0.16, null);
         }
     }

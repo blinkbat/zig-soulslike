@@ -1281,16 +1281,19 @@ const MASON_JAMB_PARTS = [_]Part{
     .{ .ax = mason.DOOR_W * 0.5 + 0.16, .bx = mason.DOOR_W * 0.5 + 0.16, .r = 0.30, .h = mason.DOOR_H, .flat = true },
 };
 
+/// A PIER'S COLLIDER IS A SHARE OF THE PIER, so the gate and the arcade answer one number rather than two hand-picked radii.
+const PIER_R_K: f32 = 0.62;
+
 const MASON_GATE_PARTS = [_]Part{
-    .{ .ax = -mason.GATE_SPAN * 0.5 - 0.45, .bx = -mason.GATE_SPAN * 0.5 - 0.45, .r = 0.52, .h = mason.GATE_SPRING, .flat = true },
-    .{ .ax = mason.GATE_SPAN * 0.5 + 0.45, .bx = mason.GATE_SPAN * 0.5 + 0.45, .r = 0.52, .h = mason.GATE_SPRING, .flat = true },
+    .{ .ax = -mason.GATE_SPAN * 0.5 - mason.GATE_PIER * 0.5, .bx = -mason.GATE_SPAN * 0.5 - mason.GATE_PIER * 0.5, .r = mason.GATE_PIER * PIER_R_K, .h = mason.GATE_SPRING, .flat = true },
+    .{ .ax = mason.GATE_SPAN * 0.5 + mason.GATE_PIER * 0.5, .bx = mason.GATE_SPAN * 0.5 + mason.GATE_PIER * 0.5, .r = mason.GATE_PIER * PIER_R_K, .h = mason.GATE_SPRING, .flat = true },
 };
 
 const MASON_ARCADE_PARTS = blk: {
     var out: [mason.ARCADE_BAYS + 1]Part = undefined;
     for (0..mason.ARCADE_BAYS + 1) |i| {
         const x = (@as(f32, @floatFromInt(i)) - @as(f32, mason.ARCADE_BAYS) * 0.5) * mason.ARCADE_PITCH;
-        out[i] = .{ .ax = x, .bx = x, .r = mason.ARCADE_PIER * 0.62, .h = 2.60, .flat = true };
+        out[i] = .{ .ax = x, .bx = x, .r = mason.ARCADE_PIER * PIER_R_K, .h = mason.ARCADE_SPRING, .flat = true };
     }
     break :blk out;
 };
@@ -1305,6 +1308,17 @@ fn shellParts(hw: f32, hl: f32, h: f32, doorX0: f32, doorX1: f32) [5]Part {
         .{ .ax = -hw, .az = -hl, .bx = doorX0 - 0.10, .bz = -hl, .r = MASON_R, .h = h, .flat = true },
         .{ .ax = doorX1 + 0.10, .az = -hl, .bx = hw, .bz = -hl, .r = MASON_R, .h = h, .flat = true },
     };
+}
+
+/// What a shell's dressing stands off its own wall line — quoins, piers, a chimney and the weathering scatter, the widest of them.
+const SHELL_DRESS: f32 = 1.6;
+
+/// A SHELL'S CULL SPHERE IS DERIVED, NOT PICKED: the diagonal of its own footprint plus that dressing, against its own crown. Three hand-picked radii
+/// are three numbers that stop tracking the first time a wall moves.
+fn shellBound(hw: f32, hl: f32, top: f32) f32 {
+    const x = hw + SHELL_DRESS;
+    const z = hl + SHELL_DRESS;
+    return @sqrt(x * x + z * z + top * top);
 }
 
 const MANOR_PARTS = shellParts(mason.MANOR_HW, mason.MANOR_HL, mason.MANOR_EAVE, mason.MANOR_DOOR_X0, mason.MANOR_DOOR_X1);
@@ -2001,9 +2015,9 @@ pub const INFO = [NK]Info{
     .{ .kind = .ceilingslab, .build = mason.ceilingMesh, .bound = mason.SLAB, .top = mason.SLAB_T, .view = FAR, .decks = &MASON_SLAB_DECK, .surf = .stone },
     .{ .kind = .ceilingbroken, .build = mason.ceilingBrokenMesh, .bound = mason.SLAB, .top = mason.SLAB_T + 0.4, .view = FAR, .surf = .stone },
     .{ .kind = .barrelvault, .build = mason.vaultMesh, .bound = mason.VAULT_SPAN, .top = mason.VAULT_RISE + 0.4, .view = FAR, .surf = .stone },
-    .{ .kind = .manor, .build = mason.manorMesh, .bound = 16.0, .top = mason.MANOR_TOP, .view = FAR, .solid = true, .parts = &MANOR_PARTS },
-    .{ .kind = .greathall, .build = mason.greatHallMesh, .bound = 22.0, .top = mason.HALL_TOP, .view = FAR, .solid = true, .parts = &GREATHALL_PARTS },
-    .{ .kind = .towerhouse, .build = mason.towerHouseMesh, .bound = 14.0, .top = mason.TOWERHOUSE_TOP, .view = FAR, .solid = true, .parts = &TOWERHOUSE_PARTS },
+    .{ .kind = .manor, .build = mason.manorMesh, .bound = shellBound(mason.MANOR_HW, mason.MANOR_HL, mason.MANOR_TOP), .top = mason.MANOR_TOP, .view = FAR, .solid = true, .parts = &MANOR_PARTS },
+    .{ .kind = .greathall, .build = mason.greatHallMesh, .bound = shellBound(mason.HALL_HW, mason.HALL_HL, mason.HALL_TOP), .top = mason.HALL_TOP, .view = FAR, .solid = true, .parts = &GREATHALL_PARTS },
+    .{ .kind = .towerhouse, .build = mason.towerHouseMesh, .bound = shellBound(mason.TOWERHOUSE_HALF, mason.TOWERHOUSE_HALF, mason.TOWERHOUSE_TOP), .top = mason.TOWERHOUSE_TOP, .view = FAR, .solid = true, .parts = &TOWERHOUSE_PARTS },
     .{ .kind = .illusory_long, .build = mason.illusoryLongMesh, .bound = MASON_LONG_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .interact = true, .solid = true, .breach = .illusion, .parts = &masonRun(mason.MOD, mason.WALL_H) },
     .{ .kind = .illusory_short, .build = mason.illusoryShortMesh, .bound = MASON_SHORT_BOUND, .top = mason.WALL_H + 0.3, .view = WALL_VIEW, .interact = true, .solid = true, .breach = .illusion, .parts = &masonRun(mason.HALF, mason.WALL_H) },
     .{ .kind = .illusory_tall, .build = mason.illusoryTallMesh, .bound = MASON_TALL_BOUND, .top = mason.TALL_H + 0.3, .view = FAR, .interact = true, .solid = true, .breach = .illusion, .parts = &masonRun(mason.MOD, mason.TALL_H) },

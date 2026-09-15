@@ -270,7 +270,19 @@ var bg: Bg = .{};
 
 pub const Done = struct { ok: bool, slot: usize, shelf: Shelf };
 
+/// A map path too long to hold is refused OUTRIGHT, never truncated: `gather` clamps it, and a clamped name no longer matches the map it names, so the
+/// slot would write clean and then read back as an unreadable file. BOTH write paths ask here.
+fn tooLong(s: Slot) bool {
+    return s.map.len > MAP_CAP;
+}
+
 pub fn writeAsync(i: usize, s: Slot) void {
+    if (tooLong(s)) {
+        bg.mtx.lock();
+        defer bg.mtx.unlock();
+        finish(i, false, bg.shelf);
+        return;
+    }
     const d = gather(s);
     bg.mtx.lock();
     bg.slot = i;
@@ -385,7 +397,7 @@ pub fn writeShot(i: usize) bool {
 /// WRITE BESIDE IT AND RENAME OVER IT (`worldfmt.save`'s rule, and this is the other file the game writes):
 /// `createFile` truncates first, so a render that failed part-way took the save it was replacing with it.
 pub fn writeTo(file: []const u8, s: Slot) bool {
-    if (s.map.len > MAP_CAP) return false;
+    if (tooLong(s)) return false;
     const d = gather(s);
     return writeData(file, &d);
 }

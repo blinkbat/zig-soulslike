@@ -2720,7 +2720,7 @@ fn unitStudyViewFrame(g: *Game, rt: rl.RenderTexture2D, body: anytype, model: an
     snap(path);
 }
 
-fn knightStudyView(initial: knightmod.Knight, bounds: *const [19]rl.BoundingBox, quarry: rl.Vector3, until: f32) StudyView {
+fn knightStudyView(initial: knightmod.Knight, bounds: *const [heromod.N + 1]rl.BoundingBox, quarry: rl.Vector3, until: f32) StudyView {
     const yaw = mathx.radians(LIT_YAW);
     const right = v3(@cos(yaw), 0, -@sin(yaw));
     const back = v3(@sin(yaw) * @cos(@as(f32, 0.10)), @sin(@as(f32, 0.10)), @cos(yaw) * @cos(@as(f32, 0.10)));
@@ -2757,8 +2757,8 @@ fn knightStudyView(initial: knightmod.Knight, bounds: *const [19]rl.BoundingBox,
 fn knightStudyShots(g: *Game) void {
     const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("knight plate target");
     defer rl.unloadRenderTexture(rt);
-    var bounds: [19]rl.BoundingBox = undefined;
-    for (&bounds, 0..) |*box, i| box.* = rl.getMeshBoundingBox(if (i < 18) g.vigil.model.bone[i] else g.vigil.model.shield);
+    var bounds: [heromod.N + 1]rl.BoundingBox = undefined;
+    for (&bounds, 0..) |*box, i| box.* = rl.getMeshBoundingBox(if (i < heromod.N) g.vigil.model.bone[i] else g.vigil.model.shield);
     for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
         const yaw = mathx.radians(LIT_YAW + turn);
         for (0..14) |mode| {
@@ -5653,33 +5653,41 @@ pub fn runArtShots(g: *Game) void {
     {
         sheet.begin();
         const spells = @typeInfo(combat.Spell).@"enum".fields;
+        // The row is sized to the COUNT — an eleventh spell at the old fixed 136 stride drew off the 1280 sheet.
+        const sw: f32 = (W - 40) / @as(f32, @floatFromInt(spells.len));
+        const cw: f32 = sw - 16;
         inline for (spells, 0..) |f, i| {
             const sp: combat.Spell = @enumFromInt(f.value);
-            const x: f32 = 20 + @as(f32, @floatFromInt(i)) * 136;
-            sheet.cellBg(x, 20, 120, 120);
-            itemart.spellArt(sp, x + 60, 74, 90, true);
-            sheet.cellBg(x, 150, 120, 60);
-            itemart.spellArt(sp, x + 30, 180, 34, true);
-            itemart.spellArt(sp, x + 90, 180, 34, false);
-            hudmod.mono(f.name, @intFromFloat(x), 214, SHEET_CAP, uimod.LABEL);
+            const x: f32 = 20 + @as(f32, @floatFromInt(i)) * sw;
+            sheet.cellBg(x, 20, cw, cw);
+            itemart.spellArt(sp, x + cw * 0.5, 20 + cw * 0.45, cw * 0.75, true);
+            sheet.cellBg(x, 30 + cw, cw, 60);
+            itemart.spellArt(sp, x + cw * 0.25, 60 + cw, 34, true);
+            itemart.spellArt(sp, x + cw * 0.75, 60 + cw, 34, false);
+            hudmod.mono(f.name, @intFromFloat(x), @intFromFloat(94 + cw), SHEET_CAP, uimod.LABEL);
         }
         const ails = @typeInfo(combat.Ail).@"enum".fields;
+        // Sized to the COUNT like the spells above: ten ails comes out the old 124 stride and 110 cell exactly.
+        const aw: f32 = (W - 40) / @as(f32, @floatFromInt(ails.len));
+        const acw: f32 = aw - 14;
         inline for (ails, 0..) |f, i| {
             const a: combat.Ail = @enumFromInt(f.value);
-            const x: f32 = 20 + @as(f32, @floatFromInt(i)) * 124;
-            sheet.cellBg(x, 260, 110, 110);
-            hudmod.ailGlyph(a, x + 55, 310, 60, hudmod.ailTint(a));
+            const x: f32 = 20 + @as(f32, @floatFromInt(i)) * aw;
+            sheet.cellBg(x, 260, acw, 110);
+            hudmod.ailGlyph(a, x + acw * 0.5, 310, 60, hudmod.ailTint(a));
             hudmod.ailGlyph(a, x + 20, 355, 13, hudmod.ailTint(a));
             hudmod.ailGlyph(a, x + 45, 355, 13, uimod.VALUE);
             hudmod.mono(f.name, @intFromFloat(x), 374, SHEET_CAP, uimod.LABEL);
         }
         var i: i32 = 0;
-        inline for (.{ hudmod.PadBtn.a, hudmod.PadBtn.b, hudmod.PadBtn.x, hudmod.PadBtn.y }) |b| {
+        inline for (@typeInfo(hudmod.PadBtn).@"enum".fields) |f| {
+            const b: hudmod.PadBtn = @enumFromInt(f.value);
             hudmod.padFace(60 + i * 60, 460, hudmod.GLYPH_R, b);
             hudmod.padFace(60 + i * 60, 520, 20, b);
             i += 1;
         }
-        inline for (.{ hudmod.Dir.up, hudmod.Dir.down, hudmod.Dir.left, hudmod.Dir.right, hudmod.Dir.updown, hudmod.Dir.leftright }) |d| {
+        inline for (@typeInfo(hudmod.Dir).@"enum".fields) |f| {
+            const d: hudmod.Dir = @enumFromInt(f.value);
             hudmod.padDpad(60 + i * 60, 460, hudmod.GLYPH_R, d);
             hudmod.padDpad(60 + i * 60, 520, 20, d);
             i += 1;

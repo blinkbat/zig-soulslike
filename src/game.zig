@@ -1692,7 +1692,7 @@ const SparKept = struct {
 };
 var sparKept: ?SparKept = null;
 
-/// ASKED for and never listed: a tenth sorcery is in his hands the build it is written.
+/// ASKED for and never listed: a new sorcery is in his hands the build it is written.
 fn sparKit(g: *Game) void {
     sparKept = .{
         .bag = g.bag,
@@ -4225,7 +4225,7 @@ fn releaseSpell(g: *Game) void {
         .siphon => drawSiphon(g),
         .lance => throwLance(g),
         .sunder => strikeSunder(g),
-        .babble, .bidding => whisperAt(g),
+        .babble, .bidding, .rot, .pyre => whisperAt(g),
     }
 }
 
@@ -4238,22 +4238,28 @@ fn castBeat(g: *Game, landed: bool) void {
 fn whisperAt(g: *Game) void {
     const blow = g.hero.castBlow() orelse return;
     const reach = combat.spellReach(g.hero.spell) orelse return;
+    const ail = combat.spellDose(g.hero.spell) orelse return;
     sfx.play(.wand_cast);
     castBeat(g, false);
-    const tint = whisperTint(g.hero.spell);
+    const tint = hud_.ailTint(ail);
     const pick = strikeVictim(g, reach) orelse {
         g.hero.dustPuff(strikeMissAt(g, reach), WHISPER_R, tint, g.hero.casts);
         return;
     };
     const hit = strikeOne(g, pick, blow) orelse return;
     g.hero.dustPuff(v3(hit.at.x, g.env.floorUnder(hit.at), hit.at.z), WHISPER_R, tint, g.hero.casts);
-    sfx.play(.hollow_toll);
+    sfx.play(whisperLand(ail));
 }
 
 const WHISPER_R: f32 = 1.1;
 
-fn whisperTint(s: combat.Spell) rl.Color {
-    return hud_.ailTint(combat.spellDose(s) orelse .confusion);
+/// The voice is the AIL'S, like the tint is — a toll is what a whisper sounds like, not what a rot does. Exhaustive like `hud.ailTint` beside it: an eleventh meter names its own voice or it does not compile.
+fn whisperLand(a: combat.Ail) sfx.Id {
+    return switch (a) {
+        .poison => .acid_burn,
+        .burning => .lava_sear,
+        .chill, .stun, .bleed, .sleep, .confusion, .charm, .berserk, .stupefy => .hollow_toll,
+    };
 }
 
 fn throwLance(g: *Game) void {
@@ -5666,7 +5672,7 @@ pub fn run(mode: Mode) void {
     }.ms;
     // VSYNC, not `setTargetFPS`: that is a CPU-side frame LIMITER and never tells the driver to swap during vblank, so fullscreen tears.
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .vsync_hint = true, .window_hidden = shot, .window_resizable = true });
-    rl.initWindow(SCREEN_W, SCREEN_H, "Gloamfall");
+    rl.initWindow(SCREEN_W, SCREEN_H, "Golem");
     defer rl.closeWindow();
     defer savemod.shutdown();
     rl.setExitKey(.null);

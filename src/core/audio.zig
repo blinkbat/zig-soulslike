@@ -3552,13 +3552,14 @@ pub const NAMES: [NV][:0]const u8 = blk: {
     break :blk out;
 };
 
-pub const DialSpec = struct { name: [:0]const u8, lo: f32, hi: f32, tip: [:0]const u8 };
+/// `dp` is the column's own width in `settings.cfg`; `reach` is metres and the rest are 0..1.
+pub const DialSpec = struct { name: [:0]const u8, lo: f32, hi: f32, dp: u8 = 4, tip: [:0]const u8 };
 
 pub fn dialSpec(d: Dial) DialSpec {
     return switch (d) {
         .gain => .{ .name = "vol", .lo = 0, .hi = 1, .tip = "How loud, before the family's own trim and the player's slider" },
         .pitch => .{ .name = "pitch", .lo = 0.5, .hi = 2.0, .tip = "Where the take sits - 1.0 is as it was baked" },
-        .reach => .{ .name = "reach", .lo = 4, .hi = 220, .tip = "Metres it carries; past this it is not played at all" },
+        .reach => .{ .name = "reach", .lo = 4, .hi = 220, .dp = 2, .tip = "Metres it carries; past this it is not played at all" },
         .jit => .{ .name = "pitch jit", .lo = 0, .hi = 0.30, .tip = "How far each firing wanders off the pitch" },
         .vjit => .{ .name = "level jit", .lo = 0, .hi = 0.40, .tip = "How far each firing wanders off the level" },
     };
@@ -3732,7 +3733,9 @@ pub const SETTINGS_PATH = "settings.cfg";
 const FX_KEY = "fx.";
 const VOICE_KEY = "voice.";
 
-const SETTINGS_CAP = NMIX * (32 + AFX_COUNT * 8) + NV * (40 + 5 * 10 + AFX_COUNT * 6) + 64;
+/// The dial columns are `Dial`'s OWN count, because `saveSettings` writes one per field: at a hand-written 5 a sixth dial overruns the read buffer and `loadSettings` drops EVERY voice setting in silence.
+const NDIAL = @typeInfo(Dial).@"enum".fields.len;
+const SETTINGS_CAP = NMIX * (32 + AFX_COUNT * 8) + NV * (40 + NDIAL * 10 + AFX_COUNT * 6) + 64;
 
 pub fn loadSettings() void {
     var buf: [SETTINGS_CAP]u8 = undefined;
@@ -3803,8 +3806,12 @@ pub fn saveSettings() void {
     }
     for (0..NV) |i| {
         if (!voiceEdited(@enumFromInt(i))) continue;
-        const r = live[i];
-        w.print(VOICE_KEY ++ "{s} {d:.4} {d:.4} {d:.2} {d:.4} {d:.4}", .{ NAMES[i], r.gain, r.pitch, r.reach, r.jit, r.vjit }) catch return;
+        w.print(VOICE_KEY ++ "{s}", .{NAMES[i]}) catch return;
+        // OFF THE ENUM, like `loadSettings` reads it: a hand-written column order is one the reader cannot disagree with in silence.
+        inline for (@typeInfo(Dial).@"enum".fields) |dfld| {
+            const d: Dial = @enumFromInt(dfld.value);
+            w.print(" {d:." ++ std.fmt.comptimePrint("{d}", .{dialSpec(d).dp}) ++ "}", .{dialOf(@enumFromInt(i), d)}) catch return;
+        }
         for (voiceFx[i]) |v| w.print(" {d:.3}", .{v}) catch return;
         w.writeAll("\n") catch return;
     }

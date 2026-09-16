@@ -564,12 +564,12 @@ pub const Menu = struct {
         }
         switch (self.screen) {
             .closed, .character => {},
-            .boot => self.drawCard("GLOAMFALL", &bootLabels(), .{
+            .boot => self.drawCard("GOLEM", &bootLabels(), .{
                 .dim = &bootDim(self, shelf),
                 .note = if (shelf.full()) BOOT_NOTE_FULL else if (shelf.any()) BOOT_NOTE else BOOT_NOTE_EMPTY,
             }),
             .slots => self.drawSlots(shelf),
-            .main => self.drawCard("GLOAMFALL", &mainLabels(), .{}),
+            .main => self.drawCard("GOLEM", &mainLabels(), .{}),
             .options => self.drawCard("SOUND", &optionLabels(), .{ .gauges = &soundLevels() }),
             .debug => self.drawCard("DEBUG", &self.debugLabels(day, sky), .{}),
             .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), .{ .gauges = retro.values[0..gfx.RETRO_COUNT] }),

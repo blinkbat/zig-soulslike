@@ -90,7 +90,7 @@ pub const BANK = [_]Row{
     .{ .foe = .necromancer, .common = .nameless_soul, .odds = BIG, .rare = .rimewax, .chance = 0.20, .gold = .purse },
 
     .{ .foe = .fungal_deer, .common = .bloodgrass },
-    .{ .foe = .mushroom_mage, .common = .purgeleaf, .odds = UNCOMMON },
+    .{ .foe = .mushroom_mage, .common = .purgeleaf, .odds = UNCOMMON, .rare = .scroll_rot, .chance = 0.12 },
 
     .{ .foe = .fen_lurker, .common = .ironwort_tea, .odds = UNCOMMON, .gold = .few },
     .{ .foe = .spore_golem, .common = .purgeleaf, .odds = UNCOMMON },
@@ -100,7 +100,7 @@ pub const BANK = [_]Row{
     .{ .foe = .tolling_hollow, .common = .gravebell_amulet, .odds = UNCOMMON, .rare = .thundercrock, .chance = 0.16, .gold = .few },
     .{ .foe = .mourner, .common = .wax_stopped_hood, .odds = UNCOMMON, .rare = .wakers_nail, .chance = 0.12, .gold = .few },
     .{ .foe = .slumber_bloom, .common = .purgeleaf, .rare = .nightcap_grease, .chance = 0.20 },
-    .{ .foe = .cinder_wake, .common = .ashen_amulet, .odds = UNCOMMON, .rare = .kiln_draught, .chance = 0.18 },
+    .{ .foe = .cinder_wake, .common = .ashen_amulet, .odds = UNCOMMON, .rare = .scroll_pyre, .chance = 0.14 },
     .{ .foe = .rotgorger, .common = .sporeling_cap, .odds = UNCOMMON, .rare = .sporecrown, .chance = 0.14, .gold = .few },
     .{ .foe = .birchwight, .common = .fire_tallow, .odds = UNCOMMON, .rare = .rimewax, .chance = 0.14 },
     .{ .foe = .salt_husk, .common = .pilgrims_salt, .rare = .ironwort_tea, .chance = 0.12, .gold = .few },

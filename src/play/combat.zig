@@ -821,7 +821,13 @@ pub const BABBLE_REACH: f32 = 13.0;
 pub const BIDDING_HIT = Hit{ .dose = Doses.one(.charm, ailBank(.charm).max) };
 pub const BIDDING_REACH: f32 = 9.0;
 
-pub const Spell = enum { bolt, roots, rime, levin, siphon, lance, sunder, babble, bidding };
+pub const ROT_HIT = Hit{ .dose = Doses.one(.poison, ailBank(.poison).max) };
+pub const ROT_REACH: f32 = 14.0;
+
+pub const PYRE_HIT = Hit{ .dose = Doses.one(.burning, ailBank(.burning).max) };
+pub const PYRE_REACH: f32 = 11.0;
+
+pub const Spell = enum { bolt, roots, rime, levin, siphon, lance, sunder, babble, bidding, rot, pyre };
 
 pub const SpellRow = struct {
     spell: Spell,
@@ -834,7 +840,7 @@ pub const SpellRow = struct {
     drip: f32 = 0,
 };
 
-/// **ROW ORDER IS `Spell`'S OWN**, pinned at comptime: an eighth spell is a compile error until it has said what it costs and what it does. This is the price, not the physics.
+/// **ROW ORDER IS `Spell`'S OWN**, pinned at comptime: a new spell is a compile error until it has said what it costs and what it does. This is the price, not the physics.
 pub const SPELLS_BANK = [_]SpellRow{
     .{ .spell = .bolt,   .name = "Chaos Bolt",   .fp = 8,  .scroll = .scroll_bolt,   .says = "A thrown stone of chaos. Crosses the ground, and cover stops it.",     .blow = BOLT_HIT },
     .{ .spell = .roots,  .name = "Roots",        .fp = 12, .scroll = .scroll_roots,  .says = "Holds a body where it stands and bleeds it while it is held.",        .drip = ROOT_HOLD * ROOT_DPS },
@@ -845,6 +851,8 @@ pub const SPELLS_BANK = [_]SpellRow{
     .{ .spell = .sunder, .name = "Sunder",       .fp = 16, .scroll = .scroll_sunder, .says = "Breaks a guard inside sword reach. The one sorcery cast in the fight.", .blow = SUNDER_HIT, .reach = SUNDER_REACH },
     .{ .spell = .babble, .name = "Babble",       .fp = 19, .scroll = .scroll_babble, .says = "Takes a body's aim away. It swings at whatever is nearest, you included.", .blow = BABBLE_HIT,  .reach = BABBLE_REACH },
     .{ .spell = .bidding, .name = "Bidding",     .fp = 24, .scroll = .scroll_bidding, .says = "Turns a body on the ones it came with. The dearest thing the rod does.", .blow = BIDDING_HIT, .reach = BIDDING_REACH },
+    .{ .spell = .rot,    .name = "Rot",          .fp = 18, .scroll = .scroll_rot,    .says = "Fills one body with poison. The slowest thing the rod does, and the largest share it takes.", .blow = ROT_HIT,  .reach = ROT_REACH },
+    .{ .spell = .pyre,   .name = "Pyre",         .fp = 20, .scroll = .scroll_pyre,   .says = "Sets one body burning. Takes less than the rot, and takes it in a third of the time.", .blow = PYRE_HIT, .reach = PYRE_REACH },
 };
 
 pub var SPELLS: [SPELLS_BANK.len]SpellRow = SPELLS_BANK;
@@ -2000,6 +2008,44 @@ test "THE SIPHON FEEDS OFF WHAT IT ACTUALLY TOOK, so a body that resists chaos i
     try std.testing.expect(off_bare > off_boned * 3.9); // 75% resisted is a quarter of the meal
     try std.testing.expect(off_bare * SIPHON_SHARE < off_bare);
     try std.testing.expect(SIPHON_SHARE > 0 and SIPHON_SHARE < 1);
+}
+
+test "THE ROT AND THE PYRE BUY A CLOCK, NOT A BLOW — one cast fills the meter, and what it costs is what the clock pays" {
+    for ([_]Spell{ .rot, .pyre }) |s| {
+        const blow = spellBlow(s).?;
+        try std.testing.expect(blow.raw() == 0 and blow.poise == 0 and blow.stance == 0);
+        try std.testing.expect(spellDamage(s) == 0 and spellDoses(s));
+        for (std.enums.values(Spell)) |other| {
+            if (spellDoses(other)) continue;
+            try std.testing.expect(spellFp(s) > spellFp(other));
+        }
+    }
+    try std.testing.expectEqual(@as(?Ail, .poison), spellDose(.rot));
+    try std.testing.expectEqual(@as(?Ail, .burning), spellDose(.pyre));
+    try std.testing.expect(spellFp(.rot) < spellFp(.pyre));
+    try std.testing.expect(ROT_REACH > PYRE_REACH);
+
+    const HP: f32 = 400;
+    var paid: [2]f32 = .{ 0, 0 };
+    var clock: [2]f32 = .{ 0, 0 };
+    for ([_]Spell{ .rot, .pyre }, 0..) |s, i| {
+        const row = ailRow(spellDose(s).?);
+        var st = Status{};
+        st.add(row, spellBlow(s).?.dose.at(spellDose(s).?));
+        try std.testing.expectApproxEqAbs(@as(f32, 1.0), st.frac(row), 1e-4); // ONE cast fills it
+        var t: f32 = 0;
+        while (t < row.dur * 1.4) : (t += 1.0 / 60.0) {
+            paid[i] += st.tick(row, 1.0 / 60.0, HP);
+            if (st.active()) clock[i] += 1.0 / 60.0;
+        }
+        try std.testing.expect(!st.active());
+        try std.testing.expectApproxEqAbs(HP * row.hpFrac, paid[i], 1.0);
+    }
+    try std.testing.expect(paid[0] > paid[1]);
+    try std.testing.expect(paid[1] / clock[1] > paid[0] / clock[0] * 2.0);
+
+    std.debug.print("\n  rot {d:.0} FP: {d:.0} hp over {d:.1} s, {d:.1} hp/s, reach {d:.0} m\n", .{ spellFp(.rot), paid[0], clock[0], paid[0] / clock[0], ROT_REACH });
+    std.debug.print("  pyre {d:.0} FP: {d:.0} hp over {d:.1} s, {d:.1} hp/s, reach {d:.0} m\n", .{ spellFp(.pyre), paid[1], clock[1], paid[1] / clock[1], PYRE_REACH });
 }
 
 test "a small hit chips poise without a stun" {

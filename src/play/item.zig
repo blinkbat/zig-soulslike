@@ -86,6 +86,8 @@ pub const Kind = enum(u8) {
     scroll_babble,
     scroll_bidding,
     gold_purse,
+    scroll_rot,
+    scroll_pyre,
 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
@@ -106,7 +108,7 @@ const ORDER = [_][]const u8{
     "spidersilk_moccasins", "bloodtinge_signet", "loop_of_chance",
     "nightcap_grease", "wakers_nail",       "madcap_powder",  "stolen_gravebell",
     "bloodwine",       "wax_stopped_hood",  "scroll_babble",  "scroll_bidding",
-    "gold_purse",
+    "gold_purse",      "scroll_rot",        "scroll_pyre",
 };
 
 comptime {
@@ -182,6 +184,8 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .wax_stopped_hood => "Wax-Stopped Hood",
         .scroll_babble => "Sorcery Scroll: Babble",
         .scroll_bidding => "Sorcery Scroll: Bidding",
+        .scroll_rot => "Sorcery Scroll: Rot",
+        .scroll_pyre => "Sorcery Scroll: Pyre",
     };
 }
 
@@ -303,21 +307,12 @@ pub fn sellPrice(k: Kind) u32 {
 }
 
 pub fn class(k: Kind) Class {
+    if (isSpellScroll(k)) return .spell;
     return switch (k) {
         .crimson_flask, .cerulean_flask, .empty_flask => .flask,
         .plain_arrows, .fire_arrows => .ammo,
         .nameless_soul, .pilgrims_salt, .pilgrims_offering => .soul,
-        .spirit_scroll_wolf,
-        .scroll_bolt,
-        .scroll_roots,
-        .scroll_rime,
-        .scroll_levin,
-        .scroll_siphon,
-        .scroll_lance,
-        .scroll_sunder,
-        .scroll_babble,
-        .scroll_bidding,
-        => .spell,
+        .spirit_scroll_wolf => .spell,
         .smithing_stone, .bloodgrass, .kobold_fang => .material,
         .rune_arc, .gold_purse => .treasure,
         .iron_key => .key,
@@ -404,6 +399,8 @@ pub fn describe(k: Kind) [:0]const u8 {
         .wax_stopped_hood => "A pilgrim's hood with the ears sewn shut and packed with candle-wax, done from the inside by somebody who wanted it that way. It came off a body a mile from the nearest bell, still walking a straight line.",
         .scroll_babble => "A sheet written over three times in three hands, none of them agreeing, and the last one going round the margin. Read aloud it does nothing to you. What it does is to whatever is listening.",
         .scroll_bidding => "One line, very large, very carefully drawn, and no words in it at all. Below it, small, in a different ink: WHAT IS OWED IS OWED TO WHOEVER HOLDS THE DEBT.",
+        .scroll_rot => "A sheet of something soft and pale that was never paper, gone brown along the folds and still smelling of the bed it was cut out of. The figure drawn on it is standing upright, and the ink of it thins away from the feet up.",
+        .scroll_pyre => "Thin leather rolled in oiled cloth, warm to the back of the hand whatever weather it has been kept in. The figure on it stands in a fire the copier drew starting under the skin rather than round it.",
     };
 }
 
@@ -606,7 +603,7 @@ pub const INERT = [_]Kind{
     .spirit_scroll_wolf,
     .scroll_bolt,    .scroll_roots,   .scroll_rime, .scroll_levin,
     .scroll_siphon,  .scroll_lance,   .scroll_sunder,
-    .scroll_babble,  .scroll_bidding,
+    .scroll_babble,  .scroll_bidding, .scroll_rot,  .scroll_pyre,
     .gold_purse,
 };
 
@@ -723,6 +720,7 @@ fn plateElem(r: Res) ?struct { name: []const u8, amount: f32 } {
 }
 
 
+/// THE ONE LIST OF SORCERY SHEETS — `class` shelves off it, so a scroll cannot be on the Spells shelf and unlearnable, or the reverse.
 pub fn isSpellScroll(k: Kind) bool {
     return switch (k) {
         .scroll_bolt,
@@ -734,17 +732,11 @@ pub fn isSpellScroll(k: Kind) bool {
         .scroll_sunder,
         .scroll_babble,
         .scroll_bidding,
+        .scroll_rot,
+        .scroll_pyre,
         => true,
         else => false,
     };
-}
-
-comptime {
-    for (0..NK) |i| {
-        const k: Kind = @enumFromInt(i);
-        if (isSpellScroll(k) and class(k) != .spell)
-            @compileError("item: " ++ @tagName(k) ++ " is a sorcery scroll that `class` does not shelve under Spells");
-    }
 }
 
 pub fn usable(k: Kind) bool {

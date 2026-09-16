@@ -224,6 +224,8 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
         .wax_stopped_hood => waxStoppedHood(cx, cy, px),
         .scroll_babble => sorceryScroll(cx, cy, px, .babble),
         .scroll_bidding => sorceryScroll(cx, cy, px, .bidding),
+        .scroll_rot => sorceryScroll(cx, cy, px, .rot),
+        .scroll_pyre => sorceryScroll(cx, cy, px, .pyre),
     }
 }
 
@@ -233,6 +235,7 @@ const GILL_DUST = rgba(186, 208, 96, 255);
 const GILL_DUST_DK = rgba(126, 144, 58, 255);
 pub const BABBLE_GILL = rgba(172, 202, 82, 255);
 pub const CHARM_ROSE = rgba(228, 122, 172, 255);
+pub const ROT_BLOOM = rgba(150, 96, 190, 255);
 const WINE_BLACK = rgba(46, 18, 26, 255);
 const WINE_RED = rgba(140, 26, 40, 255);
 const PAPER = rgba(206, 192, 156, 255);
@@ -515,7 +518,47 @@ pub fn spellArt(s: combat.Spell, cx: f32, cy: f32, px: f32, lit: bool) void {
         .sunder => sunder(cx, cy, px, lit),
         .babble => babble(cx, cy, px, lit),
         .bidding => bidding(cx, cy, px, lit),
+        .rot => rot(cx, cy, px, lit),
+        .pyre => pyre(cx, cy, px, lit),
     }
+}
+
+fn rot(cx: f32, cy: f32, px: f32, lit: bool) void {
+    const s = px;
+    const k = strokeK(px);
+    const hot = dimmed(ROT_BLOOM, lit);
+    const cool = dimmed(VENOM, lit);
+    ellipseV(cx, cy + s * 0.29, s * 0.26, s * 0.075, cool);
+    ellipseV(cx - s * 0.02, cy + s * 0.275, s * 0.16, s * 0.045, hot);
+    const puffs = [_][3]f32{ .{ -0.06, 0.13, 0.105 }, .{ 0.09, -0.05, 0.135 }, .{ -0.05, -0.23, 0.095 } };
+    for (puffs, 0..) |p, i| {
+        const ox = cx + s * p[0];
+        const oy = cy + s * p[1];
+        rl.drawCircleV(v2(ox, oy), s * p[2], if (i == 1) hot else cool);
+        rl.drawCircleV(v2(ox - s * 0.03, oy - s * 0.03), s * p[2] * 0.46, if (i == 1) cool else hot);
+    }
+    rl.drawCircleV(v2(cx + s * 0.20, cy - s * 0.26), 2.0 * k, hot);
+    rl.drawCircleV(v2(cx - s * 0.22, cy + s * 0.02), 1.5 * k, cool);
+}
+
+fn pyre(cx: f32, cy: f32, px: f32, lit: bool) void {
+    const s = px;
+    const k = strokeK(px);
+    const outer = dimmed(FIRE_DIM, lit);
+    const body = dimmed(FIRE, lit);
+    const core = dimmed(rgba(255, 238, 198, 255), lit);
+    const log = dimmed(rgba(74, 52, 36, 255), lit);
+    const logLt = dimmed(rgba(110, 80, 54, 255), lit);
+    quad(v2(cx - s * 0.14, cy - s * 0.02), v2(cx - s * 0.02, cy - s * 0.32), v2(cx + s * 0.07, cy - s * 0.06), v2(cx + s * 0.09, cy + s * 0.14), outer);
+    quad(v2(cx + s * 0.02, cy + s * 0.06), v2(cx + s * 0.15, cy - s * 0.20), v2(cx + s * 0.18, cy + s * 0.04), v2(cx + s * 0.10, cy + s * 0.18), outer);
+    quad(v2(cx - s * 0.09, cy + s * 0.06), v2(cx - s * 0.01, cy - s * 0.22), v2(cx + s * 0.07, cy + s * 0.01), v2(cx + s * 0.06, cy + s * 0.16), body);
+    rl.drawCircleV(v2(cx - s * 0.01, cy + s * 0.11), s * 0.098, body);
+    quad(v2(cx - s * 0.03, cy + s * 0.11), v2(cx + s * 0.01, cy - s * 0.10), v2(cx + s * 0.04, cy + s * 0.02), v2(cx + s * 0.03, cy + s * 0.14), core);
+    rl.drawLineEx(v2(cx - s * 0.30, cy + s * 0.30), v2(cx + s * 0.28, cy + s * 0.20), 5.0 * k, log);
+    rl.drawLineEx(v2(cx - s * 0.28, cy + s * 0.19), v2(cx + s * 0.30, cy + s * 0.29), 5.0 * k, logLt);
+    rl.drawCircleV(v2(cx - s * 0.10, cy + s * 0.245), s * 0.05, body);
+    rl.drawCircleV(v2(cx + s * 0.24, cy - s * 0.24), 1.8 * k, body);
+    rl.drawCircleV(v2(cx - s * 0.20, cy - s * 0.14), 1.4 * k, outer);
 }
 
 fn babble(cx: f32, cy: f32, px: f32, lit: bool) void {
@@ -736,6 +779,8 @@ pub fn spellTint(sp: combat.Spell) rl.Color {
         .sunder => rgba(148, 142, 132, 255),
         .babble => BABBLE_GILL,
         .bidding => CHARM_ROSE,
+        .rot => ROT_BLOOM,
+        .pyre => FIRE,
     };
 }
 

@@ -1339,7 +1339,7 @@ pub const TABLES = [_]Table{
     .{
         .name = "Spells",
         .key = "spell",
-        .tip = "The rod's nine. The FP column is the ladder every other number is priced against",
+        .tip = "Every sorcery written. The FP column is the ladder every other number is priced against",
         .n = combat.SPELLS_BANK.len,
         .cols = &SPELL_COLS,
         .rowName = spellName,

@@ -455,7 +455,7 @@ pub const Status = struct { frac: f32 = 0, on: bool = false };
 /// Vector, from primitives, so it reads at 8 px and at 40.
 pub fn ailTint(a: combat.Ail) rl.Color {
     return switch (a) {
-        .poison => rgba(150, 96, 190, 255),
+        .poison => itemart.ROT_BLOOM,
         .burning => rgba(236, 126, 48, 255),
         .chill => CHILL_STRIP,
         .stun => rgba(240, 228, 122, 255),

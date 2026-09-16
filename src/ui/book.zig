@@ -512,6 +512,7 @@ fn handAct(s: SlotId, h: Hand) Action {
 }
 
 fn candidates(s: SlotId, v: View, out: *[CAND_MAX]Cand) []const Cand {
+    @setEvalBranchQuota(4000);
     if (locked(s, v) != null) return out[0..0];
     if (wearOf(s)) |w| {
         var n: usize = 1;
@@ -3137,6 +3138,20 @@ test "the sockets are fitted to the panel, and never off the end of it" {
     const small = slotFit(.{ .x = 0, .y = 0, .w = 620, .h = 380 });
     const big = slotFit(.{ .x = 0, .y = 0, .w = 2400, .h = 1300 });
     try std.testing.expect(big.px > small.px);
+}
+
+test "EVERY SORCERY EVER WRITTEN FITS THE COLUMN, with the note under it — the list does not scroll" {
+    for ([_][2]i32{ .{ 1280, 800 }, .{ 1920, 1080 }, .{ 2560, 1440 }, .{ 3840, 2160 } }) |wh| {
+        const card = Box{ .x = 0, .y = 0, .w = wh[0], .h = wh[1] };
+        const body = Box{ .x = card.x, .y = card.y + headH(), .w = card.w, .h = card.h - headH() - 40 };
+        const inner = panelInner(spellCols(body)[0], true);
+        const run = @as(i32, @intCast(combat.SPELLS.len)) * spellStep();
+        const note = 18 + 2 * hud.lineH(hud.HINT);
+        try std.testing.expect(run + note <= inner.h);
+        const last = spellRow(spellCols(body)[0], combat.SPELLS.len - 1);
+        try std.testing.expect(last.y + last.height <= fi(inner.y + inner.h));
+    }
+    std.debug.print("\n  book: {d} sorceries at {d} px a row\n", .{ combat.SPELLS.len, spellStep() });
 }
 
 test "BOTH PAGES SPEAK IN NUMBERS, and the three classes are told apart by them" {

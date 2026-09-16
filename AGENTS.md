@@ -1055,6 +1055,11 @@ armour is the blow itself. A new game is bare-handed.
   stagger, a hold, HP back, or a second body in the cone. A comptime block asserts it over every PAIR, so an
   eighth spell is priced by the rule without editing it. **ONE PLACE ANSWERS WHAT A SPELL LANDS** (`spellBlow`),
   null for the two that bill over time.
+- **A SORCERY THAT ONLY DOSES IS OFF THE DAMAGE LADDER AND UNDER EVERY RUNG OF IT** — zero raw damage and an FP
+  above every spell that deals any (babble 19, pyre 20, bidding 24, rot 18), asserted in the same block. What it
+  buys is a METER, filled by ONE cast (`ailBank(a).max`), so its worth is the ail's clock and not the blow.
+  **ITS TINT AND ITS VOICE ARE THE AIL'S** (`hud.ailTint`, `game.whisperLand`) — every one of them casts through
+  `whisperAt`, which picks one body in reach and leaves the dose there.
 - **LEVIN AND SIPHON DO NOT CROSS THE GROUND** — they arrive on ONE body on the frame they are cast, and SIGHT
   stands in for a flight. **THE LEVIN BUYS THE STAGGER AND NOTHING ELSE** (poise 34, past every `POISE_MAX` bar
   the knight's 78; its STANCE stays under his own heavy swing's). **IT DOES NOT TRAVEL BECAUSE THE ELEMENT DOES

@@ -406,6 +406,8 @@ pub fn shutdown() void {
         t.join();
         bg.thread = null;
     }
+    // The latch goes with the thread: left set, the next `writeAsync` spawns a worker that returns at once and every save after it queues behind a thread that is gone.
+    bg.quit = false;
 }
 
 pub fn erase(i: usize) bool {
@@ -739,27 +741,27 @@ pub fn parse(text: []const u8, d: *Data) !void {
                 };
             }
         } else if (std.mem.eql(u8, key, "memory:")) {
+            // A WIDER RACK IS AN OLDER `MEM_SLOTS`, A BAD SORCERY IS A BAD FILE — the tail past the rack is DROPPED but still READ, or `tiers:`' fault comes back in another row.
             d.memory = [_]?combat.Spell{null} ** combat.MEM_SLOTS;
             var i: usize = 0;
             while (it.next()) |tok| : (i += 1) {
-                if (i >= d.memory.len) break;
                 if (std.mem.eql(u8, tok, "-")) continue;
-                d.memory[i] = std.meta.stringToEnum(combat.Spell, tok) orelse return Error.BadField;
+                const sp = std.meta.stringToEnum(combat.Spell, tok) orelse return Error.BadField;
+                if (i < d.memory.len) d.memory[i] = sp;
             }
         } else if (std.mem.eql(u8, key, "quicksel:")) {
             d.quickSel = try int(usize, &it);
         } else if (std.mem.eql(u8, key, "worn:")) {
             d.worn = .{};
             var wi: usize = 0;
-            while (wi < NWEAR) : (wi += 1) {
-                const tok = it.next() orelse break;
-                if (!std.mem.eql(u8, tok, "-")) {
-                    const k = item.fromTag(tok) orelse {
-                        if (!item.retired(tok)) return Error.BadField;
-                        continue;
-                    };
-                    d.worn.put(item.wearSlot(k) orelse return Error.BadField, k);
-                }
+            while (it.next()) |tok| : (wi += 1) {
+                if (std.mem.eql(u8, tok, "-")) continue;
+                const k = item.fromTag(tok) orelse {
+                    if (!item.retired(tok)) return Error.BadField;
+                    continue;
+                };
+                const slot = item.wearSlot(k) orelse return Error.BadField;
+                if (wi < NWEAR) d.worn.put(slot, k);
             }
         } else if (std.mem.eql(u8, key, "bag:")) {
             d.bag = [_]u16{0} ** item.NK;
@@ -1025,6 +1027,26 @@ test "A FILE WITH NO RACK IN IT LOADS AS THE STARTING RACK, and a bad sorcery is
     var wide = Data{};
     try parse("version: 1\nmemory: bolt levin rime siphon lance sunder roots\n", &wide);
     try testing.expectEqual(combat.Spell.bolt, wide.memory[0].?);
+
+    // The tail past the rack is dropped, not skipped: a bad tag in it is still a bad file, the `tiers:` rule.
+    var tail = Data{};
+    try testing.expectError(Error.BadField, parse("version: 1\nmemory: bolt levin rime fireball\n", &tail));
+
+    var buf: [NWEAR * 2 + 64]u8 = undefined;
+    var w = std.io.fixedBufferStream(&buf);
+    try w.writer().writeAll("version: 1\nworn:");
+    for (0..NWEAR) |_| try w.writer().writeAll(" -");
+    try w.writer().writeAll(" fireball\n");
+    try testing.expectError(Error.BadField, parse(w.getWritten(), &tail));
+
+    // A REAL KIND THAT GOES IN NO SOCKET IS THE SAME BAD FILE, inside the rack or past it.
+    var sock = std.io.fixedBufferStream(&buf);
+    try sock.writer().writeAll("version: 1\nworn:");
+    for (0..NWEAR) |_| try sock.writer().writeAll(" -");
+    try sock.writer().writeAll(" crimson_flask\n");
+    try testing.expect(item.wearSlot(.crimson_flask) == null);
+    try testing.expectError(Error.BadField, parse(sock.getWritten(), &tail));
+    try testing.expectError(Error.BadField, parse("version: 1\nworn: crimson_flask\n", &tail));
 }
 
 fn expectSame(comptime T: type, comptime where: []const u8, a: T, b: T) !void {

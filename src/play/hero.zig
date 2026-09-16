@@ -2012,7 +2012,7 @@ pub const Hero = struct {
 
 
     pub fn committed(self: *const Hero) bool {
-        return self.jumping or self.launched or self.climbing or self.mantling or self.rolling or self.attacking or self.drinking or self.shooting or self.casting or self.parrying or self.ringing;
+        return self.jumping or self.launched or self.onLadder() or self.rolling or self.attacking or self.drinking or self.shooting or self.casting or self.parrying or self.ringing;
     }
 
     pub fn holds(self: *const Hero, a: Armament) bool {

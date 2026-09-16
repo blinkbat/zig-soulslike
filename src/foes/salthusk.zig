@@ -136,7 +136,7 @@ const State = enum { idle, walk, clout, bursting, stunlight, stunheavy, dead };
 const Choice = enum { rest, hold, close, clout };
 
 fn cloutBand(scale: f32) f32 {
-    return foe.hurtReach(CLOUT_R + CLOUT_STEP * foe.stepLanded(CLOUT_IMPACT_K), scale);
+    return foe.stepBand(CLOUT_R, CLOUT_STEP, CLOUT_IMPACT_K, scale);
 }
 
 /// Measured edge to edge against a centre-to-centre bill, the band ran 0.21 m past the reach at scale 1 and 0.87 m at `wf.FOE_SCALE_LO`.

@@ -267,7 +267,9 @@ pub fn peek(i: usize) ?Head {
 }
 
 /// THE WORLD A SLOT WAS WRITTEN IN, READ WITHOUT LOADING THE RUN — `game.loadGame` opens this map before it scatters the file, so a save brings its own world with it.
+/// It is the FIRST read of the slot, so it owes `drain`'s rule as much as `read` does: unwaited, the one read that can cross a half-written file is the one the load begins with.
 pub fn mapOf(i: usize) ?MapName {
+    drain();
     return mapOfFile(path(i));
 }
 
@@ -275,10 +277,6 @@ pub fn mapOfFile(file: []const u8) ?MapName {
     var d = Data{};
     if (!parseFile(file, &d)) return null;
     return MapName.of(d.mapName());
-}
-
-pub fn write(i: usize, s: Slot) bool {
-    return writeTo(path(i), s);
 }
 
 pub fn read(i: usize, s: Slot) bool {
@@ -381,12 +379,6 @@ pub fn takeDone() ?Done {
     if (!bg.ready) return null;
     bg.ready = false;
     return .{ .ok = bg.ok, .slot = bg.doneSlot, .shelf = bg.shelf };
-}
-
-pub fn saving() bool {
-    bg.mtx.lock();
-    defer bg.mtx.unlock();
-    return bg.pending or bg.working;
 }
 
 /// ONE WRITER OF THESE FILES AT A TIME — every main-thread path that reads, surveys or deletes a slot waits here, so a load can never cross a half-written file.
@@ -710,10 +702,11 @@ pub fn parse(text: []const u8, d: *Data) !void {
         } else if (std.mem.eql(u8, key, "gold:")) {
             d.gold = try int(u32, &it);
         } else if (std.mem.eql(u8, key, "tiers:")) {
-            // A SHORT ROW IS AN OLDER `Armament`, A BAD TOKEN IS A BAD FILE — `catch break` read both as the end of the row, so `tiers: 3 x 1` loaded clean with every tier past the first at zero. The `hands:`/`ready:` rule: a missing trailing field is allowed, a malformed one never is.
-            for (&d.tiers) |*t| {
-                const tok = it.next() orelse break;
-                t.* = std.fmt.parseInt(u8, tok, 10) catch return Error.BadField;
+            d.tiers = [_]u8{0} ** heromod.NARM;
+            var ti: usize = 0;
+            while (it.next()) |tok| : (ti += 1) {
+                const v = std.fmt.parseInt(u8, tok, 10) catch return Error.BadField;
+                if (ti < d.tiers.len) d.tiers[ti] = v;
             }
         } else if (std.mem.eql(u8, key, "hands:")) {
             d.arm = try tagged(heromod.Armament, &it);
@@ -730,18 +723,21 @@ pub fn parse(text: []const u8, d: *Data) !void {
             d.arrows = try int(u8, &it);
             d.fireArrows = try int(u8, &it);
         } else if (std.mem.eql(u8, key, "quick:")) {
+            // **A POSITIONAL RACK IS READ WHOLE AND STORED SHORT** — `quick:`, `memory:`, `worn:` and `tiers:` all: a row WIDER than this build's rack is
+            // an older one and its tail is DROPPED, a row SHORTER is an older one too and the rest keeps its default, and a malformed token anywhere in it
+            // is a bad file wherever it falls. `tiers:` read the tail as the end of the row (`catch break`) and `tiers: 3 x 1` loaded with every tier past
+            // the first at zero; `quick:` refused the wide row outright, which makes a save from a wider rack unloadable rather than short.
             d.quick = [_]?item.Kind{null} ** combat.QUICK_SLOTS;
             var i: usize = 0;
             while (it.next()) |tok| : (i += 1) {
-                if (i >= d.quick.len) return Error.BadField;
                 if (std.mem.eql(u8, tok, "-")) continue;
-                d.quick[i] = item.fromTag(tok) orelse {
+                const k = item.fromTag(tok) orelse {
                     if (!item.retired(tok)) return Error.BadField;
                     continue;
                 };
+                if (i < d.quick.len) d.quick[i] = k;
             }
         } else if (std.mem.eql(u8, key, "memory:")) {
-            // A WIDER RACK IS AN OLDER `MEM_SLOTS`, A BAD SORCERY IS A BAD FILE — the tail past the rack is DROPPED but still READ, or `tiers:`' fault comes back in another row.
             d.memory = [_]?combat.Spell{null} ** combat.MEM_SLOTS;
             var i: usize = 0;
             while (it.next()) |tok| : (i += 1) {
@@ -1136,6 +1132,19 @@ test "A SHORT `tiers:` IS AN OLDER ARMAMENT LIST, A BAD ONE IS A BAD FILE" {
     try testing.expectEqual(@as(u8, 3), d.tiers[0]);
     try testing.expectEqual(@as(u8, 0), d.tiers[heromod.NARM - 1]);
     try testing.expectError(Error.BadField, parse("version: 1\ntiers: 3 x 1\n", &d));
+
+    // A LONGER ROW IS A NEWER `Armament`: the tail is dropped, and a bad token IN the tail is still a bad file.
+    var buf: [heromod.NARM * 4 + 64]u8 = undefined;
+    var w = std.io.fixedBufferStream(&buf);
+    try w.writer().writeAll("version: 1\ntiers:");
+    for (0..heromod.NARM) |_| try w.writer().writeAll(" 2");
+    const rack = w.pos;
+    try w.writer().writeAll(" 5\n");
+    try parse(w.getWritten(), &d);
+    try testing.expectEqual(@as(u8, 2), d.tiers[heromod.NARM - 1]);
+    w.pos = rack;
+    try w.writer().writeAll(" x\n");
+    try testing.expectError(Error.BadField, parse(w.getWritten(), &d));
 }
 
 test "A NON-FINITE NUMBER IS REFUSED IN EVERY RUN, not just the scalar rows" {

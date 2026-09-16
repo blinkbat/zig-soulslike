@@ -608,8 +608,7 @@ pub const Kobold = struct {
 
     fn parryable(self: *const Kobold) ?f32 {
         if (self.dealt) return null;
-        const left = self.toImpact() orelse return null;
-        if (!self.parry.window(left)) return null;
+        _ = foe.parryOpen(self, self.toImpact()) orelse return null;
         return self.hurtReach();
     }
 

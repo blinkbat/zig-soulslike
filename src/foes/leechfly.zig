@@ -501,8 +501,7 @@ pub const Leechfly = struct {
     }
 
     fn parryable(self: *const Leechfly) ?f32 {
-        const left = self.toImpact() orelse return null;
-        if (!self.parry.window(left)) return null;
+        _ = foe.parryOpen(self, self.toImpact()) orelse return null;
         return self.stabReach();
     }
 

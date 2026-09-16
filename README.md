@@ -57,7 +57,7 @@ moon as anti-sun. Intermittent rain in two strengths with lightning, late thunde
 **Progression.** Souls drop where you die and are spent only on an 81-node radial passive tree (PoE2-shaped,
 three arms, six branches, six bridges). Taking a node IS the level-up — no point pool. Seven attributes, all
 raised via nodes. Equipment: 41 pieces, one row each, across 12 doll sockets, every socket real. Three
-memorized sorcery slots off nine scrolls. Gold is the second currency and is kept on death — it buys the
+memorized sorcery slots off eleven scrolls. Gold is the second currency and is kept on death — it buys the
 shelf, and with smithing stone it buys weapon tiers, +0 to +10 per armament.
 
 **Systems.** StarCraft-style trigger machine (conditions + actions, switches / counters / timers), BG2-style

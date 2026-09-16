@@ -136,7 +136,7 @@ const State = enum { idle, walk, bough, stunlight, stunheavy, dead };
 const Choice = enum { rest, hold, close, bough };
 
 fn boughBand(scale: f32) f32 {
-    return foe.hurtReach(BOUGH_R + BOUGH_STEP * foe.stepLanded(BOUGH_IMPACT_K), scale);
+    return foe.stepBand(BOUGH_R, BOUGH_STEP, BOUGH_IMPACT_K, scale);
 }
 
 /// Measured edge to edge against a centre-to-centre bill, the band ran 0.19 m past the reach at scale 1 and 1.15 m at `wf.FOE_SCALE_LO`.

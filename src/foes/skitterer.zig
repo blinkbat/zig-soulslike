@@ -355,8 +355,7 @@ pub const Skitterer = struct {
     }
 
     fn parryable(self: *const Skitterer) ?f32 {
-        const left = self.toImpact() orelse return null;
-        if (!self.parry.window(left)) return null;
+        _ = foe.parryOpen(self, self.toImpact()) orelse return null;
         return foe.hurtReach(SLICE_R, self.scale);
     }
 

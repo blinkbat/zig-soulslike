@@ -134,7 +134,7 @@ const State = enum { idle, walk, rake, stunlight, stunheavy, dead };
 const Choice = enum { rest, hold, close, rake };
 
 fn rakeBand(scale: f32) f32 {
-    return foe.hurtReach(RAKE_R + RAKE_STEP * foe.stepLanded(RAKE_IMPACT_K), scale);
+    return foe.stepBand(RAKE_R, RAKE_STEP, RAKE_IMPACT_K, scale);
 }
 
 /// Measured edge to edge against a centre-to-centre bill, the band ran 0.24 m past the reach at scale 1 and 1.00 m at `wf.FOE_SCALE_LO`.

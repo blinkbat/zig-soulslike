@@ -374,8 +374,7 @@ pub const Mastodon = struct {
         };
     }
     fn parryable(self: *const Mastodon) ?f32 {
-        const left = self.toImpact() orelse return null;
-        if (!self.parry.window(left)) return null;
+        _ = foe.parryOpen(self, self.toImpact()) orelse return null;
         return foe.hurtReach(if (self.state == .butt) BUTT_R else BITE_R, self.scale);
     }
     fn takeParry(self: *Mastodon) void {
@@ -741,9 +740,7 @@ pub const Mastodon = struct {
         foe.spray(&self.parts, &self.fxHead, &self.fxRng, v3(at.x, self.pos.y, at.z), v3(0, 1, 0), n, spd, self.scale, DUST_SPRAY);
     }
     fn blood(self: *Mastodon, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        var s = BLOOD_SPRAY;
-        if (!foe.onDryGround(self)) s.splat = 0;
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, s);
+        foe.bloodSpray(self, at, dir, n, spd, BLOOD_SPRAY);
     }
 
     pub fn drawFx(self: *const Mastodon) void {

@@ -223,7 +223,8 @@ fn spellSet(r: usize, c: usize, v: f32) void {
                 .dmg => row.blow.?.dmg = v,
                 .poise => row.blow.?.poise = v,
                 .stance => row.blow.?.stance = v,
-                else => row.blow.?.elem.v[c - SPELL_ELEM0] = v,
+                .fire, .cold, .lightning, .chaos => row.blow.?.elem.v[c - SPELL_ELEM0] = v,
+                else => unreachable,
             }
         },
     }

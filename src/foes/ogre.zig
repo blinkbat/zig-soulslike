@@ -872,8 +872,7 @@ pub const Ogre = struct {
     }
 
     fn parryable(self: *const Ogre) ?f32 {
-        const left = self.toImpact() orelse return null;
-        if (!self.parry.window(left)) return null;
+        const left = foe.parryOpen(self, self.toImpact()) orelse return null;
         if (self.driveMove()) return self.slamReach() + DRIVE_SPEED * left;
         return if (self.slamMove()) self.slamReach() else self.swipeReach();
     }
@@ -1402,9 +1401,7 @@ pub const Ogre = struct {
         self.prevPhase = self.phase;
     }
     fn bloodBurst(self: *Ogre, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        var s = BLOOD_SPRAY;
-        if (!foe.onDryGround(self)) s.splat = 0;
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, s);
+        foe.bloodSpray(self, at, dir, n, spd, BLOOD_SPRAY);
     }
     pub fn drawFx(self: *const Ogre) void {
         foe.drawParticles(&self.parts);

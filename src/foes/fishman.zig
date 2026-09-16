@@ -214,7 +214,7 @@ const State = enum { idle, walk, roll, thrust, cast, rite, stunlight, stunheavy,
 const Choice = enum { rest, hold, close, back, roll, thrust, net, rite };
 
 fn thrustBand(size: f32) f32 {
-    return foe.hurtReach(THRUST_R + THRUST_STEP * foe.stepLanded(THRUST_IMPACT_K), size);
+    return foe.stepBand(THRUST_R, THRUST_STEP, THRUST_IMPACT_K, size);
 }
 
 fn classify(role: Role, gap: f32, sensed: f32, homeGap: f32, scale: f32, ready: bool, wounded: bool, rooted: bool, rollReady: bool) Choice {

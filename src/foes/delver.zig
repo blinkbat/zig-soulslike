@@ -970,8 +970,7 @@ pub const Delver = struct {
     }
 
     fn parryable(self: *const Delver) ?f32 {
-        const left = self.toImpact() orelse return null;
-        if (!self.parry.window(left)) return null;
+        _ = foe.parryOpen(self, self.toImpact()) orelse return null;
         return foe.hurtReach(CLAW_BAND, self.scale);
     }
 

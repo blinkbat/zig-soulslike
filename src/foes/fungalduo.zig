@@ -187,11 +187,14 @@ const SW_SLASH2_CHANCE: f32 = 0.55;
 const SW_SLASH_CD: f32 = 1.35;
 /// Metres pre-scale the slash carries him in (`foe.strokeStep`), on one clock across the wind and cut states.
 const SW_SLASH_STEP: f32 = 0.45;
+/// THE SHARE OF EACH STRIKE AT WHICH THE EDGE CROSSES HIS FRONT — the parry window is measured back from it (`toImpact`) and the slash's choose band widened by the drive landed by then.
+const SW_SLASH_IMPACT_K: f32 = 0.46;
 
 const SW_LUNGE_MIN: f32 = 3.4;
 const SW_LUNGE_MAX: f32 = 7.3;
 const SW_LUNGE_WIND: f32 = 0.70;
 const SW_LUNGE_DUR: f32 = 0.34;
+const SW_LUNGE_IMPACT_K: f32 = 0.30;
 const SW_LUNGE_REC: f32 = 0.72;
 const SW_LUNGE_CD: f32 = 6.4;
 /// Metres pre-scale, so the travel is `× SCALE`: 7.68 m on the ground, down from the 10.94 m that 7.4 bought.
@@ -210,6 +213,7 @@ const SW_LUNGE_HIT = combat.Hit{ .dmg = 13, .poise = 44, .stance = 34, .elem = c
 const SW_HEAVY_R: f32 = 2.1;
 const SW_HEAVY_WIND: f32 = 1.15;
 const SW_HEAVY_DUR: f32 = 0.30;
+const SW_HEAVY_IMPACT_K: f32 = 0.42;
 const SW_HEAVY_REC: f32 = 0.98;
 const SW_HEAVY_CD: f32 = 8.5;
 const SW_HEAVY_LAUNCH: f32 = 1.2;
@@ -350,9 +354,9 @@ fn swNearR(scale: f32) f32 {
     return foe.triggerBand(SW_LUNGE_MIN, SCALE, scale);
 }
 
-/// The slash's band on the shipped body: its swept reach plus the share of the step landed by mid-cut.
+/// The slash's band on the shipped body: its swept reach plus the share of the step landed when the edge crosses him.
 fn swSlashBand() f32 {
-    return SW_SLASH_R + SW_SLASH_STEP * SCALE * foe.stepLanded(0.5);
+    return SW_SLASH_R + SW_SLASH_STEP * SCALE * foe.stepLanded(SW_SLASH_IMPACT_K);
 }
 
 fn swClassify(dist: f32, scale: f32, off: f32, slashReady: bool, heavyReady: bool, lungeReady: bool, backReady: bool, crowded: bool) SwChoice {
@@ -1023,12 +1027,12 @@ pub const Swordsman = struct {
 
     fn toImpact(self: *const Swordsman) ?f32 {
         return switch (self.state) {
-            .slash_wind => SW_SLASH_WIND - self.t + SW_SLASH_DUR * 0.46,
-            .slash, .slash2 => SW_SLASH_DUR * 0.46 - self.t,
-            .heavy_wind => SW_HEAVY_WIND - self.t + SW_HEAVY_DUR * 0.42,
-            .heavy => SW_HEAVY_DUR * 0.42 - self.t,
-            .lunge_wind => SW_LUNGE_WIND - self.t + SW_LUNGE_DUR * 0.30,
-            .lunge => SW_LUNGE_DUR * 0.30 - self.t,
+            .slash_wind => SW_SLASH_WIND - self.t + SW_SLASH_DUR * SW_SLASH_IMPACT_K,
+            .slash, .slash2 => SW_SLASH_DUR * SW_SLASH_IMPACT_K - self.t,
+            .heavy_wind => SW_HEAVY_WIND - self.t + SW_HEAVY_DUR * SW_HEAVY_IMPACT_K,
+            .heavy => SW_HEAVY_DUR * SW_HEAVY_IMPACT_K - self.t,
+            .lunge_wind => SW_LUNGE_WIND - self.t + SW_LUNGE_DUR * SW_LUNGE_IMPACT_K,
+            .lunge => SW_LUNGE_DUR * SW_LUNGE_IMPACT_K - self.t,
             else => null,
         };
     }

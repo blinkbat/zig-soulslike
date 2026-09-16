@@ -893,8 +893,7 @@ pub const Archer = struct {
     }
 
     fn parryable(self: *const Archer) ?f32 {
-        const left = self.toImpact() orelse return null;
-        if (!self.parry.window(left)) return null;
+        _ = foe.parryOpen(self, self.toImpact()) orelse return null;
         return foe.hurtReach(BUTT_R, self.scale);
     }
 

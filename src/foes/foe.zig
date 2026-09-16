@@ -977,6 +977,14 @@ pub fn billFront(self: anytype, quarry: rl.Vector3, reach: f32, frontDot: f32, h
     return true;
 }
 
+/// THE GATE EVERY `parryable` OPENS WITH: the stroke's own seconds-to-impact while the catch window stands on it, `null` otherwise. `until` is passed
+/// in the way `caught` takes it, because `toImpact` is private to each creature. The REACH stays with the creature — it is the only per-body part —
+/// and the seconds come back because `ogre` spends them on it (`DRIVE_SPEED * left`).
+pub fn parryOpen(self: anytype, until: ?f32) ?f32 {
+    const left = until orelse return null;
+    return if (self.parry.window(left)) left else null;
+}
+
 /// WHAT A CAUGHT BLOW COSTS: whether the catch BROKE THE STANCE. `combat.PARRY_HIT` is stance and nothing else — `raw()` and `poise` are both
 /// pinned at 0 in `combat` — so a catch can never resolve as a death.
 pub fn parryBroke(self: anytype) bool {
@@ -1332,8 +1340,10 @@ test "THE WATER GATE IS BOTH HALVES OR NEITHER — the field alone stamps a fact
         const src = try wf.readForTest(std.testing.allocator, path, wf.SRC_CAP);
         defer std.testing.allocator.free(src);
         const field = std.mem.indexOf(u8, src, "wade: foe.Wade") != null;
+        // `bloodSpray` asks the gate on the caller's behalf, so it is a third spelling of asking it.
         const asks = std.mem.indexOf(u8, src, "onDryGround(self)") != null or
-            std.mem.indexOf(u8, src, "self.wade.") != null;
+            std.mem.indexOf(u8, src, "self.wade.") != null or
+            std.mem.indexOf(u8, src, "foe.bloodSpray(self") != null;
         if (field != asks) std.debug.print("\n  {s}: carries `wade` {}, asks the gate {}\n", .{ ent.name, field, asks });
         try std.testing.expectEqual(field, asks);
         if (field) carriers += 1;
@@ -1556,6 +1566,14 @@ pub const Spray = struct {
     drag: f32 = 0,
     style: ParticleStyle = .auto,
 };
+
+/// A BODY'S OWN SPRAY, off its own three fx fields: the preset is the only per-creature part. The SPLAT is a ground decal, so it is dropped off dry
+/// ground — the motes still fly, nothing is painted on the water.
+pub fn bloodSpray(self: anytype, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32, preset: Spray) void {
+    var s = preset;
+    if (!onDryGround(self)) s.splat = 0;
+    spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, s);
+}
 
 pub fn spray(pool: []Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32, scale: f32, s: Spray) void {
     const parts = hitParts(n);
@@ -2556,6 +2574,12 @@ fn stepEase(k: f32) f32 {
 /// The share of a `strokeStep` already covered when the blow bills at `impactK` of the strike — what a choose band may be widened by, since the rest of the drive lands after the kit has crossed him.
 pub fn stepLanded(impactK: f32) f32 {
     return stepEase(impactK);
+}
+
+/// THE CHOOSE BAND OF A STROKE THAT CARRIES THE BODY, in one place: the kit's own reach plus the share of the drive landed by the impact frame, measured from
+/// the quarry's hide. The BILL stays `hurtReach(reach, ...)` — by then the body has taken the step, so the widening is the chooser's alone.
+pub fn stepBand(reach: f32, step: f32, impactK: f32, scale: f32) f32 {
+    return hurtReach(reach + step * stepLanded(impactK), scale);
 }
 
 pub fn stride(self: anytype, dt: f32, bounds: f32, movedDist: *f32, moveSpeed: *f32, moveYaw: *?f32) void {

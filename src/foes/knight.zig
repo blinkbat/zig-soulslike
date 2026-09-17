@@ -1436,7 +1436,7 @@ fn classify(sit: Sit) Decision {
 }
 
 fn triggerR(a: Attack, scale: f32) f32 {
-    return a.reachOut * scale + foe.HERO_REACH - oversize(scale) * giantPullIn(a);
+    return foe.hurtReach(a.reachOut, scale) - oversize(scale) * giantPullIn(a);
 }
 
 fn fallWaveR(scale: f32) f32 {

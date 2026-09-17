@@ -84,17 +84,17 @@ fn restPositions() [N]rl.Vector3 {
     const hx = 0.135;
     const sx = 0.235;
     var r: [N]rl.Vector3 = undefined;
-    r[ROOT] = v3(0, 0.530, 0);
+    r[ROOT] = v3(0, heromod.HIP_Y, 0);
     r[SPINE] = v3(0, 0.645, 0);
     r[CHEST] = v3(0, 0.775, 0);
     r[NECK] = v3(0, 0.842, 0.048);
     r[SKULL] = v3(0, 0.925, 0.104); // MEASURED against the chest barrel's top: at 0.070 the whole head sat
-    r[HIPL] = v3(hx, 0.530, 0);
-    r[KNEEL] = v3(hx, 0.285, 0);
-    r[ANKL] = v3(hx, 0.039, 0);
-    r[HIPR] = v3(-hx, 0.530, 0);
-    r[KNEER] = v3(-hx, 0.285, 0);
-    r[ANKR] = v3(-hx, 0.039, 0);
+    r[HIPL] = v3(hx, heromod.HIP_Y, 0);
+    r[KNEEL] = v3(hx, heromod.KNEE_Y, 0);
+    r[ANKL] = v3(hx, heromod.ANKLE_Y, 0);
+    r[HIPR] = v3(-hx, heromod.HIP_Y, 0);
+    r[KNEER] = v3(-hx, heromod.KNEE_Y, 0);
+    r[ANKR] = v3(-hx, heromod.ANKLE_Y, 0);
     r[SHL] = v3(sx, 0.791, 0);
     r[ELL] = v3(sx, 0.556, 0);
     r[WRL] = v3(sx, 0.361, 0);
@@ -659,7 +659,7 @@ pub const Ogre = struct {
                 self.faceToward(hero, dt * 0.5);
                 const surge = DRIVE_DUR * DRIVE_IMPACT_K;
                 self.setDrive(foe.swingCurve(self.t / DRIVE_DUR));
-                const travelDt = @max(0, @min(self.t, surge) - @min(@max(0, self.t - dt), surge));
+                const travelDt = mathx.sliceIn(self.t, dt, 0, surge);
                 if (travelDt > 0) {
                     const f = self.fdir();
                     const moved = DRIVE_SPEED * travelDt;

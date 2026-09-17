@@ -111,6 +111,7 @@ contents change together is fine.
 | `world/worldfmt.zig` | THE MAP FORMAT — ops, zone/foe/npc/trigger/dialog tables, one comptime field table |
 | `world/daynight.zig` · `weather.zig` | sun/moon path, the hour's palette, the anchor hour · rain, mist, embers, bird skeins |
 | `world/caves.zig` · `spar.zig` | a second surface UNDER the heightfield · F6, one walled room and one creature |
+| `world/cliffseat.zig` | seating a premade `cliff*` against a cut — `seatOf`, `paint`, `sheer`, `covers` |
 | `world/trigger.zig` · `dialog.zig` | SC1's conditions + actions, switches/counters/timers · one conversation, node walk + panel |
 | `props/props.zig` | prop vocabulary + `INFO`; `displayName`/`group`/`biome` exhaustive; `decks`/`stack`/`climb` |
 | `props/prop*.zig` | meshes by family — `propart` (palette + weathering), `ruins`, `mason` (the cut-stone KIT, one grid), `gold`, `build`, `village`, `market`, `forge`, `rock`, `wood`, `flora`, `fungus`, `coral`, `ash`, `bone`, `ember`, `palace`+`desert`, `fx` |
@@ -427,7 +428,7 @@ What transfers:
   what moves it is the STEP-TURN, the hop and the GATHERS, so where he is looking is a fact you can read and be
   wrong about. **A GATHER TURNS HIS SHOULDERS, NOT HIS FEET**: `GATHER_SWEEP_MAX` caps the TOTAL a wind may bring
   round off the facing it STARTED from, and must stay under `180 − FALL_SECTOR` or the back pocket closes.
-- **"DULL" IS A MEASUREMENT, NOT A FEELING** — 45 s of a hero walking a ring is 21 blows thrown, 93% committed, no
+- **"DULL" IS A MEASUREMENT, NOT A FEELING** — 45 s of a hero walking a ring is 21 blows thrown, 92% committed, no
   lull past 0.73 s. Test-pinned, because the failure it guards is the fight going quiet.
 - **LIGHT AND HEAVY ARE TELLABLE APART BEFORE THEY LAND** (`Weight`) — the gather's FIRE says which, and it must be
   WIDER THAN THE DOOR to be seen at all. A test forbids raising a move's damage without its tell following.
@@ -495,7 +496,7 @@ What transfers:
     it with his FRONT — sword side on presence, shield side bought with DAMAGE, or the door collapses that whole
     flank onto one move.
   - **THE SOAK IS THE JUDGE, NOT THE PER-MOVE PROBES.** Debug entries drop him into one state from nothing; the
-    seams live in a real fight. 120 s, 200 blows landed, 29 of 33 states visited, four invariants asked EVERY
+    seams live in a real fight. 120 s, 200 blows landed, 31 of 33 states visited, four invariants asked EVERY
     frame, failing with frame/state/geometry printed, **and asserting its own state coverage** so a soak that
     quietly stopped reaching the fall cannot pass having proved nothing.
 - **Art:** `PLATE` = `.plain`, `BRIGHT` = `.steel` — `Mat.steel`'s specular is catastrophic on a face the size of
@@ -1192,8 +1193,8 @@ Conditions: `always`, `never`, `flag N=0|1`, `counter N <cmp> n`, `timer N=done|
   rows above the top keep taking the clicks.
 - **THE UNITS LAYER MARKS BOTH KINDS IN ONE LIST** (`NPC_MARK`, a folk is its index past `wf.MAX_FOES`) — the
   same address `hoverInLayer` uses. Marking creatures alone, the marquee still said "{d} selected".
-- **THE UNITS PALETTE IS TWO TABS AND THE FOES ARE FILED BY KINGDOM** (`editor.UnitTab`, `foe.homeOf`) — 41 icon
-  rows in one column is 1220 px of list in a 738 px panel, so the bottom seventeen creatures could not be clicked
+- **THE UNITS PALETTE IS TWO TABS AND THE FOES ARE FILED BY KINGDOM** (`editor.UnitTab`, `foe.homeOf`) — one icon
+  row per `FoeKind` in one column is over 1300 px of list in a 704 px panel, so the bottom seventeen could not be clicked
   at all. Foes / Folk, and under Foes a chip per `props.Biome` that holds one — the same axis the props are filed
   on. `foe.homeOf` is EXHAUSTIVE and **NOTHING SPAWNS BY IT**; `any` is not a dustbin, it is the set that answers
   every chip, which is why it has no chip of its own.
@@ -1842,7 +1843,7 @@ One number — `Game.day.hour` — and every colour and shadow in the world is a
 ### The weather (`weather.zig`)
 
 **IT IS AN EVENT, NOT A SETTING.** A storm arrives every `DRY_LO`..`DRY_HI` and runs `WET_LO`..`WET_HI`, ramping
-9 s in and 14 s out — measured over an hour: **9 storms, raining 26% of the time, dry gaps 162–405 s**. The clock
+9 s in and 14 s out — measured over an hour: **9 storms, raining 27% of the time, dry gaps 162–405 s**. The clock
 is PURE (seconds and 0..1), so a test runs a day without a window. Weather does not run in the EDITOR and
 `--shot` forces one (`shots/150`–`155`).
 

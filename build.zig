@@ -1,6 +1,6 @@
 const std = @import("std");
 
-/// 144.4 MB of slabs measured across 29 rows; Windows commits stack lazily, so this is address space, not memory. The test binary needs the same: a `Map` is 5.4 MB and a round-trip test holds two in a frame.
+/// 189.0 MB of slabs measured across 34 rows; Windows commits stack lazily, so this is address space, not memory. The test binary needs the same: a `Map` is 5.8 MB and a round-trip test holds two in a frame.
 const STACK_SIZE: usize = 192 * 1024 * 1024;
 
 pub fn build(b: *std.Build) void {

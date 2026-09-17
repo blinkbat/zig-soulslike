@@ -173,6 +173,7 @@ comptime {
     for (SPEC, 0..) |sp, i| {
         if (@intFromEnum(sp.kind) != i) @compileError("npc: SPEC is out of `wf.NpcKind` order");
     }
+    if (NKIND != 3) @compileError("npc: a fourth folk owes `Model.init` its own head and bone row, or its slot comes up `undefined`");
     std.debug.assert(spec(.merchant).stoop < spec(.wanderer).stoop and spec(.merchant).headFwd < spec(.wanderer).headFwd);
     std.debug.assert(spec(.merchant).top > spec(.wanderer).top);
     std.debug.assert(spec(.smith).stoop > spec(.wanderer).stoop and spec(.smith).headFwd > spec(.wanderer).headFwd);
@@ -243,14 +244,19 @@ pub const Model = struct {
 
     pub fn init(shader: rl.Shader) Model {
         const mat = gfx.material(shader, "npc");
+        // ROWS ARE ADDRESSED BY THE KIND, NOT BY AN ORDINAL: `draw` reads them at `@intFromEnum(p.kind)`, so a
+        // fourth folk inserted above leaves every row one kind out and its own slot `undefined`, drawn as a stray mesh.
+        const WANDERER = @intFromEnum(wf.NpcKind.wanderer);
+        const MERCHANT = @intFromEnum(wf.NpcKind.merchant);
+        const SMITH = @intFromEnum(wf.NpcKind.smith);
         var heads: [NKIND][2]rl.Mesh = undefined;
-        heads[0] = .{ hoodedHeadMesh(), bareHeadMesh() };
-        heads[1] = .{ merchHeadMesh(true), merchHeadMesh(false) };
-        heads[2] = .{ burlHeadMesh(false), burlHeadMesh(true) };
+        heads[WANDERER] = .{ hoodedHeadMesh(), bareHeadMesh() };
+        heads[MERCHANT] = .{ merchHeadMesh(true), merchHeadMesh(false) };
+        heads[SMITH] = .{ burlHeadMesh(false), burlHeadMesh(true) };
         var bone: [NKIND][N]rl.Mesh = undefined;
-        bone[0] = wandererBones(heads[0][0]);
-        bone[1] = merchantBones(heads[1][0]);
-        bone[2] = smithBones(heads[2][0]);
+        bone[WANDERER] = wandererBones(heads[WANDERER][0]);
+        bone[MERCHANT] = merchantBones(heads[MERCHANT][0]);
+        bone[SMITH] = smithBones(heads[SMITH][0]);
         return .{ .bone = bone, .heads = heads, .mat = mat };
     }
 

@@ -439,7 +439,7 @@ pub const Shroom = struct {
 
     fn updateArc(self: *Shroom, dt: f32, bounds: f32, coil: f32, flight: f32, land: f32, fling: bool) void {
         const total = coil + flight + land;
-        const travelDt = @max(0, @min(self.t, coil + flight) - @max(self.t - dt, coil));
+        const travelDt = mathx.sliceIn(self.t, dt, coil, coil + flight);
         if (travelDt > 0) foe.hopStep(self, travelDt, bounds, self.fdir(), flight);
         if (self.t < coil) {
             self.faceToward(self.hopAim, dt);

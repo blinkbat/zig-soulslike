@@ -67,7 +67,14 @@ const SWORD = HELD;
 pub const PARENT = [N]i32{ -1, ROOT, SPINE, CHEST, NECK, ROOT, HIPL, KNEEL, ROOT, HIPR, KNEER, CHEST, SHL, ELL, CHEST, SHR, ELR, WRR };
 
 pub const HIP_Y: f32 = 0.530;
+pub const KNEE_Y: f32 = 0.285;
 pub const ANKLE_Y: f32 = 0.039;
+
+comptime {
+    // `legChain` solves the knee against SEG_THIGH/SEG_SHANK, so the three rest heights and the two segment lengths are one fact stated twice.
+    std.debug.assert(@abs((HIP_Y - KNEE_Y) - SEG_THIGH) < 1e-6);
+    std.debug.assert(@abs((KNEE_Y - ANKLE_Y) - SEG_SHANK) < 1e-6);
+}
 
 pub fn restHumanoid(hx: f32, sx: f32, stature: f32) [N]rl.Vector3 {
     var r: [N]rl.Vector3 = undefined;
@@ -77,10 +84,10 @@ pub fn restHumanoid(hx: f32, sx: f32, stature: f32) [N]rl.Vector3 {
     r[NECK] = v3(0, 0.815, 0);
     r[HEAD] = v3(0, 0.885, 0);
     r[HIPL] = v3(hx, HIP_Y, 0);
-    r[KNEEL] = v3(hx, 0.285, 0);
+    r[KNEEL] = v3(hx, KNEE_Y, 0);
     r[ANKL] = v3(hx, ANKLE_Y, 0);
     r[HIPR] = v3(-hx, HIP_Y, 0);
-    r[KNEER] = v3(-hx, 0.285, 0);
+    r[KNEER] = v3(-hx, KNEE_Y, 0);
     r[ANKR] = v3(-hx, ANKLE_Y, 0);
     r[SHL] = v3(sx, 0.818, 0);
     r[ELL] = v3(sx, 0.630, 0);

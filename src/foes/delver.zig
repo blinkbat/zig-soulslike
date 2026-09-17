@@ -711,7 +711,7 @@ pub const Delver = struct {
     fn updatePlough(self: *Delver, dt: f32, hero: rl.Vector3, bounds: f32) void {
         self.depth = UNDER_DEPTH;
         const before = @max(0, self.t - dt);
-        const windStep = @max(0, @min(self.t, PLOUGH_WIND) - @min(before, PLOUGH_WIND)) * UNDER_SPEED * 0.45 * self.scale;
+        const windStep = mathx.sliceIn(self.t, dt, 0, PLOUGH_WIND) * UNDER_SPEED * 0.45 * self.scale;
         mathx.stepXZ(&self.pos, self.fdir(), windStep, bounds);
         self.gait += windStep / (STRIDE * self.scale);
         if (self.t < PLOUGH_WIND) {

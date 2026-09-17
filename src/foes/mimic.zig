@@ -458,7 +458,7 @@ pub const Mimic = struct {
                         const stop = foe.hurtReach(BITE_R, self.scale) * 0.75 + foe.HERO_R;
                         if (mathx.distXZ(self.pos, hero) > stop) {
                             self.speed = approach(self.speed, CHASE_SPEED, ACCEL * dt);
-                            moved = self.travel(dt, bounds);
+                            moved = foe.strideBy(self, dt, bounds);
                             self.state = .walk;
                         } else {
                             self.speed = approach(self.speed, 0, ACCEL * dt);
@@ -469,12 +469,12 @@ pub const Mimic = struct {
                         if (foe.postWant(self, dt, sensed, AGGRO_R)) |go| {
                             self.faceToward(self.nav.aim(self.pos, go), dt);
                             self.speed = approach(self.speed, WALK_SPEED, ACCEL * dt);
-                            moved = self.travel(dt, bounds);
+                            moved = foe.strideBy(self, dt, bounds);
                             self.state = .walk;
                         } else if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) {
                             self.faceToward(self.nav.aim(self.pos, foe.tetherFor(self)), dt);
                             self.speed = approach(self.speed, WALK_SPEED, ACCEL * dt);
-                            moved = self.travel(dt, bounds);
+                            moved = foe.strideBy(self, dt, bounds);
                             self.state = .walk;
                         } else {
                             self.speed = approach(self.speed, 0, ACCEL * dt);
@@ -492,12 +492,6 @@ pub const Mimic = struct {
         self.pose();
         self.tryHit(blade);
         return self.heroHit;
-    }
-
-    fn travel(self: *Mimic, dt: f32, bounds: f32) f32 {
-        const step = self.speed * dt;
-        mathx.stepXZ(&self.pos, self.nav.along(mathx.headingDir(self.facing)), step, bounds);
-        return step;
     }
 
     fn biteReach(self: *const Mimic) f32 {

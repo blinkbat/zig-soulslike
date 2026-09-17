@@ -148,7 +148,7 @@ pub fn ashCragMesh(shader: rl.Shader) rl.Model {
         const half = CRAG_R * mathx.lerpF(1.0, 0.24, t) * rng.range(0.86, 1.12);
         const yaw = rng.angle();
         const u = v3(mathx.cosf(yaw), 0, mathx.sinf(yaw));
-        const w = v3(-u.z, 0, u.x);
+        const w = mathx.perpXZNeg(u);
         b.addBox(
             v3(cx, y + th * 0.5, cz),
             v3(u.x * half, rng.signed() * 0.10, u.z * half),
@@ -247,7 +247,7 @@ pub fn menhirMesh(shader: rl.Shader) rl.Model {
         const half = MENHIR_R * wide * rng.range(0.90, 1.06);
         const yaw = rng.signed() * 0.42;
         const u = v3(mathx.cosf(yaw), 0, mathx.sinf(yaw));
-        const w = v3(-u.z, 0, u.x);
+        const w = mathx.perpXZNeg(u);
         b.addBox(
             v3(tipX * tm, MENHIR_TOP * tm, tipZ * tm),
             v3(u.x * half, rng.signed() * 0.05, u.z * half),

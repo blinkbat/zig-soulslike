@@ -498,7 +498,7 @@ pub const Frog = struct {
             },
             .scatter => {
                 const to = mathx.dirXZ(self.pos, hero);
-                const dir = self.nav.along(v3(to.z * self.panicSide, 0, -to.x * self.panicSide));
+                const dir = self.nav.along(mathx.scaleV(mathx.perpXZ(to), self.panicSide));
                 self.panicSide = -self.panicSide;
                 self.startHop(v3(self.pos.x + dir.x * HOP_REACH, 0, self.pos.z + dir.z * HOP_REACH), bounds, false);
             },

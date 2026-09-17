@@ -24,7 +24,7 @@ pub const EDGE_MASK: u8 = 7;
 pub const LIQUID_SHIFT: u3 = 3;
 pub const LIQUID_MASK: u8 = 3;
 
-pub const LIQUID_N: usize = 4;
+pub const LIQUID_N: usize = wf.Liquid.N;
 
 /// It was `128` in Zig against `0.5005` and two bare `0.5`s in the GLSL — 128/255 is 0.501961 — so the drawn waterline and the walkable one were set against three different thresholds.
 pub const WATER_SHORE: u8 = 128;
@@ -39,15 +39,30 @@ comptime {
     std.debug.assert(WATER_SHORE > 0 and WATER_SHORE < 255);
 }
 
-const LIQUID_GLSL = std.fmt.comptimePrint(
-    "const int L_WATER = 0;\nconst int L_OIL = 1;\nconst int L_FUNGAL = 2;\nconst int L_LAVA = 3;\n" ++
+/// THE NAMES THE GLSL BRANCHES ON ARE GENERATED, `edgeShape`'s rule — a fifth `wf.Liquid` arrives with its own `L_*` and grows
+/// the tone array with it, where a hand-written four left the shader reading one uniform past the end and the length assert still passing.
+const LIQUID_GLSL = blk: {
+    var s: []const u8 = "";
+    for (@typeInfo(wf.Liquid).@"enum".fields) |f| {
+        s = s ++ std.fmt.comptimePrint("const int L_{s} = {d};\n", .{ upperTag(f.name), f.value });
+    }
+    break :blk s ++ std.fmt.comptimePrint(
         "const int LIQ_SHIFT = {d};\nconst int LIQ_MASK = {d};\nconst int EDGE_MASK = {d};\n" ++
-        "uniform vec3 liquidTone[{d}];\n",
-    .{ LIQUID_SHIFT, LIQUID_MASK, EDGE_MASK, LIQUID_N * 3 },
-);
+            "uniform vec3 liquidTone[{d}];\n",
+        .{ LIQUID_SHIFT, LIQUID_MASK, EDGE_MASK, LIQUID_N * 3 },
+    );
+};
+
+fn upperTag(comptime name: []const u8) []const u8 {
+    comptime {
+        var out: [name.len]u8 = undefined;
+        for (name, 0..) |c, i| out[i] = std.ascii.toUpper(c);
+        const frozen = out;
+        return &frozen;
+    }
+}
 
 comptime {
-    std.debug.assert(LIQUID_N == 4);
     std.debug.assert(LIQUID_N <= LIQUID_MASK + 1);
 }
 
@@ -134,6 +149,52 @@ const CAVE_GLSL = std.fmt.comptimePrint(
         wf.HEIGHT_STEP,
     },
 );
+
+const SoilTone = struct { soil: wf.Soil, rgb: [3]f32, note: []const u8 };
+
+/// THE GROUND'S OWN PALETTE, one row per `wf.Soil` past `none`, and the GLSL's `soilColor` is GENERATED from it (`EDGE_K`'s rule):
+/// that function falls back to deep moss, so a material with no row of its own came up green with nothing to say so.
+/// Authored NEAR-BLACK like every other albedo here — the hot key plus the gamma lift turns any mid-dark value pale on a big sunward face.
+/// The five past `moss` separate from the six before it on HUE, not value: neutral-cool, warm-black, violet, pink, orange.
+pub const SOIL_TONE = [_]SoilTone{
+    .{ .soil = .dirt, .rgb = .{ 0.130, 0.106, 0.074 }, .note = "trodden dirt / a path worn through" },
+    .{ .soil = .turf, .rgb = .{ 0.072, 0.098, 0.042 }, .note = "green turf" },
+    .{ .soil = .stone, .rgb = .{ 0.132, 0.134, 0.130 }, .note = "stone, flagged or scoured bare" },
+    .{ .soil = .silt, .rgb = .{ 0.150, 0.132, 0.090 }, .note = "pale silt, the tarn's margin" },
+    .{ .soil = .ash, .rgb = .{ 0.062, 0.058, 0.054 }, .note = "ash and burnt ground" },
+    .{ .soil = .moss, .rgb = .{ 0.046, 0.062, 0.034 }, .note = "deep moss, and the fallback the function answers with" },
+    .{ .soil = .bone, .rgb = .{ 0.165, 0.156, 0.132 }, .note = "bone meal - the palest ground in the table" },
+    .{ .soil = .cinder, .rgb = .{ 0.058, 0.044, 0.038 }, .note = "cinder, a burnt crust warmer and darker than ash" },
+    .{ .soil = .spore, .rgb = .{ 0.058, 0.048, 0.062 }, .note = "spore floor, the one COLD ground" },
+    .{ .soil = .bloom, .rgb = .{ 0.115, 0.055, 0.070 }, .note = "fungal bloom - the one PINK ground, mauve at 122/85/97 on screen" },
+    .{ .soil = .sand, .rgb = .{ 0.215, 0.100, 0.044 }, .note = "desert sand - the BRIGHTEST ground in the table, 162/115/79 and hard orange" },
+};
+
+/// The row `soilColor` answers an unpainted or unknown id with. Named off the soil, not typed as an index.
+const SOIL_FALLBACK: usize = @intFromEnum(wf.Soil.moss) - 1;
+
+comptime {
+    if (SOIL_TONE.len != wf.Soil.N - 1) @compileError("shaders: SOIL_TONE is not one row per `wf.Soil` past `none`");
+    for (SOIL_TONE, 0..) |row, i| {
+        if (@intFromEnum(row.soil) != i + 1)
+            @compileError("shaders: the " ++ @tagName(row.soil) ++ " tone is out of `wf.Soil` order");
+    }
+}
+
+const SOIL_GLSL = blk: {
+    var s: []const u8 = "vec3 soilColor(int id){\n";
+    for (SOIL_TONE, 0..) |row, i| {
+        s = s ++ std.fmt.comptimePrint(
+            "  if (id=={d}) return vec3({d:.3}, {d:.3}, {d:.3});  // {s}\n",
+            .{ i + 1, row.rgb[0], row.rgb[1], row.rgb[2], row.note },
+        );
+    }
+    const back = SOIL_TONE[SOIL_FALLBACK].rgb;
+    break :blk s ++ std.fmt.comptimePrint("  return vec3({d:.3}, {d:.3}, {d:.3});\n}}\n", .{ back[0], back[1], back[2] });
+};
+
+/// The one soil `paintedSoil` singles out by ordinal for its own grain, named rather than typed into the GLSL as a number.
+const SOIL_ID_GLSL = std.fmt.comptimePrint("const int S_SAND = {d};\n", .{@intFromEnum(wf.Soil.sand)});
 
 const EDGE_ID_GLSL = std.fmt.comptimePrint(
     "const int E_TILED = {d};\nconst int E_SCALLOP = {d};\nconst int E_SPECKLE = {d};\n",
@@ -342,22 +403,10 @@ pub const sceneFS =
     \\uniform float soilHalf;    // world half-extent the grid spans
     \\uniform float soilCell;    // metres per grid cell — the scale the coverage ring samples at
     \\uniform int   soilOn;      // 0 = nothing painted anywhere; skip the fetch entirely
-    \\vec3 soilColor(int id){
-    \\  // Authored NEAR-BLACK like every other albedo here — the shader's hot key plus the gamma lift turns any mid-dark value pale where a big face takes the sun square on.
-    \\  if (id==1) return vec3(0.130, 0.106, 0.074);  // trodden dirt / a path worn through
-    \\  if (id==2) return vec3(0.072, 0.098, 0.042);  // green turf
-    \\  if (id==3) return vec3(0.132, 0.134, 0.130);  // stone, flagged or scoured bare
-    \\  if (id==4) return vec3(0.150, 0.132, 0.090);  // pale silt, the tarn's margin
-    \\  if (id==5) return vec3(0.062, 0.058, 0.054);  // ash and burnt ground
-    \\  if (id==6) return vec3(0.046, 0.062, 0.034);  // deep moss
-    \\  // The three below separate from the six above on HUE, not value: neutral-cool, warm-black, violet.
-    \\  if (id==7) return vec3(0.165, 0.156, 0.132);  // bone meal - the palest ground in the table
-    \\  if (id==8) return vec3(0.058, 0.044, 0.038);  // cinder, a burnt crust warmer and darker than ash
-    \\  if (id==9) return vec3(0.058, 0.048, 0.062);  // spore floor, the one COLD ground
-    \\  if (id==10) return vec3(0.115, 0.055, 0.070);  // fungal bloom - the one PINK ground, mauve at 122/85/97 on screen
-    \\  if (id==11) return vec3(0.215, 0.100, 0.044);  // desert sand - the BRIGHTEST ground in the table, 162/115/79 and hard orange
-    \\  return vec3(0.046, 0.062, 0.034);
-    \\}
+    \\// **THE PALETTE IS GENERATED from `SOIL_TONE` at the top of this file**, `edgeShape`'s rule, so a `wf.Soil` with no
+    \\// row of its own is a compile error rather than a material that quietly comes up deep moss.
+    \\
+++ SOIL_GLSL ++
     \\int soilAt(vec2 w){
     \\  vec2 uv = w/(2.0*soilHalf) + 0.5;
     \\  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0;
@@ -377,7 +426,7 @@ pub const sceneFS =
     \\// **THE THREE KNOBS AN EDGE HAS** - GENERATED from `EDGE_K` at the top of this file, so the table
     \\// the CPU reads (`env.paintedDepth`) and the function the GPU runs cannot drift apart.
     \\
-++ EDGE_SHAPE_GLSL ++ EDGE_ID_GLSL ++ LIQUID_GLSL ++ BAY_GLSL ++ WATER_GLSL ++ CAVE_GLSL ++
+++ EDGE_SHAPE_GLSL ++ EDGE_ID_GLSL ++ SOIL_ID_GLSL ++ LIQUID_GLSL ++ BAY_GLSL ++ WATER_GLSL ++ CAVE_GLSL ++
     \\// WHERE THE LOOKUP ACTUALLY READS FROM. The READ POSITION is warped per shape, never the material after it: one
     \\// fixed noise over every material wandered the BOUNDARY +/-1.7 m whatever its policy said, and `soilCovAt`'s
     \\// `snap` only ever snapped the COVERAGE.
@@ -532,7 +581,7 @@ pub const sceneFS =
     \\  if (id == 0) return c;
     \\  // SAND IS FINER AND FLATTER THAN ANY BLADE: a 58-cell hash at a third the amplitude, or the grain
     \\  // reads as gravel and a desert floor comes back looking like scree.
-    \\  float g = (id==11) ? (0.88 + 0.20*fspk(p, 58.0, px) + 0.16*f3 + 0.10*f2) : (0.80 + 0.50*blades + 0.20*f3);
+    \\  float g = (id==S_SAND) ? (0.88 + 0.20*fspk(p, 58.0, px) + 0.16*f3 + 0.10*f2) : (0.80 + 0.50*blades + 0.20*f3);
     \\  vec3 s = soilColor(id)*g;
     \\  // THE TWO COVERAGES MULTIPLY, and they answer different questions: the brush's own strength, and how
     \\  // much of this cell's NEIGHBOURHOOD is the same material. `k.z` is how much of the second one the

@@ -176,6 +176,11 @@ pub const Doses = struct {
     pub fn at(self: Doses, a: Ail) f32 {
         return self.v[@intFromEnum(a)];
     }
+    pub fn scaled(self: Doses, k: f32) Doses {
+        var out = self;
+        for (&out.v) |*x| x.* *= k;
+        return out;
+    }
     pub fn any(self: Doses) bool {
         for (self.v) |x| {
             if (x > 0) return true;
@@ -656,10 +661,21 @@ pub fn guardChip(h: Hit, negate: f32) Hit {
     return guardChipSplit(h, negate, negate);
 }
 
+/// A COPY, NOT A FRESH LITERAL (`Hit.scaled`'s rule) — `dose` and the `venom` flag are what carry an ailment, and dropped
+/// they made a board stop a rot, a pyre or a spore slash OUTRIGHT, which `GUARD_NEGATE_CAP` is there to forbid. POISE AND
+/// STANCE ARE THE BOARD'S OWN JOB and stay at zero.
 pub fn guardChipSplit(h: Hit, negate: f32, negateElem: f32) Hit {
     const k = 1.0 - mathx.clampF(negate, 0, 1);
     const ke = 1.0 - mathx.clampF(negateElem, 0, 1);
-    return .{ .dmg = h.dmg * k, .elem = h.elem.scaled(ke), .fp = h.fp * ke };
+    var out = h;
+    out.dmg = h.dmg * k;
+    out.gore = h.gore * k;
+    out.elem = h.elem.scaled(ke);
+    out.dose = h.dose.scaled(ke);
+    out.fp = h.fp * ke;
+    out.poise = 0;
+    out.stance = 0;
+    return out;
 }
 
 
@@ -2584,6 +2600,22 @@ test "poise and stance are the BLOW's, not the body's — an element cannot buy 
     try std.testing.expectEqual(HitResult.light, soak.hit(.{ .poise = 99, .elem = elems(.{ .fire = 50 }) }));
     try std.testing.expect(soak.hp > 80);
     try std.testing.expect(soak.stunned());
+}
+
+test "A BOARD MAY NEVER STOP A BLOW OUTRIGHT — a dose-only spell and a venom slash still build through a raised shield" {
+    const rot = guardChip(ROT_HIT, GUARD_NEGATE);
+    try std.testing.expect(rot.dose.at(.poison) > 0);
+    try std.testing.expectApproxEqAbs(ailBank(.poison).max * (1.0 - GUARD_NEGATE), rot.dose.at(.poison), 1e-3);
+    var soak = Vitals.initFoe(900, 90, 200);
+    _ = soak.hit(rot);
+    try std.testing.expect(soak.ailFrac(.poison) > 0);
+    // A BLOCKED CHAOS BLOW BUILDS LIKE A BLOCKED FIRE ONE: `venom` is a classifier, not a magnitude, so it rides the copy.
+    const spore = guardChip(.{ .dmg = 7, .elem = elems(.{ .chaos = 11 }), .venom = true }, GUARD_NEGATE);
+    try std.testing.expect(spore.venom);
+    var man = Vitals.init(100, 20, 40);
+    _ = man.hit(spore);
+    try std.testing.expect(man.ailFrac(.poison) > 0);
+    std.debug.print("\n  guard: a blocked rot still pours {d:.1} of {d:.0} poison, and a blocked spore slash {d:.4} of the meter\n", .{ rot.dose.at(.poison), ailBank(.poison).max, man.ailFrac(.poison) });
 }
 
 test "the shield eats the WHOLE blow, and the chip meets the resistances on its way through" {

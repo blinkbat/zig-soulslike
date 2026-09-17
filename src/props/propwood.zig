@@ -80,7 +80,7 @@ pub fn rootsInto(b: *Builder, rng: *mathx.Rng, sp: RootSpec) void {
     while (r < sp.n) : (r += 1) {
         const a = std.math.tau * @as(f32, @floatFromInt(r)) / @as(f32, @floatFromInt(@max(sp.n, 1))) + rng.signed() * 0.34;
         const dir = v3(mathx.cosf(a), 0, mathx.sinf(a));
-        const side = v3(-dir.z, 0, dir.x);
+        const side = mathx.perpXZNeg(dir);
         const reach = sp.reach * rng.range(0.82, 1.14);
         const deep = sp.deep * rng.range(0.76, 1.22);
         const heave: f32 = if (r == 1) sp.heave else 0.0;

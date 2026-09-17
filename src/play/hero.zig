@@ -518,7 +518,7 @@ const WAND_SA = @sin(radians(WAND_PITCH));
 const WAND_UC = @cos(radians(WAND_ULNAR));
 const WAND_US = @sin(radians(WAND_ULNAR));
 const WAND_AX = v3(WAND_SA * WAND_US, -WAND_CA, WAND_SA * WAND_UC);
-const WAND_U = mathx.normV(v3(-WAND_AX.z, 0, WAND_AX.x));
+const WAND_U = mathx.normV(mathx.perpXZNeg(WAND_AX));
 const WAND_V = mathx.normV(mathx.crossV(WAND_AX, WAND_U));
 fn wandAt(t: f32) rl.Vector3 {
     return v3(
@@ -1017,16 +1017,21 @@ fn bladeAt(t: f32) rl.Vector3 {
 /// `t` is the fraction of STATURE along the grip axis (`bladeAt`); `r` is the fight capsule, not visible geometry.
 pub const Blade = enum { sword, dagger, club };
 
-const BladeSpec = struct { base: f32, tip: f32, r: f32 };
+const BladeSpec = struct { blade: Blade, base: f32, tip: f32, r: f32 };
 
 const BLADES = [_]BladeSpec{
-    .{ .base = -0.06, .tip = 0.64, .r = BLADE_R }, // sword: 1.15 m past the fist
-    .{ .base = -0.05, .tip = 0.37, .r = 0.25 }, // dagger: 0.67 m
-    .{ .base = -0.06, .tip = 0.80, .r = 0.42 }, // club: 1.44 m
+    .{ .blade = .sword, .base = -0.06, .tip = 0.64, .r = BLADE_R }, // 1.15 m past the fist
+    .{ .blade = .dagger, .base = -0.05, .tip = 0.37, .r = 0.25 }, // 0.67 m
+    .{ .blade = .club, .base = -0.06, .tip = 0.80, .r = 0.42 }, // 1.44 m
 };
 
 comptime {
     if (BLADES.len != @typeInfo(Blade).@"enum".fields.len) @compileError("hero: a Blade has no capsule row");
+    // THE ROW IS NAMED, NOT COUNTED: `bladeSpec` reads it at the blade's ordinal, so a `Blade` inserted above would hand
+    // the sword the dagger's capsule and every reach, trail and spark with it — silently.
+    for (BLADES, 0..) |row, i| {
+        if (@intFromEnum(row.blade) != i) @compileError("hero: BLADES row " ++ @tagName(row.blade) ++ " is out of `Blade` order");
+    }
 }
 
 fn bladeSpec(b: Blade) BladeSpec {
@@ -1065,7 +1070,7 @@ const SWORD_LIGHT = Timing{ .dur = ATK_LIGHT_DUR, .hitA = AL_HIT_A, .hitB = AL_H
 const SWORD_HEAVY = Timing{ .dur = ATK_HEAVY_DUR, .hitA = AH_HIT_A, .hitB = AH_HIT_B, .travelA = AH_STRIKE_A, .travelB = AH_STRIKE_B, .recovA = AH_RECOV_A, .chain = AH_CHAIN, .lunge = AH_LUNGE };
 
 /// Indexed `[Blade][heavy]`. Seconds in the comments below are AFTER the row's dial (dagger 0.78, club 1.34).
-const MOVES = [3][2]Move{
+const MOVES = [@typeInfo(Blade).@"enum".fields.len][2]Move{
     .{
         .{ .stroke = .slash, .t = SWORD_LIGHT },
         .{ .stroke = .chop, .t = SWORD_HEAVY },

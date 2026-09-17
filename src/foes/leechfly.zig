@@ -652,7 +652,7 @@ pub const Leechfly = struct {
 
     fn aimOrbit(self: *Leechfly, hero: rl.Vector3) void {
         const to = mathx.dirXZ(hero, self.pos);
-        self.driftDir = mathx.normV(v3(-to.z * self.orbitSign, 0, to.x * self.orbitSign));
+        self.driftDir = mathx.normV(mathx.scaleV(mathx.perpXZNeg(to), self.orbitSign));
     }
 
     fn enterStun(self: *Leechfly, s: State) void {

@@ -366,11 +366,8 @@ pub const Wight = struct {
                         self.enter(.bough);
                     },
                     .hold, .close => |ch| {
-                        const to = if (ch == .hold) self.home else quarry;
-                        const want = (if (ch == .hold) WALK_SPEED else CHASE_SPEED) * self.haste();
-                        self.faceToward(self.nav.aim(self.pos, to), dt);
-                        self.speed = approach(self.speed, want, ACCEL * dt);
-                        foe.stride(self, dt, bounds, &movedDist, &moveSpeed, &moveYaw);
+                        const lit = self.haste();
+                        foe.chaseOrHold(self, ch == .hold, quarry, dt, bounds, WALK_SPEED * lit, CHASE_SPEED * lit, ACCEL, TURN_RATE * lit, &movedDist, &moveSpeed, &moveYaw);
                         self.state = .walk;
                     },
                 }

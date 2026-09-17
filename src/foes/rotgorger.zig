@@ -326,7 +326,7 @@ pub const Gorger = struct {
                 } else {
                     self.faceToward(self.nav.aim(self.pos, self.mealAt), dt);
                     self.speed = approach(self.speed, FEED_RUSH, ACCEL * dt);
-                    moved = self.travel(dt, bounds);
+                    moved = foe.strideBy(self, dt, bounds);
                 }
             },
             .feed => {
@@ -357,7 +357,7 @@ pub const Gorger = struct {
                         if (foe.postWant(self, dt, sensed, AGGRO_R)) |go| {
                             self.faceToward(self.nav.aim(self.pos, go), dt);
                             self.speed = approach(self.speed, WALK_SPEED, ACCEL * dt);
-                            moved = self.travel(dt, bounds);
+                            moved = foe.strideBy(self, dt, bounds);
                             self.state = .prowl;
                         } else {
                             self.speed = approach(self.speed, 0, ACCEL * dt);
@@ -371,11 +371,8 @@ pub const Gorger = struct {
                         self.enter(.bite);
                     },
                     .hold, .close => |ch| {
-                        const to = if (ch == .hold) self.home else quarry;
-                        const want = if (ch == .hold) WALK_SPEED else CHASE_SPEED;
-                        self.faceToward(self.nav.aim(self.pos, to), dt);
-                        self.speed = approach(self.speed, want, ACCEL * dt);
-                        moved = self.travel(dt, bounds);
+                        foe.chaseAim(self, ch == .hold, quarry, dt, WALK_SPEED, CHASE_SPEED, ACCEL, TURN_RATE);
+                        moved = foe.strideBy(self, dt, bounds);
                         self.state = .prowl;
                     },
                 }
@@ -397,13 +394,6 @@ pub const Gorger = struct {
         }
         self.tryHit(blade);
         return self.heroHit;
-    }
-
-    fn travel(self: *Gorger, dt: f32, bounds: f32) f32 {
-        const step = self.speed * dt;
-        const way = self.nav.along(mathx.headingDir(self.facing));
-        mathx.stepXZ(&self.pos, way, step, bounds);
-        return step;
     }
 
     fn tryBite(self: *Gorger, quarry: rl.Vector3) void {

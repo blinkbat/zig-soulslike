@@ -249,7 +249,7 @@ pub const Routine = struct {
     fn ring(self: *const Routine, c: Ctx, r: f32) rl.Vector3 {
         const out = mathx.dirXZ(c.quarry, c.at);
         const o = if (mathx.lenXZ(out) < 1e-3) mathx.headingDir(c.facing) else out;
-        const tan = v3(o.z * self.side, 0, -o.x * self.side);
+        const tan = mathx.scaleV(mathx.perpXZ(o), self.side);
         const want = v3(c.quarry.x + o.x * r, c.at.y, c.quarry.z + o.z * r);
         return mathx.addV(want, c.nav.along(tan));
     }

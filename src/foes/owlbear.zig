@@ -505,11 +505,7 @@ pub const Owlbear = struct {
                         self.enter(.burst);
                     },
                     .hold, .close => |ch| {
-                        const to = if (ch == .hold) self.home else quarry;
-                        const want = if (ch == .hold) WALK_SPEED else CHASE_SPEED;
-                        self.faceToward(self.nav.aim(self.pos, to), dt);
-                        self.speed = approach(self.speed, want, ACCEL * dt);
-                        foe.stride(self, dt, bounds, &movedDist, &moveSpeed, &moveYaw);
+                        foe.chaseOrHold(self, ch == .hold, quarry, dt, bounds, WALK_SPEED, CHASE_SPEED, ACCEL, TURN_RATE, &movedDist, &moveSpeed, &moveYaw);
                         self.state = .walk;
                     },
                 }

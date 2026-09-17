@@ -959,7 +959,7 @@ fn buildBones() [N]rl.Mesh {
 fn hornInto(b: *Builder, rng: *mathx.Rng, root: rl.Vector3, dir: rl.Vector3, len: f32, r0: f32) void {
     const curl = rng.range(0.10, 0.28);
     const d = mathx.normV(dir);
-    const side = mathx.normV(v3(-d.z, 0, d.x));
+    const side = mathx.normV(mathx.perpXZNeg(d));
     const p1 = mathx.addV(root, mathx.scaleV(d, len * 0.45));
     const p2 = mathx.addV(mathx.addV(root, mathx.scaleV(d, len * 0.85)), mathx.addV(mathx.scaleV(side, curl * len * rng.signed()), v3(0, curl * len, 0)));
     b.addCapsule(root, p1, r0, r0 * 0.72, 7, HORN_DK);

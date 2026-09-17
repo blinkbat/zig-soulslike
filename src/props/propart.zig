@@ -428,7 +428,7 @@ const NICHE_SIDES: i32 = 6;
 pub fn muqarnasInto(bb: *Builder, r: *mathx.Rng, c: rl.Vector3, face: rl.Vector3, w: f32, up: f32, gild: f32, t: Tone) void {
     const th = up / @as(f32, @floatFromInt(MUQ_TIERS));
     const f = mathx.normV(v3(face.x, 0, face.z));
-    const s = v3(-f.z, 0, f.x);
+    const s = mathx.perpXZNeg(f);
     var tier: i32 = 0;
     while (tier < MUQ_TIERS) : (tier += 1) {
         const ft = @as(f32, @floatFromInt(tier));

@@ -85,7 +85,7 @@ pub fn giltLeafMesh(shader: rl.Shader) rl.Model {
         const rise = rng.range(0.012, 0.055);
         const lift = rng.range(0.030, 0.185);
         const u = v3(mathx.cosf(yaw), 0, mathx.sinf(yaw));
-        const w = v3(-u.z, 0, u.x);
+        const w = mathx.perpXZNeg(u);
         const tone = goldTone(&rng);
         b.addBox(
             v3(cx, lift, cz),
@@ -135,7 +135,7 @@ pub fn marbleFloorMesh(shader: rl.Shader) rl.Model {
             const y = rng.range(0.004, 0.048);
             const yaw = rng.signed() * 0.10;
             const u = v3(mathx.cosf(yaw), 0, mathx.sinf(yaw));
-            const w = v3(-u.z, 0, u.x);
+            const w = mathx.perpXZNeg(u);
             b.addBox(
                 v3(cx, y * 0.5, cz),
                 v3(u.x * half, rng.signed() * 0.008, u.z * half),

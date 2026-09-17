@@ -1585,7 +1585,7 @@ pub const Editor = struct {
 
     fn right(self: *const Editor) rl.Vector3 {
         const f = self.forward();
-        return mathx.normV(v3(-f.z, 0, f.x));
+        return mathx.normV(mathx.perpXZNeg(f));
     }
 
     /// The eye rides the LEVEL's floor, not the land's, so you can orbit inside a carve. Clear of the 0.55 m near plane.
@@ -7739,19 +7739,24 @@ fn trigI(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, x: i32, y: i32, w: i32, label: [
 /// `cap` sizes a box rather than stretching it; 0 fills what is left of `w`.
 const ScriptNum = enum { counter_n, elapsed_s, near_r, deaths_n, act_count, act_timer, act_wait };
 
-const SCRIPT_NUMS = [_]struct { name: []const u8, at: i32, gap: i32, cap: i32 = 0 }{
-    .{ .name = "counter n ", .at = 168, .gap = 172 },
-    .{ .name = "elapsed s ", .at = 46, .gap = 50 },
-    .{ .name = "near r    ", .at = 156, .gap = 160 },
-    .{ .name = "deaths n  ", .at = 198, .gap = 202 },
-    .{ .name = "act count ", .at = 218, .gap = 222 },
-    .{ .name = "act timer ", .at = 124, .gap = 128 },
-    .{ .name = "act wait  ", .at = 0, .gap = 0, .cap = 140 },
+const SCRIPT_NUMS = [_]struct { row: ScriptNum, name: []const u8, at: i32, gap: i32, cap: i32 = 0 }{
+    .{ .row = .counter_n, .name = "counter n ", .at = 168, .gap = 172 },
+    .{ .row = .elapsed_s, .name = "elapsed s ", .at = 46, .gap = 50 },
+    .{ .row = .near_r, .name = "near r    ", .at = 156, .gap = 160 },
+    .{ .row = .deaths_n, .name = "deaths n  ", .at = 198, .gap = 202 },
+    .{ .row = .act_count, .name = "act count ", .at = 218, .gap = 222 },
+    .{ .row = .act_timer, .name = "act timer ", .at = 124, .gap = 128 },
+    .{ .row = .act_wait, .name = "act wait  ", .at = 0, .gap = 0, .cap = 140 },
 };
 
 comptime {
     if (SCRIPT_NUMS.len != @typeInfo(ScriptNum).@"enum".fields.len)
         @compileError("editor: SCRIPT_NUMS and ScriptNum disagree on how many numeric rows the script modal has");
+    // …AND NAMED, NOT COUNTED: `numAt`/`numW` read the row at the tag's ordinal, so a row inserted in the middle puts
+    // every later field at its neighbour's x and the length check still passes.
+    for (SCRIPT_NUMS, 0..) |r, i| {
+        if (@intFromEnum(r.row) != i) @compileError("editor: the " ++ @tagName(r.row) ++ " script row is out of `ScriptNum` order");
+    }
 }
 
 fn numAt(n: ScriptNum) i32 {

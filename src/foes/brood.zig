@@ -594,7 +594,7 @@ fn bladeMesh(sk: Skin, side: f32) rl.Mesh {
     var rings: [5][8]rl.Vector3 = undefined;
     for (points, 0..) |p, i| {
         const d = mathx.normV(mathx.subV(points[@min(i + 1, 4)], points[if (i == 0) 0 else i - 1]));
-        const across = mathx.normV(v3(-d.z, 0, d.x));
+        const across = mathx.normV(mathx.perpXZNeg(d));
         for (0..8) |j| {
             const angle = std.math.tau * @as(f32, @floatFromInt(j)) / 8;
             rings[i][j] = mathx.addV(p, mathx.addV(mathx.scaleV(across, 0.0275 * sk.clawLen * mathx.cosf(angle)), v3(0, depths[i] * sk.clawLen * mathx.sinf(angle), 0)));

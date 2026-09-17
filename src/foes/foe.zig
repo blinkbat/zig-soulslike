@@ -2325,7 +2325,7 @@ fn drawPass(pool: []const Particle, order: []const Ordered) void {
         if (q.landed) {
             const s = rad * q.splat;
             const x = v3(mathx.cosf(q.seed) * s, 0, mathx.sinf(q.seed) * s);
-            const z = v3(-x.z * 0.72, 0, x.x * 0.72);
+            const z = mathx.scaleV(mathx.perpXZNeg(x), 0.72);
             const p = mathx.addV(q.p, v3(0, 0.008, 0));
             particleart.quad(style, q.seed, .{ mathx.subV(mathx.subV(p, x), z), mathx.subV(mathx.addV(p, x), z),
                 mathx.addV(mathx.addV(p, x), z), mathx.addV(mathx.subV(p, x), z) });
@@ -2645,6 +2645,42 @@ pub fn stride(self: anytype, dt: f32, bounds: f32, movedDist: *f32, moveSpeed: *
     movedDist.* = moved;
     moveSpeed.* = self.speed;
     moveYaw.* = mathx.headingXZ(way);
+}
+
+/// `stride`'s MOVER ALONE, for a body whose gait is not `advanceGait`'s three out-params: steers by `Nav.along`, steps down the
+/// facing, and hands back the metres covered for whatever phase the creature drives off.
+pub fn strideBy(self: anytype, dt: f32, bounds: f32) f32 {
+    const moved = self.speed * dt;
+    mathx.stepXZ(&self.pos, self.nav.along(mathx.headingDir(self.facing)), moved, bounds);
+    return moved;
+}
+
+/// A ROUTINE'S TWO TRAVEL ARMS WITHOUT THE MOVER, which is the half six bodies share while their gaits do not: `holding` ambles
+/// back to the anchor at `walk`, otherwise it runs the quarry down at `chase`. The anchor is `tetherFor`, never the spawn pin,
+/// so an order that lets a body wander cannot be dragged home by this.
+pub fn chaseAim(self: anytype, holding: bool, quarry: rl.Vector3, dt: f32, walk: f32, chase: f32, accel: f32, turn: f32) void {
+    const to = if (holding) tetherFor(self) else quarry;
+    faceToward(self.pos, &self.facing, self.nav.aim(self.pos, to), turn, dt);
+    self.speed = mathx.approach(self.speed, if (holding) walk else chase, accel * dt);
+}
+
+/// `chaseAim` and then `stride`, for the five bodies that walk on `advanceGait`.
+pub fn chaseOrHold(
+    self: anytype,
+    holding: bool,
+    quarry: rl.Vector3,
+    dt: f32,
+    bounds: f32,
+    walk: f32,
+    chase: f32,
+    accel: f32,
+    turn: f32,
+    movedDist: *f32,
+    moveSpeed: *f32,
+    moveYaw: *?f32,
+) void {
+    chaseAim(self, holding, quarry, dt, walk, chase, accel, turn);
+    stride(self, dt, bounds, movedDist, moveSpeed, moveYaw);
 }
 
 pub fn postWant(self: anytype, dt: f32, sensed: f32, aggroR: f32) ?rl.Vector3 {

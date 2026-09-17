@@ -4801,7 +4801,7 @@ fn campfireShots(g: *Game) void {
     g.hero.pose();
     shootPortrait(g, DIR ++ "/114_campfires.png", v3(cx, gy + 0.5, cz), LIT_YAW, 0.16, 6.4);
     shootPortrait(g, DIR ++ "/114b_campfire_dead.png", v3(cx - 1.8, gy + 0.30, cz), LIT_YAW, 0.20, 2.6);
-    const right = v3(-LIT_BACK.z, 0, LIT_BACK.x);
+    const right = mathx.perpXZNeg(LIT_BACK);
     const hx = cx + 1.8 + right.x * 1.7;
     const hz = cz + right.z * 1.7;
     standHero(g, hx, hz, mathx.headingXZ(v3(cx + 1.8 - hx, 0, cz - hz)));
@@ -4867,7 +4867,7 @@ fn chestShots(g: *Game) void {
     g.bag = .{};
 
     const gy = mathx.ground(cx, cz).y;
-    const right = v3(-LIT_BACK.z, 0, LIT_BACK.x);
+    const right = mathx.perpXZNeg(LIT_BACK);
     const hx = cx + right.x * 1.8;
     const hz = cz + right.z * 1.8;
     const aim = v3(cx, gy + 0.55, cz);

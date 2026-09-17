@@ -104,6 +104,13 @@ pub fn perpXZ(f: rl.Vector3) rl.Vector3 {
     return v3(f.z, 0, -f.x);
 }
 
+/// THE OTHER QUARTER TURN, `-perpXZ`: +Z answers -X where `perpXZ` answers +X. Written down because the two read identically at
+/// a glance and only the sign says which side of `f` the answer is on — thirteen sites had it spelled out, and `shots` took both
+/// sides off one `LIT_BACK` two different ways.
+pub fn perpXZNeg(f: rl.Vector3) rl.Vector3 {
+    return v3(-f.z, 0, f.x);
+}
+
 pub fn headingDir(yaw: f32) rl.Vector3 {
     return v3(sinf(yaw), 0, cosf(yaw));
 }

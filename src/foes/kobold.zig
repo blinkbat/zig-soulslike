@@ -116,6 +116,7 @@ const A_PROT = 4.6;
 pub const Role = enum { berserker, priest, slinger };
 
 const Spec = struct {
+    role: Role,
     hp: f32,
     poise: f32,
     stance: f32,
@@ -128,9 +129,9 @@ const Spec = struct {
 };
 
 const SPEC = [_]Spec{
-    .{ .hp = 76, .poise = 11, .stance = 34, .speed = 1.22, .bodyR = 0.40, .hurtR = 0.60, .souls = 120, .wantMin = 0.0, .wantMax = 1.5 },
-    .{ .hp = 54, .poise = 10, .stance = 24, .speed = 0.86, .bodyR = 0.38, .hurtR = 0.58, .souls = 210, .wantMin = 7.5, .wantMax = 12.0 },
-    .{ .hp = 62, .poise = 12, .stance = 28, .speed = 1.0, .bodyR = 0.38, .hurtR = 0.58, .souls = 140, .wantMin = 5.0, .wantMax = 10.5 },
+    .{ .role = .berserker, .hp = 76, .poise = 11, .stance = 34, .speed = 1.22, .bodyR = 0.40, .hurtR = 0.60, .souls = 120, .wantMin = 0.0, .wantMax = 1.5 },
+    .{ .role = .priest, .hp = 54, .poise = 10, .stance = 24, .speed = 0.86, .bodyR = 0.38, .hurtR = 0.58, .souls = 210, .wantMin = 7.5, .wantMax = 12.0 },
+    .{ .role = .slinger, .hp = 62, .poise = 12, .stance = 28, .speed = 1.0, .bodyR = 0.38, .hurtR = 0.58, .souls = 140, .wantMin = 5.0, .wantMax = 10.5 },
 };
 
 fn spec(r: Role) *const Spec {
@@ -139,6 +140,10 @@ fn spec(r: Role) *const Spec {
 
 comptime {
     if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("kobold: a Role with no spec row");
+    // Named, not counted: `spec()` reads the row at the role's ordinal, so a `Role` inserted above slides every stat.
+    for (SPEC, 0..) |s, i| {
+        if (@intFromEnum(s.role) != i) @compileError("kobold: the " ++ @tagName(s.role) ++ " spec row is out of `Role` order");
+    }
     foe.pinRun("kobold", Role, .berserker, 0);
 }
 

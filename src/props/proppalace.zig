@@ -130,7 +130,7 @@ fn grecaInto(b: *Builder, r: *mathx.Rng, a: rl.Vector3, c: rl.Vector3, face: rl.
 fn ziaInto(b: *Builder, r: *mathx.Rng, c: rl.Vector3, face: rl.Vector3, radius: f32, out: f32) void {
     const t = SUN;
     const f = mathx.normV(v3(face.x, 0, face.z));
-    const s = v3(-f.z, 0, f.x);
+    const s = mathx.perpXZNeg(f);
     const put = struct {
         fn at(cc: rl.Vector3, sv: rl.Vector3, across: f32, rise: f32, fv: rl.Vector3, o: f32) rl.Vector3 {
             return v3(cc.x + sv.x * across + fv.x * o, cc.y + rise, cc.z + sv.z * across + fv.z * o);
@@ -267,7 +267,7 @@ fn glyphBandInto(b: *Builder, r: *mathx.Rng, a: rl.Vector3, c: rl.Vector3, face:
 /// A PIERCED SCREEN; `hw`/`hh` are half-extents in the (across, up) plane.
 fn jaliInto(b: *Builder, r: *mathx.Rng, c: rl.Vector3, face: rl.Vector3, hw: f32, hh: f32, thick: f32, pitch: f32) void {
     const f = mathx.normV(v3(face.x, 0, face.z));
-    const s = v3(-f.z, 0, f.x);
+    const s = mathx.perpXZNeg(f);
     const bar = thick * 0.34;
     b.setMat(.stone);
     for ([_]f32{ 45.0, -45.0 }) |deg| {

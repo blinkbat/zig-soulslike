@@ -4272,7 +4272,7 @@ fn restCamera(g: *Game) void {
     g.rig.cam.target = v3(s.pos.x + axis.x * 0.90, s.pos.y + 0.60, s.pos.z + axis.z * 0.90);
     g.rig.cam.up = v3(0, 1, 0);
     const fwd = mathx.subV(g.rig.cam.target, g.rig.cam.position);
-    const right = mathx.normV(v3(-fwd.z, 0, fwd.x));
+    const right = mathx.normV(mathx.perpXZNeg(fwd));
     const shove = mathx.scaleV(right, -REST_PAN);
     g.rig.cam.position = mathx.addV(g.rig.cam.position, shove);
     g.rig.cam.target = mathx.addV(g.rig.cam.target, shove);

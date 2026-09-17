@@ -230,11 +230,13 @@ fn spellSet(r: usize, c: usize, v: f32) void {
     }
 }
 
+// THE THREE FLOORS ARE `AILS_BANK`'S OWN COMPTIME LAW, WHICH THE BENCH IS THE ONE DOOR PAST: `max` and `dur` are divisors
+// (`combat.Status.frac`, `Status.tick`), and at 0 the meter reads NaN while `meter >= max` procs every frame, saved into `tuning.cfg`.
 const AIL_COLS = [_]Col{
-    .{ .name = "max", .hi = 300, .step = 1, .tip = "The meter's own size - what a full bar is worth in buildup" },
-    .{ .name = "decay", .hi = 120, .step = 0.5, .tip = "Meter a second it empties at once nothing is filling it" },
+    .{ .name = "max", .lo = 1, .hi = 300, .step = 1, .tip = "The meter's own size - what a full bar is worth in buildup" },
+    .{ .name = "decay", .lo = 0.5, .hi = 120, .step = 0.5, .tip = "Meter a second it empties at once nothing is filling it" },
     .{ .name = "delay", .hi = 6, .step = 0.1, .tip = "Seconds after the last dose before it starts emptying" },
-    .{ .name = "dur", .hi = 30, .step = 0.2, .tip = "Seconds the proc runs for" },
+    .{ .name = "dur", .lo = 0.2, .hi = 30, .step = 0.2, .tip = "Seconds the proc runs for" },
     .{ .name = "hpFrac", .hi = 1.0, .step = 0.01, .tip = "Share of max HP the whole clock bleeds" },
     .{ .name = "flat", .hi = 300, .step = 1, .tip = "A burst's flat payout, which no armour and no column answers" },
 };

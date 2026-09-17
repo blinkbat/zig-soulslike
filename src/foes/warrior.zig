@@ -215,6 +215,7 @@ const MOVES_GREATSWORD_BANK = [_]Attack{ SLAM, LUNGE, SWEEP };
 const PARRY_LEAD = foe.PARRY_LEAD;
 
 const Spec = struct {
+    role: Role,
     hp: f32,
     poise: f32,
     stance: f32,
@@ -230,8 +231,8 @@ pub var MOVES_GREATSWORD = MOVES_GREATSWORD_BANK;
 pub var MOVES_SHIELDMAN = MOVES_SHIELDMAN_BANK;
 
 const SPEC = [_]Spec{
-    .{ .hp = 92, .poise = 15, .stance = 42, .speed = 0.86, .bodyR = 0.36, .hurtR = 0.44, .souls = 180, .moves = &MOVES_SHIELDMAN },
-    .{ .hp = 124, .poise = 26, .stance = 58, .speed = 0.74, .bodyR = 0.38, .hurtR = 0.46, .souls = 280, .moves = &MOVES_GREATSWORD },
+    .{ .role = .shieldman, .hp = 92, .poise = 15, .stance = 42, .speed = 0.86, .bodyR = 0.36, .hurtR = 0.44, .souls = 180, .moves = &MOVES_SHIELDMAN },
+    .{ .role = .greatsword, .hp = 124, .poise = 26, .stance = 58, .speed = 0.74, .bodyR = 0.38, .hurtR = 0.46, .souls = 280, .moves = &MOVES_GREATSWORD },
 };
 
 fn spec(r: Role) *const Spec {
@@ -240,7 +241,11 @@ fn spec(r: Role) *const Spec {
 
 comptime {
     std.debug.assert(SPEC.len == @typeInfo(Role).@"enum".fields.len);
-    for (SPEC) |s| std.debug.assert(s.moves.len > 0);
+    // Named, not counted — `KIT`'s rule, and `spec()` reads this one at the same ordinal.
+    for (SPEC, 0..) |s, i| {
+        if (@intFromEnum(s.role) != i) @compileError("warrior: the " ++ @tagName(s.role) ++ " spec row is out of `Role` order");
+        std.debug.assert(s.moves.len > 0);
+    }
 }
 
 const MAX_MOVES = blk: {
@@ -424,15 +429,15 @@ pub const Model = struct {
 
     pub fn init(shader: rl.Shader) Model {
         const mat = gfx.material(shader, "warrior");
-        // ROWS ARE ADDRESSED BY THE ROLE, NOT BY AN ORDINAL: `draw` reads them at `@intFromEnum(w.role)`, so a third
-        // role inserted above leaves every row one role out and its own slot `undefined`, drawn as a stray mesh.
-        const SHIELDMAN = @intFromEnum(Role.shieldman);
-        const GREATSWORD = @intFromEnum(Role.greatsword);
+        // ROWS ARE ADDRESSED BY THE ROLE AND FILLED OFF `KIT`, so a third role is a compile error at the switch rather
+        // than an `undefined` slot drawn as a stray mesh — `draw` reads them at `@intFromEnum(w.role)`.
         var kit: [SPEC.len]rl.Mesh = undefined;
-        kit[SHIELDMAN] = maceMesh();
-        kit[GREATSWORD] = greatswordMesh();
+        inline for (KIT) |row| kit[@intFromEnum(row.role)] = switch (row.role) {
+            .shieldman => maceMesh(),
+            .greatsword => greatswordMesh(),
+        };
         var bone = archermod.bareSkeleton();
-        bone[WPN] = kit[SHIELDMAN];
+        bone[WPN] = kit[@intFromEnum(Role.shieldman)];
         return .{ .bone = bone, .kit = kit, .shield = shieldMesh(), .mat = mat };
     }
     pub fn setShader(self: *Model, sh: rl.Shader) void {

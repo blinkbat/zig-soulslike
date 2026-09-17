@@ -2215,12 +2215,11 @@ pub const LIQUID_TONES = [gfx.LIQUID_N * 3]rl.Vector3{
     mathx.colVec(art.LAVA_SHALLOW),   mathx.colVec(art.LAVA_MID),   mathx.colVec(art.LAVA_DEEP),
 };
 
-/// The ground "too bright" is measured against. Pinned to the GLSL so the two cannot part company.
-const BLOOM_GROUND = [3]f32{ 0.115 * 255.0, 0.055 * 255.0, 0.070 * 255.0 };
-comptime {
-    if (std.mem.indexOf(u8, @import("../gfx/shaders.zig").sceneFS, "vec3(0.115, 0.055, 0.070)") == null)
-        @compileError("props: the fungal bloom's ground tone moved — BLOOM_GROUND is stale");
-}
+/// The ground "too bright" is measured against, READ off the row the shader's own palette is generated from, so the two cannot part company.
+const BLOOM_GROUND = blk: {
+    const rgb = @import("../gfx/shaders.zig").SOIL_TONE[@intFromEnum(wf.Soil.bloom) - 1].rgb;
+    break :blk [3]f32{ rgb[0] * 255.0, rgb[1] * 255.0, rgb[2] * 255.0 };
+};
 
 test "ONLY LAVA IS A LIGHT — no other pool may come back off the top of the screen" {
     for (LIQUID_TONES[0 .. 3 * 3]) |tone| {

@@ -726,7 +726,7 @@ pub const Shade = struct {
             self.driftDir = mathx.headingDir(self.facing);
             return;
         }
-        const tangent = v3(-out.z * self.orbitSign, 0, out.x * self.orbitSign);
+        const tangent = mathx.scaleV(mathx.perpXZNeg(out), self.orbitSign);
         const err = mathx.distXZ(self.pos, hero) - CIRCLE_BAND;
         const pull = mathx.clampF(-err * 0.6, -1, 1);
         self.driftDir = mathx.normV(v3(tangent.x + out.x * pull, 0, tangent.z + out.z * pull));

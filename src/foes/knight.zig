@@ -2006,7 +2006,7 @@ pub const Knight = struct {
                     const u = mathx.clampF((self.t - t0) / HOP.airDur, 0, 1);
                     const want = HOP.dist * self.scale * mathx.smoothstep(0, 1, u);
                     const f = self.fdir();
-                    mathx.stepXZ(&self.pos, v3(f.z * self.hopSide, 0, -f.x * self.hopSide), want - self.strokeDone, bounds);
+                    mathx.stepXZ(&self.pos, mathx.scaleV(mathx.perpXZ(f), self.hopSide), want - self.strokeDone, bounds);
                     self.strokeDone = want;
                 }
                 if (!self.dealt and self.t >= t1) {
@@ -2282,7 +2282,7 @@ pub const Knight = struct {
                 moveSpeed = mathx.maxF(moveSpeed, arc / mathx.maxF(dt, 1e-4));
                 const f = self.fdir();
                 const sign: f32 = if (dyaw > 0) 1.0 else -1.0;
-                moveYaw = mathx.headingXZ(v3(f.z * sign, 0, -f.x * sign));
+                moveYaw = mathx.headingXZ(mathx.scaleV(mathx.perpXZ(f), sign));
             }
         }
 
@@ -4181,7 +4181,7 @@ fn shieldMesh() rl.Mesh {
         const mid = (SH_TOP - SH_BOT) * 0.5;
         b.addBox(
             arcAt(am, mid, -SH_THICK * 0.55),
-            v3(n.z * halfW, 0, -n.x * halfW),
+            mathx.scaleV(mathx.perpXZ(n), halfW),
             v3(0, (SH_TOP + SH_BOT) * 0.5 * 0.97, 0),
             v3(n.x * SH_THICK * 0.30, 0, n.z * SH_THICK * 0.30),
             IRON_DK,
@@ -4204,7 +4204,7 @@ fn shieldMesh() rl.Mesh {
         const proud = (if (i % 2 == 0) SH_STAVE_PROUD else 0.0) + rng.range(-0.003, 0.004) * H;
         b.addBox(
             arcAt(am, mid, proud),
-            v3(n.z * halfW, 0, -n.x * halfW),
+            mathx.scaleV(mathx.perpXZ(n), halfW),
             v3(0, halfH, 0),
             v3(n.x * SH_THICK * 0.5, 0, n.z * SH_THICK * 0.5),
             shade(SH_FIELD, rng.range(-6.0, 6.0)),
@@ -4212,7 +4212,7 @@ fn shieldMesh() rl.Mesh {
         if (i == 6) {
             b.addBox(
                 arcAt(am + (a1 - a0) * 0.34, foot + (top - foot) * 0.30, proud + 0.006 * H),
-                v3(n.z * halfW * 0.42, 0, -n.x * halfW * 0.42),
+                mathx.scaleV(mathx.perpXZ(n), halfW * 0.42),
                 v3(0, (top - foot) * 0.11, 0),
                 v3(n.x * SH_THICK * 0.34, 0, n.z * SH_THICK * 0.34),
                 SOCKET,
@@ -4227,7 +4227,7 @@ fn shieldMesh() rl.Mesh {
             const n = v3(@sin(am), 0, @cos(am));
             b.addBox(
                 arcAt(am, ty * H + rng.range(-0.004, 0.004) * H, SH_STAVE_PROUD + 0.014 * H),
-                v3(n.z * halfW, 0, -n.x * halfW),
+                mathx.scaleV(mathx.perpXZ(n), halfW),
                 v3(0, rng.range(0.026, 0.034) * H, 0),
                 v3(n.x * 0.014 * H, 0, n.z * 0.014 * H),
                 SH_BAND,

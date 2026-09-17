@@ -97,6 +97,7 @@ const ROBE_DK = rgba(10, 14, 19, 255);
 pub const Role = enum { spearman, netter, shaman };
 
 const Spec = struct {
+    role: Role,
     hp: f32,
     poise: f32,
     stance: f32,
@@ -111,9 +112,9 @@ const Spec = struct {
 };
 
 const SPEC = [_]Spec{
-    .{ .hp = 168, .poise = 24, .stance = 44, .speed = 1.34, .bodyR = 0.47, .hurtR = 0.71, .souls = 215, .wantMin = 0.0, .wantMax = 2.8, .size = 1.16, .rolls = true },
-    .{ .hp = 126, .poise = 16, .stance = 34, .speed = 1.48, .bodyR = 0.45, .hurtR = 0.68, .souls = 240, .wantMin = 4.8, .wantMax = 8.5, .size = 1.12, .rolls = true },
-    .{ .hp = 106, .poise = 14, .stance = 30, .speed = 0.88, .bodyR = 0.60, .hurtR = 0.82, .souls = 365, .wantMin = 8.0, .wantMax = 13.0, .size = 1.00, .rolls = false },
+    .{ .role = .spearman, .hp = 168, .poise = 24, .stance = 44, .speed = 1.34, .bodyR = 0.47, .hurtR = 0.71, .souls = 215, .wantMin = 0.0, .wantMax = 2.8, .size = 1.16, .rolls = true },
+    .{ .role = .netter, .hp = 126, .poise = 16, .stance = 34, .speed = 1.48, .bodyR = 0.45, .hurtR = 0.68, .souls = 240, .wantMin = 4.8, .wantMax = 8.5, .size = 1.12, .rolls = true },
+    .{ .role = .shaman, .hp = 106, .poise = 14, .stance = 30, .speed = 0.88, .bodyR = 0.60, .hurtR = 0.82, .souls = 365, .wantMin = 8.0, .wantMax = 13.0, .size = 1.00, .rolls = false },
 };
 
 fn spec(r: Role) *const Spec {
@@ -122,6 +123,10 @@ fn spec(r: Role) *const Spec {
 
 comptime {
     if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("fishman: a Role with no spec row");
+    // NAMED, NOT COUNTED: `spec()` reads the row at the role's ordinal, so a `Role` inserted above slides every stat one body over.
+    for (SPEC, 0..) |s, i| {
+        if (@intFromEnum(s.role) != i) @compileError("fishman: the " ++ @tagName(s.role) ++ " spec row is out of `Role` order");
+    }
     foe.pinRun("fishman", Role, .fish_spearman, "fish_".len);
     // Read through `spec` and not by ordinal: the run above pins the ORDER, and a bare `SPEC[2]` names no role.
     std.debug.assert(spec(.shaman).souls > spec(.spearman).souls and spec(.shaman).hp < spec(.spearman).hp);

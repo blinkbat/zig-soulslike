@@ -1192,7 +1192,6 @@ pub const Editor = struct {
     slotLabels: [MAX_SLOT_ROWS][wf.ID_CAP]u8 = undefined,
     trigNameBuf: [wf.ID_CAP]u8 = [_]u8{0} ** wf.ID_CAP,
     trigNameLen: usize = 0,
-    trigScroll: i32 = 0,
     lineBuf: [96]u8 = [_]u8{0} ** 96,
     lineLen: usize = 0,
     arenaNameBuf: [wf.NAME_CAP]u8 = [_]u8{0} ** wf.NAME_CAP,

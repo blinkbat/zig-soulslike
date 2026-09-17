@@ -140,6 +140,15 @@ pub fn kindInRun(comptime Role: type, first: wf.FoeKind, r: Role) wf.FoeKind {
     return @enumFromInt(@intFromEnum(first) + @intFromEnum(r));
 }
 
+/// NAMED, NOT COUNTED: a `spec()` reads its row at the role's own ordinal, so a `Role` inserted above slides every stat one body
+/// over. Each row writes its `role` down and this walks them; three warbands carried the same loop.
+pub fn pinSpecOrder(comptime who: []const u8, comptime Role: type, comptime SPEC: anytype) void {
+    if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError(who ++ ": a " ++ @typeName(Role) ++ " with no spec row");
+    for (SPEC, 0..) |s, i| {
+        if (@intFromEnum(s.role) != i) @compileError(who ++ ": the " ++ @tagName(s.role) ++ " spec row is out of `" ++ @typeName(Role) ++ "` order");
+    }
+}
+
 /// **AND THE RUN IS PINNED WHERE IT IS WALKED** — the same offset arithmetic at comptime, so a kind INSERTED into `wf.FoeKind` is a compile error
 /// rather than a warband whose roles have slid one along. `trim` is the prefix the KIND names carry and the role names do not (the shoal's `fish_`).
 pub fn pinRun(comptime who: []const u8, comptime Role: type, comptime first: wf.FoeKind, comptime trim: usize) void {
@@ -831,6 +840,19 @@ pub fn bodyPoint(pos: rl.Vector3, h: f32, scale: f32, lift: f32) rl.Vector3 {
 /// `at` is in the BONE's own frame, which already carries the rig's scale, the facing and `pos`; every `spawn` poses before it returns, so the matrix is never undefined.
 pub fn markOn(bone: rl.Matrix, at: rl.Vector3) rl.Vector3 {
     return rl.math.vector3Transform(at, bone);
+}
+
+/// THE POINT BESIDE A BODY'S OWN FEET — `off` metres along `mathx.perpXZNeg(facing)`, lifted off the stand. Four footfall and
+/// plant bursts spelled the quarter turn out by hand; a sign flipped in one of them mirrors that creature's dust and nothing else.
+pub fn asidePoint(base: rl.Vector3, facing: rl.Vector3, off: f32, lift: f32) rl.Vector3 {
+    const n = mathx.perpXZNeg(facing);
+    return v3(base.x + n.x * off, base.y + lift, base.z + n.z * off);
+}
+
+/// ONE FOOTFALL: `advanceGait` only ever advances `phase` and wraps it at 1, so a half-cycle boundary is a change of
+/// `floor(phase * 2)` — 0.5 and the wrap past 0 in one test. Written two different ways across four bodies.
+pub fn halfCycleCrossed(prev: f32, phase: f32) bool {
+    return @floor(phase * 2.0) != @floor(prev * 2.0);
 }
 
 /// A BODY'S POSE CHANNELS GATHERED INTO THE FLAT ARRAY `SpringBank.chase` WANTS, and scattered back. Kept as a PAIR here

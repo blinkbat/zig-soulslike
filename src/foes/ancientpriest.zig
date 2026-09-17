@@ -668,18 +668,7 @@ pub const Ancient = struct {
         const from = self.muzzleWorld();
         var aim = self.fdir();
         aim.y = -0.22; // …and it goes DOWNHILL: cold falls (`elemfx`'s signature), and a cone aimed level misses his legs
-        elemfx.pour(
-            &self.parts,
-            &self.fxHead,
-            &self.fxRng,
-            from,
-            mathx.normV(aim),
-            .cold,
-            owed,
-            mathx.radians(BREATH_ARC),
-            self.breathReach(),
-            self.scale,
-        );
+        elemfx.ownPour(self, from, mathx.normV(aim), .cold, owed, mathx.radians(BREATH_ARC), self.breathReach(), self.scale);
     }
 
     pub fn drawFx(self: *const Ancient) void {

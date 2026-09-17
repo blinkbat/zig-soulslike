@@ -153,6 +153,8 @@ pub const Hit = struct {
     }
 
     /// THE MAGNITUDES SCALE AND THE REST RIDES ALONG — written as a COPY, not a fresh literal, so a field added to `Hit` comes through a scaled blow.
+    /// **`dose` IS NOT ONE OF THEM ON PURPOSE**: an arm's venom (`hero.weigh`, `item.Arm.venom`) is an absolute per-stroke build and
+    /// does not ride the damage dial or the skill. `guardChipSplit` DOES scale it, because a board negating a blow negates its ailment too.
     pub fn scaled(self: Hit, k: f32) Hit {
         var out = self;
         out.dmg *= k;

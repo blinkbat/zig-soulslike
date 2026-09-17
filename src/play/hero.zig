@@ -870,17 +870,19 @@ pub const TIER_MAX: u8 = 10;
 /// FLAT damage added BEFORE `row.dmg`, the skill curve and the perks. 1.3 a tier against `ATK_LIGHT_HIT`'s 13 and `ATK_HEAVY_HIT`'s 27.
 pub var TIER_FLAT: f32 = 1.3;
 
+/// A COPY, NOT A FRESH LITERAL (`Hit.scaled`'s rule) — `gore` and `launch` are bench columns on `ATK_LIGHT_HIT`/`ATK_HEAVY_HIT`
+/// (`tune.BLOW_COLS`), and a literal dropped both, so those two dials moved nothing. The `dose` is the ARM's venom and replaces
+/// whatever the move carried.
 pub fn weigh(h: combat.Hit, row: item.Arm, sheet: statsmod.Sheet, tier: u8) combat.Hit {
     const skill = scaleOf(sheet, row.scales);
     const base = h.dmg + TIER_FLAT * @as(f32, @floatFromInt(@min(tier, TIER_MAX)));
-    return .{
-        .dmg = base * row.dmg * skill,
-        .poise = h.poise * row.poise,
-        .stance = h.stance * row.poise,
-        .elem = h.elem.scaled(row.dmg * skill),
-        .fp = h.fp,
-        .dose = combat.Doses.one(.poison, row.venom),
-    };
+    var out = h;
+    out.dmg = base * row.dmg * skill;
+    out.poise = h.poise * row.poise;
+    out.stance = h.stance * row.poise;
+    out.elem = h.elem.scaled(row.dmg * skill);
+    out.dose = combat.Doses.one(.poison, row.venom);
+    return out;
 }
 
 const HURT_LEAN = 40.0;
@@ -5415,6 +5417,22 @@ test "AN EMPTY QUIVER REFUSES THE SHOT, and it does not bill him for the one tha
     try std.testing.expectApproxEqAbs(stamBefore, h.stam.cur, 1e-5);
     h.respawnNow();
     try std.testing.expectEqual(@as(u8, 0), h.quiver.ready());
+}
+
+test "A BENCH COLUMN THE SWING DOES NOT CARRY IS A DEAD DIAL — `gore` and `launch` ride `weigh`" {
+    const row = armRow(Worn{}, .hand_sword);
+    const sheet = statsmod.Sheet{};
+    var dialled = ATK_HEAVY_HIT;
+    dialled.gore = 17;
+    dialled.launch = 2.5;
+    const out = weigh(dialled, row, sheet, 0);
+    try std.testing.expectApproxEqAbs(@as(f32, 17), out.gore, 1e-5);
+    try std.testing.expectApproxEqAbs(@as(f32, 2.5), out.launch, 1e-5);
+    // Untouched, the bench changes nothing: the authored blow weighs exactly as it always did.
+    const plain = weigh(ATK_HEAVY_HIT, row, sheet, 0);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), plain.gore, 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), plain.launch, 1e-6);
+    std.debug.print("\n  bench: a {d:.0} gore, {d:.1} m launch heavy swing weighs {d:.1} raw against the plain {d:.1}\n", .{ out.gore, out.launch, out.raw(), plain.raw() });
 }
 
 test "THE FIRE ARROW ADDS FIRE and takes nothing off the shaft's own physical" {

@@ -240,12 +240,8 @@ fn spec(r: Role) *const Spec {
 }
 
 comptime {
-    std.debug.assert(SPEC.len == @typeInfo(Role).@"enum".fields.len);
-    // Named, not counted — `KIT`'s rule, and `spec()` reads this one at the same ordinal.
-    for (SPEC, 0..) |s, i| {
-        if (@intFromEnum(s.role) != i) @compileError("warrior: the " ++ @tagName(s.role) ++ " spec row is out of `Role` order");
-        std.debug.assert(s.moves.len > 0);
-    }
+    foe.pinSpecOrder("warrior", Role, SPEC);
+    for (SPEC) |s| std.debug.assert(s.moves.len > 0);
 }
 
 const MAX_MOVES = blk: {
@@ -1681,9 +1677,10 @@ pub const Warrior = struct {
             self.prevPhase = self.phase;
             return;
         }
-        const crossed = @floor(self.phase * 2.0) != @floor(self.prevPhase * 2.0);
+        const crossed = foe.halfCycleCrossed(self.prevPhase, self.phase);
         self.prevPhase = self.phase;
         if (!crossed) return;
+        // The other quarter turn to every other body's footfall, so his dust falls on the far side; kept as authored.
         const side = mathx.perpXZ(self.fdir());
         const s: f32 = if (@mod(@floor(self.phase * 2.0), 2.0) == 0) 1.0 else -1.0;
         const at = v3(self.pos.x + side.x * 0.16 * s * self.scale, self.pos.y, self.pos.z + side.z * 0.16 * s * self.scale);

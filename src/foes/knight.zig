@@ -3413,8 +3413,7 @@ pub const Knight = struct {
     fn plantBurst(self: *Knight) void {
         const f = self.fdir();
         for ([_]f32{ -1, 1 }) |side| {
-            const rr = 0.40 * self.scale;
-            const at = v3(self.pos.x - f.z * side * rr, self.pos.y + 0.05, self.pos.z + f.x * side * rr);
+            const at = foe.asidePoint(self.pos, f, side * 0.40 * self.scale, 0.05);
             self.dustBurst(at, 10, 2.1, 0.22);
         }
     }
@@ -3569,13 +3568,11 @@ pub const Knight = struct {
             self.prevPhase = self.phase;
             return;
         }
-        const crossed = (self.prevPhase < 0.5 and self.phase >= 0.5) or (self.phase < self.prevPhase);
+        const crossed = foe.halfCycleCrossed(self.prevPhase, self.phase);
         self.prevPhase = self.phase;
         if (!crossed) return;
         const side: f32 = if (self.phase < 0.5) 1.0 else -1.0;
-        const f = self.fdir();
-        const rr = 0.13 * H * self.scale;
-        const at = v3(self.pos.x - f.z * side * rr, self.pos.y + 0.05, self.pos.z + f.x * side * rr);
+        const at = foe.asidePoint(self.pos, self.fdir(), side * 0.13 * H * self.scale, 0.05);
         self.dustBurst(at, 9, 1.7, 0.19);
         self.quake = mathx.maxF(self.quake, QUAKE_STEP);
         sfx.world(.knight_step, at);

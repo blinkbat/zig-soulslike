@@ -122,11 +122,7 @@ fn spec(r: Role) *const Spec {
 }
 
 comptime {
-    if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("fishman: a Role with no spec row");
-    // NAMED, NOT COUNTED: `spec()` reads the row at the role's ordinal, so a `Role` inserted above slides every stat one body over.
-    for (SPEC, 0..) |s, i| {
-        if (@intFromEnum(s.role) != i) @compileError("fishman: the " ++ @tagName(s.role) ++ " spec row is out of `Role` order");
-    }
+    foe.pinSpecOrder("fishman", Role, SPEC);
     foe.pinRun("fishman", Role, .fish_spearman, "fish_".len);
     // Read through `spec` and not by ordinal: the run above pins the ORDER, and a bare `SPEC[2]` names no role.
     std.debug.assert(spec(.shaman).souls > spec(.spearman).souls and spec(.shaman).hp < spec(.spearman).hp);

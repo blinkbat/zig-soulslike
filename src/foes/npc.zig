@@ -380,7 +380,6 @@ pub const Wanderer = struct {
     fwdB: f32 = 1,
     latB: f32 = 0,
     speedS: f32 = 0,
-    prevPhase: f32 = 0,
 
     xf: [N]rl.Matrix = undefined,
     rest: [N]rl.Vector3 = undefined,

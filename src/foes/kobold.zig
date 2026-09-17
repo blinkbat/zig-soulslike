@@ -139,11 +139,7 @@ fn spec(r: Role) *const Spec {
 }
 
 comptime {
-    if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("kobold: a Role with no spec row");
-    // Named, not counted: `spec()` reads the row at the role's ordinal, so a `Role` inserted above slides every stat.
-    for (SPEC, 0..) |s, i| {
-        if (@intFromEnum(s.role) != i) @compileError("kobold: the " ++ @tagName(s.role) ++ " spec row is out of `Role` order");
-    }
+    foe.pinSpecOrder("kobold", Role, SPEC);
     foe.pinRun("kobold", Role, .berserker, 0);
 }
 

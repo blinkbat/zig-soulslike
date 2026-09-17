@@ -1115,13 +1115,8 @@ pub const Druidess = struct {
     }
     /// The save's rail says she is down: put her past her own dissolve, so a loaded run never meets a boss it killed.
     pub fn markSlain(self: *Druidess) void {
-        self.vit.hp = 0;
-        self.vit.dead = true;
-        self.state = .dead;
-        self.t = DEATH_DUR + DISS_DUR;
-        self.fade = 1;
+        foe.markSlain(self, DEATH_DUR + DISS_DUR);
         self.hop = 0;
-        self.gone = true;
     }
     pub fn debugKill(self: *Druidess) void {
         self.enterDeath();

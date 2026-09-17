@@ -1358,8 +1358,7 @@ pub const Ogre = struct {
     fn plantBurst(self: *Ogre) void {
         const f = mathx.headingDir(self.facing);
         for ([_]f32{ -1, 1 }) |side| {
-            const rr = 0.42 * self.scale;
-            const at = v3(self.pos.x - f.z * side * rr, self.pos.y + 0.05, self.pos.z + f.x * side * rr);
+            const at = foe.asidePoint(self.pos, f, side * 0.42 * self.scale, 0.05);
             self.dustBurst(at, 9, 2.0, 0.20);
         }
     }
@@ -1390,13 +1389,10 @@ pub const Ogre = struct {
             self.prevPhase = self.phase;
             return;
         }
-        const crossed = (self.prevPhase < 0.5 and self.phase >= 0.5) or (self.phase < self.prevPhase); // 0.5 or the wrap past 0.0
-        if (crossed) {
+        if (foe.halfCycleCrossed(self.prevPhase, self.phase)) {
             self.jolt = 1.0;
             const side: f32 = if (self.phase < 0.5) 1.0 else -1.0;
-            const f = self.fdir();
-            const rr = 0.13 * H * self.scale;
-            const foot = v3(self.pos.x - f.z * side * rr, self.pos.y + 0.05, self.pos.z + f.x * side * rr);
+            const foot = foe.asidePoint(self.pos, self.fdir(), side * 0.13 * H * self.scale, 0.05);
             self.dustBurst(foot, 6, 1.4, 0.14);
             sfx.world(.ogre_step, foot);
         }

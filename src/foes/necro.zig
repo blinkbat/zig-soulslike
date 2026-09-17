@@ -1214,7 +1214,7 @@ pub const Necro = struct {
 
     fn footfalls(self: *Necro) void {
         const ph = self.phase;
-        const crossed = @floor(ph * 2.0) != @floor(self.prevPhase * 2.0);
+        const crossed = foe.halfCycleCrossed(self.prevPhase, ph);
         self.prevPhase = ph;
         if (!crossed or self.moving < 0.25) return;
         sfx.world(.step_soft, self.pos);

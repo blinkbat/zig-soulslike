@@ -1249,7 +1249,7 @@ Conditions: `always`, `never`, `flag N=0|1`, `counter N <cmp> n`, `timer N=done|
   cover more. **A CELL IS 5 m**, the floor on how fine any of this can be: warps under about half a cell do not
   survive the coverage staircase.
 - **HOW A PATCH ENDS IS PAINTED, NOT DERIVED** — a third grid (`Map.soilEdge`, one `wf.Edge` per cell), picked in
-  the brush panel like radius and opacity, and it is the STROKE's, not the material's. Eight shapes (`blend`,
+  the brush panel like width and opacity, and it is the STROKE's, not the material's. Eight shapes (`blend`,
   `natural`, `frayed`, `jagged`, `straight`, `tiled`, `scallop`, `speckle`) with their ordinals pinned to the
   shader's `edgeShape()` by a comptime assert.
 - **AN EDGE HAS THREE KNOBS**: how far the lookup WANDERS off the authored line, at what WAVELENGTH, and whether
@@ -1481,6 +1481,12 @@ LOAD ERROR on a build that does not know it — which is what `wf.VERSION` 3 bou
   (3/6/12 m chips, or the stepper's 3..24), NOT a cliff piece's `top`: `cliffseat.rise` measures a piece and only its
   own test reads it, and `Editor.cliffScale` is only the scale a stamped cliff piece takes.
   `worlds/test_cliffseat.world` is the bench, written once by its test if missing.
+- **SHEER SPENDS AN EXISTING GRADE AT ONE LINE** (`cliffseat.sheer`, Ground > Sheer) — drag ALONG the lip of a slope
+  that ought to be a cliff. Each side of the drag is flattened in CROSS-SECTION ONLY, onto the land a radius out at
+  its own edge of the band, so the map is the IDENTITY at that edge and nothing outside the band moves; both levels
+  are read ALONG the drag, so a lip over rolling ground keeps its roll. **THE WIDTH IS THE DROP** — a wider brush
+  gathers more grade, and the whole band takes `CLIFF_FACE` (inert where it is flat, which is also what dresses the
+  two ends of the cut). Applied on RELEASE off one straight drag, and it reports the metres against `cliffMinDrop`.
 - **THE SHIPPED MAP'S NORTH-WEST BASIN LIP IS ONE OF THESE** — terraced to two tiers, a **13.25 m** face past
   `FALL_DEATH`. Walking off it kills.
 
@@ -2219,7 +2225,7 @@ Keyboard+mouse or gamepad; the pad follows **Elden Ring's default layout** (ER i
   limiter that never asks the driver to swap during vblank, so the swap TEARS in exclusive fullscreen, and two
   limiters fight on any panel that isn't 60 Hz.
 - **Depth z-fighting:** `rlSetClipPlanes(CLIP_NEAR, CLIP_FAR)` (0.55, 320) at startup. The ground sits a hair
-  above y=0 (`env.GROUND_Y = 0.01`) so content is planted-to-slightly-embedded and never FLOATS.
+  above y=0 (`env.groundY()` is 0.01; the const itself is private) so content is planted-to-slightly-embedded and never FLOATS.
 - **Sun + shadows are STILL ONE source** — `gfx.sun`, solved from the hour (`daynight.keyDir`), written only by
   `gfx.Scene.setHour`, feeding the shader, the shadow camera and `env`'s depth cull. `gfx.SUN_DIR` is the ANCHOR
   the cycle is solved through, not what casts.
@@ -2408,6 +2414,7 @@ Keyboard+mouse or gamepad; the pad follows **Elden Ring's default layout** (ER i
   is one level plane.
 - **The script layer is foundations only, but it is AUTHORABLE** (`editor.drawScriptModal`) — triggers, their
   conditions and their actions are made, named, re-kinded and thrown away from a MODAL rather than a map layer,
-  because a trigger is not a place. Still hand-written: the DIALOG trees themselves, and the flag/counter/timer
-  TABLES (the modal cycles the names a map already declares and cannot coin a new one). Three `NpcKind`. No
+  because a trigger is not a place. The flag/counter/timer TABLES are authorable too, but only as a SERIAL — every
+  slot row ends in "new …" and `editor.coinName` interns `flag1`..`flag99` (`counter*`, `timer*`); the modal cannot
+  coin a name, only a number. Still hand-written: the DIALOG trees themselves. Three `NpcKind`. No
   quest log, no journal.

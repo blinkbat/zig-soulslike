@@ -178,6 +178,7 @@ const groundBrushes = [_][:0]const u8{
     "Cliff",
     "Stair",
     "Ramp",
+    "Sheer",
     "Slope",
     "Conform",
     "Plateau",
@@ -321,6 +322,7 @@ const groundTips = [_][:0]const u8{
     "Click or drag to raise a flat area with connected rock faces. Height is fixed for the whole stroke.",
     "Sweep to TERRACE the ground under the brush. One tread a cell, one riser a step, so a grade becomes a flight",
     "Drag from low ground to the cliff top to connect a walkable ramp. Longer ramps are gentler.",
+    "Drag ALONG the top of a slope that ought to be a cliff: the grade across the brush is spent at one exact cut instead. The WIDTH is the drop",
     "Sweep to give the drop back its ramp",
     "Click a placed CLIFF piece: the land under it goes to its foot, the land behind it to its top, and the cut lands on the rock's seat. The box reads green when it seats within 0.25 m, red where it gaps",
     "Drag a rectangle to raise a plateau by the selected height",
@@ -530,7 +532,7 @@ fn brushShown(ed: *const Editor, i: usize) bool {
         if (ed.floorSculpting()) return shaping(b) or roofing(b);
         if (roofing(b)) return false;
         return switch (ed.groundTools) {
-            .cliffs => b == .cliff or b == .indent or b == .ramp or b == .waterfall,
+            .cliffs => b == .cliff or b == .indent or b == .ramp or b == .sheer or b == .waterfall,
             .sculpt => shaping(b) or b == .pool,
             .paint => i >= GROUND_SOIL_0,
             .all => true,
@@ -649,7 +651,11 @@ comptime {
     }
 }
 
-pub const GroundBrush = enum { raise, lower, smooth, flat, roof_up, roof_down, pool, cliff, stair, ramp, slope, conform, plateau, indent, waterfall, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, sand, water, oil, fungal, lava, level, reset, erase };
+/// THE BRUSH'S OWN RANGE, IN RADIUS METRES — the `[` `]` keys and the panel's width gauge are the two writers and they read it here. The panel doubles it (`ui.widthSlider`).
+const RADIUS_MIN: f32 = 1;
+const RADIUS_MAX: f32 = 60;
+
+pub const GroundBrush = enum { raise, lower, smooth, flat, roof_up, roof_down, pool, cliff, stair, ramp, sheer, slope, conform, plateau, indent, waterfall, dirt, turf, stone, silt, ash, moss, bone, cinder, spore, bloom, sand, water, oil, fungal, lava, level, reset, erase };
 
 /// `groundBrushes` is PINNED to the enum's own tags (`pinBrushes`), so a brush whose strip name is not its tag says so here.
 fn groundLabel(b: GroundBrush, tag: [:0]const u8) [:0]const u8 {
@@ -1308,7 +1314,8 @@ pub const Editor = struct {
         self.hotFrame = false;
         self.editing = false;
         self.caveSurveyDue = true;
-        if (self.pathLen == 0) self.setPath(wf.START_MAP);
+        // THE BOOTED MAP, NEVER THE SHIPPED CONSTANT: `--map` loads another world, and seeding `START_MAP` here points Save and Revert at a file this map did not come from.
+        if (self.pathLen == 0) self.setPath(wf.startMap());
         self.touchFolk();
     }
 
@@ -2138,8 +2145,8 @@ pub const Editor = struct {
             }
             if (rl.isKeyPressed(.u)) self.setUnder(!self.under);
             if (rl.isKeyPressed(.i)) self.lookInside(env);
-            if (rl.isKeyPressed(.left_bracket)) self.radius = mathx.clampF(self.radius - 1, 1, 60);
-            if (rl.isKeyPressed(.right_bracket)) self.radius = mathx.clampF(self.radius + 1, 1, 60);
+            if (rl.isKeyPressed(.left_bracket)) self.radius = mathx.clampF(self.radius - 1, RADIUS_MIN, RADIUS_MAX);
+            if (rl.isKeyPressed(.right_bracket)) self.radius = mathx.clampF(self.radius + 1, RADIUS_MIN, RADIUS_MAX);
             {
                 const fast = rl.isKeyDown(.left_shift) or rl.isKeyDown(.right_shift);
                 const rate: f32 = if (fast) EDIT_HOUR_FAST else EDIT_HOUR_RATE;
@@ -2443,7 +2450,7 @@ pub const Editor = struct {
                             self.dragTo = g;
                         },
                         // The cut goes first: a flagged cell steps, and a stroke that only smoothed it would move heights the face was still snapping away.
-                        .ramp => {
+                        .ramp, .sheer => {
                             self.dragTo = g;
                         },
                         .level => if (started) self.levelAt(m, env, g),
@@ -2475,6 +2482,7 @@ pub const Editor = struct {
                             self.say("Ramp connected.");
                         } else self.say("Ramp: drag farther from the foot to the top of the cliff.");
                     },
+                    .sheer => self.sheerAt(m, env),
                     .plateau => self.terraceAt(m, env),
                     else => {},
                 }
@@ -2649,6 +2657,23 @@ pub const Editor = struct {
         env.sculptHeight(m, span);
         self.heightStroke = true;
         self.sayFmt("plateau: {d:.2} m high, top at {d:.2} m", .{ rise, rim.level });
+    }
+
+    fn sheerAt(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
+        var span: [4]usize = wf.EMPTY_SPAN;
+        const sh = cliffseat.sheer(m, .{ self.dragFrom.x, self.dragFrom.z }, .{ self.dragTo.x, self.dragTo.z }, self.radius, &span) orelse {
+            self.say("sheer: drag ALONG the lip, at least one cell");
+            return;
+        };
+        if (sh.moved) {
+            env.sculptHeight(m, span);
+            self.heightStroke = true;
+        }
+        if (sh.cuts()) {
+            self.sayFmt("sheer: {d:.2} m face over {d:.1} m of run", .{ sh.drop, mathx.distXZ(self.dragFrom, self.dragTo) });
+        } else {
+            self.sayFmt("sheer: only {d:.2} m of grade across the brush, and a cut needs {d:.2} m - widen it, or drag along the lip", .{ sh.drop, sh.min });
+        }
     }
 
     fn conformAt(self: *Editor, m: *wf.Map, env: *envmod.Env, g: rl.Vector3) void {
@@ -4340,14 +4365,26 @@ pub const Editor = struct {
                         rl.drawCubeWires(v3(g.x, (base + top) * 0.5, g.z), self.radius * 2, @abs(top - base), self.radius * 2, ui.HOT);
                         outlineOf(normRect(v3(g.x - self.radius, 0, g.z - self.radius), v3(g.x + self.radius, 0, g.z + self.radius)), top + 0.04, ui.HOT);
                     },
+                    .sheer => if (self.painting) {
+                        const a = self.dragFrom;
+                        const b = self.dragTo;
+                        if (bandOffset(a, b, self.radius)) |o| {
+                            const dx = o.dx;
+                            const dz = o.dz;
+                            groundLine(a.x + dx, a.z + dz, b.x + dx, b.z + dz, y, ui.LABEL);
+                            groundLine(a.x - dx, a.z - dz, b.x - dx, b.z - dz, y, ui.LABEL);
+                            groundLine(a.x + dx, a.z + dz, a.x - dx, a.z - dz, y, ui.LABEL);
+                            groundLine(b.x + dx, b.z + dz, b.x - dx, b.z - dz, y, ui.LABEL);
+                            groundLine(a.x, a.z, b.x, b.z, y, ui.HOT);
+                        }
+                    },
                     .ramp => if (self.painting) {
                         const a = self.dragFrom;
                         const b = self.dragTo;
-                        const length = mathx.distXZ(a, b);
-                        if (length > 0.1) {
-                            const col = if (@abs(b.y - a.y) > length * 0.5) CARVE_SKY else ui.HOT;
-                            const dx = -(b.z - a.z) / length * self.radius;
-                            const dz = (b.x - a.x) / length * self.radius;
+                        if (bandOffset(a, b, self.radius)) |o| {
+                            const dx = o.dx;
+                            const dz = o.dz;
+                            const col = if (@abs(b.y - a.y) > o.run * 0.5) CARVE_SKY else ui.HOT;
                             rl.drawLine3D(v3(a.x + dx, a.y + 0.1, a.z + dz), v3(b.x + dx, b.y + 0.1, b.z + dz), col);
                             rl.drawLine3D(v3(a.x - dx, a.y + 0.1, a.z - dz), v3(b.x - dx, b.y + 0.1, b.z - dz), col);
                             rl.drawLine3D(v3(a.x + dx, a.y + 0.1, a.z + dz), v3(a.x - dx, a.y + 0.1, a.z - dz), col);
@@ -4666,6 +4703,17 @@ fn arenaWall(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void 
 }
 
 const GROUND_SEG: i32 = 12;
+
+/// A drag shorter than this has no bearing to take a normal off, so a swept band cannot be drawn for it.
+const BAND_MIN_RUN: f32 = 0.1;
+
+/// HALF THE BAND, ACROSS THE DRAG — the left normal times the radius, as XZ, with the run it was turned off. Both swept-band previews (`ramp`, `sheer`) offset their four edges by it, and it is the one place the drag's bearing is taken.
+const Band = struct { dx: f32, dz: f32, run: f32 };
+fn bandOffset(a: rl.Vector3, b: rl.Vector3, r: f32) ?Band {
+    const run = mathx.distXZ(a, b);
+    if (run <= BAND_MIN_RUN) return null;
+    return .{ .dx = -(b.z - a.z) / run * r, .dz = (b.x - a.x) / run * r, .run = run };
+}
 
 fn groundLine(x0: f32, z0: f32, x1: f32, z1: f32, lift: f32, col: rl.Color) void {
     const SEG = GROUND_SEG;
@@ -5117,6 +5165,7 @@ fn drawSide(ed: *Editor, ctx: *ui.Ctx, sh: i32) void {
                 .cliff => ui.swatchButton(ctx, r, CLIFF_SWATCH, s, hud.MONO, on, tips[i]),
                 .stair => ui.swatchButton(ctx, r, STAIR_SWATCH, s, hud.MONO, on, tips[i]),
                 .ramp => ui.swatchButton(ctx, r, RAMP_SWATCH, s, hud.MONO, on, tips[i]),
+                .sheer => ui.swatchButton(ctx, r, CLIFF_SWATCH, s, hud.MONO, on, tips[i]),
                 .slope => ui.swatchButton(ctx, r, SLOPE_SWATCH, s, hud.MONO, on, tips[i]),
                 .conform => ui.swatchButton(ctx, r, CLIFF_SWATCH, s, hud.MONO, on, tips[i]),
                 .plateau => ui.swatchButton(ctx, r, RAISE_SWATCH, s, hud.MONO, on, tips[i]),
@@ -5352,8 +5401,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             }
             y += ROW_H + 6;
         }
-        var width = ed.radius * 2;
-        if (ui.stepperF(ctx, x, y, w, "passage width", &width, 0.5, 4, 32, "Full width of the passage, in metres")) ed.radius = width * 0.5;
+        _ = ui.widthStepper(ctx, x, y, w, "passage width", &ed.radius, 0.5, 4, 32, "Full width of the passage, in metres");
         y += ROW_H;
         _ = ui.stepperF(ctx, x, y, w, "headroom", &ed.caveHead, 0.25, HEAD_MIN, 8, "Space from the floor to the ceiling");
         y += ROW_H + 6;
@@ -5399,10 +5447,10 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         const cliffing = cliffCaseOf(brush) != null;
         const terracing = brush == .cliff or brush == .plateau or brush == .indent;
         const sculpting = cliffing or switch (brush) {
-            .raise, .lower, .smooth, .flat, .roof_up, .roof_down, .pool, .ramp, .conform, .plateau, .indent, .reset => true,
+            .raise, .lower, .smooth, .flat, .roof_up, .roof_down, .pool, .ramp, .sheer, .conform, .plateau, .indent, .reset => true,
             else => false,
         };
-        const title: [:0]const u8 = if (brush == .waterfall) "WATERFALL" else if (brush == .cliff) "RAISE CLIFF" else if (brush == .indent) "LOWER CLIFF" else if (brush == .ramp) "CONNECT A RAMP" else if (roofing(brush)) "CAVE ROOF" else if (ed.floorSculpting()) "CAVE FLOOR" else if (brush == .reset) "RESET" else if (brush == .conform) "CONFORM TO A CLIFF PIECE" else if (brush == .plateau) "PLATEAU" else if (brush == .level) "WATER LEVEL" else if (cliffing) "RELIEF" else if (sculpting) "SCULPT" else if (liquid) |l| switch (l) {
+        const title: [:0]const u8 = if (brush == .waterfall) "WATERFALL" else if (brush == .cliff) "RAISE CLIFF" else if (brush == .indent) "LOWER CLIFF" else if (brush == .ramp) "CONNECT A RAMP" else if (brush == .sheer) "SHEER A SLOPE" else if (roofing(brush)) "CAVE ROOF" else if (ed.floorSculpting()) "CAVE FLOOR" else if (brush == .reset) "RESET" else if (brush == .conform) "CONFORM TO A CLIFF PIECE" else if (brush == .plateau) "PLATEAU" else if (brush == .level) "WATER LEVEL" else if (cliffing) "RELIEF" else if (sculpting) "SCULPT" else if (liquid) |l| switch (l) {
             .water => "WATER BRUSH",
             .oil => "OIL BRUSH",
             .fungal => "FUNGAL BRUSH",
@@ -5415,8 +5463,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             return;
         }
         if (brush == .waterfall) {
-            var width = ed.radius * 2;
-            if (ui.stepperF(ctx, x, y, w, "width", &width, 1, 3, 24, "Width painted along the cliff edge")) ed.radius = width * 0.5;
+            _ = ui.widthStepper(ctx, x, y, w, "width", &ed.radius, 1, 3, 24, "Width painted along the cliff edge");
             y += ROW_H + 6;
             hud.mono("Paint along a cliff edge.", x, y, hud.MONO, ui.LABEL);
             y += ROW_H;
@@ -5429,8 +5476,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             return;
         }
         if (brush == .ramp) {
-            var width = ed.radius * 2;
-            if (ui.stepperF(ctx, x, y, w, "width", &width, 1, 5, 30, "Full ramp width in metres")) ed.radius = width * 0.5;
+            _ = ui.widthStepper(ctx, x, y, w, "width", &ed.radius, 1, 5, 30, "Full ramp width in metres");
             y += ROW_H + 6;
             hud.mono("Drag from the foot to the top.", x, y, hud.MONO, ui.LABEL);
             y += ROW_H;
@@ -5438,11 +5484,22 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             y += ROW_H;
             return;
         }
+        if (brush == .sheer) {
+            _ = ui.widthStepper(ctx, x, y, w, "width", &ed.radius, 1, 4, 80, "How much of the grade is gathered into the cut, in metres across");
+            y += ROW_H + 6;
+            hud.mono("Drag ALONG the lip.", x, y, hud.MONO, ui.LABEL);
+            y += ROW_H;
+            hud.mono("The width is the drop.", x, y, hud.MONO, ui.LABEL);
+            y += ROW_H + 6;
+            hud.mono("Land outside the band stays.", x, y, hud.MONO, ui.LIVE);
+            y += ROW_H;
+            return;
+        }
         if (brush == .level) {
             y = drawWaterLevelPanel(ed, env, ctx, x, y, w);
             return;
         }
-        _ = ui.slider(ctx, x, y, w, "radius", &ed.radius, 1, 60, "How wide the brush bites, in metres");
+        _ = ui.widthSlider(ctx, x, y, w, "width", &ed.radius, 2 * RADIUS_MIN, 2 * RADIUS_MAX, "How wide the brush bites, in metres");
         y += ROW_H;
         if (!sculpting and !wet) {
             _ = ui.slider(ctx, x, y, w, "opacity", &ed.soilOpacity, 0, 1, "How much a stroke lays down. Under 1 blends with what is already there, so a pass builds up");
@@ -5547,7 +5604,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
             const soak = liquidmod.soakOf(l);
             const s5: [:0]const u8 = if (soak) |sk|
                 (std.fmt.bufPrintZ(&buf, "{s} {d:.0}/s{s}", .{
-                    combat.ailRow(sk.ail).name,
+                    combat.ailRow(sk.ail.?).name,
                     sk.build,
                     if (sk.dpsFrac > 0) " + damage" else "",
                 }) catch "")
@@ -6206,8 +6263,7 @@ fn drawCliffHeightPicker(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, w: i32) i32
     y += 4;
     _ = ui.stepperF(ctx, x, y, w, "height", &ed.cliffHeight, 0.25, 3, 24, "Metres added or removed in one stroke");
     y += ROW_H;
-    var width = ed.radius * 2;
-    if (ui.stepperF(ctx, x, y, w, "brush width", &width, 1, 5, 60, "Click to place. Drag to paint connected cliffs.")) ed.radius = width * 0.5;
+    _ = ui.widthStepper(ctx, x, y, w, "brush width", &ed.radius, 1, 5, 60, "Click to place. Drag to paint connected cliffs.");
     y += ROW_H + 6;
     hud.mono("Click or drag to place.", x, y, hud.MONO, ui.LABEL);
     y += ROW_H;
@@ -8484,6 +8540,21 @@ test "SAVE AS RENAMES THE MAP BEFORE IT WRITES — the file's own `name:` and th
     var line: usize = 0;
     try wf.load(kept, back, &line);
     try std.testing.expectEqualStrings(want, back.label());
+}
+
+test "A FRESH EDITOR OPENS ON THE MAP THAT BOOTED — Save writes back to the file the world came from, not to the shipped one" {
+    const other = wf.DIR ++ "/test_spar" ++ wf.EXT;
+    wf.setStartMap(other);
+    defer wf.setStartMap(wf.START_MAP);
+
+    var ed = Editor{};
+    ed.enter(mathx.zero3);
+    try std.testing.expectEqualStrings(other, ed.curPath());
+
+    var shipped = Editor{};
+    wf.setStartMap(wf.START_MAP);
+    shipped.enter(mathx.zero3);
+    try std.testing.expectEqualStrings(wf.START_MAP, shipped.curPath());
 }
 
 test "THE CURSOR IS MARCHED ONCE A DRAW, AND A DRAW WITH NO RESOLVE BEHIND IT STILL MARCHES" {

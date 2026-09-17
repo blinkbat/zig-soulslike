@@ -212,11 +212,25 @@ const CHAR_KINDS = blk: {
     }
     break :blk out;
 };
-const CHAR_N = CHAR_KINDS.len;
+/// THE HERO IS NOT A `FoeKind` AND IS NOT GIVEN ONE — a kind for him is a kind that spawns nothing, so
+/// the bench indexes a union and the creature roster stays exactly the creatures. He is the first slot.
+const Who = union(enum) { hero, foe: wf.FoeKind };
+pub const CHAR_N = CHAR_KINDS.len + 1;
+
+fn charAt(i: usize) Who {
+    return if (i == 0) .hero else .{ .foe = CHAR_KINDS[i - 1] };
+}
+
+fn charName(w: Who) [:0]const u8 {
+    return switch (w) {
+        .hero => "hero",
+        .foe => |k| wf.foeName(k),
+    };
+}
 
 pub fn charSlot(k: wf.FoeKind) ?usize {
     for (CHAR_KINDS, 0..) |c, i| {
-        if (c == k) return i;
+        if (c == k) return i + 1;
     }
     return null;
 }
@@ -228,7 +242,7 @@ pub fn itemSlot(k: item.Kind) usize {
 
 const GLYPH_N = @typeInfo(icons.Icon).@"enum".fields.len;
 const PICT_N = item.NK;
-const ICONS_TOTAL = GLYPH_N + PICT_N;
+pub const ICONS_TOTAL = GLYPH_N + PICT_N;
 
 pub const State = struct {
     mode: Mode = .objects,
@@ -392,7 +406,11 @@ fn ensureChars(scene: *gfx.Scene) *CharSet {
     return cs;
 }
 
-fn charDims(k: wf.FoeKind) struct { top: f32, bound: f32 } {
+fn charDims(w: Who) struct { top: f32, bound: f32 } {
+    const k = switch (w) {
+        .hero => return .{ .top = heromod.H, .bound = 1.0 },
+        .foe => |f| f,
+    };
     return switch (k) {
         .toad => .{ .top = 1.7, .bound = 1.6 },
         .archer => .{ .top = 2.0, .bound = 1.0 },
@@ -742,17 +760,52 @@ fn rulerStandX(bound: f32) f32 {
     return bound * 0.5 + RULER_GAP + foemod.HERO_R;
 }
 
-fn renderChar(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, k: wf.FoeKind, pose: Pose, live: bool, ruler: bool) void {
+fn seedHero(h: *heromod.Hero) void {
+    h.pos = mathx.zero3;
+    h.facing = 0;
+    h.speed = 0;
+    h.speedS = 0;
+    h.moving = 0;
+    h.phase = 0;
+    h.pose();
+}
+
+/// HIS DRIVER IS THE LOOP'S INPUT, and the bench has none, so playing him is his own gait walked on the spot.
+fn stepHero(h: *heromod.Hero, dt: f32) void {
+    h.update(dt, heromod.WALK_SPEED * dt, heromod.WALK_SPEED, h.facing);
+}
+
+fn isHero(w: Who) bool {
+    return switch (w) {
+        .hero => true,
+        .foe => false,
+    };
+}
+
+fn renderChar(rt: rl.RenderTexture2D, env: *envmod.Env, scene: *gfx.Scene, w: Who, pose: Pose, live: bool, ruler: bool) void {
     const cs = ensureChars(scene);
-    const dims = charDims(k);
+    const h = ensureHero(scene);
+    const dims = charDims(w);
     const aspect = rtAspect(rt);
+    const beside = ruler and !isHero(w);
     const standX = rulerStandX(dims.bound);
-    const top = if (ruler) mathx.maxF(dims.top, heromod.H) else dims.top;
-    const bound = if (ruler) mathx.maxF(dims.bound, (standX + foemod.HERO_R) * 2.0) else dims.bound;
+    const top = if (beside) mathx.maxF(dims.top, heromod.H) else dims.top;
+    const bound = if (beside) mathx.maxF(dims.bound, (standX + foemod.HERO_R) * 2.0) else dims.bound;
     openStage(rt, env, scene, fitCam(top, bound, pose, aspect), aspect);
-    if (live) drawGroup(cs, k, scene) else drawChar(cs, k, scene);
-    if (ruler) {
-        const h = ensureHero(scene);
+    switch (w) {
+        .hero => {
+            if (live) {
+                h.pos = mathx.zero3;
+                h.facing = 0;
+                h.pose();
+            } else seedHero(h);
+            h.draw(false);
+        },
+        .foe => |k| if (live) drawGroup(cs, k, scene) else drawChar(cs, k, scene),
+    }
+    if (beside) {
+        // ONE HERO SERVES BOTH THE SLOT AND THE RULER, and the slot PLAYS: unseeded, the ruler stands frozen mid-stride at less than his own 1.8 m.
+        seedHero(h);
         h.pos = v3(standX, 0, 0);
         h.facing = 0;
         h.pose();
@@ -828,7 +881,8 @@ fn gridCell(box: ui.ModalBox, slot: i32) rl.Rectangle {
     );
 }
 
-fn pageCount(n: usize) i32 {
+/// HOW MANY PAGES A ROSTER FILLS — the grid's own bound, so a harness sweep walks exactly what the viewer draws instead of a round number.
+pub fn pageCount(n: usize) i32 {
     const total: i32 = @intCast(n);
     return @max(1, @divTrunc(total + perPage() - 1, perPage()));
 }
@@ -1103,13 +1157,13 @@ fn galleryChars(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) b
     st.charLive = null;
     i = start;
     while (i < end) : (i += 1) {
-        const k = CHAR_KINDS[i];
+        const who = charAt(i);
         const r = gridCell(box, @intCast(i - start));
-        renderChar(target(&thumbRT, THUMB_W, THUMB_H), env, scene, k, st.charPose[i], false, false);
+        renderChar(target(&thumbRT, THUMB_W, THUMB_H), env, scene, who, st.charPose[i], false, false);
         blit(thumbRT.?, r);
         const on = (hover != null and hover.? == i) or (st.grabbed != null and st.grabbed.? == i);
         rl.drawRectangleLinesEx(r, 1, ui.alpha(if (on) ui.HOT else ui.TRIM, if (on) 220 else 70));
-        const name = wf.foeName(k);
+        const name = charName(who);
         const nw = hud.monoW(name, hud.MONO);
         hud.mono(name, @as(i32, @intFromFloat(r.x)) + @divTrunc(THUMB_W - nw, 2), @as(i32, @intFromFloat(r.y + r.height)) + 3, hud.MONO, if (on) ui.HOT else ui.LABEL);
     }
@@ -1120,20 +1174,24 @@ fn galleryChars(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) b
 }
 
 fn bigChar(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, at: usize) bool {
-    const k = CHAR_KINDS[at];
+    const who = charAt(at);
     const sw = rl.getScreenWidth();
     const sh = rl.getScreenHeight();
     const w = @min(sw - 60, BIG_W + INFO_W + 3 * BIG_PAD);
     const h = @min(sh - 60, BIG_H + 96);
-    const box = ui.beginModal(ctx, w, h, wf.foeName(k));
+    const box = ui.beginModal(ctx, w, h, charName(who));
     const viewR = ui.rect(box.x + BIG_PAD, box.y + 46, w - INFO_W - 3 * BIG_PAD, h - 46 - 44);
     const p = &st.charPose[at];
 
     spinView(st, ctx, p, viewR);
 
     const cs = ensureChars(scene);
+    const hero = ensureHero(scene);
     if (st.charLive == null or st.charLive.? != at) {
-        seedChar(cs, k);
+        switch (who) {
+            .hero => seedHero(hero),
+            .foe => |k| seedChar(cs, k),
+        }
         st.charLive = at;
         st.charSpin = 0;
         st.charT = 0;
@@ -1142,13 +1200,16 @@ fn bigChar(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, at: us
         const dt = mathx.minF(rl.getFrameTime(), 0.05);
         st.charT += dt;
         st.charSpin += BENCH_ORBIT * dt;
-        stepChar(cs, k, dt, quarryAt(st.charDist, st.charSpin));
+        switch (who) {
+            .hero => stepHero(hero, dt),
+            .foe => |k| stepChar(cs, k, dt, quarryAt(st.charDist, st.charSpin)),
+        }
     }
-    renderChar(target(&bigRT, BIG_W, BIG_H), env, scene, k, p.*, true, st.charRuler);
+    renderChar(target(&bigRT, BIG_W, BIG_H), env, scene, who, p.*, true, st.charRuler);
     blit(bigRT.?, viewR);
     rl.drawRectangleLinesEx(viewR, 1, ui.alpha(ui.TRIM, 110));
 
-    const dims = charDims(k);
+    const dims = charDims(who);
     const x = box.x + w - INFO_W - BIG_PAD;
     var y = box.y + 52;
     const line = lineH();
@@ -1161,23 +1222,37 @@ fn bigChar(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx, at: us
         y += line;
     }
     y += 6;
-    if (ui.button(ctx, ui.rect(x, y, 78, 24), if (st.charPlay) "Pause" else "Play", hud.MONO, st.charPlay, "Run the creature's own update against a decoy. It walks, turns, closes and strikes on its own")) {
+    const playTip = if (isHero(who))
+        "Walk him on the spot at his own gait. Nothing drives him here but the clock"
+    else
+        "Run the creature's own update against a decoy. It walks, turns, closes and strikes on its own";
+    if (ui.button(ctx, ui.rect(x, y, 78, 24), if (st.charPlay) "Pause" else "Play", hud.MONO, st.charPlay, playTip)) {
         st.charPlay = !st.charPlay;
     }
     if (ui.button(ctx, ui.rect(x + 82, y, 78, 24), "Restart", hud.MONO, false, "Put it back on its own first frame")) {
-        seedChar(cs, k);
+        switch (who) {
+            .hero => seedHero(hero),
+            .foe => |k| seedChar(cs, k),
+        }
         st.charSpin = 0;
         st.charT = 0;
     }
     y += 30;
-    _ = ui.checkbox(ctx, x, y, "hero beside it", &st.charRuler, "Stand the hero next to it at his own 1.8 m. Every creature is fitted to the same frame, so this is the only thing that says how big one is");
-    y += 24;
-    _ = ui.slider(ctx, x, y, INFO_W - 12, "decoy range (m)", &st.charDist, BENCH_NEAR, BENCH_FAR, "Where the decoy stands. Inside its reach it strikes, outside it closes, past its own aggro it walks its post");
-    y += ui.ROW_H;
+    if (!isHero(who)) {
+        _ = ui.checkbox(ctx, x, y, "hero beside it", &st.charRuler, "Stand the hero next to it at his own 1.8 m. Every creature is fitted to the same frame, so this is the only thing that says how big one is");
+        y += 24;
+        _ = ui.slider(ctx, x, y, INFO_W - 12, "decoy range (m)", &st.charDist, BENCH_NEAR, BENCH_FAR, "Where the decoy stands. Inside its reach it strikes, outside it closes, past its own aggro it walks its post");
+        y += ui.ROW_H;
+    }
     const clock = std.fmt.bufPrintZ(&buf, "{s: <7}{d: >7.1}", .{ "played", st.charT }) catch "";
     hud.mono(clock, x, y, hud.MONO, ui.alpha(ui.VALUE, if (st.charPlay) 255 else 140));
     y += line + 8;
-    y = tuneui.faceSheet(ctx, x, y, INFO_W, .foe, @intFromEnum(k), box.y + h - FOOT_DROP - 24);
+    switch (who) {
+        .hero => {},
+        .foe => |k| {
+            y = tuneui.faceSheet(ctx, x, y, INFO_W, .foe, @intFromEnum(k), box.y + h - FOOT_DROP - 24);
+        },
+    }
     y += 2;
     hud.mono("drag spins, wheel zooms", x, y, hud.MONO, ui.alpha(ui.LABEL, 170));
 
@@ -1583,6 +1658,30 @@ test "THE CHARACTER BENCH'S SLAB, MEASURED — one live group per creature, take
     try std.testing.expectEqual(@typeInfo(CharSet).@"struct".fields.len, CHAR_GROUPS);
 }
 
+test "THE HERO IS THE BENCH'S FIRST SLOT — a character, not a creature, and the roster keeps its own numbering" {
+    try std.testing.expectEqual(CHAR_KINDS.len + 1, CHAR_N);
+    try std.testing.expect(isHero(charAt(0)));
+    for (CHAR_KINDS, 0..) |k, i| {
+        try std.testing.expectEqual(i + 1, charSlot(k).?);
+        try std.testing.expect(!isHero(charAt(i + 1)));
+        switch (charAt(i + 1)) {
+            .hero => unreachable,
+            .foe => |f| try std.testing.expectEqual(k, f),
+        }
+    }
+
+    const aspect = @as(f32, @floatFromInt(BIG_W)) / @as(f32, @floatFromInt(BIG_H));
+    const dims = charDims(.hero);
+    try std.testing.expectEqual(heromod.H, dims.top);
+    const view = envmod.View.fromCamera(fitCam(dims.top, dims.bound, .{}, aspect), aspect);
+    const pts = [_]rl.Vector3{
+        v3(0, heromod.H, 0),             v3(0, 0, 0),
+        v3(dims.bound * 0.5, 0.9, 0),    v3(-dims.bound * 0.5, 0.9, 0),
+    };
+    for (pts) |q| try std.testing.expect(view.visible(q, 0, 1e6));
+    std.debug.print("\n  bench: {d} characters — the hero at {d:.2} m in slot 0, then {d} creatures\n", .{ CHAR_N, heromod.H, CHAR_KINDS.len });
+}
+
 test "THE RULER STANDS IN FRAME BESIDE EVERY CREATURE — every body is fitted to the same box, which is exactly what hides its size" {
     const aspect = @as(f32, @floatFromInt(BIG_W)) / @as(f32, @floatFromInt(BIG_H));
     var tallest: f32 = 0;
@@ -1590,7 +1689,7 @@ test "THE RULER STANDS IN FRAME BESIDE EVERY CREATURE — every body is fitted t
     var shortest: f32 = 1e9;
     var shortName: [:0]const u8 = "";
     for (CHAR_KINDS) |k| {
-        const dims = charDims(k);
+        const dims = charDims(.{ .foe = k });
         const standX = rulerStandX(dims.bound);
         const top = mathx.maxF(dims.top, heromod.H);
         const bound = mathx.maxF(dims.bound, (standX + foemod.HERO_R) * 2.0);

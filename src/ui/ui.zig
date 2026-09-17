@@ -458,6 +458,19 @@ pub fn stepperI(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *i32,
     return gauge(i32, ctx, x, y, w, label, v, step, lo, hi, false, tip);
 }
 
+/// A RADIUS EDITED AS THE WIDTH IT PAINTS — every brush panel shows the full span the stroke lays down and the brush keeps the half. `step`/`lo`/`hi` are the WIDTH's, so a panel's range reads as the metres it draws.
+pub fn widthStepper(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, radius: *f32, step: f32, lo: f32, hi: f32, tip: [:0]const u8) bool {
+    var width = radius.* * 2;
+    if (!stepperF(ctx, x, y, w, label, &width, step, lo, hi, tip)) return false;
+    radius.* = width * 0.5;
+    return true;
+}
+
+/// The same rule on a free-running track, where `slider` picks the step off the span itself.
+pub fn widthSlider(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, radius: *f32, lo: f32, hi: f32, tip: [:0]const u8) bool {
+    return widthStepper(ctx, x, y, w, label, radius, niceStep(hi - lo), lo, hi, tip);
+}
+
 pub fn angleF(ctx: *Ctx, x: i32, y: i32, w: i32, label: [:0]const u8, v: *f32, step: f32, tip: [:0]const u8) bool {
     return gauge(f32, ctx, x, y, w, label, v, step, 0, 360, true, tip);
 }

@@ -305,14 +305,20 @@ var bg: Bg = .{};
 
 pub const Done = struct { ok: bool, slot: usize, shelf: Shelf };
 
-/// A map path too long to hold is refused OUTRIGHT, never truncated: `MapName.of` clamps it, and a clamped name no longer matches the map it names, so
-/// the slot would write clean and then read back as an unreadable file. EVERY writer of a map name asks here — both write paths and `game.nameable`.
-pub fn tooLong(map: []const u8) bool {
-    return map.len > MAP_CAP;
+/// WHAT A `map:` ROW CAN CARRY, or why it cannot — refused OUTRIGHT, never truncated, because either fault leaves a slot that writes clean and then
+/// reads back as an unreadable file. TOO LONG: `MapName.of` clamps it and a clamped name no longer matches the map it names. A SPACE: the row is read
+/// back with a whitespace tokeniser, so `readFrom` compares the first word against the whole path and refuses every time.
+/// EVERY writer of a map name asks here — both write paths and `game.nameable`.
+pub fn refuses(map: []const u8) ?[]const u8 {
+    if (map.len > MAP_CAP) return "is longer than a slot can hold";
+    for (map) |c| {
+        if (c == ' ' or c == '\t') return "holds a space, which the `map:` row is read past";
+    }
+    return null;
 }
 
 pub fn writeAsync(i: usize, s: Slot) void {
-    if (tooLong(s.map)) {
+    if (refuses(s.map) != null) {
         bg.mtx.lock();
         defer bg.mtx.unlock();
         finish(i, false, bg.shelf);
@@ -428,7 +434,7 @@ pub fn writeShot(i: usize) bool {
 /// WRITE BESIDE IT AND RENAME OVER IT (`worldfmt.save`'s rule, and this is the other file the game writes):
 /// `createFile` truncates first, so a render that failed part-way took the save it was replacing with it.
 pub fn writeTo(file: []const u8, s: Slot) bool {
-    if (tooLong(s.map)) return false;
+    if (refuses(s.map) != null) return false;
     const d = gather(s);
     return writeData(file, &d);
 }

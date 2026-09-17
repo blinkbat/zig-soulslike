@@ -6,6 +6,7 @@ const combat = @import("play/combat.zig");
 const gfx = @import("gfx/gfx.zig");
 const elemfx = @import("gfx/elemfx.zig");
 const editormod = @import("ui/editor.zig");
+const objview = @import("ui/objview.zig");
 const heromod = @import("play/hero.zig");
 const frogmod = @import("foes/frog.zig");
 const archermod = @import("foes/archer.zig");
@@ -754,6 +755,17 @@ fn stageOn(tag: []const u8) bool {
     return std.mem.indexOf(u8, tag, onlyStage) != null;
 }
 
+/// The two stages that REPLACE the run rather than sit inside it (`runShots` returns on either), so they cannot be
+/// picked by `stageOn`'s substring — `--shot-only day` would take one instead of falling through to the harness.
+/// WHOLE UNDERSCORE-SEPARATED WORDS OFF THE FRONT name them (`objview`, `objview_sweep`), so `--shot-only o` cannot
+/// swallow the harness the way a bare prefix would.
+const TERRAIN_EDITOR_STUDY = "terrain_editor_study";
+const OBJVIEW_SWEEP = "objview_sweep";
+fn wholeStage(tag: []const u8) bool {
+    if (onlyStage.len == 0 or !std.mem.startsWith(u8, tag, onlyStage)) return false;
+    return onlyStage.len == tag.len or tag[onlyStage.len] == '_';
+}
+
 /// THE RIG ARRANGES ITS OWN KIT. A fresh run is a sword, a buckler and three flasks (`game.STARTING_KIT`), so the harness grants itself every scroll here.
 fn harnessKit(g: *Game) void {
     for (combat.SPELLS) |row| {
@@ -768,8 +780,12 @@ fn harnessKit(g: *Game) void {
 
 pub fn runShots(g: *Game) void {
     std.fs.cwd().makePath(DIR) catch {};
-    if (std.mem.eql(u8, onlyStage, "terrain_editor_study")) {
+    if (wholeStage(TERRAIN_EDITOR_STUDY)) {
         terrainEditorStudy(g);
+        return;
+    }
+    if (wholeStage(OBJVIEW_SWEEP)) {
+        objviewSweep(g);
         return;
     }
     if (g.warren.n == 0 or g.line.n == 0 or g.grief.n == 0) {
@@ -5151,6 +5167,84 @@ fn editorSnap(g: *Game, name: [:0]const u8) void {
     drawScene(g);
     editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, &g.day, SHOT_DT);
     snap(name);
+}
+
+/// One pass over a grid's pages, asked of the grid rather than guessed, and tallied so the sweep can report its own coverage.
+fn walkPages(g: *Game, st: *objview.State, n: usize, seen: *usize) void {
+    const last: usize = @intCast(objview.pageCount(n));
+    for (0..last) |p| {
+        st.page = @intCast(p);
+        editorFrames(g, 2);
+    }
+    seen.* += last;
+}
+
+fn editorFrames(g: *Game, n: i32) void {
+    var i: i32 = 0;
+    while (i < n) : (i += 1) {
+        drawScene(g);
+        editormod.drawOverlay(&g.editor, &g.map, &g.env, &g.scene, &g.day, SHOT_DT);
+        rl.gl.rlDrawRenderBatchActive();
+        rl.endDrawing();
+    }
+}
+
+/// DEV ONLY (`--shot --shot-only objview_sweep`): every state of the object viewer, with the WORLD drawn behind it
+/// each frame. `drawScene`'s `checkFoeModels` is the sensor — a pass that walks over a group's model panics on the
+/// frame after it happens, which is where the viewer's `DrawMesh` crash was reported from.
+fn objviewSweep(g: *Game) void {
+    g.editor.enter(mathx.ground(0, -66));
+    g.editor.applyCamForShot();
+    g.editor.modal = .objects;
+    const st = &g.editor.objects;
+    // EVERY page the grid actually draws, asked of the grid: a round number under-walks the icon shelf, which is the longest.
+    var pages: usize = 0;
+
+    st.mode = .chars;
+    st.charPlay = true;
+    for (0..objview.CHAR_N) |i| {
+        st.openChar = i;
+        editorFrames(g, 3);
+    }
+    st.openChar = null;
+    walkPages(g, st, objview.CHAR_N, &pages);
+    std.debug.print("  objview sweep: {d} character slots opened live, {d} gallery pages\n", .{ objview.CHAR_N, pages });
+
+    st.mode = .objects;
+    var kinds: usize = 0;
+    inline for (@typeInfo(objview.Shelf).@"enum".fields) |f| {
+        st.shelf = @enumFromInt(f.value);
+        st.open = null;
+        walkPages(g, st, st.shelf.kinds().len, &pages);
+        for (st.shelf.kinds()) |k| {
+            st.open = k;
+            kinds += 1;
+            editorFrames(g, 2);
+        }
+        st.open = null;
+    }
+    std.debug.print("  objview sweep: {d} props opened over {d} shelves\n", .{ kinds, @typeInfo(objview.Shelf).@"enum".fields.len });
+
+    st.mode = .icons;
+    st.openIcon = null;
+    walkPages(g, st, objview.ICONS_TOTAL, &pages);
+    for (0..item.NK) |k| {
+        st.openIcon = objview.itemSlot(@enumFromInt(k));
+        editorFrames(g, 2);
+    }
+    st.openIcon = null;
+
+    st.mode = .effects;
+    for (std.meta.tags(combat.Elem)) |e| {
+        st.elem = e;
+        editorFrames(g, 12);
+    }
+    st.mode = .volumes;
+    inline for (@typeInfo(@TypeOf(st.vol)).@"enum".fields) |f| {
+        st.vol = @enumFromInt(f.value);
+        editorFrames(g, 12);
+    }
+    std.debug.print("  objview sweep: clean — every model stamp held over {d} gallery pages\n", .{pages});
 }
 
 fn editorJukeShot(g: *Game, name: [:0]const u8) void {

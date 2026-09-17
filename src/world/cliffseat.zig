@@ -464,6 +464,83 @@ pub fn ramp(m: *wf.Map, from: [2]f32, to: [2]f32, radius: f32, span: *[4]usize) 
     return changed;
 }
 
+/// THE GRADE ACROSS THE BRUSH COLLAPSED ONTO ONE LINE: each side of the drag is flattened in CROSS-SECTION only,
+/// onto the land at its own edge of the band, so the drop the slope spent over the brush width is spent at the line
+/// instead. The map is the IDENTITY at the band's edge, so nothing outside it moves and no seam steps. Both levels
+/// are read ALONG the drag, so a lip over rolling ground keeps its roll, and the WIDTH is the drop: a wider brush
+/// gathers more grade into the cut.
+pub const Sheer = struct {
+    drop: f32,
+    /// The drop a face needs before the paint cuts at all (`wf.cliffMinDrop`).
+    min: f32,
+    moved: bool,
+
+    pub fn cuts(s: Sheer) bool {
+        return s.drop >= s.min;
+    }
+};
+
+/// One level per LATTICE CELL of run (`Map.heightStep`, not the 0.25 m `wf.HEIGHT_STEP`), so the bound is the lattice's own diagonal in cells —
+/// `sqrt(2) * (HEIGHT_N - 1)`, the same on any `half` because both sides carry it — plus the two endpoints.
+const SHEER_LEVELS: usize = @as(usize, @intFromFloat(@ceil(@sqrt(@as(f64, 2.0)) * @as(f64, @floatFromInt(wf.HEIGHT_N - 1))))) + 2;
+
+pub fn sheer(m: *wf.Map, from: [2]f32, to: [2]f32, radius: f32, span: *[4]usize) ?Sheer {
+    span.* = wf.EMPTY_SPAN;
+    const step = m.heightStep();
+    const dx = to[0] - from[0];
+    const dz = to[1] - from[1];
+    const run = @sqrt(dx * dx + dz * dz);
+    if (run < step) return null;
+    const r = @max(radius, step);
+    const sp = wf.sweptSpan(from, to, r, m.half, step, wf.HEIGHT_N) orelse return null;
+    const ux = dx / run;
+    const uz = dz / run;
+    const nx = -uz;
+    const nz = ux;
+
+    const n = @min(@as(usize, @intFromFloat(run / step)) + 2, SHEER_LEVELS);
+    std.debug.assert(n >= 3);
+    var hi: [SHEER_LEVELS]f32 = undefined;
+    var lo: [SHEER_LEVELS]f32 = undefined;
+    var sum: f32 = 0;
+    // EVERY LEVEL IS READ BEFORE ANY IS WRITTEN: sampled a radius off the line, the reads land inside the band this stroke is about to flatten.
+    for (0..n) |k| {
+        const t = @as(f32, @floatFromInt(k)) / @as(f32, @floatFromInt(n - 1));
+        const cx = from[0] + dx * t;
+        const cz = from[1] + dz * t;
+        hi[k] = m.heightAt(cx + nx * r, cz + nz * r);
+        lo[k] = m.heightAt(cx - nx * r, cz - nz * r);
+        sum += @abs(hi[k] - lo[k]);
+    }
+
+    var changed = false;
+    for (sp[1]..sp[3] + 1) |iz| {
+        for (sp[0]..sp[2] + 1) |ix| {
+            const p = m.heightPoint(ix, iz);
+            const wx = p[0] - from[0];
+            const wz = p[1] - from[1];
+            const along = wx * ux + wz * uz;
+            if (along < 0 or along > run) continue;
+            const side = wx * nx + wz * nz;
+            if (@abs(side) > r) continue;
+            const f = along / run * @as(f32, @floatFromInt(n - 1));
+            const k = @min(@as(usize, @intFromFloat(f)), n - 2);
+            const tk = f - @as(f32, @floatFromInt(k));
+            const level = if (side >= 0) mathx.lerpF(hi[k], hi[k + 1], tk) else mathx.lerpF(lo[k], lo[k + 1], tk);
+            const want = wf.heightByte(mathx.clampF(level, wf.HEIGHT_MIN, wf.HEIGHT_MAX));
+            const i = iz * wf.HEIGHT_N + ix;
+            if (m.height[i] != want) {
+                m.height[i] = want;
+                changed = true;
+            }
+            // The WHOLE band, not just the line: a flat cell takes the flag inert, and the two ends of the cut are faces as much as its length is.
+            if (markCells(m, ix, iz, wf.CLIFF_FACE)) changed = true;
+        }
+    }
+    if (changed) span.* = grown(sp);
+    return .{ .drop = sum / @as(f32, @floatFromInt(n)), .min = wf.cliffMinDrop(step), .moved = changed };
+}
+
 test "terrain editor: cliff paint is a joined plateau regardless of mouse sampling" {
     const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD);
     defer std.testing.allocator.destroy(m);
@@ -533,6 +610,34 @@ test "terrain editor: a ramp connects two cliff levels without a lip or a wall i
         try std.testing.expectApproxEqAbs(6 * (30 - x) / 30, y, wf.HEIGHT_STEP);
         previous = y;
     }
+}
+
+test "terrain editor: sheer spends a walkable grade at one line and leaves the land outside the band alone" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD);
+    defer std.testing.allocator.destroy(m);
+    const GRADE: f32 = 0.15;
+    for (0..wf.HEIGHT_N) |iz| {
+        for (0..wf.HEIGHT_N) |ix| m.height[iz * wf.HEIGHT_N + ix] = wf.heightByte(m.heightPoint(ix, iz)[0] * GRADE);
+    }
+    const R: f32 = 20;
+    var span: [4]usize = undefined;
+    try std.testing.expect(sheer(m, .{ 0, 0 }, .{ 0, 0 }, R, &span) == null);
+    const sh = sheer(m, .{ 0, -30 }, .{ 0, 30 }, R, &span).?;
+    try std.testing.expect(sh.moved and sh.cuts());
+    try std.testing.expectApproxEqAbs(2 * R * GRADE, sh.drop, wf.HEIGHT_STEP);
+    std.debug.print("sheer: {d:.2} m face out of a {d:.3} grade over {d:.1} m, cut needs {d:.2} m; {d} levels hold the lattice's {d:.0}-cell diagonal\n", .{ sh.drop, GRADE, 2 * R, sh.min, SHEER_LEVELS, @sqrt(2.0) * @as(f32, @floatFromInt(wf.HEIGHT_N - 1)) });
+
+    // Flat in cross-section either side, the whole drop at the line, and the identity past the band's own edge.
+    try std.testing.expectApproxEqAbs(m.heightAt(-15, 0), m.heightAt(-4, 0), wf.HEIGHT_STEP);
+    try std.testing.expectApproxEqAbs(m.heightAt(4, 0), m.heightAt(15, 0), wf.HEIGHT_STEP);
+    try std.testing.expectApproxEqAbs(2 * R * GRADE, m.heightAt(2, 0) - m.heightAt(-2, 0), wf.HEIGHT_STEP);
+    for ([_]f32{ 22, 30, 60, -22, -30, -60 }) |x| {
+        try std.testing.expectApproxEqAbs(x * GRADE, m.heightAt(x, 0), wf.HEIGHT_STEP);
+    }
+    // And past the ends of the drag, where the cut simply is not.
+    try std.testing.expectApproxEqAbs(10 * GRADE, m.heightAt(10, 40), wf.HEIGHT_STEP);
+    const mid = wf.HEIGHT_N / 2;
+    try std.testing.expect(wf.cliffFace(m.cliff[mid * wf.HEIGHT_N + mid]));
 }
 
 /// ONE FLAT LEVEL INSIDE A RECTANGLE AND A CUT ROUND IT: every lattice point inside goes to `target`, every cell the edge crosses is painted

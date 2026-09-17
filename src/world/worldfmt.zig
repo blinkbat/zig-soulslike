@@ -623,9 +623,26 @@ fn uncomment(dst: []u8) void {
     }
 }
 
+/// …AND IN A TOKENISED RECORD A SPACE TRUNCATES THE NAME THE SAME WAY `#` TRUNCATES THE LINE. `zone:`, `location:`
+/// and `arena:` are POSITIONAL, so a name with a space in it shifts every column after it and the map the editor
+/// just wrote comes back a LOAD ERROR. The three name fields' own tooltips have always promised this.
+fn untoken(dst: []u8) void {
+    for (dst) |*c| {
+        if (c.* == COMMENT or c.* == ' ' or c.* == '\t') c.* = '_';
+    }
+}
+
 /// THE EDITOR'S POLICY, where `setId` is the PARSER'S: a name too long is CUT, not refused, and the cap comes off the destination so an `Id` cell
 /// and a `NAME_CAP` cell take the same call. One byte is always held back for the terminator `nameText` reads.
 pub fn setNameIn(dst: []u8, s: []const u8) void {
+    @memset(dst, 0);
+    const n = @min(s.len, dst.len - 1);
+    @memcpy(dst[0..n], s[0..n]);
+    untoken(dst[0..n]);
+}
+
+/// The one authored name read as the REST OF ITS LINE (`name:`), so it keeps its spaces and only owes the comment byte.
+pub fn setLineIn(dst: []u8, s: []const u8) void {
     @memset(dst, 0);
     const n = @min(s.len, dst.len - 1);
     @memcpy(dst[0..n], s[0..n]);
@@ -1764,7 +1781,7 @@ pub const Map = struct {
     }
 
     pub fn setName(self: *Map, s: []const u8) void {
-        setNameIn(&self.name, s);
+        setLineIn(&self.name, s);
     }
 
     /// EVERYTHING BUT WHERE AND WHAT THE FILE IS, taken off the struct's OWN defaults — which is also the one place the grids' datums are written
@@ -3613,6 +3630,45 @@ test "a map path off a save file may only name a file in worlds/" {
     try std.testing.expect(!namesAMap("C:/windows/system32" ++ EXT));
     try std.testing.expect(!namesAMap(DIR ++ "/01_fallen_plain"));
     try std.testing.expect(!namesAMap(DIR ++ "/" ++ EXT));
+}
+
+test "A NAME IN A TOKENISED RECORD KEEPS NO SPACE — a zone called \"north field\" wrote clean and would not load" {
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    m.* = .{};
+    m.blank("The Fallen Plain");
+    // The map's own title is the one name read as the rest of its line, so it keeps its spaces.
+    try std.testing.expectEqualStrings("The Fallen Plain", m.label());
+
+    m.zones[0].setName("north field");
+    m.locations[0] = .{ .x = -10, .z = -10, .x1 = 10, .z1 = 10 };
+    m.locations[0].setName("old\tmill # west");
+    m.nlocations = 1;
+    m.arenas[0] = .{ .n = 3 };
+    m.arenas[0].vx[0] = -5;
+    m.arenas[0].vz[0] = -5;
+    m.arenas[0].vx[1] = 5;
+    m.arenas[0].vz[1] = -5;
+    m.arenas[0].vx[2] = 0;
+    m.arenas[0].vz[2] = 5;
+    m.arenas[0].setName("bone court");
+    m.narenas = 1;
+    try std.testing.expectEqualStrings("north_field", m.zones[0].label());
+    try std.testing.expectEqualStrings("old_mill___west", m.locations[0].label());
+    try std.testing.expectEqualStrings("bone_court", m.arenas[0].label());
+
+    // The whole point: what the editor writes has to come back.
+    const tmp = DIR ++ "/test_spacednames" ++ EXT;
+    defer std.fs.cwd().deleteFile(tmp) catch {};
+    try save(tmp, m);
+    const back = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(back);
+    var line: usize = 0;
+    try load(tmp, back, &line);
+    try std.testing.expectEqualStrings("The Fallen Plain", back.label());
+    try std.testing.expectEqualStrings("north_field", back.zones[0].label());
+    try std.testing.expectEqualStrings("old_mill___west", back.locations[0].label());
+    try std.testing.expectEqualStrings("bone_court", back.arenas[0].label());
 }
 
 /// Bytes an `at:` line spends on the shipped maps, rounded up from a measured 49.7 and pinned by a test.

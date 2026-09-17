@@ -234,6 +234,8 @@ pub const Game = struct {
     map: worldfmt.Map,
     /// THE WORLD THE RUN IS ACTUALLY STANDING IN, not the one the exe booted — what a slot is labelled with.
     mapAt: savemod.MapName = .{},
+    /// The editor path `mapAt` was last solved FROM, refused or not, so the door is asked once a swap and never once a frame.
+    mapFrom: savemod.MapName = .{},
     editor: editormod.Editor,
     env: envmod.Env,
     hero: heromod.Hero,
@@ -380,8 +382,9 @@ pub const Game = struct {
         g.menu = .{};
         phase(&initTimer, "gfx");
         worldfmt.loadOrPanic(worldfmt.startMap(), &g.map);
-        if (!nameable(worldfmt.startMap())) @panic("game: the boot map's path is too long to label a save with");
+        if (!nameable(worldfmt.startMap())) @panic("game: the boot map's path cannot label a save");
         g.mapAt = savemod.MapName.of(worldfmt.startMap());
+        g.mapFrom = g.mapAt;
         PLAY_HALF = playHalfOf(g.map.half);
         phase(&initTimer, "map");
         g.env.build(&g.scene);
@@ -618,10 +621,10 @@ fn enterNow(g: *Game, act: Enter) void {
     g.enterIn = ENTER_IN;
 }
 
-/// A NAME `savemod.MapName` WOULD HAVE TO CLAMP IS REFUSED, NOT TRUNCATED — clamped, it no longer matches the map it names, so every slot written in that world reads back unloadable. `--map` is the other way in, so `init` asks too.
+/// A NAME THE `map:` ROW CANNOT CARRY IS REFUSED, NOT TRUNCATED — carried anyway, every slot written in that world reads back unloadable. `--map` and the editor's own Open are the other ways in, so `init` and the editor swap ask too.
 fn nameable(path: []const u8) bool {
-    if (!savemod.tooLong(path)) return true;
-    std.debug.print("world: {s} is too long a path to save against ({d} > {d})\n", .{ path, path.len, savemod.MAP_CAP });
+    const why = savemod.refuses(path) orelse return true;
+    std.debug.print("world: {s} cannot label a save — it {s}\n", .{ path, why });
     return false;
 }
 
@@ -634,6 +637,8 @@ fn swapMap(g: *Game, path: []const u8) bool {
         return false;
     };
     g.mapAt = savemod.MapName.of(path);
+    // `mapAt` no longer came from the editor's path, so the editor's own door has to solve it again the next frame it is open.
+    g.mapFrom = .{};
     PLAY_HALF = playHalfOf(g.map.half);
     g.env.replay(&g.map);
     return true;
@@ -699,6 +704,15 @@ test "A MAP NAME IS REFUSED, NEVER CLAMPED — the boot path and a swap ask the 
     // The refusal is the whole guard: clamped, the name no longer opens the file it came from.
     try std.testing.expect(!std.mem.eql(u8, savemod.MapName.of(over).name(), over));
     std.debug.print(" (clamped it would read {d} chars)\n", .{savemod.MapName.of(over).name().len});
+
+    // …and the same door catches the OTHER byte a `map:` row cannot carry: the row is read back one token at a time.
+    const spaced = worldfmt.DIR ++ "/fallen plain" ++ worldfmt.EXT;
+    try std.testing.expect(!nameable(spaced));
+    var buf: [savemod.MAP_CAP * 2]u8 = undefined;
+    const row = try std.fmt.bufPrint(&buf, "map: {s}", .{spaced});
+    var it = std.mem.tokenizeAny(u8, row, " \t");
+    _ = it.next();
+    try std.testing.expect(!std.mem.eql(u8, it.next().?, spaced));
 }
 
 /// A RAIL ONLY EVER GAINS A BIT, AND THE RUN'S START IS WHAT CLEARS IT (`beginGame`). The bonfire empties every group (`clearFoes`) BEFORE `saveNow`, so re-derived off the live bodies a killed knight was written back alive.
@@ -2748,7 +2762,25 @@ fn mixStamp(h: *u64, x: u64) void {
     h.* = (h.* ^ x) *% 0x9E3779B97F4A7C15;
 }
 
-fn stampParts(h: *u64, v: anytype) void {
+/// The stamp cannot watch the shader, and `DrawMesh` reads `material.shader.locs` BEFORE anything else it is
+/// handed — a material left holding a shader that is neither of the scene's two faults inside raylib with no
+/// Zig frame to name it. Printed once, never fatal: a model may legitimately carry a material of its own.
+var shaderWarned = false;
+
+fn watchShader(sc: *const gfx.Scene, mat: rl.Material, field: []const u8) void {
+    if (shaderWarned) return;
+    const sh = mat.shader;
+    if ((sh.id == sc.shader.id and sh.locs == sc.shader.locs) or (sh.id == sc.depthShader.id and sh.locs == sc.depthShader.locs)) return;
+    shaderWarned = true;
+    std.debug.print(
+        "game: `{s}` holds shader {d} locs 0x{x} — neither the scene ({d}/0x{x}) nor the depth ({d}/0x{x}). `DrawMesh` reads `locs` first.\n",
+        .{ field, sh.id, @intFromPtr(sh.locs), sc.shader.id, @intFromPtr(sc.shader.locs), sc.depthShader.id, @intFromPtr(sc.depthShader.locs) },
+    );
+}
+
+/// ONE WALK OF A GROUP'S MODEL, BOTH SENSORS ON IT — the clobber stamp and the shader watch reach the same leaves, so a
+/// second traversal only doubled the per-frame cost and gave the type filter a second place to drift.
+fn stampParts(h: *u64, sc: *const gfx.Scene, field: []const u8, v: anytype) void {
     const T = @TypeOf(v);
     if (T == rl.Mesh) {
         mixStamp(h, @intFromPtr(v.vboId));
@@ -2756,7 +2788,11 @@ fn stampParts(h: *u64, v: anytype) void {
         mixStamp(h, @as(u32, @bitCast(v.vertexCount)));
         return;
     }
-    if (T == rl.Material) return mixStamp(h, @intFromPtr(v.maps));
+    if (T == rl.Material) {
+        mixStamp(h, @intFromPtr(v.maps));
+        watchShader(sc, v, field);
+        return;
+    }
     if (T == rl.Model) {
         mixStamp(h, @intFromPtr(v.meshes));
         mixStamp(h, @intFromPtr(v.materials));
@@ -2764,9 +2800,9 @@ fn stampParts(h: *u64, v: anytype) void {
         return;
     }
     switch (@typeInfo(T)) {
-        .array => for (v) |e| stampParts(h, e),
-        .optional => if (v) |e| stampParts(h, e),
-        .@"struct" => inline for (std.meta.fields(T)) |f| stampParts(h, @field(v, f.name)),
+        .array => for (v) |e| stampParts(h, sc, field, e),
+        .optional => if (v) |e| stampParts(h, sc, field, e),
+        .@"struct" => inline for (std.meta.fields(T)) |f| stampParts(h, sc, field, @field(v, f.name)),
         else => {},
     }
 }
@@ -2775,7 +2811,7 @@ fn checkFoeModels(g: *const Game, where: []const u8) void {
     inline for (FOE_GROUPS, 0..) |gr, i| {
         if (comptime @hasField(@FieldType(Game, gr.field), "model")) {
             var h: u64 = 0xF0E;
-            stampParts(&h, @field(g, gr.field).model);
+            stampParts(&h, &g.scene, gr.field, @field(g, gr.field).model);
             if (!foeWatched) {
                 foeStamp[i] = h;
             } else if (foeStamp[i] != h) {
@@ -2784,6 +2820,35 @@ fn checkFoeModels(g: *const Game, where: []const u8) void {
         }
     }
     foeWatched = true;
+}
+
+/// What one `checkFoeModels` pass actually costs, counted off the same type walk the sensor takes.
+fn stampLeaves(comptime T: type) usize {
+    if (T == rl.Mesh or T == rl.Material or T == rl.Model) return 1;
+    return switch (@typeInfo(T)) {
+        .array => |a| a.len * stampLeaves(a.child),
+        .optional => |o| stampLeaves(o.child),
+        .@"struct" => blk: {
+            var n: usize = 0;
+            for (std.meta.fields(T)) |f| n += stampLeaves(f.type);
+            break :blk n;
+        },
+        else => 0,
+    };
+}
+
+test "THE MODEL SENSOR IS ONE WALK, NOT TWO — the clobber stamp and the shader watch share every leaf they reach" {
+    @setEvalBranchQuota(200000);
+    const leaves = comptime blk: {
+        var n: usize = 0;
+        for (FOE_GROUPS) |gr| {
+            if (@hasField(@FieldType(Game, gr.field), "model")) n += stampLeaves(@FieldType(@FieldType(Game, gr.field), "model"));
+        }
+        break :blk n;
+    };
+    try std.testing.expect(leaves > 0);
+    // Two calls a frame (`the frame ahead of it`, `the shadow pass`); a second traversal for the shader watch doubled it.
+    std.debug.print("\n  model sensor: {d} mesh/material parts over {d} groups, walked {d} times a frame ({d} leaf visits, was {d})\n", .{ leaves, FOE_GROUPS.len, 2, leaves * 2, leaves * 4 });
 }
 
 pub fn heroCenterY(g: *const Game) f32 {
@@ -5672,7 +5737,7 @@ pub fn run(mode: Mode) void {
     }.ms;
     // VSYNC, not `setTargetFPS`: that is a CPU-side frame LIMITER and never tells the driver to swap during vblank, so fullscreen tears.
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .vsync_hint = true, .window_hidden = shot, .window_resizable = true });
-    rl.initWindow(SCREEN_W, SCREEN_H, "Golem");
+    rl.initWindow(SCREEN_W, SCREEN_H, menumod.TITLE_WINDOW);
     defer rl.closeWindow();
     defer savemod.shutdown();
     rl.setExitKey(.null);
@@ -5786,7 +5851,12 @@ pub fn run(mode: Mode) void {
             rl.showCursor();
             const edAct = g.editor.update(&g.map, &g.env, &g.day, rawDt);
             // Read AFTER the step: Open/New/Save As swap the world, and a save taken the same frame would be labelled with the map he just left.
-            if (g.editor.curPath().len > 0) g.mapAt = savemod.MapName.of(g.editor.curPath());
+            // ASKED ON THE CHANGE, NOT ON THE FRAME: `nameable` PRINTS its refusal, and a path the `map:` row cannot carry is a standing condition.
+            const edPath = g.editor.curPath();
+            if (edPath.len > 0 and !g.mapFrom.is(edPath)) {
+                g.mapFrom = savemod.MapName.of(edPath);
+                if (nameable(edPath)) g.mapAt = g.mapFrom;
+            }
             switch (edAct) {
                 .none => {},
                 .leave => {

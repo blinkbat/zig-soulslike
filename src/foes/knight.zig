@@ -991,7 +991,9 @@ const SWAT_SHIELD_KEYS = MoveKeys{
     },
 };
 
-const MOVE_KEYS = [MOVES.len]MoveKeys{ SWEEP_KEYS, OVER_KEYS, THRUST_KEYS, BASH_KEYS, SWEEP2_KEYS, BASH_KEYS };
+/// The default track per move, pinned to the `*_I` indices below. The bash and the swat each pick a VARIANT off the body's
+/// state (`bashKeys`, `swatKeys`) and `trackFor` intercepts both, so those two rows are only ever the fallback.
+const MOVE_KEYS = [MOVES.len]MoveKeys{ SWEEP_KEYS, OVER_KEYS, THRUST_KEYS, BASH_KEYS, SWEEP2_KEYS, SWAT_SWORD_KEYS };
 
 fn keysFor(mv: usize) MoveKeys {
     return MOVE_KEYS[@min(mv, MOVE_KEYS.len - 1)];
@@ -1154,6 +1156,10 @@ comptime {
     // `windFor` INDEXES `STROKE` by the move, so row i must be move i. Reordering `MOVES_BANK` alone hands every stroke its neighbour's gather, and the uniqueness checks below still pass.
     for (.{ .{ SWEEP_I, State.sweepwind }, .{ OVER_I, State.overwind }, .{ THRUST_I, State.thrustwind }, .{ BASH_I, State.bashwind }, .{ SWEEP2_I, State.chainwind }, .{ SWAT_I, State.swatwind } }) |row| {
         if (STROKE[row[0]].wind != row[1]) @compileError("knight: a STROKE row no longer sits at its own move's index");
+    }
+    // …AND `MOVE_KEYS` IS THE THIRD LIST ON THE SAME INDEX. `keysFor` reads it positionally, so a move reordered here dresses a stroke in its neighbour's animation and every timing test still passes.
+    for (.{ .{ SWEEP_I, SWEEP_KEYS }, .{ OVER_I, OVER_KEYS }, .{ THRUST_I, THRUST_KEYS }, .{ BASH_I, BASH_KEYS }, .{ SWEEP2_I, SWEEP2_KEYS }, .{ SWAT_I, SWAT_SWORD_KEYS } }) |row| {
+        if (!std.meta.eql(MOVE_KEYS[row[0]], row[1])) @compileError("knight: a MOVE_KEYS row no longer sits at its own move's index");
     }
     for (0..MOVES.len) |i| {
         for (i + 1..MOVES.len) |j| {

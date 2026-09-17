@@ -22,6 +22,8 @@ const lerpF = mathx.lerpF;
 const placeAt = mathx.placeAt;
 
 const Pal = struct {
+    /// WHOSE ROW THIS IS, so the palette table is pinned to `Role`'s own order the way `SPEC` is — read positionally, a role inserted above hands the mourner the shade's colours and nothing says so.
+    role: Role,
     shroud: rl.Color,
     shroudLt: rl.Color,
     shroudDk: rl.Color,
@@ -34,6 +36,7 @@ const Pal = struct {
 
 const PAL = [NROLE]Pal{
     .{
+        .role = .shade,
         .shroud = rgba(13, 12, 19, 255),
         .shroudLt = rgba(26, 24, 38, 255),
         .shroudDk = rgba(6, 6, 10, 255),
@@ -44,6 +47,7 @@ const PAL = [NROLE]Pal{
         .eyeCore = rgba(206, 180, 255, 30),
     },
     .{
+        .role = .mourner,
         .shroud = rgba(17, 17, 19, 255),
         .shroudLt = rgba(33, 33, 36, 255),
         .shroudDk = rgba(8, 8, 9, 255),
@@ -134,6 +138,9 @@ comptime {
     for (SPEC, 0..) |sp, i| {
         if (@intFromEnum(sp.role) != i) @compileError("shade: SPEC is out of `Role` order");
         if (sp.hp <= 0 or sp.size <= 0 or sp.slow <= 0) @compileError("shade: a role with no body");
+    }
+    for (PAL, 0..) |p, i| {
+        if (@intFromEnum(p.role) != i) @compileError("shade: PAL is out of `Role` order");
     }
     std.debug.assert(spec(.mourner).size > spec(.shade).size and spec(.mourner).slow > spec(.shade).slow);
     std.debug.assert(spec(.mourner).souls > spec(.shade).souls and spec(.mourner).hp > spec(.shade).hp);

@@ -1282,7 +1282,7 @@ const SOAK_ROWS = blk: {
     var out: [wf.Liquid.N]usize = undefined;
     var n: usize = 0;
     for (liquid.SOAK_BANK, 0..) |row, i| {
-        if (row != null) {
+        if (row.ail != null) {
             out[n] = i;
             n += 1;
         }
@@ -1310,7 +1310,7 @@ fn soakRowKey(i: usize) []const u8 {
 }
 
 fn soakGet(r: usize, c: usize) f32 {
-    const row = liquid.SOAK[SOAK_ROWS[r]] orelse return 0;
+    const row = liquid.SOAK[SOAK_ROWS[r]];
     return switch (@as(SoakCol, @enumFromInt(c))) {
         .build => row.build,
         .dpsFrac => row.dpsFrac,
@@ -1319,10 +1319,10 @@ fn soakGet(r: usize, c: usize) f32 {
 
 fn soakSet(r: usize, c: usize, v: f32) void {
     const slot = &liquid.SOAK[SOAK_ROWS[r]];
-    if (slot.* == null) return;
+    if (slot.ail == null) return;
     switch (@as(SoakCol, @enumFromInt(c))) {
-        .build => slot.*.?.build = v,
-        .dpsFrac => slot.*.?.dpsFrac = v,
+        .build => slot.build = v,
+        .dpsFrac => slot.dpsFrac = v,
     }
 }
 

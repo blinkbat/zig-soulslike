@@ -73,7 +73,9 @@ undo/redo, cut/copy/paste, grid snap, object viewer, sound jukebox, FX bench, ba
 drops into a walled arena against the one creature under the cursor and hands your map back when you leave.
 
 Ground starts with a compact **Cliffs** palette: click or drag **Raise cliff / Lower cliff** at a chosen
-height, or drag a **Ramp** from foot to top. **Waterfall** paints flowing water along an existing cliff edge;
+height, or drag a **Ramp** from foot to top. **Sheer** drags along the top of a slope that ought to be a cliff
+and spends the grade across the brush at one exact cut instead, leaving the land either side of the band alone.
+**Waterfall** paints flowing water along an existing cliff edge;
 hold Shift to remove the water. A cave entrance can remain open behind the curtain.
 
 **Caves** offers Tunnel and Chamber presets, connected drag strokes, automatic floor fitting, and a graded

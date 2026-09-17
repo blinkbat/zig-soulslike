@@ -18,6 +18,12 @@ const padPressed = rumblemod.padPressed;
 const padDown = rumblemod.padDown;
 
 
+/// THE GAME'S NAME, IN ONE PLACE — the boot card, the pause card and the window all read it. The rename off the
+/// old one had to find three literals in two files, and the window's is the one nobody looks at.
+pub const TITLE: [:0]const u8 = "GOLEM";
+/// The same name as the OS bar shows it.
+pub const TITLE_WINDOW: [:0]const u8 = "Golem";
+
 pub const Action = union(enum) {
     none,
     quit,
@@ -564,12 +570,12 @@ pub const Menu = struct {
         }
         switch (self.screen) {
             .closed, .character => {},
-            .boot => self.drawCard("GOLEM", &bootLabels(), .{
+            .boot => self.drawCard(TITLE, &bootLabels(), .{
                 .dim = &bootDim(self, shelf),
                 .note = if (shelf.full()) BOOT_NOTE_FULL else if (shelf.any()) BOOT_NOTE else BOOT_NOTE_EMPTY,
             }),
             .slots => self.drawSlots(shelf),
-            .main => self.drawCard("GOLEM", &mainLabels(), .{}),
+            .main => self.drawCard(TITLE, &mainLabels(), .{}),
             .options => self.drawCard("SOUND", &optionLabels(), .{ .gauges = &soundLevels() }),
             .debug => self.drawCard("DEBUG", &self.debugLabels(day, sky), .{}),
             .retro => self.drawCard("RETRO FILTERS", &retroLabels(retro), .{ .gauges = retro.values[0..gfx.RETRO_COUNT] }),

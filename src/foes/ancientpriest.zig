@@ -599,7 +599,7 @@ pub const Ancient = struct {
     }
 
     fn chips(self: *Ancient, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, CHIP_SPRAY);
+        foe.ownSpray(self, at, dir, n, spd, self.scale, CHIP_SPRAY);
     }
 
     pub fn debugRaise(self: *Ancient) void {
@@ -653,13 +653,13 @@ pub const Ancient = struct {
     }
 
     fn bloom(self: *Ancient, at: rl.Vector3) void {
-        elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, v3(at.x, at.y + 0.10, at.z), v3(0, 1, 0), .cold, RAISE_BLOOM, self.scale);
+        elemfx.ownBurst(self, v3(at.x, at.y + 0.10, at.z), v3(0, 1, 0), .cold, RAISE_BLOOM, self.scale);
     }
 
     fn frostGather(self: *Ancient, dt: f32, u: f32) void {
         const at = self.muzzleWorld();
         const owed = foe.emitDue(&self.fxAccum, dt, 10.0 + 22.0 * u);
-        if (owed > 0) elemfx.gather(&self.parts, &self.fxHead, &self.fxRng, at, .cold, owed, 0.55, self.scale);
+        if (owed > 0) elemfx.ownGather(self, at, .cold, owed, 0.55, self.scale);
     }
 
     fn breathe(self: *Ancient, dt: f32) void {

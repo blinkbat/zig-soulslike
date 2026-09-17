@@ -737,7 +737,7 @@ pub const Mastodon = struct {
     }
 
     fn dust(self: *Mastodon, at: rl.Vector3, n: i32, spd: f32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, v3(at.x, self.pos.y, at.z), v3(0, 1, 0), n, spd, self.scale, DUST_SPRAY);
+        foe.ownSpray(self, v3(at.x, self.pos.y, at.z), v3(0, 1, 0), n, spd, self.scale, DUST_SPRAY);
     }
     fn blood(self: *Mastodon, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
         foe.bloodSpray(self, at, dir, n, spd, BLOOD_SPRAY);

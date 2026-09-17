@@ -454,7 +454,7 @@ pub const Cinder = struct {
         .col1 = foe.DUST_THIN,
     };
     fn ashBurst(self: *Cinder, at: rl.Vector3, n: i32) void {
-        foe.puff(&self.parts, &self.fxHead, &self.fxRng, at, n, 2.0, 0.18, self.scale, ASH_PUFF);
+        foe.dustPuff(self, at, n, 2.0, 0.18, ASH_PUFF);
     }
 
     pub fn drawFx(self: *const Cinder) void {

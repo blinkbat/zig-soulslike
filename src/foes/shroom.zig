@@ -550,7 +550,7 @@ pub const Shroom = struct {
         .bigJit = null,
     };
     fn dustBurst(self: *Shroom, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
-        foe.puff(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, self.pos.y + 0.04, c.z), n, spd, big, 1.0, PUFF);
+        foe.dustPuff(self, v3(c.x, self.pos.y + 0.04, c.z), n, spd, big, PUFF);
     }
     fn emitPuff(self: *Shroom, at: rl.Vector3, motes: i32) void {
         var i: i32 = 0;

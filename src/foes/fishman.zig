@@ -696,7 +696,7 @@ pub const Fishman = struct {
             blood.col = foe.HIT_FLASH;
             blood.col1 = rgba(218, 147, 71, 180);
         }
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, 2.4, self.rigSize(), blood);
+        foe.ownSpray(self, at, dir, n, 2.4, self.rigSize(), blood);
     }
 
     fn riteMotes(self: *Fishman) void {

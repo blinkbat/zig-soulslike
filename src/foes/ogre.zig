@@ -724,7 +724,7 @@ pub const Ogre = struct {
         var target = self.poseChannels();
         const striking = blowOf(self.state) != null;
         self.poseSprings.chase(&target, if (striking or live != null) 18000 else 6500, 0.78, 0.97, dt);
-        inline for (POSE_FIELDS, 0..) |field, i| @field(self, field) = target[i];
+        self.applyPoseChannels(target);
         self.pose();
         self.takeParry();
         if (if (self.parried) null else live) |hit| {
@@ -954,9 +954,11 @@ pub const Ogre = struct {
     const POSE_FIELDS = .{ "bodyLean", "twist", "legBrace", "girdle", "carryHang", "headPitch", "jawOpen", "offShoulder", "offElbow", "clubShoulder", "clubAbd", "clubSweep", "clubElbow", "clubTilt" };
 
     fn poseChannels(self: *const Ogre) [POSE_FIELDS.len]f32 {
-        var values: [POSE_FIELDS.len]f32 = undefined;
-        inline for (POSE_FIELDS, 0..) |field, i| values[i] = @field(self, field);
-        return values;
+        return foe.poseChannels(self, POSE_FIELDS);
+    }
+
+    fn applyPoseChannels(self: *Ogre, values: [POSE_FIELDS.len]f32) void {
+        foe.applyPoseChannels(self, POSE_FIELDS, values);
     }
 
     fn clubSeg(self: *const Ogre) [2]rl.Vector3 {
@@ -1351,7 +1353,7 @@ pub const Ogre = struct {
         .rHi = 0.16,
     };
     fn dustBurst(self: *Ogre, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
-        foe.puff(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, self.pos.y + 0.06, c.z), n, spd, big, self.scale, PUFF);
+        foe.dustPuff(self, v3(c.x, self.pos.y + 0.06, c.z), n, spd, big, PUFF);
     }
     fn plantBurst(self: *Ogre) void {
         const f = mathx.headingDir(self.facing);

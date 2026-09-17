@@ -651,7 +651,9 @@ comptime {
     }
 }
 
-/// THE BRUSH'S OWN RANGE, IN RADIUS METRES — the `[` `]` keys and the panel's width gauge are the two writers and they read it here. The panel doubles it (`ui.widthSlider`).
+/// THE `[` `]` KEYS' OWN RANGE, IN RADIUS METRES — they are the one writer that is not a panel, so they take the WIDEST band any
+/// brush allows. A brush whose panel gauge is narrower (ramp, waterfall, sheer, cave) states its own WIDTH range there; `ui.gauge`
+/// only writes inside a gesture, so a key press outside a panel's band is shown pinned and never silently snapped.
 const RADIUS_MIN: f32 = 1;
 const RADIUS_MAX: f32 = 60;
 

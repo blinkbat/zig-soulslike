@@ -664,7 +664,7 @@ pub const Owlbear = struct {
         .bounce = 0.22,
     };
     fn chips(self: *Owlbear, at: rl.Vector3, dir: rl.Vector3, n: i32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, 2.4, self.scale, CHIP_SPRAY);
+        foe.ownSpray(self, at, dir, n, 2.4, self.scale, CHIP_SPRAY);
     }
 
     fn shedGrit(self: *Owlbear, dt: f32) void {

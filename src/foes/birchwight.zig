@@ -465,7 +465,7 @@ pub const Wight = struct {
         .bounce = 0.25,
     };
     fn chips(self: *Wight, at: rl.Vector3, dir: rl.Vector3, n: i32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, 2.6, self.scale, CHIP_SPRAY);
+        foe.ownSpray(self, at, dir, n, 2.6, self.scale, CHIP_SPRAY);
     }
 
     fn emitFire(self: *Wight, dt: f32) void {

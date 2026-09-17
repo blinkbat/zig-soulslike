@@ -789,7 +789,7 @@ pub const Frog = struct {
         .rHi = 0.12,
     };
     fn dustBurst(self: *Frog, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
-        foe.puff(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, self.pos.y + 0.05, c.z), n, spd, big, self.scale, PUFF);
+        foe.dustPuff(self, v3(c.x, self.pos.y + 0.05, c.z), n, spd, big, PUFF);
     }
     fn emitCoil(self: *Frog, dt: f32, k: f32) void {
         const emitRate = (12.0 + 40.0 * k);

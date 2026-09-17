@@ -1050,7 +1050,7 @@ pub const Archer = struct {
     }
 
     fn chips(self: *Archer, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, CHIP_SPRAY);
+        foe.ownSpray(self, at, dir, n, spd, self.scale, CHIP_SPRAY);
     }
 
     pub fn pose(self: *Archer) void {

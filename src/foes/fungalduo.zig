@@ -1098,16 +1098,11 @@ pub const Swordsman = struct {
     }
 
     pub fn markSlain(self: *Swordsman) void {
-        self.vit.hp = 0;
-        self.vit.dead = true;
-        self.state = .dead;
-        self.t = SW_DEATH_DUR + SW_DISS_DUR;
-        self.fade = 1;
-        self.gone = true;
+        foe.markSlain(self, SW_DEATH_DUR + SW_DISS_DUR);
     }
 
     fn venom(self: *Swordsman, at: rl.Vector3, n: usize) void {
-        elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, at, v3(0, 1, 0), .chaos, n, self.scale);
+        elemfx.ownBurst(self, at, v3(0, 1, 0), .chaos, n, self.scale);
     }
 
     fn stunAmount(self: *const Swordsman) f32 {
@@ -1572,20 +1567,20 @@ pub const Magus = struct {
     fn kindle(self: *Magus, dt: f32, u: f32) void {
         const n = foe.emitTicks(&self.fxAccum, dt, lerpF(6.0, 34.0, u * u), MG_EMIT_CAP);
         if (n == 0) return;
-        elemfx.gather(&self.parts, &self.fxHead, &self.fxRng, self.staffHead(), .chaos, n, 0.22 * (0.4 + 0.6 * u) * self.scale, self.scale);
+        elemfx.ownGather(self, self.staffHead(), .chaos, n, 0.22 * (0.4 + 0.6 * u) * self.scale, self.scale);
     }
 
     fn shed(self: *Magus, dt: f32, u: f32) void {
         const n = foe.emitTicks(&self.fxAccum, dt, lerpF(4.0, 26.0, u), MG_EMIT_CAP);
         if (n == 0) return;
-        elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, self.centerWorld(), v3(0, -1, 0), .chaos, n, self.scale);
+        elemfx.ownBurst(self, self.centerWorld(), v3(0, -1, 0), .chaos, n, self.scale);
     }
 
     pub fn tryHit(self: *Magus, blade_: foe.Blade) void {
         if (self.state == .dead or self.absent()) return;
         const s = foe.reached(self, blade_) orelse return;
         const heavy = foe.wounded(self, s, blade_, MG_SHOVE);
-        elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, s.contact, v3(0, 1, 0), .chaos, if (heavy) MG_HURT_HEAVY else MG_HURT_LIGHT, self.scale);
+        elemfx.ownBurst(self, s.contact, v3(0, 1, 0), .chaos, if (heavy) MG_HURT_HEAVY else MG_HURT_LIGHT, self.scale);
         switch (s.reaction) {
             .death => self.enterDeath(),
             .heavy => self.enterStun(true),
@@ -1628,12 +1623,7 @@ pub const Magus = struct {
         self.enter(.puff_wind);
     }
     pub fn markSlain(self: *Magus) void {
-        self.vit.hp = 0;
-        self.vit.dead = true;
-        self.state = .dead;
-        self.t = MG_DEATH_DUR + MG_DISS_DUR;
-        self.fade = 1;
-        self.gone = true;
+        foe.markSlain(self, MG_DEATH_DUR + MG_DISS_DUR);
     }
 
     pub fn stagger(self: *Magus, heavy: bool) void {
@@ -2285,7 +2275,7 @@ pub const Conclave = struct {
         for (&self.dusts) |*g| {
             if (g.live) continue;
             g.* = .{ .live = true, .at = at, .seed = self.fxRng.float() };
-            foe.spray(&self.parts, &self.fxHead, &self.fxRng, v3(at.x, at.y + 0.9, at.z), v3(0, 1, 0), DUST_SPRAY, 2.6, 1.0, SPORE_SPRAY);
+            foe.ownSpray(self, v3(at.x, at.y + 0.9, at.z), v3(0, 1, 0), DUST_SPRAY, 2.6, 1.0, SPORE_SPRAY);
             return;
         }
     }
@@ -2322,7 +2312,7 @@ pub const Conclave = struct {
 
     fn splashAt(self: *Conclave, at: rl.Vector3, n: usize) void {
         const from = self.fxHead;
-        elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, at, v3(0, 1, 0), .chaos, n, 1.0);
+        elemfx.ownBurst(self, at, v3(0, 1, 0), .chaos, n, 1.0);
         foe.floorBurst(&self.parts, from, self.fxHead, at.y);
     }
 

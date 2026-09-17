@@ -894,8 +894,7 @@ pub const Necro = struct {
     }
 
     fn chainHem(self: *Necro) void {
-        const swayLag = HEM_SWAY * mathx.sinf(std.math.tau * self.phase - 0.9) * self.moving;
-        self.hemMat = mul(mul(rx(self.hemLean), rz(swayLag)), self.xf[ROOT]);
+        self.hemMat = foe.hemXform(self.xf[ROOT], self.hemLean, self.phase, self.moving, HEM_SWAY);
     }
 
     pub fn pose(self: *Necro) void {
@@ -1210,7 +1209,7 @@ pub const Necro = struct {
     }
 
     fn chips(self: *Necro, at: rl.Vector3, dir: rl.Vector3, n: u32, spd: f32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, @intCast(n), spd, self.scale, CHIP_SPRAY);
+        foe.ownSpray(self, at, dir, @intCast(n), spd, self.scale, CHIP_SPRAY);
     }
 
     fn footfalls(self: *Necro) void {

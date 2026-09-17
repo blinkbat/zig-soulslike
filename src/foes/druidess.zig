@@ -1010,7 +1010,7 @@ pub const Druidess = struct {
     }
 
     fn land(self: *Druidess) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, self.pos, v3(0, 0, 1), 6, 1.2, self.scale, LAND_DUST);
+        foe.ownSpray(self, self.pos, v3(0, 0, 1), 6, 1.2, self.scale, LAND_DUST);
         sfx.world(.druid_land, self.pos);
     }
 
@@ -1145,14 +1145,14 @@ pub const Druidess = struct {
     }
 
     fn chips(self: *Druidess, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, LEAF_SPRAY);
+        foe.ownSpray(self, at, dir, n, spd, self.scale, LEAF_SPRAY);
     }
     fn bloom(self: *Druidess, at: rl.Vector3, n: usize) void {
-        elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, at, v3(0, 1, 0), .chaos, n, self.scale);
+        elemfx.ownBurst(self, at, v3(0, 1, 0), .chaos, n, self.scale);
     }
     fn gatherAtOrb(self: *Druidess, dt: f32) void {
         const n = foe.emitDue(&self.fxAccum, dt, 16.0);
-        if (n > 0) elemfx.gather(&self.parts, &self.fxHead, &self.fxRng, self.orbWorld(), .chaos, n, 0.55 * self.scale, self.scale);
+        if (n > 0) elemfx.ownGather(self, self.orbWorld(), .chaos, n, 0.55 * self.scale, self.scale);
     }
 
     fn setCarry(self: *Druidess, dt: f32) void {
@@ -1374,8 +1374,7 @@ pub const Druidess = struct {
     }
 
     fn chainHem(self: *Druidess) void {
-        const swayLag = HEM_SWAY * mathx.sinf(std.math.tau * self.phase - 0.9) * self.moving;
-        self.hemMat = mul(mul(rx(self.hemLean), rz(swayLag)), self.xf[ROOT]);
+        self.hemMat = foe.hemXform(self.xf[ROOT], self.hemLean, self.phase, self.moving, HEM_SWAY);
     }
 
     fn chainTrails(self: *Druidess, fs: f32) void {
@@ -1646,8 +1645,8 @@ pub const Coven = struct {
             p.live = false;
             const at = p.to;
             sfx.world(.druid_pod, at);
-            elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, at, v3(0, 1, 0), .chaos, POD_BURST, 1.0);
-            foe.spray(&self.parts, &self.fxHead, &self.fxRng, v3(at.x, at.y + POD_R1 * 0.6, at.z), v3(0, 1, 0), POD_SPLINTERS, 3.6, 1.0, SPLINTER_SPRAY);
+            elemfx.ownBurst(self, at, v3(0, 1, 0), .chaos, POD_BURST, 1.0);
+            foe.ownSpray(self, v3(at.x, at.y + POD_R1 * 0.6, at.z), v3(0, 1, 0), POD_SPLINTERS, 3.6, 1.0, SPLINTER_SPRAY);
             if (mathx.distXZ(at, hero) <= POD_R + foe.HERO_R) foe.worseBlow(worst, POD_HIT, at, &GROUND_THREAT);
         }
     }
@@ -1680,7 +1679,7 @@ pub const Coven = struct {
         // `lashed` on a snare is "it has hold of someone": the stalks clutch harder for it.
         self.plant(.{ .live = true, .kind = .snare, .at = at, .seed = self.fxRng.float(), .lashed = caught });
         sfx.world(.druid_snare, at);
-        elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, at, v3(0, 1, 0), .chaos, 10, 1.0);
+        elemfx.ownBurst(self, at, v3(0, 1, 0), .chaos, 10, 1.0);
         if (caught) {
             self.pendingSnare = mathx.maxF(self.pendingSnare, SNARE_HOLD);
             self.holdLeft = SNARE_HOLD;
@@ -1692,7 +1691,7 @@ pub const Coven = struct {
 
     pub fn thrust(self: *Coven, from: rl.Vector3, yaw: f32) void {
         self.plant(.{ .live = true, .kind = .spear, .at = from, .yaw = yaw, .seed = self.fxRng.float() });
-        elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, from, mathx.headingDir(yaw), .chaos, 8, 1.0);
+        elemfx.ownBurst(self, from, mathx.headingDir(yaw), .chaos, 8, 1.0);
     }
 
     fn plant(self: *Coven, v: Vine) void {

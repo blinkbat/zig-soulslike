@@ -833,6 +833,25 @@ pub fn markOn(bone: rl.Matrix, at: rl.Vector3) rl.Vector3 {
     return rl.math.vector3Transform(at, bone);
 }
 
+/// A BODY'S POSE CHANNELS GATHERED INTO THE FLAT ARRAY `SpringBank.chase` WANTS, and scattered back. Kept as a PAIR here
+/// so a creature cannot name its channels for the gather and then hand-roll the scatter over a different list.
+pub fn poseChannels(self: anytype, comptime FIELDS: anytype) [FIELDS.len]f32 {
+    var values: [FIELDS.len]f32 = undefined;
+    inline for (FIELDS, 0..) |field, i| values[i] = @field(self, field);
+    return values;
+}
+
+pub fn applyPoseChannels(self: anytype, comptime FIELDS: anytype, values: [FIELDS.len]f32) void {
+    inline for (FIELDS, 0..) |field, i| @field(self, field) = values[i];
+}
+
+/// A ROBED BODY'S SKIRT, hung off its ROOT: the sway trails the stride by 0.9 rad so the hem is still coming back as the
+/// far foot lands, and it rides the lean rather than being added beside it. `sway` is the only per-creature part.
+pub fn hemXform(root: rl.Matrix, lean: f32, phase: f32, moving: f32, sway: f32) rl.Matrix {
+    const swayLag = sway * mathx.sinf(std.math.tau * phase - 0.9) * moving;
+    return mathx.mul(mathx.mul(mathx.rx(lean), mathx.rz(swayLag)), root);
+}
+
 /// ONE MESH PER BONE OFF THE REST POSE, for a rig whose whole body is built by index rather than part by part — the creature owes `buildBone` and nothing else.
 pub fn boneMeshes(comptime N: usize, rest: [N]rl.Vector3, comptime buildBone: fn (*gfx.Builder, usize, [N]rl.Vector3) void) [N]rl.Mesh {
     var mesh: [N]rl.Mesh = undefined;
@@ -1567,12 +1586,39 @@ pub const Spray = struct {
     style: ParticleStyle = .auto,
 };
 
+/// A BOSS THE RAIL SAYS IS ALREADY DOWN, PUT WHERE A FULL DEATH AND DISSOLVE WOULD HAVE LEFT IT — `past` is the clock
+/// already run out, the creature's own death plus its dissipation. Written out per boss it was a reset LIST, which is a
+/// list to forget one from; `game.applyRail` is the only caller.
+pub fn markSlain(self: anytype, past: f32) void {
+    self.vit.hp = 0;
+    self.vit.dead = true;
+    self.state = .dead;
+    self.t = past;
+    self.fade = 1;
+    self.gone = true;
+}
+
+/// THE THREE FX FIELDS ARE ONE ARGUMENT — THE BODY (`ownSpray`/`ownGrit`/`ownSparks`, and `elemfx`'s own three for the
+/// emitters it owns). The SCALE stays an argument, because it is NOT always the body's: a pod bursting stands at its own
+/// world metre and a fishman's rig is its ROLE's size. The raw `spray`/`grit`/`sparks` are for a pool that is not a creature's.
+pub fn ownSpray(self: anytype, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32, scale: f32, s: Spray) void {
+    spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, scale, s);
+}
+
+pub fn ownGrit(self: anytype, at: rl.Vector3, n: i32, scale: f32, g: Grit) void {
+    grit(&self.parts, &self.fxHead, &self.fxRng, at, n, scale, g);
+}
+
+pub fn ownSparks(self: anytype, at: rl.Vector3, dir: rl.Vector3, n: i32, s: Sparks) void {
+    sparks(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, s);
+}
+
 /// A BODY'S OWN SPRAY, off its own three fx fields: the preset is the only per-creature part. The SPLAT is a ground decal, so it is dropped off dry
 /// ground — the motes still fly, nothing is painted on the water.
 pub fn bloodSpray(self: anytype, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32, preset: Spray) void {
     var s = preset;
     if (!onDryGround(self)) s.splat = 0;
-    spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, s);
+    ownSpray(self, at, dir, n, spd, self.scale, s);
 }
 
 pub fn spray(pool: []Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32, scale: f32, s: Spray) void {
@@ -1660,6 +1706,16 @@ pub const Puff = struct {
     col: rl.Color = DUST,
     col1: rl.Color = DUST_THIN,
 };
+
+/// A BODY'S OWN DUST, off its own three fx fields — `bloodSpray`'s shape for the other emitter. The LIFT stays at the call site: a puff is thrown from
+/// the foot, the hoof or the contact point, and only the body knows which.
+pub fn dustPuff(self: anytype, at: rl.Vector3, n: i32, spd: f32, big: f32, preset: Puff) void {
+    ownPuff(self, at, n, spd, big, self.scale, preset);
+}
+
+pub fn ownPuff(self: anytype, at: rl.Vector3, n: i32, spd: f32, big: f32, scale: f32, preset: Puff) void {
+    puff(&self.parts, &self.fxHead, &self.fxRng, at, n, spd, big, scale, preset);
+}
 
 pub fn puff(pool: []Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3, n: i32, spd: f32, big: f32, scale: f32, p: Puff) void {
     var i: i32 = 0;

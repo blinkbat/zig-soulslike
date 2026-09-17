@@ -1645,7 +1645,7 @@ pub const Spider = struct {
         .rHi = 0.11,
     };
     fn dustBurst(self: *Spider, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
-        foe.puff(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, c.y + 0.04, c.z), n, spd, big, self.scale, PUFF);
+        foe.dustPuff(self, v3(c.x, c.y + 0.04, c.z), n, spd, big, PUFF);
     }
 
     fn emitDrool(self: *Spider, dt: f32, k: f32) void {

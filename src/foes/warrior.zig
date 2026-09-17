@@ -101,17 +101,28 @@ const GS_BLADE = 0.76 * H;
 const MACE_FLANGE = 0.046 * H;
 const GS_HALF_W = 0.049 * H;
 
-const KIT_SEG = [SPEC.len][2]rl.Vector3{
-    .{ v3(0, FIST_Y - 0.02 * H, FIST_Z), v3(0, FIST_Y + MACE_HEAD + MACE_CAP, FIST_Z) },
-    .{ v3(0, FIST_Y + GS_GUARD, FIST_Z), v3(0, FIST_Y + GS_GUARD + GS_BLADE, FIST_Z) },
+/// THE SWEPT EDGE OF WHAT EACH ROLE HOLDS, in the wrist's own frame. One row, not two lists: `seg` and `r` are read at the
+/// same ordinal by `weaponReaches`, and the row names its role so the table can be reordered without counting.
+const Kit = struct { role: Role, seg: [2]rl.Vector3, r: f32 };
+
+const KIT = [_]Kit{
+    .{ .role = .shieldman, .r = MACE_FLANGE, .seg = .{ v3(0, FIST_Y - 0.02 * H, FIST_Z), v3(0, FIST_Y + MACE_HEAD + MACE_CAP, FIST_Z) } },
+    .{ .role = .greatsword, .r = GS_HALF_W, .seg = .{ v3(0, FIST_Y + GS_GUARD, FIST_Z), v3(0, FIST_Y + GS_GUARD + GS_BLADE, FIST_Z) } },
 };
-const KIT_R = [SPEC.len]f32{ MACE_FLANGE, GS_HALF_W };
+
+fn kitOf(r: Role) *const Kit {
+    return &KIT[@intFromEnum(r)];
+}
 
 pub const Role = enum { shieldman, greatsword };
 
 comptime {
     // …and a SPEC ROW PER ROLE, since `spec()` indexes it by the role's own ordinal and would walk off the end.
     if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("warrior: a Role with no spec row");
+    if (KIT.len != @typeInfo(Role).@"enum".fields.len) @compileError("warrior: a Role with no kit row");
+    for (KIT, 0..) |row, i| {
+        if (@intFromEnum(row.role) != i) @compileError("warrior: the " ++ @tagName(row.role) ++ " kit row is out of `Role` order");
+    }
     foe.pinRun("warrior", Role, .shieldman, 0);
 }
 
@@ -413,9 +424,15 @@ pub const Model = struct {
 
     pub fn init(shader: rl.Shader) Model {
         const mat = gfx.material(shader, "warrior");
-        const kit = [_]rl.Mesh{ maceMesh(), greatswordMesh() };
+        // ROWS ARE ADDRESSED BY THE ROLE, NOT BY AN ORDINAL: `draw` reads them at `@intFromEnum(w.role)`, so a third
+        // role inserted above leaves every row one role out and its own slot `undefined`, drawn as a stray mesh.
+        const SHIELDMAN = @intFromEnum(Role.shieldman);
+        const GREATSWORD = @intFromEnum(Role.greatsword);
+        var kit: [SPEC.len]rl.Mesh = undefined;
+        kit[SHIELDMAN] = maceMesh();
+        kit[GREATSWORD] = greatswordMesh();
         var bone = archermod.bareSkeleton();
-        bone[WPN] = kit[0];
+        bone[WPN] = kit[SHIELDMAN];
         return .{ .bone = bone, .kit = kit, .shield = shieldMesh(), .mat = mat };
     }
     pub fn setShader(self: *Model, sh: rl.Shader) void {
@@ -921,7 +938,7 @@ pub const Warrior = struct {
     }
 
     pub fn weaponSeg(self: *const Warrior) [2]rl.Vector3 {
-        const s = KIT_SEG[@intFromEnum(self.role)];
+        const s = kitOf(self.role).seg;
         return .{
             rl.math.vector3Transform(s[0], self.xf[WPN]),
             rl.math.vector3Transform(s[1], self.xf[WPN]),
@@ -950,7 +967,7 @@ pub const Warrior = struct {
     fn takeParry(self: *Warrior) void {
         const reach = self.parryReach(self.move());
         const touching = self.state == .swing and self.t > 0.03 and !self.dealt and
-            foe.weaponReaches(self.wpnWas, self.wpnHere(), self.parry.at, foe.hurtReach(KIT_R[@intFromEnum(self.role)], self.scale));
+            foe.weaponReaches(self.wpnWas, self.wpnHere(), self.parry.at, foe.hurtReach(kitOf(self.role).r, self.scale));
         if (!foe.caught(self, reach, self.toImpact(), touching)) return;
         self.cds[self.atk] = self.move().cd;
         self.sparks(self.wpnHere()[1], mathx.dirXZ(self.pos, self.parry.at), 16);
@@ -960,7 +977,7 @@ pub const Warrior = struct {
 
     fn tryReach(self: *Warrior, hero: rl.Vector3) void {
         if (self.dealt) return;
-        const r = foe.hurtReach(KIT_R[@intFromEnum(self.role)], self.scale);
+        const r = foe.hurtReach(kitOf(self.role).r, self.scale);
         if (!foe.weaponReaches(self.wpnWas, self.wpnHere(), hero, r)) return;
         self.heroHit = self.move().hit;
         self.dealt = true;
@@ -1087,13 +1104,11 @@ pub const Warrior = struct {
     const POSE_FIELDS = .{ "bodyLean", "twist", "legBrace", "headPitch", "offSh", "offAbd", "offEl", "armSh", "armSweep", "armAbd", "armEl", "wpnTilt" };
 
     fn poseChannels(self: *const Warrior) [POSE_FIELDS.len]f32 {
-        var values: [POSE_FIELDS.len]f32 = undefined;
-        inline for (POSE_FIELDS, 0..) |field, i| values[i] = @field(self, field);
-        return values;
+        return foe.poseChannels(self, POSE_FIELDS);
     }
 
     fn applyPoseChannels(self: *Warrior, values: [POSE_FIELDS.len]f32) void {
-        inline for (POSE_FIELDS, 0..) |field, i| @field(self, field) = values[i];
+        foe.applyPoseChannels(self, POSE_FIELDS, values);
     }
 
 
@@ -1484,8 +1499,8 @@ pub const Warrior = struct {
         };
         const reach = (heromod.SEG_UPARM + heromod.SEG_FOREARM) * H * fs * 0.985;
         const near = @abs(heromod.SEG_UPARM - heromod.SEG_FOREARM) * H * fs + 0.002;
-        const edge = KIT_SEG[@intFromEnum(Role.greatsword)];
-        const low = @min(foe.markOn(held, edge[0]).y, foe.markOn(held, edge[1]).y) - KIT_R[@intFromEnum(Role.greatsword)] * fs;
+        const edge = kitOf(.greatsword).seg;
+        const low = @min(foe.markOn(held, edge[0]).y, foe.markOn(held, edge[1]).y) - kitOf(.greatsword).r * fs;
         const floor = if (self.dying()) -std.math.inf(f32) else self.pos.y + 0.01 - low;
         const shift = heromod.gripShift(targets, shoulders, near, reach, floor);
         const rightDown = mathx.subV(foe.markOn(wx[WRR], v3(0, -1, 0)), rightOrigin);
@@ -1574,7 +1589,7 @@ pub const Warrior = struct {
         .rHi = 0.15,
     };
     fn dustBurst(self: *Warrior, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
-        foe.puff(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, self.pos.y + 0.05, c.z), n, spd, big, self.scale, PUFF);
+        foe.dustPuff(self, v3(c.x, self.pos.y + 0.05, c.z), n, spd, big, PUFF);
     }
     const GRIT = foe.Grit{
         .spdLo = 1.2,
@@ -1592,10 +1607,10 @@ pub const Warrior = struct {
         .bounce = 0.42,
     };
     fn grit(self: *Warrior, c: rl.Vector3, n: i32) void {
-        foe.grit(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, self.pos.y + 0.08, c.z), n, self.scale, GRIT);
+        foe.ownGrit(self, v3(c.x, self.pos.y + 0.08, c.z), n, self.scale, GRIT);
     }
     fn chips(self: *Warrior, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, CHIP_SPRAY);
+        foe.ownSpray(self, at, dir, n, spd, self.scale, CHIP_SPRAY);
     }
     const SPARKS = foe.Sparks{
         .spdLo = 1.4,
@@ -1614,7 +1629,7 @@ pub const Warrior = struct {
         .bounce = 0.45,
     };
     fn sparks(self: *Warrior, at: rl.Vector3, dir: rl.Vector3, n: i32) void {
-        foe.sparks(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, SPARKS);
+        foe.ownSparks(self, at, dir, n, SPARKS);
     }
     fn shatter(self: *Warrior, at: rl.Vector3) void {
         var i: i32 = 0;
@@ -2090,7 +2105,7 @@ test "parry lets both warriors swing into contact at 30, 60 and 144 Hz" {
                 if (w.state == .swing and mathx.lenV(mathx.subV(was[1], w.weaponSeg()[1])) > 0.03) moved = true;
                 if (!w.parried) continue;
                 try std.testing.expect(pending and moved);
-                try std.testing.expect(foe.weaponReaches(w.wpnWas, w.wpnHere(), hero, foe.hurtReach(KIT_R[@intFromEnum(role)], w.scale)));
+                try std.testing.expect(foe.weaponReaches(w.wpnWas, w.wpnHere(), hero, foe.hurtReach(kitOf(role).r, w.scale)));
                 const ankle = w.xf[ANKL];
                 var twisted = w;
                 twisted.deflect.spring.v = 1;

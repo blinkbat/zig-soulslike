@@ -3079,12 +3079,12 @@ pub const Knight = struct {
         var owed = foe.emitDue(&self.emberAccum, dt, emitRate);
         while (owed > 0) : (owed -= 1) {
             const at = mathx.lerpV(seg[0], seg[1], self.fxRng.float());
-            elemfx.gather(&self.parts, &self.fxHead, &self.fxRng, at, .chaos, 1, 0.22 + 0.26 * k, self.scale * 0.5);
+            elemfx.ownGather(self, at, .chaos, 1, 0.22 + 0.26 * k, self.scale * 0.5);
         }
     }
 
     fn chaosBurst(self: *Knight, at: rl.Vector3, n: usize) void {
-        elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, at, mathx.zero3, .chaos, n, self.scale * 0.7);
+        elemfx.ownBurst(self, at, mathx.zero3, .chaos, n, self.scale * 0.7);
     }
 
     fn leapWind(self: *const Knight) f32 {
@@ -3368,7 +3368,7 @@ pub const Knight = struct {
         .bigJit = .{ 0.8, 1.35 },
     };
     fn dustBurst(self: *Knight, c: rl.Vector3, n: i32, spd: f32, big: f32) void {
-        foe.puff(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, self.pos.y + 0.06, c.z), n, spd, big, self.scale, PUFF);
+        foe.dustPuff(self, v3(c.x, self.pos.y + 0.06, c.z), n, spd, big, PUFF);
     }
     const GRIT = foe.Grit{
         .spdLo = 1.3,
@@ -3386,10 +3386,10 @@ pub const Knight = struct {
         .bounce = 0.42,
     };
     fn grit(self: *Knight, c: rl.Vector3, n: i32) void {
-        foe.grit(&self.parts, &self.fxHead, &self.fxRng, v3(c.x, self.pos.y + 0.09, c.z), n, self.scale, GRIT);
+        foe.ownGrit(self, v3(c.x, self.pos.y + 0.09, c.z), n, self.scale, GRIT);
     }
     fn chips(self: *Knight, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, CHIP_SPRAY);
+        foe.ownSpray(self, at, dir, n, spd, self.scale, CHIP_SPRAY);
     }
     const SPARKS = foe.Sparks{
         .spdLo = 1.5,
@@ -3408,7 +3408,7 @@ pub const Knight = struct {
         .bounce = 0.45,
     };
     fn sparks(self: *Knight, at: rl.Vector3, dir: rl.Vector3, n: i32) void {
-        foe.sparks(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, SPARKS);
+        foe.ownSparks(self, at, dir, n, SPARKS);
     }
     fn plantBurst(self: *Knight) void {
         const f = self.fdir();
@@ -3590,12 +3590,7 @@ pub const Knight = struct {
     }
 
     pub fn markSlain(self: *Knight) void {
-        self.vit.hp = 0;
-        self.vit.dead = true;
-        self.state = .dead;
-        self.t = DEATH_DUR + DISS_DUR;
-        self.fade = 1;
-        self.gone = true;
+        foe.markSlain(self, DEATH_DUR + DISS_DUR);
     }
 };
 

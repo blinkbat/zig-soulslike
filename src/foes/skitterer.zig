@@ -495,7 +495,7 @@ pub const Skitterer = struct {
     }
 
     fn chips(self: *Skitterer, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, CHIP_SPRAY);
+        foe.ownSpray(self, at, dir, n, spd, self.scale, CHIP_SPRAY);
     }
 
     fn enterStun(self: *Skitterer, heavy: bool) void {

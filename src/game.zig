@@ -696,6 +696,32 @@ comptime {
     if (BOSS_RAILS.len > savemod.BOSS_RAILS) @compileError("game: more boss rails than the save file has rows for");
 }
 
+/// THE EDITOR'S OWN DOOR, read AFTER its step: Open/New/Save As swap the world, and a save taken the same frame would be
+/// labelled with the map he just left. `mapAt` is the world STANDING and is stamped whatever the name is — a name the
+/// `map:` row cannot carry is spent at `savemod.writeAsync`, which refuses the slot outright. Held back on a refusal,
+/// `mapAt` goes on naming the map he LEFT and the next bonfire writes a slot that LOADS A DIFFERENT WORLD. Asked once a
+/// swap, not once a frame, because `game.nameable` PRINTS and an unnameable path is a standing condition.
+fn adoptEditorMap(at: *savemod.MapName, from: *savemod.MapName, path: []const u8) bool {
+    if (path.len == 0 or from.is(path)) return false;
+    from.* = savemod.MapName.of(path);
+    at.* = from.*;
+    return true;
+}
+
+test "THE EDITOR'S MAP IS ADOPTED WHATEVER ITS NAME — the write refuses it; `mapAt` never names the map he left" {
+    const spaced = worldfmt.DIR ++ "/fallen plain" ++ worldfmt.EXT;
+    var at = savemod.MapName.of(worldfmt.START_MAP);
+    var from = at;
+    try std.testing.expect(!adoptEditorMap(&at, &from, worldfmt.START_MAP));
+    try std.testing.expect(adoptEditorMap(&at, &from, spaced));
+    try std.testing.expectEqualStrings(spaced, at.name());
+    // The refusal lands at the WRITE, so the run cannot save rather than saving a slot that opens another world.
+    try std.testing.expect(savemod.refuses(at.name()) != null);
+    // ASKED ONCE A SWAP: the latch holds, so the refusal is not a line a frame.
+    try std.testing.expect(!adoptEditorMap(&at, &from, spaced));
+    std.debug.print("\n  editor map door: {s} adopted and refused at the write, not swallowed onto {s}\n", .{ spaced, worldfmt.START_MAP });
+}
+
 test "A MAP NAME IS REFUSED, NEVER CLAMPED — the boot path and a swap ask the same question" {
     const over = worldfmt.DIR ++ "/" ++ "x" ** (savemod.MAP_CAP) ++ worldfmt.EXT;
     try std.testing.expect(nameable(worldfmt.START_MAP) and nameable(worldfmt.startMap()));
@@ -5851,12 +5877,7 @@ pub fn run(mode: Mode) void {
             rl.showCursor();
             const edAct = g.editor.update(&g.map, &g.env, &g.day, rawDt);
             // Read AFTER the step: Open/New/Save As swap the world, and a save taken the same frame would be labelled with the map he just left.
-            // ASKED ON THE CHANGE, NOT ON THE FRAME: `nameable` PRINTS its refusal, and a path the `map:` row cannot carry is a standing condition.
-            const edPath = g.editor.curPath();
-            if (edPath.len > 0 and !g.mapFrom.is(edPath)) {
-                g.mapFrom = savemod.MapName.of(edPath);
-                if (nameable(edPath)) g.mapAt = g.mapFrom;
-            }
+            if (adoptEditorMap(&g.mapAt, &g.mapFrom, g.editor.curPath())) _ = nameable(g.mapAt.name());
             switch (edAct) {
                 .none => {},
                 .leave => {

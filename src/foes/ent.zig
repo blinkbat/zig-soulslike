@@ -578,7 +578,7 @@ pub const Ent = struct {
         .stretch = 0.030,
     };
     fn chips(self: *Ent, at: rl.Vector3, dir: rl.Vector3, n: i32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, 3.2, self.scale, CHIP_SPRAY);
+        foe.ownSpray(self, at, dir, n, 3.2, self.scale, CHIP_SPRAY);
     }
 
     pub fn drawFx(self: *const Ent) void {

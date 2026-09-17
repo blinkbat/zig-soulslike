@@ -100,6 +100,20 @@ pub fn sig(e: combat.Elem) Sig {
 }
 
 
+/// THE THREE FX FIELDS ARE ONE ARGUMENT — THE BODY, `foe.ownSpray`'s law for the emitters this file owns. The SCALE stays
+/// an argument: a bounce puff stands at its own world metre, and the knight's ember is `scale * 0.7` on purpose.
+pub fn ownGather(self: anytype, at: rl.Vector3, e: combat.Elem, n: usize, r: f32, scale: f32) void {
+    gather(&self.parts, &self.fxHead, &self.fxRng, at, e, n, r, scale);
+}
+
+pub fn ownBurst(self: anytype, at: rl.Vector3, dir: rl.Vector3, e: combat.Elem, n: usize, scale: f32) void {
+    burst(&self.parts, &self.fxHead, &self.fxRng, at, dir, e, n, scale);
+}
+
+pub fn ownPour(self: anytype, from: rl.Vector3, dir: rl.Vector3, e: combat.Elem, n: usize, spread: f32, reach: f32, scale: f32) void {
+    pour(&self.parts, &self.fxHead, &self.fxRng, from, dir, e, n, spread, reach, scale);
+}
+
 const GATHER_PACE: f32 = 0.55;
 
 pub fn gather(pool: []foe.Particle, head: *usize, rng: *mathx.Rng, at: rl.Vector3, e: combat.Elem, n: usize, r: f32, scale: f32) void {

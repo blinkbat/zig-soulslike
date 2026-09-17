@@ -627,13 +627,13 @@ pub const Mage = struct {
         const rate = lerpF(KINDLE_RATE_0, KINDLE_RATE_1, u * u);
         const n = foe.emitTicks(&self.fxAccum, dt, rate, KINDLE_CAP);
         if (n == 0) return;
-        elemfx.gather(&self.parts, &self.fxHead, &self.fxRng, self.cupWorld(), .fire, n, BALL_R * (0.4 + 0.6 * u) * self.scale, self.scale);
+        elemfx.ownGather(self, self.cupWorld(), .fire, n, BALL_R * (0.4 + 0.6 * u) * self.scale, self.scale);
     }
 
     fn pourFlame(self: *Mage, dt: f32) void {
         const n = foe.emitTicks(&self.fxAccum, dt, FLAME_RATE, FLAME_CAP);
         if (n == 0) return;
-        elemfx.pour(&self.parts, &self.fxHead, &self.fxRng, self.cupWorld(), self.fdir(), .fire, n, mathx.radians(FLAME_ARC), FLICK_R * self.scale, self.scale);
+        elemfx.ownPour(self, self.cupWorld(), self.fdir(), .fire, n, mathx.radians(FLAME_ARC), FLICK_R * self.scale, self.scale);
     }
 
     fn tryFlick(self: *Mage, hero: rl.Vector3) void {
@@ -642,7 +642,7 @@ pub const Mage = struct {
     }
 
     fn burstCup(self: *Mage) void {
-        elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, self.cupWorld(), self.fdir(), .fire, THROW_PUFF, self.scale);
+        elemfx.ownBurst(self, self.cupWorld(), self.fdir(), .fire, THROW_PUFF, self.scale);
     }
 
     pub fn tryHit(self: *Mage, blade_: foe.Blade) void {
@@ -795,8 +795,7 @@ pub const Mage = struct {
     }
 
     fn chainCloak(self: *Mage) void {
-        const swayLag = CLOAK_SWAY * mathx.sinf(std.math.tau * self.phase - 0.85) * self.moving;
-        self.cloakMat = mul(mul(rx(self.cloakLean), rz(swayLag)), self.xf[ROOT]);
+        self.cloakMat = foe.hemXform(self.xf[ROOT], self.cloakLean, self.phase, self.moving, CLOAK_SWAY);
     }
 
     pub fn draw(self: *const Mage, model: *const Model) void {
@@ -1079,13 +1078,13 @@ pub const Ring = struct {
 
     pub fn bounce(self: *Ring, at: rl.Vector3) void {
         const from = self.fxHead;
-        elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, at, v3(0, 1, 0), .fire, BOUNCE_PUFF, 1.0);
+        elemfx.ownBurst(self, at, v3(0, 1, 0), .fire, BOUNCE_PUFF, 1.0);
         foe.floorBurst(&self.parts, from, self.fxHead, at.y);
     }
 
     pub fn splash(self: *Ring, at: rl.Vector3) void {
         const from = self.fxHead;
-        elemfx.burst(&self.parts, &self.fxHead, &self.fxRng, at, v3(0, 1, 0), .fire, BURST_PUFF, 1.0);
+        elemfx.ownBurst(self, at, v3(0, 1, 0), .fire, BURST_PUFF, 1.0);
         foe.floorBurst(&self.parts, from, self.fxHead, at.y);
     }
     pub fn live(self: *Ring) []Mage {

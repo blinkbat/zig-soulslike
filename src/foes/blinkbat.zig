@@ -660,7 +660,7 @@ pub const Bat = struct {
     }
 
     fn chips(self: *Bat, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, CHIP_SPRAY);
+        foe.ownSpray(self, at, dir, n, spd, self.scale, CHIP_SPRAY);
     }
 
     fn enter(self: *Bat, s: State) void {

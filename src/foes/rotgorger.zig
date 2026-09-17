@@ -488,7 +488,7 @@ pub const Gorger = struct {
         .col1 = foe.DUST_THIN,
     };
     fn puff(self: *Gorger, at: rl.Vector3, n: i32) void {
-        foe.puff(&self.parts, &self.fxHead, &self.fxRng, at, n, 2.0, 0.2, self.scale, PUFF);
+        foe.dustPuff(self, at, n, 2.0, 0.2, PUFF);
     }
 
     pub fn drawFx(self: *const Gorger) void {

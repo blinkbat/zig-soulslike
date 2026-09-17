@@ -442,7 +442,7 @@ pub const Husk = struct {
         .bounce = 0.3,
     };
     fn grit(self: *Husk, at: rl.Vector3, dir: rl.Vector3, n: i32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, 2.2, self.scale, GRIT_SPRAY);
+        foe.ownSpray(self, at, dir, n, 2.2, self.scale, GRIT_SPRAY);
     }
 
     fn shards(self: *Husk) void {

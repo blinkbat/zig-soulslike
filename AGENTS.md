@@ -2291,7 +2291,11 @@ Keyboard+mouse or gamepad; the pad follows **Elden Ring's default layout** (ER i
   `gfx/particleart.zig` builds one seeded atlas with four variants per style; `Particle.style` picks the shape
   and legacy emitters infer matter, haze, spark or blood from their properties. Alpha MATTER sorts back to front
   within each pool, then additive LIGHT; depth TESTED, never WRITTEN. **Reuse `foe.drawCloud`, `drawAura` and
-  `contactFlash`** rather than adding sphere clouds or another contact emitter. `--shot --shot-only
+  `contactFlash`** rather than adding sphere clouds or another contact emitter, and **THE THREE FX FIELDS ARE ONE
+  ARGUMENT — THE BODY**: `foe.ownSpray`/`ownPuff`/`ownGrit`/`ownSparks` and `elemfx.ownBurst`/`ownGather`/`ownPour`,
+  with `bloodSpray`/`dustPuff` the two that also take the SCALE off the body. The scale stays an argument everywhere
+  else, because it is not always the body's — a pod bursting stands at its own world metre and a fishman's rig is its
+  ROLE's size. The raw `spray`/`puff`/`burst` are for a pool that is not a creature's (`game`'s breach motes). `--shot --shot-only
   particles_study` and `docs/PARTICLE_PASS.md` cover the pass.
 - **A POOL NOBODY CAN SEE MAY NOT BE DRAWN** (`foe.motesVisible`) — not for the per-mote cost but for the COUNT:
   twelve chaos clouds at 132 motes each still walk their whole array. The gate is a REACH and a HEMISPHERE and

@@ -677,7 +677,7 @@ pub const Hollow = struct {
             .spin = G_TUMBLE,
         };
         self.unseated = true;
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, seat, dir, G_SPARK_N, 3.2, self.scale, G_BURST);
+        foe.ownSpray(self, seat, dir, G_SPARK_N, 3.2, self.scale, G_BURST);
         if (self.state == .spark) self.enter(.idle);
     }
 
@@ -706,7 +706,7 @@ pub const Hollow = struct {
         if (self.riderSeated()) {
             if (foe.reachedPart(self, &self.rider.vit, blade, self.riderPart())) |s| {
                 self.hits += 1;
-                foe.spray(&self.parts, &self.fxHead, &self.fxRng, s.contact, s.dir, G_CHIP, 2.4, self.scale, G_CHIP_SPRAY);
+                foe.ownSpray(self, s.contact, s.dir, G_CHIP, 2.4, self.scale, G_CHIP_SPRAY);
                 if (s.reaction == .death) self.unseat(s.dir);
                 return;
             }
@@ -727,7 +727,7 @@ pub const Hollow = struct {
     }
 
     fn chips(self: *Hollow, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32) void {
-        foe.spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, self.scale, CHIP_SPRAY);
+        foe.ownSpray(self, at, dir, n, spd, self.scale, CHIP_SPRAY);
     }
 
     fn enter(self: *Hollow, s: State) void {

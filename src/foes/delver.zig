@@ -1014,7 +1014,7 @@ pub const Delver = struct {
         .bigJit = null,
     };
     fn dirtBurst(self: *Delver, c: rl.Vector3, motes: i32, spd: f32, big: f32) void {
-        foe.puff(&self.parts, &self.fxHead, &self.fxRng, c, motes, spd, big, self.scale, DIRT_PUFF);
+        foe.dustPuff(self, c, motes, spd, big, DIRT_PUFF);
     }
     fn burstDirt(self: *Delver) void {
         var i: i32 = 0;

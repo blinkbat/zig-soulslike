@@ -527,7 +527,7 @@ pub const Kobold = struct {
                 self.faceToward(hero, dt * 0.35);
                 const u = self.t / ZERK_CHOP;
                 const before = @max(0, self.t - dt * self.vit.hasteMult()) / ZERK_CHOP;
-                const travel = @max(0, @min(u, ZERK_HIT_B) - @max(before, ZERK_HIT_A));
+                const travel = mathx.sliceIn(u, u - before, ZERK_HIT_A, ZERK_HIT_B);
                 mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), ZERK_STEP * travel / (ZERK_HIT_B - ZERK_HIT_A), bounds);
                 if (self.t >= ZERK_CHOP) {
                     if (self.chopsLeft > 0) {

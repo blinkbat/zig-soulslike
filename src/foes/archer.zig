@@ -220,7 +220,7 @@ const ARROW_STICK_FADE = 1.4;
 pub fn lingerOf(s: Shot) f32 {
     return switch (s) {
         .arrow, .firearrow => ARROW_STICK_FADE,
-        .clump, .crock, .venom, .bolt, .wisp, .emberball, .sac, .spark, .powder, .rock, .acorn => 0,
+        .clump, .crock, .venom, .bolt, .wisp, .emberball, .sac, .spark, .powder, .rock, .acorn, .bomb => 0,
     };
 }
 pub const ARROW_COVER_MARGIN: f32 = 0.04;
@@ -253,13 +253,16 @@ fn trailCol(s: Shot) rl.Color {
         .powder => TRAIL_POWDER,
         .rock => TRAIL_ROCK,
         .acorn => TRAIL_ACORN,
+        .bomb => TRAIL_FUSE,
         .arrow, .venom => TRAIL_COL,
     };
 }
 const TRAIL_ROCK = rgba(150, 132, 96, 255);
+/// The FUSE, not the shell: a thrown bomb trails the spark burning down into it.
+const TRAIL_FUSE = rgba(255, 196, 96, 255);
 const TRAIL_ACORN = rgba(146, 168, 84, 255);
 
-pub const Shot = enum { arrow, clump, venom, firearrow, bolt, wisp, crock, emberball, sac, spark, powder, rock, acorn };
+pub const Shot = enum { arrow, clump, venom, firearrow, bolt, wisp, crock, emberball, sac, spark, powder, rock, acorn, bomb };
 
 pub fn dropOf(s: Shot) f32 {
     return switch (s) {
@@ -274,16 +277,19 @@ pub fn dropOf(s: Shot) f32 {
         .powder => POWDER_GRAV,
         .rock => ROCK_GRAV,
         .acorn => ACORN_GRAV,
+        .bomb => BOMB_GRAV,
     };
 }
 const ROCK_GRAV: f32 = 14.0;
 const ACORN_GRAV: f32 = 11.0;
+/// Heavier than the crock: a bomb is thrown UNDERARM and lands short of where an arrow would.
+const BOMB_GRAV: f32 = 15.0;
 
 /// **HOW MUCH OF THE BALLISTIC SOLVE A SHOT ACTUALLY TAKES.** 1.0 is the honest arc that lands on the target;
 fn loftOf(s: Shot) f32 {
     return switch (s) {
         .emberball => EMBER_LOFT,
-        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder, .rock, .acorn => 1.0,
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder, .rock, .acorn, .bomb => 1.0,
     };
 }
 pub const EMBER_LOFT: f32 = 0.52;
@@ -300,7 +306,7 @@ const EMBER_KEEP_XZ: f32 = 0.66;
 pub fn bouncesOf(s: Shot) u8 {
     return switch (s) {
         .emberball => EMBER_BOUNCES,
-        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder, .rock, .acorn => 0,
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder, .rock, .acorn, .bomb => 0,
     };
 }
 const EMBER_BOUNCES: u8 = 3;
@@ -316,7 +322,7 @@ fn minUp(s: Shot) f32 {
 fn lifeOf(s: Shot) f32 {
     return switch (s) {
         .emberball => EMBER_LIFE,
-        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder, .rock, .acorn => ARROW_LIFE,
+        .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .sac, .spark, .powder, .rock, .acorn, .bomb => ARROW_LIFE,
     };
 }
 const EMBER_LIFE: f32 = 6.0;
@@ -478,9 +484,13 @@ fn hitBoxOf(s: Shot) struct { r: f32, halfH: f32 } {
         .sac => .{ .r = SAC_HIT_R, .halfH = SAC_HIT_HALF_H },
         .rock => .{ .r = ROCK_HIT_R, .halfH = ROCK_HIT_HALF_H },
         .acorn => .{ .r = ACORN_HIT_R, .halfH = ACORN_HIT_HALF_H },
+        .bomb => .{ .r = BOMB_HIT_R, .halfH = BOMB_HIT_HALF_H },
         .arrow, .firearrow, .clump, .crock, .venom, .bolt, .wisp, .spark, .powder => .{ .r = ARROW_HIT_R, .halfH = ARROW_HIT_HALF_H },
     };
 }
+/// A ball skimming the grass, the rock's box: it has to meet his shins or it rolls through them.
+const BOMB_HIT_R: f32 = 0.40;
+const BOMB_HIT_HALF_H: f32 = 1.05;
 const ACORN_HIT_R: f32 = 0.40;
 const ACORN_HIT_HALF_H: f32 = 1.10;
 const ROCK_HIT_R: f32 = 0.62;

@@ -88,6 +88,7 @@ pub const Kind = enum(u8) {
     gold_purse,
     scroll_rot,
     scroll_pyre,
+    bomb,
 };
 
 pub const NK = @typeInfo(Kind).@"enum".fields.len;
@@ -108,7 +109,7 @@ const ORDER = [_][]const u8{
     "spidersilk_moccasins", "bloodtinge_signet", "loop_of_chance",
     "nightcap_grease", "wakers_nail",       "madcap_powder",  "stolen_gravebell",
     "bloodwine",       "wax_stopped_hood",  "scroll_babble",  "scroll_bidding",
-    "gold_purse",      "scroll_rot",        "scroll_pyre",
+    "gold_purse",      "scroll_rot",        "scroll_pyre",    "bomb",
 };
 
 comptime {
@@ -186,6 +187,7 @@ pub fn displayName(k: Kind) [:0]const u8 {
         .scroll_bidding => "Sorcery Scroll: Bidding",
         .scroll_rot => "Sorcery Scroll: Rot",
         .scroll_pyre => "Sorcery Scroll: Pyre",
+        .bomb => "Bomb",
     };
 }
 
@@ -253,6 +255,9 @@ pub const SOULS_PER_COIN: u32 = 4;
 pub fn priceBank(k: Kind) u32 {
     return switch (k) {
         .soul_binding_ring, .gold_purse => 0,
+
+        // Dearer than the crock it retired off the cracked wall, and dear enough that you plant it rather than lob it at a toad.
+        .bomb => 220,
 
         .envenomed_dagger => 900,
         .grave_warbow => 850,
@@ -401,6 +406,7 @@ pub fn describe(k: Kind) [:0]const u8 {
         .scroll_bidding => "One line, very large, very carefully drawn, and no words in it at all. Below it, small, in a different ink: WHAT IS OWED IS OWED TO WHOEVER HOLDS THE DEBT.",
         .scroll_rot => "A sheet of something soft and pale that was never paper, gone brown along the folds and still smelling of the bed it was cut out of. The figure drawn on it is standing upright, and the ink of it thins away from the feet up.",
         .scroll_pyre => "Thin leather rolled in oiled cloth, warm to the back of the hand whatever weather it has been kept in. The figure on it stands in a fire the copier drew starting under the skin rather than round it.",
+        .bomb => "A clay sphere packed with the black grit the forges keep out of the weather, sealed with pitch and stoppered with a twist of waxed cord. Set it down or throw it; the cord is the only clock it keeps, and it keeps it whether or not you have gone.",
     };
 }
 
@@ -420,6 +426,9 @@ pub const Use = union(enum) {
     dose: AilDose,
     coat: struct { ail: AilName, amt: f32, secs: f32 },
     toll: struct { ail: AilName, amt: f32, fp: f32, r: f32 },
+    /// A FUSE, NOT AN IMPACT — `secs` runs from the moment it leaves his hand, planted or thrown, and the blast is the same
+    /// either way. It does not know whose it is: `r` reaches the hero as readily as anything else standing in it.
+    bomb: struct { dmg: f32, fire: f32, poise: f32, r: f32, secs: f32 },
 };
 
 pub const Wear = enum {
@@ -595,6 +604,7 @@ pub const GEAR = [_]Gear{
     .{ .kind = .stolen_gravebell, .use = .{ .toll = .{ .ail = .charm, .amt = 100, .fp = 24, .r = 5.0 } } },
     .{ .kind = .bloodwine, .use = .{ .dose = .{ .ail = .berserk, .amt = 100 } } },
     .{ .kind = .wax_stopped_hood, .equip = .{ .plate = .{ .slot = .helm, .a = 6.0, .rate = .{ .ail = .stupefy, .k = 0.40 } } } },
+    .{ .kind = .bomb, .use = .{ .bomb = .{ .dmg = 70, .fire = 40, .poise = 46, .r = 4.6, .secs = 2.2 } } },
 };
 
 pub const INERT = [_]Kind{
@@ -834,6 +844,7 @@ pub fn effect(k: Kind, buf: []u8) [:0]const u8 {
         .dose => |d| std.fmt.bufPrintZ(buf, "Puts {d:.0} {s} in YOUR OWN meter, at once.", .{ d.amt, ailWord(d.ail) }) catch "Fills one of your own meters.",
         .coat => |c| std.fmt.bufPrintZ(buf, "Edge carries +{d:.0} {s} a hit for {d:.0}s. Refreshes, never stacks.", .{ c.amt, ailWord(c.ail), c.secs }) catch "Coats the blade.",
         .toll => |t| std.fmt.bufPrintZ(buf, "Rung for {d:.0} focus: {d:.0} {s} into everything inside {d:.1}m. Not spent.", .{ t.fp, t.amt, ailWord(t.ail), t.r }) catch "Rung for focus.",
+        .bomb => |b| std.fmt.bufPrintZ(buf, "Planted, or thrown at your lock. {d:.1}s fuse: {d:.0}+{d:.0} fire inside {d:.1}m, you included. Opens cracked walls.", .{ b.secs, b.dmg, b.fire, b.r }) catch "Planted or thrown, then it goes off.",
     };
 }
 
@@ -1011,6 +1022,13 @@ test "every usable kind carries its OWN dose, and the rest do nothing" {
                     try std.testing.expect(l.dmg + l.fire + l.lightning > 0);
                     try std.testing.expectApproxEqAbs(@as(f32, 0), l.r, 1e-6);
                 }
+            },
+            .bomb => |b| {
+                found += 1;
+                try std.testing.expect(usable(k));
+                try std.testing.expect(b.dmg + b.fire > 0);
+                try std.testing.expect(b.poise > 0);
+                try std.testing.expect(b.r > 0 and b.secs > 0);
             },
             .arrows => |a| {
                 found += 1;

@@ -61,11 +61,13 @@ pub fn breachFade(b: props.Breach) f32 {
     };
 }
 /// WHAT OPENS A BREACH — all of them the hero's; a foe opens nothing.
-pub const Key = enum { blade, roll, arrow, burst };
+pub const Key = enum { blade, roll, arrow, bomb };
+/// **WRITTEN POSITIVELY, NOT AS AN EXCLUSION** — as `key != .burst` the illusion answered every key added afterwards by
+/// silence, and the bomb would have opened a wall that is supposed to answer a TOUCH.
 pub fn opens(b: props.Breach, key: Key) bool {
     return switch (b) {
-        .illusion => key != .burst,
-        .cracked => key == .burst,
+        .illusion => key == .blade or key == .roll or key == .arrow,
+        .cracked => key == .bomb,
         .vines => key == .blade,
     };
 }
@@ -2138,6 +2140,11 @@ pub const Env = struct {
         return self.standAt(p.x, p.z, p.y);
     }
 
+    /// The same point put DOWN on that floor — its own height is the probe, so it keeps the chamber it was already in.
+    pub fn seat(self: *const Env, p: rl.Vector3) rl.Vector3 {
+        return .{ .x = p.x, .y = self.floorUnder(p), .z = p.z };
+    }
+
     /// How covered a point is, 0 out under the sky and 1 under solid rock. The CPU's read of what the shader shades by.
     pub fn shelterAt(self: *const Env, x: f32, y: f32, z: f32) f32 {
         if (!self.caveAny) return 0;
@@ -3963,7 +3970,7 @@ test "THE WATERFALL CAVE: in through the fall, the vines hold him until cut, the
     try std.testing.expect(atWall.z < l.wall[1] and atWall.z > l.wall[1] - 1.2);
     try std.testing.expectEqual(@as(?u8, null), e.breachStruck(v3(l.wall[0], 1.2, l.wall[1] - 1), v3(l.wall[0], 1.2, l.wall[1] + 1), 0.05, .blade));
     try std.testing.expectEqual(@as(?u8, null), e.breachTouched(v3(l.wall[0], 0.8, l.wall[1] - 0.7), 0.9, .roll));
-    const blown = e.breachTouched(v3(l.wall[0], 0.8, l.wall[1] - 0.7), 0.9, .burst) orelse return error.TestUnexpectedResult;
+    const blown = e.breachTouched(v3(l.wall[0], 0.8, l.wall[1] - 0.7), 0.9, .bomb) orelse return error.TestUnexpectedResult;
     try std.testing.expectEqual(props.Breach.cracked, e.breachKind(blown));
     try std.testing.expect(e.openBreach(blown));
     const out = walkUntilStalled(e, atWall, north, heroR, 8);
@@ -5805,7 +5812,7 @@ fn envWithBreaches() !*Env {
     return e;
 }
 
-test "THREE BREACHES, THREE KEYS — steel opens the illusion and the vines, only a burst the cracked wall, and nothing opens the wrong one" {
+test "THREE BREACHES, THREE KEYS — steel opens the illusion and the vines, only a BOMB the cracked wall, and nothing opens the wrong one" {
     const e = try envWithBreaches();
     defer std.testing.allocator.destroy(e);
     try std.testing.expectEqual(@as(usize, 3), e.nbreaches);
@@ -5813,12 +5820,15 @@ test "THREE BREACHES, THREE KEYS — steel opens the illusion and the vines, onl
     try std.testing.expectEqual(props.Breach.vines, e.breachKind(2));
     const wall = v3(30, 0, 0);
     const curtain = v3(60, 0, 0);
-    try std.testing.expectEqual(@as(?u8, 1), e.breachTouched(wall, 0.3, .burst));
+    try std.testing.expectEqual(@as(?u8, 1), e.breachTouched(wall, 0.3, .bomb));
     for ([_]Key{ .blade, .roll, .arrow }) |k| try std.testing.expectEqual(@as(?u8, null), e.breachTouched(wall, 0.3, k));
+    // AND THE BOMB OPENS NOTHING ELSE: the illusion answers a TOUCH, and `opens` is written positively so a fourth key joins nothing by silence.
+    try std.testing.expectEqual(@as(?u8, null), e.breachTouched(v3(0, 0, 0), 0.3, .bomb));
+    try std.testing.expectEqual(@as(?u8, null), e.breachStruck(v3(60, 1.2, -1), v3(60, 1.2, 1), 0.1, .bomb));
     try std.testing.expectEqual(@as(?u8, null), e.breachStruck(v3(30, 1.2, -1), v3(30, 1.2, 1), 0.1, .blade));
     try std.testing.expectEqual(@as(?u8, 2), e.breachStruck(v3(60, 1.2, -1), v3(60, 1.2, 1), 0.1, .blade));
-    for ([_]Key{ .burst, .roll, .arrow }) |k| try std.testing.expectEqual(@as(?u8, null), e.breachStruck(v3(60, 1.2, -1), v3(60, 1.2, 1), 0.1, k));
-    try std.testing.expectEqual(@as(?u8, null), e.breachTouched(curtain, 0.3, .burst));
+    for ([_]Key{ .bomb, .roll, .arrow }) |k| try std.testing.expectEqual(@as(?u8, null), e.breachStruck(v3(60, 1.2, -1), v3(60, 1.2, 1), 0.1, k));
+    try std.testing.expectEqual(@as(?u8, null), e.breachTouched(curtain, 0.3, .bomb));
     try std.testing.expect(!e.sees(v3(60, 1.3, -6), v3(60, 1.3, 6)));
     try std.testing.expect(e.openBreach(2));
     try std.testing.expect(e.sees(v3(60, 1.3, -6), v3(60, 1.3, 6)));

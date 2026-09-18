@@ -163,7 +163,7 @@ const layerTips = [Layer.N][:0]const u8{
     "Zone density and the clearings it keeps out of",
     "Small accoutrements - plants, but also cobbles, shards and scree",
     "Props - stone, timber, fire, water",
-    "Chests (right-click > Items...) and the fog gate",
+    "Chests, fires, ladders, the fog gate, and the walls that open",
     "Creatures and folk (the Foes tab files creatures by kingdom)",
 };
 

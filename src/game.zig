@@ -339,6 +339,7 @@ pub const Game = struct {
     wispModel: rl.Model,
     sparkModel: rl.Model,
     acornModel: rl.Model,
+    bombModel: rl.Model,
     arrows: [MAX_ARROWS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_ARROWS,
     shafts: [MAX_SHAFTS]archermod.Arrow = [_]archermod.Arrow{.{}} ** MAX_SHAFTS,
     rig: cameramod.CamRig,
@@ -363,6 +364,7 @@ pub const Game = struct {
     breachMotes: [BREACH_MOTES]foemod.Particle = [_]foemod.Particle{.{}} ** BREACH_MOTES,
     breachHead: usize = 0,
     breachRng: mathx.Rng = mathx.Rng.init(0x1117A11),
+    bombs: [BOMB_CAP]Bomb = [_]Bomb{.{}} ** BOMB_CAP,
     liquidSoak: foemod.Soak = .{},
     popT: [worldfmt.Liquid.N]f32 = [_]f32{0} ** worldfmt.Liquid.N,
     searT: f32 = 0,
@@ -446,6 +448,7 @@ pub const Game = struct {
         g.wispModel = shademod.wispMesh(g.scene.shader);
         g.sparkModel = hollowmod.sparkMesh(g.scene.shader);
         g.acornModel = entmod.acornModel(g.scene.shader);
+        g.bombModel = heromod.bombMesh(g.scene.shader);
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
         g.shafts = [_]archermod.Arrow{.{}} ** MAX_SHAFTS;
         phase(&initTimer, "pools");
@@ -466,6 +469,7 @@ pub const Game = struct {
         g.breachMotes = [_]foemod.Particle{.{}} ** BREACH_MOTES;
         g.breachHead = 0;
         g.breachRng = mathx.Rng.init(0x1117A11);
+        g.bombs = [_]Bomb{.{}} ** BOMB_CAP;
         g.dropRng = mathx.Rng.init(0xD0DEC0DE);
         g.bossBits = NO_BOSSES;
         g.seenMap = .{};
@@ -578,7 +582,7 @@ fn beginGame(g: *Game) void {
     g.rest = .{};
     rehomeChests(g);
     armScript(g);
-    clearQuivers(g);
+    clearOrdnance(g);
     g.pack.clear();
     g.deathFade = 0;
     g.saveT = 0;
@@ -656,7 +660,7 @@ fn enterMap(g: *Game, path: []const u8, at: rl.Vector3, facing: f32) void {
     rehomeFoes(g, .blind);
     rehomeChests(g);
     armScript(g);
-    clearQuivers(g);
+    clearOrdnance(g);
     g.pack.clear();
     dropRunHud(g);
     g.lock = null;
@@ -1493,9 +1497,8 @@ test "WHICH CREATURES OBEY THEIR ORDERS — every group that carries a `post`, a
 }
 
 test "A DETONATOR RESOLVES ONE WAY — caught on the chest and rolled to a stop bill the SAME blow" {
-    const full = mathx.lerpF(1.0, BLAST_FLOOR, 0.0);
-    try std.testing.expectApproxEqAbs(@as(f32, 1.0), full, 1e-6);
-    const rim = mathx.lerpF(1.0, BLAST_FLOOR, 1.0);
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), blastFalloff(0, BLAST_R), 1e-6);
+    const rim = blastFalloff(BLAST_R, BLAST_R);
     try std.testing.expectApproxEqAbs(BLAST_FLOOR, rim, 1e-6);
     try std.testing.expect(rim > 0 and rim < 0.5);
 
@@ -2885,6 +2888,8 @@ fn heroAimPoint(g: *const Game) rl.Vector3 {
     return v3(g.hero.pos.x, heroCenterY(g), g.hero.pos.z);
 }
 
+/// Metres ahead of his own centre anything he THROWS leaves from, so the shell clears him rather than starting inside his chest.
+const THROW_OUT: f32 = 0.4;
 fn forwardPoint(g: *const Game, reach: f32) rl.Vector3 {
     return mathx.addV(heroAimPoint(g), mathx.scaleV(mathx.headingDir(g.hero.facing), reach));
 }
@@ -3060,7 +3065,7 @@ pub fn stepArrowsForShot(g: *Game, dt: f32) void {
     }
 }
 pub fn clearShaftsForShot(g: *Game) void {
-    clearQuivers(g);
+    clearOrdnance(g);
 }
 
 pub fn ringForShot(g: *Game, u: f32) void {
@@ -3149,7 +3154,7 @@ pub fn forceEmberForShot(g: *Game, level: ?f32) void {
     g.emberNow = level orelse 0;
 }
 pub fn forceMistForShot(g: *Game, ahead: f32) void {
-    const p = v3(g.hero.pos.x, g.env.floorUnder(g.hero.pos), g.hero.pos.z);
+    const p = g.env.seat(g.hero.pos);
     g.mist.stageOne(p, ahead, g.hero.facing);
 }
 pub fn forceSkeinForShot(g: *Game, across: f32) void {
@@ -4095,7 +4100,7 @@ fn tickRest(g: *Game, dt: f32) void {
     g.rest.update(dt);
     if (g.rest.justEntered) {
         clearFoes(g);
-        clearQuivers(g);
+        clearOrdnance(g);
         g.lock = null;
         g.restRetro = g.retro.values;
         g.retro.values[gfx.RF_SEPIA] = mathx.maxF(g.retro.values[gfx.RF_SEPIA], REST_WARMTH);
@@ -4338,7 +4343,7 @@ fn whisperAt(g: *Game) void {
         return;
     };
     const hit = strikeOne(g, pick, blow) orelse return;
-    g.hero.dustPuff(v3(hit.at.x, g.env.floorUnder(hit.at), hit.at.z), WHISPER_R, tint, g.hero.casts);
+    g.hero.dustPuff(g.env.seat(hit.at), WHISPER_R, tint, g.hero.casts);
     sfx.play(whisperLand(ail));
 }
 
@@ -4389,7 +4394,7 @@ fn strikeSunder(g: *Game) void {
         return;
     };
     const hit = strikeOne(g, pick, blow) orelse return;
-    g.hero.sunderBurst(v3(hit.at.x, g.env.floorUnder(hit.at), hit.at.z), true, g.hero.casts);
+    g.hero.sunderBurst(g.env.seat(hit.at), true, g.hero.casts);
     castBeat(g, true);
 }
 
@@ -4405,12 +4410,12 @@ const ROOT_THROW: f32 = 7.0;
 fn rootMark(g: *const Game) rl.Vector3 {
     if (activeLock(g)) |li| {
         const p = foePos(g, li);
-        return v3(p.x, g.env.floorUnder(p), p.z);
+        return g.env.seat(p);
     }
     const d = mathx.headingDir(g.hero.facing);
     const x = g.hero.pos.x + d.x * ROOT_THROW;
     const z = g.hero.pos.z + d.z * ROOT_THROW;
-    return v3(x, g.env.floorUnder(v3(x, g.hero.pos.y, z)), z);
+    return g.env.seat(v3(x, g.hero.pos.y, z));
 }
 
 comptime {
@@ -4448,7 +4453,7 @@ fn seedRoots(g: *Game, at: rl.Vector3) ?rl.Vector3 {
             const a = &@field(g, f.field).live()[pick.idx];
             a.root.grab();
             a.leash.provoke();
-            mark = v3(a.pos.x, g.env.floorUnder(a.pos), a.pos.z);
+            mark = g.env.seat(a.pos);
         }
     }
     g.hero.rootsBurst(mark, true);
@@ -4558,7 +4563,7 @@ fn strikeMissAt(g: *const Game, reach: f32) rl.Vector3 {
     const d = mathx.headingDir(g.hero.facing);
     const x = g.hero.pos.x + d.x * reach * 0.5;
     const z = g.hero.pos.z + d.z * reach * 0.5;
-    return v3(x, g.env.floorUnder(v3(x, g.hero.pos.y, z)), z);
+    return g.env.seat(v3(x, g.hero.pos.y, z));
 }
 
 fn strikeLevin(g: *Game) void {
@@ -4704,7 +4709,7 @@ fn stepShafts(g: *Game, dt: f32) void {
         };
         if (!pierceFoes(g, blade)) continue;
         archermod.plantShaft(ar);
-        splashOf(g, ar);
+        cameToRest(g, ar, true);
         sfx.world(.arrow_hit, ar.pos);
         g.rumble.play(rumblemod.hit_light);
         g.rig.addShake(SHAKE_HIT_LIGHT);
@@ -5097,7 +5102,7 @@ fn summonWave(g: *Game, d: *const druidmod.Druidess, w: druidmod.Wave) void {
     var i: u8 = 0;
     while (i < n) : (i += 1) {
         const spot = d.summonSpot(i, n);
-        const at = v3(spot.x, g.env.floorUnder(v3(spot.x, g.hero.pos.y, spot.z)), spot.z);
+        const at = g.env.seat(v3(spot.x, g.hero.pos.y, spot.z));
         const yaw = mathx.headingXZ(mathx.dirXZ(at, g.hero.pos));
         const seed = 0.17 + 0.23 * @as(f32, @floatFromInt(i));
         inline for (WAVES) |row| {
@@ -5140,16 +5145,22 @@ fn justLanded(ar: *const archermod.Arrow) bool {
 fn planted(g: *Game, ar: *const archermod.Arrow, his: bool) void {
     if (!justLanded(ar)) return;
     if (ar.shot != .venom) sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
-    if (his) {
-        // A pot is a BURST where it lands; everything else of his that plants is a point.
-        const burst = ar.shot == .crock or ar.shot == .clump;
-        if (g.env.breachTouched(ar.pos, if (burst) BREACH_BURST_R else BREACH_ARROW_R, if (burst) .burst else .arrow)) |i| openBreach(g, i, ar.pos);
+    // A BOMB does not open anything where it LANDS — the fuse does, when it goes off (`bombBlast`). Everything else plants as a point.
+    if (his and ar.shot != .bomb) {
+        if (g.env.breachTouched(ar.pos, BREACH_ARROW_R, .arrow)) |i| openBreach(g, i, ar.pos);
     }
+    cameToRest(g, ar, his);
+}
+
+/// WHAT A SHOT OF HIS LEAVES WHERE IT STOPS, and the one thing `planted` may not own: a shaft stopped by a BODY never
+/// reaches `planted` at all (`stepShafts` plants it itself), so a bomb thrown at a lock lit no fuse and simply vanished.
+fn cameToRest(g: *Game, ar: *const archermod.Arrow, his: bool) void {
+    if (his and ar.shot == .bomb) lightFuse(g, ar.pos);
     splashOf(g, ar);
 }
 
 fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
-    const ground = v3(ar.pos.x, g.env.floorUnder(ar.pos), ar.pos.z);
+    const ground = g.env.seat(ar.pos);
     switch (ar.shot) {
         .venom => g.brood.splash(ground),
         .clump => g.band.splash(ar.pos),
@@ -5168,6 +5179,8 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
         .powder => powderBurst(g, ground),
         .rock => rockBurst(g, ground),
         .acorn => acornBurst(g, ground),
+        // Nothing on landing: the FUSE is the bomb's whole event and `planted` has already lit it.
+        .bomb => {},
         .arrow, .firearrow, .wisp, .crock, .spark => {},
     }
 }
@@ -5203,7 +5216,7 @@ fn spawnRock(g: *Game, from: rl.Vector3) void {
 fn shotBuildup(s: archermod.Shot) f32 {
     return switch (s) {
         .venom => broodmod.M_SPIT_BUILD,
-        .arrow, .firearrow, .clump, .crock, .bolt, .wisp, .emberball, .sac, .spark, .powder, .rock, .acorn => 0,
+        .arrow, .firearrow, .clump, .crock, .bolt, .wisp, .emberball, .sac, .spark, .powder, .rock, .acorn, .bomb => 0,
     };
 }
 
@@ -5227,14 +5240,20 @@ fn detonates(s: archermod.Shot) bool {
 }
 
 const BLAST_R: f32 = 3.1;
+/// What the RIM of any blast is worth against its middle. **ONE CURVE FOR EVERY BLAST** — it scales the throw and the
+/// shove as readily as the damage, so a body at the edge is pushed rather than launched.
 const BLAST_FLOOR: f32 = 0.30;
+
+/// HOW MUCH OF A BLAST A BODY STANDING `gap` METRES OUT TAKES. The radius is the source's own; the shape never is.
+fn blastFalloff(gap: f32, r: f32) f32 {
+    return mathx.lerpF(1.0, BLAST_FLOOR, mathx.clampF(gap / r, 0, 1));
+}
 
 fn emberBlast(g: *Game, ar: *const archermod.Arrow) void {
     if (ar.shot != .emberball or g.hero.dead) return;
     const d = mathx.distXZ(ar.pos, g.hero.pos);
     if (d > BLAST_R) return;
-    const k = mathx.lerpF(1.0, BLAST_FLOOR, mathx.clampF(d / BLAST_R, 0, 1));
-    const blow = foemod.Blow{ .hit = ar.blow.scaled(k), .from = ar.pos };
+    const blow = foemod.Blow{ .hit = ar.blow.scaled(blastFalloff(d, BLAST_R)), .from = ar.pos };
     _ = heroTakes(g, blow, false, false);
 }
 
@@ -5267,16 +5286,20 @@ fn drawArrows(g: *Game) void {
                 .wisp => &g.wispModel,
                 .spark => &g.sparkModel,
                 .acorn => &g.acornModel,
+                .bomb => &g.bombModel,
             };
             rl.drawMesh(m.meshes[0], m.materials[0], archermod.arrowXform(ar));
         }
     }
 }
 
-fn clearQuivers(g: *Game) void {
+/// EVERYTHING OF HIS STILL IN THE AIR OR STILL COUNTING, dropped together. A bomb left off this outlived the map it was
+/// lit on and went off at those coordinates in the next one, and outlived his own death to blast the spot he respawned from.
+fn clearOrdnance(g: *Game) void {
     for (quivers(g)) |pool| {
         for (pool) |*ar| ar.* = .{};
     }
+    g.bombs = [_]Bomb{.{}} ** BOMB_CAP;
 }
 
 fn sceneCam(g: *const Game) rl.Camera3D {
@@ -5464,6 +5487,7 @@ pub fn drawScene(g: *Game) void {
         g.scene.setWind(false);
     }
     drawArrows(g);
+    drawBombs(g);
     g.souls.draw();
     drawDrops(g);
     for (&g.boltGas) |*c| c.drawFx();
@@ -6432,7 +6456,7 @@ pub fn run(mode: Mode) void {
             if (p.justDied) sfx.world(.bone_die, p.pos);
             if (p.raised) {
                 const spot = mathx.clampXZ(p.raiseAt, PLAY_HALF);
-                const at = v3(spot.x, g.env.floorUnder(v3(spot.x, g.hero.pos.y, spot.z)), spot.z);
+                const at = g.env.seat(v3(spot.x, g.hero.pos.y, spot.z));
                 g.clatter.raise(at, mathx.headingXZ(mathx.dirXZ(at, g.hero.pos)));
                 sfx.world(.sac_hatch, at);
                 g.rumble.play(rumblemod.hit_heavy);
@@ -6505,6 +6529,7 @@ pub fn run(mode: Mode) void {
             if (m.justDied) sfx.world(.ogre_die, m.pos);
         }
         tickBoltGas(g, dt);
+        tickBombs(g, dt);
         tickBreaches(g, dt);
         if (g.vigil.gasDose(dt, g.hero.pos)) |b| {
             _ = heroTakes(g, b, false, false);
@@ -6932,7 +6957,7 @@ fn useItem(g: *Game, k: item.Kind) void {
         },
         .lob => |l| {
             if (g.bag.take(k, 1) == 0) return;
-            const from = mathx.addV(heroAimPoint(g), mathx.scaleV(mathx.headingDir(g.hero.facing), 0.4));
+            const from = forwardPoint(g, THROW_OUT);
             const hit = (combat.Hit{ .dmg = l.dmg, .poise = l.poise, .elem = combat.elems(.{ .fire = l.fire, .lightning = l.lightning }) }).scaled(g.hero.perk.thrownDmg * g.hero.perk.dmg);
             const shot: archermod.Shot = if (l.dose != null) .powder else if (l.lightning > 0) .crock else .clump;
             putIn(&g.shafts, archermod.launchShaft(from, camAimPoint(g), koboldmod.CLUMP_SPEED, hit, true, shot));
@@ -6990,10 +7015,22 @@ fn useItem(g: *Game, k: item.Kind) void {
             g.hero.startCoat(combat.ailOfName(c.ail), c.amt, c.secs);
             sfx.play(.eat);
         },
+        // PLANTED UNLESS HE IS LOCKED ON, which is the one place the throw has somewhere to go — a free camera would be
+        // throwing it at the reticle, and a bomb you cannot put DOWN is the wrong tool for a wall.
+        .bomb => {
+            if (g.bag.take(k, 1) == 0) return;
+            if (activeLock(g)) |r| {
+                // NO BLOW ON THE FLIGHT: everything the bomb is worth is in the blast, so a shell that clips a body just lands there.
+                putIn(&g.shafts, archermod.launchShaft(forwardPoint(g, THROW_OUT), foePos(g, r), koboldmod.CLUMP_SPEED, .{}, true, .bomb));
+            } else {
+                lightFuse(g, g.hero.pos);
+            }
+            sfx.play(.eat);
+        },
         .toll => |t| {
             if (!g.hero.fp.spend(t.fp)) return;
             const n = doseRing(g, g.hero.pos, t.r, combat.ailOfName(t.ail), t.amt);
-            const at = v3(g.hero.pos.x, g.env.floorUnder(g.hero.pos), g.hero.pos.z);
+            const at = g.env.seat(g.hero.pos);
             g.hero.sunderBurst(at, n > 0, g.hero.casts);
             sfx.play(.hollow_toll);
             castBeat(g, false);
@@ -7190,7 +7227,7 @@ fn tickBoltGas(g: *Game, dt: f32) void {
 
 fn layBoltGas(g: *Game, at: rl.Vector3) void {
     g.boltGas[g.boltGasHead] = .{
-        .pos = v3(at.x, g.env.floorUnder(at), at.z),
+        .pos = g.env.seat(at),
         .scale = 1.0,
         .live = true,
         .fxRng = foemod.fxStream(at.x + at.z, 641.0, 0x8017),
@@ -7216,10 +7253,10 @@ const BREACH_PUFF_COLS: usize = 5;
 const BREACH_PUFF_ROWS: usize = 4;
 const BREACH_PUFF_N: i32 = 6;
 const BREACH_MOTES: usize = propsmod.FIT_CAP * BREACH_PUFF_COLS * BREACH_PUFF_ROWS * @as(usize, @intCast(BREACH_PUFF_N));
-/// A roll that brushes the face counts, as does an arrow planted in it; a blade has to reach the stone. A pot bursts wider than it lands.
+/// A roll that brushes the face counts, as does an arrow planted in it; a blade has to reach the stone. A BOMB reaches wider than it sits.
 const BREACH_ROLL_REACH: f32 = 0.35;
 const BREACH_ARROW_R: f32 = 0.30;
-const BREACH_BURST_R: f32 = 0.90;
+const BREACH_BOMB_R: f32 = 1.60;
 const VEIL_MOTE = mathx.rgba(168, 176, 214, 200);
 const VEIL_MOTE_THIN = mathx.rgba(214, 220, 244, 0);
 const VEIL_PUFF = foemod.Puff{ .blast = foemod.Blast.of(foemod.DUST_DRAG, 0.7, 1.4), .spdLo = 0.35, .upLo = 0.6, .upHi = 1.8, .rLo = 0.08, .rHi = 0.20, .col = VEIL_MOTE, .col1 = VEIL_MOTE_THIN };
@@ -7227,6 +7264,206 @@ const RUBBLE_PUFF = foemod.Puff{ .blast = foemod.Blast.of(foemod.DUST_DRAG, 0.9,
 const LEAF_MOTE = mathx.rgba(74, 104, 52, 210);
 const LEAF_MOTE_THIN = mathx.rgba(110, 138, 84, 0);
 const LEAF_PUFF = foemod.Puff{ .blast = foemod.Blast.of(foemod.DUST_DRAG, 0.5, 1.0), .spdLo = 0.3, .upLo = -0.5, .upHi = 0.7, .rLo = 0.05, .rHi = 0.14, .col = LEAF_MOTE, .col1 = LEAF_MOTE_THIN };
+
+/// THE FUSE IS THE WHOLE MECHANIC — a bomb is not an impact, so it leaves the shaft pool the moment it lands and lives here
+/// instead. Planted or thrown, the clock is the same one and it does not know whose the bomb is.
+const Bomb = struct {
+    at: rl.Vector3 = mathx.zero3,
+    left: f32 = 0,
+    live: bool = false,
+    /// ITS OWN, not the pool's: the cord quickens as it runs out, so bombs lit at different moments owe sparks at different rates.
+    spark: f32 = 0,
+};
+/// Enough that a fistful thrown down a corridor all keep their own clock; the one nearest going off gives up its slot.
+const BOMB_CAP: usize = 8;
+const BOMB_SPARK_HZ: f32 = 34.0;
+/// Metres a second the blast puts under a creature, spent by `foe.applyShove`. Past the ogre's slam because nothing walks this off.
+const BOMB_SHOVE: f32 = 7.5;
+/// Metres it throws HIM up, and metres it slides him back. `Hit.scaled` does not touch either field, so both are billed with the falloff by hand.
+const BOMB_LAUNCH: f32 = 1.8;
+const BOMB_PUSH: f32 = 2.6;
+const BOMB_BURST_N: i32 = 26;
+const BOMB_SHELL = mathx.rgba(255, 214, 132, 255);
+const BOMB_FLARE = mathx.rgba(255, 246, 214, 0);
+const BOMB_SPARK = foemod.Sparks{ .spdLo = 0.5, .spdHi = 1.9, .upLo = 0.4, .upHi = 1.5, .lifeLo = 0.10, .lifeHi = 0.26, .rLo = 0.008, .rHi = 0.018, .r1 = 0.003, .col = BOMB_SHELL, .col1 = BOMB_FLARE, .grav = 3.2 };
+const BOMB_PUFF = foemod.Puff{ .blast = foemod.Blast.of(foemod.DUST_DRAG, 1.1, 2.0), .spdLo = 0.9, .upLo = 0.4, .upHi = 2.4, .rLo = 0.16, .rHi = 0.44, .col = foemod.DUST, .col1 = foemod.DUST_THIN };
+
+// THE BOMBS ARE THE BREACH RING'S SECOND FEEDER, and a ring that overwrites its oldest does it silently — so the whole
+// pool going off on one frame, sparks and all, is arithmetic here rather than headroom nobody checked.
+comptime {
+    const worstFrame = BOMB_CAP * (@as(usize, @intCast(BOMB_BURST_N)) + foemod.emitCap(BOMB_SPARK_HZ));
+    if (worstFrame >= BREACH_MOTES) @compileError("game: a frame of bomb blasts walks an opening's motes out of the breach ring — size it off BOTH feeders");
+}
+
+const BombRow = @FieldType(item.Use, "bomb");
+
+comptime {
+    if (std.meta.activeTag(item.useBank(.bomb)) != .bomb) @compileError("game: `item.bomb` no longer carries a `bomb` use row — " ++
+        "the fuse, the blast and the card all read it, and a runtime check here would fail SILENTLY as a bomb that never goes off");
+}
+
+/// The LIVE row, so the bench moves the fuse and the ring under a bomb already lit.
+fn bombRow() BombRow {
+    return item.use(.bomb).bomb;
+}
+
+/// The blow a bomb carries, off the ITEM ROW so the card and what lands cannot part company. `stance` is the poise again: a bomb
+/// is the one thing in the bag that takes a guard down.
+fn bombHit(row: BombRow) combat.Hit {
+    return .{ .dmg = row.dmg, .poise = row.poise, .stance = row.poise, .elem = combat.elems(.{ .fire = row.fire }) };
+}
+
+/// A BOMB SITS ON THE FLOOR WHEREVER IT CAME TO REST — the one thrown at a lock stops against a chest, and the seat is
+/// solved here so the cord, the spark and the blast's own motes cannot part company with it.
+fn lightFuse(g: *Game, at: rl.Vector3) void {
+    const row = bombRow();
+    const seat = g.env.seat(at);
+    var worst: usize = 0;
+    for (&g.bombs, 0..) |*b, i| {
+        if (!b.live) {
+            b.* = .{ .at = seat, .left = row.secs, .live = true };
+            sfx.world(.ember_bounce, seat);
+            return;
+        }
+        if (b.left < g.bombs[worst].left) worst = i;
+    }
+    g.bombs[worst] = .{ .at = seat, .left = row.secs, .live = true };
+    sfx.world(.ember_bounce, seat);
+}
+
+fn tickBombs(g: *Game, dt: f32) void {
+    const row = bombRow();
+    for (&g.bombs) |*b| {
+        if (!b.live) continue;
+        b.left -= dt;
+        if (b.left > 0) {
+            // The spark eats the cord, and it QUICKENS as the cord runs out — the only tell the blast gives.
+            const hz = BOMB_SPARK_HZ * mathx.lerpF(0.45, 1.0, 1.0 - mathx.clampF(b.left / row.secs, 0, 1));
+            var owed = foemod.emitDue(&b.spark, dt, hz);
+            const tip = mathx.addV(b.at, heromod.BOMB_CORD_TIP);
+            while (owed > 0) : (owed -= 1) {
+                foemod.sparks(&g.breachMotes, &g.breachHead, &g.breachRng, tip, v3(0, 1, 0), 1, BOMB_SPARK);
+            }
+            continue;
+        }
+        b.live = false;
+        bombBlast(g, b.at, row);
+    }
+}
+
+/// EVERYTHING INSIDE THE RING, THE HERO INCLUDED, billed once and off one falloff. The wall is asked LAST so a blast that kills
+/// him still opens it.
+fn bombBlast(g: *Game, at: rl.Vector3, row: BombRow) void {
+    const hit = bombHit(row);
+    sfx.world(.delver_burst, at);
+    g.rumble.play(rumblemod.hit_heavy);
+    g.rig.addShake(SHAKE_HIT_HEAVY);
+    g.hero.dustPuff(at, row.r, foemod.DUST, g.hero.casts);
+    foemod.puff(&g.breachMotes, &g.breachHead, &g.breachRng, mathx.addV(at, v3(0, 0.4, 0)), BOMB_BURST_N, 3.2, 1.6, 1.0, BOMB_PUFF);
+
+    inline for (FOE_GROUPS) |gr| {
+        for (@field(g, gr.field).live()) |*f| {
+            if (!foemod.corporeal(f)) continue;
+            const gap = mathx.distXZ(at, f.pos) - f.bodyR();
+            if (gap > row.r) continue;
+            const k = blastFalloff(gap, row.r);
+            f.tryHit(foemod.shaftThrough(f.centerWorld(), hit.scaled(k)));
+            // THE THROW IS THE BOMB'S, NOT THE BODY'S OWN `Push` — written after the wound so it beats the shove `wounded` just set.
+            const away = mathx.dirXZ(at, f.pos);
+            if (mathx.lenXZ(away) > 1e-3) f.shove = mathx.scaleV(away, BOMB_SHOVE * k);
+        }
+    }
+    if (!g.hero.dead) {
+        const gap = mathx.distXZ(at, g.hero.pos) - HERO_R;
+        if (gap <= row.r) {
+            const k = blastFalloff(gap, row.r);
+            var his = hit.scaled(k);
+            his.launch = BOMB_LAUNCH * k;
+            his.shove = BOMB_PUSH * k;
+            _ = heroTakes(g, .{ .hit = his, .from = at }, true, true);
+        }
+    }
+    if (g.env.breachTouched(at, BREACH_BOMB_R, .bomb)) |i| openBreach(g, i, at);
+}
+
+fn drawBombs(g: *Game) void {
+    for (&g.bombs) |*b| {
+        if (!b.live) continue;
+        const m = &g.bombModel;
+        rl.drawMesh(m.meshes[0], m.materials[0], mathx.tr(b.at.x, b.at.y, b.at.z));
+    }
+}
+
+test "THE FUSE IS THE BOMB — it runs whether or not he is still there, and what the blast is worth falls off to the rim" {
+    const row = bombRow();
+    try std.testing.expect(row.secs > 0 and row.r > 0);
+
+    // ONE CURVE for damage, poise, throw and shove: the middle is the whole blow, the rim is `BLAST_FLOOR` of it, and it is monotone between.
+    try std.testing.expectApproxEqAbs(@as(f32, 1.0), blastFalloff(0, row.r), 1e-6);
+    try std.testing.expectApproxEqAbs(BLAST_FLOOR, blastFalloff(row.r, row.r), 1e-6);
+    try std.testing.expectApproxEqAbs(BLAST_FLOOR, blastFalloff(row.r * 4.0, row.r), 1e-6);
+    var prev: f32 = 2.0;
+    var gap: f32 = 0;
+    while (gap <= row.r) : (gap += row.r / 16.0) {
+        const k = blastFalloff(gap, row.r);
+        try std.testing.expect(k < prev);
+        prev = k;
+    }
+
+    const hit = bombHit(row);
+    const mid = hit.scaled(blastFalloff(0, row.r));
+    const rim = hit.scaled(blastFalloff(row.r, row.r));
+    try std.testing.expect(mid.raw() > rim.raw());
+    // A GUARD IS NO ANSWER TO IT: the stance it takes off is the poise again, past the heavy swing's own (`hero.ATK_HEAVY_HIT`).
+    try std.testing.expect(hit.stance > heromod.ATK_HEAVY_HIT.stance);
+    try std.testing.expect(hit.poise > 0);
+    std.debug.print("\n  bomb: {d:.1}s fuse, {d:.1} m ring — {d:.0} raw at the seat, {d:.0} at the rim; throws him {d:.2} m up and shoves {d:.1} m/s\n", .{ row.secs, row.r, mid.raw(), rim.raw(), BOMB_LAUNCH, BOMB_SHOVE });
+
+    // THE CLOCK IS THE ONLY THING THAT SETS IT OFF, and the pool gives its slot to the one nearest going off.
+    var pool = [_]Bomb{.{}} ** BOMB_CAP;
+    pool[0] = .{ .at = mathx.zero3, .left = row.secs, .live = true };
+    var t: f32 = 0;
+    const step: f32 = 1.0 / 60.0;
+    while (pool[0].left > 0 and t < row.secs * 3.0) : (t += step) pool[0].left -= step;
+    try std.testing.expectApproxEqAbs(row.secs, t, step * 2.0);
+}
+
+test "EVERY WAY A SHAFT OF HIS STOPS ANNOUNCES IT — the fuse may not go out in the pool" {
+    // `stepShafts` plants by hand on two paths and only the WALL one ever reached `planted`: a shell stopped by a BODY
+    // left the pool with its clock unstarted, so a bomb thrown at the lock it was aimed at simply vanished.
+    const src = try worldfmt.readForTest(std.testing.allocator, SRC, worldfmt.SRC_CAP);
+    defer std.testing.allocator.free(src);
+    // Split so this line is not itself a match.
+    const PLANT = "archermod.plantShaft" ++ "(ar);";
+    var at: usize = 0;
+    var plants: usize = 0;
+    while (std.mem.indexOfPos(u8, src, at, PLANT)) |i| {
+        at = i + 1;
+        plants += 1;
+        const tail = src[i..@min(i + 200, src.len)];
+        if (std.mem.indexOf(u8, tail, "cameToRest(") == null and std.mem.indexOf(u8, tail, "planted(") == null) {
+            std.debug.print("\n  a shaft is planted at byte {d} and nothing announces it — a bomb stopped there never goes off\n", .{i});
+            return error.TestUnexpectedResult;
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 2), plants);
+    // AND A LIT ONE IS DROPPED WITH THE QUIVERS: split apart again, the clock outlives the map, the rest and his own death.
+    const clear = std.mem.indexOf(u8, src, "fn clearOrdnance(") orelse return error.TestUnexpectedResult;
+    try std.testing.expect(std.mem.indexOf(u8, src[clear .. clear + 400], "g.bombs = ") != null);
+    std.debug.print("\n  both hand-plants in the shaft loop announced; the ordnance clear drops the fuses too\n", .{});
+}
+
+test "A CRACKED WALL ANSWERS THE BOMB AND NOTHING ELSE — and the bomb answers no other wall" {
+    for (std.enums.values(envmod.Key)) |k| {
+        try std.testing.expectEqual(k == .bomb, envmod.opens(.cracked, k));
+        try std.testing.expect(!(k == .bomb and envmod.opens(.illusion, k)));
+        try std.testing.expect(!(k == .bomb and envmod.opens(.vines, k)));
+    }
+    // The pot that used to do it is a point like every other planted shaft now.
+    try std.testing.expect(!envmod.opens(.cracked, .arrow));
+    try std.testing.expect(item.price(.bomb) > item.price(.thundercrock));
+    std.debug.print("\n  bomb: {d} coin against the thundercrock's {d}; the crock no longer opens a cracked wall\n", .{ item.price(.bomb), item.price(.thundercrock) });
+}
 
 fn revealBreaches(g: *Game, blade: foemod.Blade) void {
     if (blade.active) {
@@ -7693,7 +7930,7 @@ fn cycleLock(g: *Game, dir: f32) void {
 fn resetFoes(g: *Game) void {
     rehomeFoes(g, .blind);
     applyBosses(g);
-    clearQuivers(g);
+    clearOrdnance(g);
     g.lock = null;
     g.pack.clear();
     dropRunHud(g);

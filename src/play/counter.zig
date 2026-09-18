@@ -63,6 +63,7 @@ pub const STOCK = [_]item.Kind{
     .fire_tallow,
     .thundercrock,
     .ember_candle,
+    .bomb,
     .smithing_stone,
 };
 

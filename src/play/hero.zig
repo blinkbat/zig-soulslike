@@ -4892,6 +4892,27 @@ fn chainTo(wx: anytype, rest: anytype, sh: usize, el: usize, wr: usize, target: 
     wx[wr] = mul3(size, axesM(hx, hy, hz), tr(wrist.x, wrist.y, wrist.z));
 }
 
+const BOMB_CLAY = mathx.rgba(46, 42, 40, 255);
+const BOMB_CLAY_LT = mathx.rgba(66, 60, 56, 255);
+const BOMB_PITCH = mathx.rgba(28, 24, 22, 255);
+const BOMB_CORD = mathx.rgba(188, 170, 128, 255);
+
+/// Where the cord ENDS over the bomb's own seat, so `game`'s spark stands on the tip of the thing you can see.
+pub const BOMB_CORD_TIP = v3(0.014, 0.146, 0.022);
+
+/// The SHELL and the cord; the spark burning down it is `game`'s particle, not geometry. Nearly black on purpose — a smooth
+/// mass this size goes pale on its sunward face (AGENTS.md).
+pub fn bombMesh(shader: rl.Shader) rl.Model {
+    var b = Builder.init();
+    var rng = mathx.Rng.init(0xB0B);
+    b.setMat(.stone);
+    b.addBlob(mathx.zero3, v3(0.092 * rng.range(0.94, 1.06), 0.088, 0.092 * rng.range(0.94, 1.06)), 6, 10, BOMB_CLAY);
+    b.addBlob(v3(0.018, 0.026, -0.014), v3(0.052, 0.046, 0.050), 5, 8, BOMB_CLAY_LT);
+    b.addBlob(v3(0, 0.082, 0), v3(0.030, 0.022, 0.030), 4, 7, BOMB_PITCH);
+    b.addCapsule(v3(0, 0.094, 0), BOMB_CORD_TIP, 0.008, 0.005, 5, BOMB_CORD);
+    return b.toModel(shader);
+}
+
 pub fn boltMesh(shader: rl.Shader) rl.Model {
     var b = Builder.init();
     b.setMat(.plain);

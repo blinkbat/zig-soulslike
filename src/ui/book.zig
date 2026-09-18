@@ -471,6 +471,7 @@ fn quickWorth(kind: ?item.Kind, worn: heromod.Worn, sheet: stats.Sheet, perk: pt
         .none => 0,
         .regen => |r| hpMax * r.frac,
         .lob => |b| b.dmg + b.fire + b.lightning,
+        .bomb => |b| b.dmg + b.fire,
         .ward, .wind, .grease, .souls, .brew, .purge, .steady, .arrows, .dose, .coat, .toll => 0,
     };
 }

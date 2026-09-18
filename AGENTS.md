@@ -1696,10 +1696,20 @@ the map places it like any prop.
 - **THREE THINGS BRING IT DOWN, ALL THE HERO'S** — a blade that reaches the stone (the blade's own radius inflating
   the face), a ROLL pressed against it, or an arrow planted in it. **A foe opens none of them.**
 - **IT IS ONE OF THREE BREACHES, AND EACH HAS ITS OWN KEY** (`props.Breach`, `env.opens`) — the ILLUSION opens to
-  any of the three above, the CRACKED WALL (`cracked_wall`) to a BURST alone (a thrown candle or crock landing on
-  it; steel scratches it), the VINE CURTAIN (`vines`) to a BLADE alone. One table in `env` (`breach*`) serves all
-  three; only the key, `breachFade` and the puff differ. Bench: `worlds/test_wfcave.world` — the curtain across a
-  mouth behind a fall, the cracked wall sealing the chamber's second mouth.
+  any of the three above, the CRACKED WALL (`cracked_wall`) to a **BOMB** alone (`item.bomb`, and nothing else in
+  the game; steel scratches it), the VINE CURTAIN (`vines`) to a BLADE alone. `opens` is written POSITIVELY on
+  purpose: as `key != .burst` the illusion answered every key added afterwards by silence. One table in `env`
+  (`breach*`) serves all three; only the key, `breachFade` and the puff differ. Bench:
+  `worlds/test_wfcave.world` — the curtain across a mouth behind a fall, the cracked wall sealing the chamber's
+  second mouth.
+- **THE BOMB IS A FUSE, NOT AN IMPACT** (`item.Use.bomb`, `game.Bomb`/`lightFuse`/`bombBlast`) — planted at his
+  feet, or thrown at the LOCK and lit where it lands; the shell leaves the shaft pool on landing and the clock
+  runs whether or not he is still standing there. **`lightFuse` IS THE ONLY WAY ONE STARTS, AND EVERY WAY A SHOT
+  COMES TO REST GOES THROUGH `cameToRest`** — a shaft stopped by a BODY never reaches `planted`, so a bomb thrown
+  at a lock used to plant in the foe and vanish. One falloff (`blastFalloff`, the fireball's own) bills damage,
+  poise, the throw and the shove together, it does not know whose the bomb is, and the wall is asked LAST so a
+  blast that kills him still opens it. **A LIT BOMB IS DROPPED WITH HIS QUIVERS** (`clearOrdnance`) — left off it,
+  the clock outlived the map it was lit on and went off at those coordinates in the next one.
 - **IT STOPS BEING A WALL THE FRAME IT IS OPENED**, and only LOOKS like one for its `breachFade` (0.7 s for the
   illusion): `eachSolid` drops every solid whose `breachLife` is under 1, so look, step, arrow and roll all pass at
   once while the face thins in place (`Prop.dissolve`, alpha only — never `shrink`, which would sink it).

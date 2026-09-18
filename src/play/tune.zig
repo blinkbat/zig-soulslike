@@ -635,6 +635,14 @@ fn useGet(r: usize, c: usize) f32 {
             .frac => q.frac,
             else => 0,
         },
+        .bomb => |q| switch (col) {
+            .dmg => q.dmg,
+            .poise => q.poise,
+            .fire => q.fire,
+            .radius => q.r,
+            .secs => q.secs,
+            else => 0,
+        },
         .lob => |q| switch (col) {
             .dmg => q.dmg,
             .poise => q.poise,
@@ -700,6 +708,14 @@ fn useSet(r: usize, c: usize, v: f32) void {
             .frac => g.use.regen.frac = v,
             else => {},
         },
+        .bomb => switch (col) {
+            .dmg => g.use.bomb.dmg = v,
+            .poise => g.use.bomb.poise = v,
+            .fire => g.use.bomb.fire = v,
+            .radius => g.use.bomb.r = v,
+            .secs => g.use.bomb.secs = v,
+            else => {},
+        },
         .lob => switch (col) {
             .dmg => g.use.lob.dmg = v,
             .poise => g.use.lob.poise = v,
@@ -759,6 +775,7 @@ fn useHas(r: usize, c: usize) bool {
     const col: UseCol = @enumFromInt(c);
     return switch (item.LIVE[@intFromEnum(USE_ROWS[r])].use) {
         .none, .purge => false,
+        .bomb => col == .dmg or col == .poise or col == .fire or col == .radius or col == .secs,
         .arrows, .souls => col == .n,
         .regen, .grease => col == .secs or col == .frac,
         .lob => |q| switch (col) {

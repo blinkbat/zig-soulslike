@@ -226,6 +226,7 @@ pub fn drawHeld(k: item.Kind, cx: f32, cy: f32, px: f32, any: bool) void {
         .scroll_bidding => sorceryScroll(cx, cy, px, .bidding),
         .scroll_rot => sorceryScroll(cx, cy, px, .rot),
         .scroll_pyre => sorceryScroll(cx, cy, px, .pyre),
+        .bomb => bomb(cx, cy, px),
     }
 }
 
@@ -1108,6 +1109,37 @@ fn loopOfChance(cx: f32, cy: f32, px: f32) void {
         const a = std.math.pi * (1.55 + 0.16 * @as(f32, @floatFromInt(i)));
         rl.drawCircleV(v2(cx + mathx.cosf(a) * s * 0.165, cy + s * 0.05 + mathx.sinf(a) * s * 0.165), 1.2 * k, BRONZE_DK);
     }
+}
+
+/// The SHELL, the pitch seal and the cord with the spark on it — the one picture in the set that is lit, because the fuse is
+/// what the item IS. Read against the thundercrock beside it on the shelf: that one is clay and light, this one is clay and black.
+fn bomb(cx: f32, cy: f32, px: f32) void {
+    const s = px;
+    const k = strokeK(px);
+    var rng = mathx.Rng.init(0xB0B);
+    const shell = rgba(46, 42, 40, 255);
+    const shellLt = rgba(78, 72, 68, 255);
+    const pitch = rgba(24, 21, 20, 255);
+    const lean = rng.range(-1.2, 1.2) * k;
+    rl.drawCircleV(v2(cx + 1.2 * k, cy + s * 0.12 + 1.4 * k), s * 0.26, SHADOW);
+    rl.drawCircleV(v2(cx, cy + s * 0.09), s * 0.255, shell);
+    rl.drawCircleV(v2(cx - s * 0.085, cy + s * 0.025), s * 0.105, shellLt);
+    quad(
+        v2(cx - s * 0.075 + lean, cy - s * 0.20),
+        v2(cx + s * 0.075 + lean, cy - s * 0.20),
+        v2(cx + s * 0.065, cy - s * 0.09),
+        v2(cx - s * 0.065, cy - s * 0.09),
+        pitch,
+    );
+    // The cord leaves the stopper off the axis and kinks once — nothing dead is straight (AGENTS.md).
+    const a = v2(cx + lean, cy - s * 0.205);
+    const b = v2(cx + s * 0.10 + lean, cy - s * 0.30);
+    const c = v2(cx + s * 0.075 + lean, cy - s * 0.40);
+    rl.drawLineEx(a, b, 2.8 * k, CORD);
+    rl.drawLineEx(b, c, 2.4 * k, CORD);
+    rl.drawCircleV(c, s * 0.055, rgba(255, 168, 56, 190));
+    rl.drawCircleV(c, s * 0.030, rgba(255, 228, 150, 255));
+    rl.drawCircleV(v2(c.x - s * 0.035, c.y + s * 0.03), s * 0.016, rgba(255, 196, 96, 210));
 }
 
 fn thundercrock(cx: f32, cy: f32, px: f32) void {

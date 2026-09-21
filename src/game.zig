@@ -7327,18 +7327,17 @@ fn bombHit(row: BombRow) combat.Hit {
 /// A BOMB SITS ON THE FLOOR WHEREVER IT CAME TO REST — the one thrown at a lock stops against a chest, and the seat is
 /// solved here so the cord, the spark and the blast's own motes cannot part company with it.
 fn lightFuse(g: *Game, at: rl.Vector3) void {
-    const row = bombRow();
     const seat = g.env.seat(at);
-    var worst: usize = 0;
+    // A FREE SLOT, ELSE THE ONE NEAREST GOING OFF — picked first, so the row and the voice are written ONCE either way.
+    var slot: usize = 0;
     for (&g.bombs, 0..) |*b, i| {
         if (!b.live) {
-            b.* = .{ .at = seat, .left = row.secs, .live = true };
-            sfx.world(.ember_bounce, seat);
-            return;
+            slot = i;
+            break;
         }
-        if (b.left < g.bombs[worst].left) worst = i;
+        if (b.left < g.bombs[slot].left) slot = i;
     }
-    g.bombs[worst] = .{ .at = seat, .left = row.secs, .live = true };
+    g.bombs[slot] = .{ .at = seat, .left = bombRow().secs, .live = true };
     sfx.world(.ember_bounce, seat);
 }
 
@@ -7375,6 +7374,9 @@ fn bombBlast(g: *Game, at: rl.Vector3, row: BombRow) void {
     inline for (FOE_GROUPS) |gr| {
         for (@field(g, gr.field).live()) |*f| {
             if (!foemod.corporeal(f)) continue;
+            // `doseRing`'s gate, and it is LOAD-BEARING here: a swept blade misses a sunk, deep, blinking or dissolved
+            // body on its own geometry, but `shaftThrough` is built at the body's OWN `centerWorld`, so nothing can refuse it.
+            if (disguised(f)) continue;
             const gap = mathx.distXZ(at, f.pos) - f.bodyR();
             if (gap > row.r) continue;
             const k = blastFalloff(gap, row.r);
@@ -7483,6 +7485,24 @@ test "EVERY WAY A SHAFT OF HIS STOPS ANNOUNCES IT — the fuse may not go out in
         try std.testing.expectEqual(@as(usize, 1), lit);
     }
     std.debug.print("\n  both hand-plants in the shaft loop announced; a shell lights ONE fuse whether it plants or its flight runs out; the ordnance clear drops them too\n", .{});
+}
+
+test "A BODY THAT IS NOT THERE TAKES NO BLAST — every ring over `FOE_GROUPS` carries `disguised`" {
+    // `foe.reached` refuses only `offField`; the rest of "cannot be struck" is GEOMETRY, and `foe.shaftThrough` built at a
+    // body's own `centerWorld` has none — the segment sinks, goes underground and blinks WITH it, so it always touches.
+    // Every ring that bills or doses over the field owes the gate its pickers carry.
+    const src = try worldfmt.readForTest(std.testing.allocator, SRC, worldfmt.SRC_CAP);
+    defer std.testing.allocator.free(src);
+    const RINGS = [_][]const u8{ "fn bombBlast(", "fn doseRing(", "fn rootVictim(", "fn strikeVictim(" };
+    for (RINGS) |name| {
+        const at = std.mem.indexOf(u8, src, name) orelse return error.TestUnexpectedResult;
+        const body = src[at..@min(at + 900, src.len)];
+        if (std.mem.indexOf(u8, body, "disguised(") == null) {
+            std.debug.print("\n  `{s}` rings the field and never asks `disguised` — it reaches a dissolved magus, a sunk lurker and a deep delver\n", .{name});
+            return error.TestUnexpectedResult;
+        }
+    }
+    std.debug.print("\n  rings: {d} sites over FOE_GROUPS, every one gated on `disguised`\n", .{RINGS.len});
 }
 
 test "A CRACKED WALL ANSWERS THE BOMB AND NOTHING ELSE — and the bomb answers no other wall" {

@@ -1704,12 +1704,15 @@ the map places it like any prop.
   second mouth.
 - **THE BOMB IS A FUSE, NOT AN IMPACT** (`item.Use.bomb`, `game.Bomb`/`lightFuse`/`bombBlast`) — planted at his
   feet, or thrown at the LOCK and lit where it lands; the shell leaves the shaft pool on landing and the clock
-  runs whether or not he is still standing there. **`lightFuse` IS THE ONLY WAY ONE STARTS, AND EVERY WAY A SHOT
-  COMES TO REST GOES THROUGH `cameToRest`** — a shaft stopped by a BODY never reaches `planted`, so a bomb thrown
-  at a lock used to plant in the foe and vanish. One falloff (`blastFalloff`, the fireball's own) bills damage,
-  poise, the throw and the shove together, it does not know whose the bomb is, and the wall is asked LAST so a
-  blast that kills him still opens it. **A LIT BOMB IS DROPPED WITH HIS QUIVERS** (`clearOrdnance`) — left off it,
-  the clock outlived the map it was lit on and went off at those coordinates in the next one.
+  runs whether or not he is still standing there. **`lightFuse` IS THE ONLY WAY ONE STARTS, AND A SHAFT LEAVES THE
+  POOL FOUR WAYS** — three come to rest and go through `cameToRest` (a shaft stopped by a BODY never reaches
+  `planted`, so a bomb thrown at a lock used to plant in the foe and vanish), the fourth is `lostInFlight`, which
+  `planted` owes the fuse before its own `justLanded` guard returns. One falloff (`blastFalloff`, the fireball's
+  own) bills damage, poise, the throw and the shove together, it does not know whose the bomb is, and the wall is
+  asked LAST so a blast that kills him still opens it. **BUT IT ONLY REACHES A BODY THAT IS THERE** — the ring
+  carries `disguised`, because `foe.shaftThrough` is built at the body's own centre and no geometry can refuse it.
+  **A LIT BOMB IS DROPPED WITH HIS QUIVERS** (`clearOrdnance`) — left off it, the clock outlived the map it was
+  lit on and went off at those coordinates in the next one.
 - **IT STOPS BEING A WALL THE FRAME IT IS OPENED**, and only LOOKS like one for its `breachFade` (0.7 s for the
   illusion): `eachSolid` drops every solid whose `breachLife` is under 1, so look, step, arrow and roll all pass at
   once while the face thins in place (`Prop.dissolve`, alpha only — never `shrink`, which would sink it).

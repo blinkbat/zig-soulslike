@@ -141,8 +141,8 @@ pub fn kindInRun(comptime Role: type, first: wf.FoeKind, r: Role) wf.FoeKind {
     return @enumFromInt(@intFromEnum(first) + @intFromEnum(r));
 }
 
-/// NAMED, NOT COUNTED: a `spec()` reads its row at the role's own ordinal, so a `Role` inserted above slides every stat one body
-/// over. Each row writes its `role` down and this walks them; three warbands carried the same loop.
+/// NAMED, not counted: a `spec()` reads its row at the role's own ordinal, so a `Role` inserted above slides every
+/// stat one body over. Each row writes its `role` down and this walks them.
 pub fn pinSpecOrder(comptime who: []const u8, comptime Role: type, comptime SPEC: anytype) void {
     if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError(who ++ ": a " ++ @typeName(Role) ++ " with no spec row");
     for (SPEC, 0..) |s, i| {
@@ -845,21 +845,21 @@ pub fn markOn(bone: rl.Matrix, at: rl.Vector3) rl.Vector3 {
     return rl.math.vector3Transform(at, bone);
 }
 
-/// THE POINT BESIDE A BODY'S OWN FEET — `off` metres along `mathx.perpXZNeg(facing)`, lifted off the stand. Four footfall and
-/// plant bursts spelled the quarter turn out by hand; a sign flipped in one of them mirrors that creature's dust and nothing else.
+/// `off` METRES along `mathx.perpXZNeg(facing)`, lifted off the stand. Spelled out by hand, a flipped sign mirrors
+/// that one creature's dust and nothing else.
 pub fn asidePoint(base: rl.Vector3, facing: rl.Vector3, off: f32, lift: f32) rl.Vector3 {
     const n = mathx.perpXZNeg(facing);
     return v3(base.x + n.x * off, base.y + lift, base.z + n.z * off);
 }
 
-/// ONE FOOTFALL: `advanceGait` only ever advances `phase` and wraps it at 1, so a half-cycle boundary is a change of
-/// `floor(phase * 2)` — 0.5 and the wrap past 0 in one test. Written two different ways across four bodies.
+/// `advanceGait` only ever advances `phase` and wraps it at 1, so a half-cycle boundary is a change of
+/// `floor(phase * 2)` — 0.5 and the wrap past 0 in one test.
 pub fn halfCycleCrossed(prev: f32, phase: f32) bool {
     return @floor(phase * 2.0) != @floor(prev * 2.0);
 }
 
-/// A BODY'S POSE CHANNELS GATHERED INTO THE FLAT ARRAY `SpringBank.chase` WANTS, and scattered back. Kept as a PAIR here
-/// so a creature cannot name its channels for the gather and then hand-roll the scatter over a different list.
+/// Gathered into the flat array `SpringBank.chase` wants, and scattered back. Kept as a PAIR so a creature cannot name
+/// its channels for the gather and hand-roll the scatter over a different list.
 pub fn poseChannels(self: anytype, comptime FIELDS: anytype) [FIELDS.len]f32 {
     var values: [FIELDS.len]f32 = undefined;
     inline for (FIELDS, 0..) |field, i| values[i] = @field(self, field);
@@ -870,8 +870,7 @@ pub fn applyPoseChannels(self: anytype, comptime FIELDS: anytype, values: [FIELD
     inline for (FIELDS, 0..) |field, i| @field(self, field) = values[i];
 }
 
-/// A ROBED BODY'S SKIRT, hung off its ROOT: the sway trails the stride by 0.9 rad so the hem is still coming back as the
-/// far foot lands, and it rides the lean rather than being added beside it. `sway` is the only per-creature part.
+/// Hung off the ROOT: the sway trails the stride by 0.9 rad and rides the lean rather than sitting beside it.
 pub fn hemXform(root: rl.Matrix, lean: f32, phase: f32, moving: f32, sway: f32) rl.Matrix {
     const swayLag = sway * mathx.sinf(std.math.tau * phase - 0.9) * moving;
     return mathx.mul(mathx.mul(mathx.rx(lean), mathx.rz(swayLag)), root);
@@ -1021,9 +1020,9 @@ pub fn billFront(self: anytype, quarry: rl.Vector3, reach: f32, frontDot: f32, h
     return true;
 }
 
-/// THE GATE EVERY `parryable` OPENS WITH: the stroke's own seconds-to-impact while the catch window stands on it, `null` otherwise. `until` is passed
-/// in the way `caught` takes it, because `toImpact` is private to each creature. The REACH stays with the creature — it is the only per-body part —
-/// and the seconds come back because `ogre` spends them on it (`DRIVE_SPEED * left`).
+/// The stroke's own seconds-to-impact while the catch window stands on it, `null` otherwise; `until` is shaped the way
+/// `caught` takes it because `toImpact` is private to each creature. The seconds come back because `ogre` spends them
+/// on it (`DRIVE_SPEED * left`).
 pub fn parryOpen(self: anytype, until: ?f32) ?f32 {
     const left = until orelse return null;
     return if (self.parry.window(left)) left else null;
@@ -1403,6 +1402,63 @@ test "THE WATER GATE IS BOTH HALVES OR NEITHER — the field alone stamps a fact
     std.debug.print("\n  water gate: {d} bodies carry it and ask it; {d} wetland kinds live in the water\n", .{ carriers, wetland });
 }
 
+/// The choices that MOVE a body or leave it idle. A leap is deliberately not among them: below the bail a leap is right,
+/// since the grip refuses one outright (`canLeap`). What may not sit below it is a SWING.
+const ROOTED_MAY = [_][]const u8{ "rest", "close", "back", "hold", "wait", "hop", "scatter", "roll" };
+
+test "THE ROOTS TAKE THE FEET AND NOTHING ELSE — a swing is chosen ABOVE the `rooted` bail, or the spell is an off switch" {
+    var dir = std.fs.cwd().openDir(DIR, .{ .iterate = true }) catch return error.SkipZigTest;
+    defer dir.close();
+    var checked: usize = 0;
+    var it = dir.iterate();
+    while (try it.next()) |ent| {
+        if (ent.kind != .file or !std.mem.endsWith(u8, ent.name, ".zig")) continue;
+        var buf: [128]u8 = undefined;
+        const path = try std.fmt.bufPrint(&buf, DIR ++ "/{s}", .{ent.name});
+        const src = try wf.readForTest(std.testing.allocator, path, wf.SRC_CAP);
+        defer std.testing.allocator.free(src);
+
+        const at = std.mem.indexOf(u8, src, "fn classify(") orelse continue;
+        const head = std.mem.indexOfScalarPos(u8, src, at, ')') orelse continue;
+        if (std.mem.indexOf(u8, src[at..head], "rooted: bool") == null) continue;
+        // Only the bodies that hand it the PLAIN grip: a creature whose one move is a leap passes `!foe.canLeap`
+        // instead (the sporeling, the frog), and there the bail may stand anywhere.
+        if (std.mem.indexOf(u8, src, "self.root.held()") == null) continue;
+        const open = std.mem.indexOfScalarPos(u8, src, head, '{') orelse continue;
+        const close = std.mem.indexOf(u8, src[open..], "\n}") orelse continue;
+        const bail = std.mem.indexOf(u8, src[open .. open + close], "if (rooted)") orelse continue;
+        checked += 1;
+
+        // The slime had none: its bail stood above its only band, so one cast of Roots took it off the field.
+        var swings: usize = 0;
+        var above = src[open .. open + bail];
+        while (std.mem.indexOf(u8, above, "return")) |r| {
+            above = above[r + "return".len ..];
+            // To the end of the STATEMENT: the frog answers `return if (chompReady) .chomp else .wait;`, and a scan
+            // for the literal `return .` reads its one band as no band at all.
+            const end = std.mem.indexOfScalar(u8, above, ';') orelse above.len;
+            const stmt = above[0..end];
+            for (stmt, 0..) |c, i| {
+                if (c != '.' or i + 1 >= stmt.len) continue;
+                // An enum literal, never a field access or a method call: nothing name-like stands in front of the dot.
+                if (i > 0 and (std.ascii.isAlphanumeric(stmt[i - 1]) or stmt[i - 1] == '_' or stmt[i - 1] == ')' or stmt[i - 1] == ']')) continue;
+                var n: usize = 1;
+                while (i + n < stmt.len and (std.ascii.isAlphanumeric(stmt[i + n]) or stmt[i + n] == '_')) n += 1;
+                var idle = false;
+                for (ROOTED_MAY) |may| idle = idle or std.mem.eql(u8, may, stmt[i + 1 .. i + n]);
+                if (!idle) swings += 1;
+            }
+        }
+        if (swings == 0) std.debug.print(
+            "\n  {s}: nothing but idling is chosen above the `rooted` bail — a root takes the FEET, and this body swings at nothing while held\n",
+            .{ent.name},
+        );
+        try std.testing.expect(swings > 0);
+    }
+    try std.testing.expect(checked >= 6);
+    std.debug.print("  the rooted bail: all {d} creatures that take one still swing while held\n", .{checked});
+}
+
 /// `dt` is the slice of THIS frame that fell inside the flight window, so the arc lands on `hopTo` exactly at every frame rate.
 pub fn hopStep(self: anytype, dt: f32, bounds: f32, dir: rl.Vector3, flight: f32) void {
     if (!self.launched) {
@@ -1611,9 +1667,8 @@ pub const Spray = struct {
     style: ParticleStyle = .auto,
 };
 
-/// A BOSS THE RAIL SAYS IS ALREADY DOWN, PUT WHERE A FULL DEATH AND DISSOLVE WOULD HAVE LEFT IT — `past` is the clock
-/// already run out, the creature's own death plus its dissipation. Written out per boss it was a reset LIST, which is a
-/// list to forget one from; `game.applyRail` is the only caller.
+/// A boss the rail says is already down, put where a full death and dissolve leave it: `past` is the clock already run
+/// out, the creature's own death plus its dissipation. `game.applyRail` is the only caller.
 pub fn markSlain(self: anytype, past: f32) void {
     self.vit.hp = 0;
     self.vit.dead = true;
@@ -1623,9 +1678,8 @@ pub fn markSlain(self: anytype, past: f32) void {
     self.gone = true;
 }
 
-/// THE THREE FX FIELDS ARE ONE ARGUMENT — THE BODY (`ownSpray`/`ownGrit`/`ownSparks`, and `elemfx`'s own three for the
-/// emitters it owns). The SCALE stays an argument, because it is NOT always the body's: a pod bursting stands at its own
-/// world metre and a fishman's rig is its ROLE's size. The raw `spray`/`grit`/`sparks` are for a pool that is not a creature's.
+/// The three fx fields are ONE argument, the body. The SCALE stays an argument because it is not always the body's: a
+/// pod bursting stands at its own world metre. The raw `spray`/`grit`/`sparks` are for a pool that is not a creature's.
 pub fn ownSpray(self: anytype, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32, scale: f32, s: Spray) void {
     spray(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, spd, scale, s);
 }
@@ -1638,8 +1692,7 @@ pub fn ownSparks(self: anytype, at: rl.Vector3, dir: rl.Vector3, n: i32, s: Spar
     sparks(&self.parts, &self.fxHead, &self.fxRng, at, dir, n, s);
 }
 
-/// A BODY'S OWN SPRAY, off its own three fx fields: the preset is the only per-creature part. The SPLAT is a ground decal, so it is dropped off dry
-/// ground — the motes still fly, nothing is painted on the water.
+/// The preset is the only per-creature part. The SPLAT is a ground decal and is dropped off dry ground; the motes still fly.
 pub fn bloodSpray(self: anytype, at: rl.Vector3, dir: rl.Vector3, n: i32, spd: f32, preset: Spray) void {
     var s = preset;
     if (!onDryGround(self)) s.splat = 0;
@@ -1732,8 +1785,8 @@ pub const Puff = struct {
     col1: rl.Color = DUST_THIN,
 };
 
-/// A BODY'S OWN DUST, off its own three fx fields — `bloodSpray`'s shape for the other emitter. The LIFT stays at the call site: a puff is thrown from
-/// the foot, the hoof or the contact point, and only the body knows which.
+/// `bloodSpray`'s shape for the other emitter. The LIFT stays at the call site: only the body knows whether a puff
+/// comes off the foot, the hoof or the contact point.
 pub fn dustPuff(self: anytype, at: rl.Vector3, n: i32, spd: f32, big: f32, preset: Puff) void {
     ownPuff(self, at, n, spd, big, self.scale, preset);
 }
@@ -2280,9 +2333,8 @@ const STREAK_MIN_RADII: f32 = 1.6;
 /// The alpha pool sorts back to front, and the depth off the lens is solved ONCE A MOTE rather than once a
 /// COMPARE: at 1,536 motes that is 1,536 dot products a frame against ~33,000, measured 0.196 ms against 0.552.
 const Ordered = struct { depth: f32, at: u32 };
-/// ONE WALK OF THE POOL FILLS BOTH PASSES. Which passes have anything is what the flush-avoidance below needs
-/// (`beginBlendMode` flushes rlgl's batch whether or not the pass draws), and it is the LISTS' own lengths —
-/// asking it first and then walking the pool again per pass paid `motesVisible` twice over every mote.
+/// One walk fills BOTH passes: `beginBlendMode` flushes rlgl's batch whether or not the pass draws, so the
+/// flush-avoidance below needs the lists' own lengths. Asked per pass instead, it paid `motesVisible` twice a mote.
 var matterOrder = std.ArrayList(Ordered).init(std.heap.page_allocator);
 var lightOrder = std.ArrayList(Ordered).init(std.heap.page_allocator);
 
@@ -2417,7 +2469,6 @@ test "ONE WALK ORDERS BOTH PASSES — matter back to front, light in pool order,
     for (matterOrder.items[1..], matterOrder.items[0 .. matterOrder.items.len - 1]) |b, a| try std.testing.expect(a.depth >= b.depth);
     for (lightOrder.items[1..], lightOrder.items[0 .. lightOrder.items.len - 1]) |b, a| try std.testing.expect(a.at < b.at);
 
-    // The gate used to be ASKED FIRST over the whole pool and then again per pass, so this walk is what one walk saves.
     const REPS = 200;
     var t = try std.time.Timer.start();
     var seen: usize = 0;
@@ -2657,8 +2708,8 @@ pub fn stepLanded(impactK: f32) f32 {
     return stepEase(impactK);
 }
 
-/// THE CHOOSE BAND OF A STROKE THAT CARRIES THE BODY, in one place: the kit's own reach plus the share of the drive landed by the impact frame, measured from
-/// the quarry's hide. The BILL stays `hurtReach(reach, ...)` — by then the body has taken the step, so the widening is the chooser's alone.
+/// The kit's own reach plus the share of the drive landed BY THE IMPACT FRAME, measured from the quarry's hide. The
+/// BILL stays `hurtReach(reach, ...)`: by then the body has taken the step, so the widening is the chooser's alone.
 pub fn stepBand(reach: f32, step: f32, impactK: f32, scale: f32) f32 {
     return hurtReach(reach + step * stepLanded(impactK), scale);
 }
@@ -2672,17 +2723,16 @@ pub fn stride(self: anytype, dt: f32, bounds: f32, movedDist: *f32, moveSpeed: *
     moveYaw.* = mathx.headingXZ(way);
 }
 
-/// `stride`'s MOVER ALONE, for a body whose gait is not `advanceGait`'s three out-params: steers by `Nav.along`, steps down the
-/// facing, and hands back the metres covered for whatever phase the creature drives off.
+/// `stride`'s mover alone, for a gait that is not `advanceGait`'s three out-params: steers by `Nav.along`, steps down
+/// the facing, hands back the METRES covered.
 pub fn strideBy(self: anytype, dt: f32, bounds: f32) f32 {
     const moved = self.speed * dt;
     mathx.stepXZ(&self.pos, self.nav.along(mathx.headingDir(self.facing)), moved, bounds);
     return moved;
 }
 
-/// A ROUTINE'S TWO TRAVEL ARMS WITHOUT THE MOVER, which is the half six bodies share while their gaits do not: `holding` ambles
-/// back to the anchor at `walk`, otherwise it runs the quarry down at `chase`. The anchor is `tetherFor`, never the spawn pin,
-/// so an order that lets a body wander cannot be dragged home by this.
+/// The two travel arms without the mover: `holding` ambles back to the anchor at `walk`, otherwise it runs the quarry
+/// down at `chase`. The anchor is `tetherFor`, NEVER the spawn pin, or `roam_free` is dragged home by its own tether.
 pub fn chaseAim(self: anytype, holding: bool, quarry: rl.Vector3, dt: f32, walk: f32, chase: f32, accel: f32, turn: f32) void {
     const to = if (holding) tetherFor(self) else quarry;
     faceToward(self.pos, &self.facing, self.nav.aim(self.pos, to), turn, dt);
@@ -2748,9 +2798,8 @@ pub const Ground = struct {
     }
 };
 
-/// INTO A GONE SLOT FIRST, ELSE APPENDED, AND THE CAP IS THE MAP'S — the slot arithmetic ALONE, because what goes
-/// with it is not the same everywhere: a line that derives its own bar must NOT arm `foestat`, a laid SAC has no
-/// stats and no leash at all, and a hatched broodling is deliberately not roused.
+/// Into a gone slot first, else appended, capped at the map's. The slot arithmetic ALONE: a line that derives its own
+/// bar must not arm `foestat`, a laid SAC has no stats or leash, and a hatched broodling is deliberately not roused.
 pub fn seatInto(comptime T: type, band: []T, n: *usize, body: T) void {
     for (band[0..n.*]) |*s| {
         if (s.gone) {

@@ -621,7 +621,8 @@ What transfers:
 - **A BODY THAT DIVIDES DERIVES ITS CHILDREN'S BAR FROM ITS OWN, NEVER FROM A TABLE** (`slime.zig`) — `foestat.arm`
   records whatever pools a body carries as the KIND's authored ones, so a gen-2 child routed through
   `foe.summonInto` would rewrite the line's own HP. The halves are seated by the GROUP (`Mire.seat`) and
-  `childMax` reads the parent, which is also what carries a bench multiplier and a map's `scale=` down the line.
+  `childVit` reads the parent — bar, poise, stance and break share together, which is also what carries a bench
+  multiplier and a map's `scale=` down the line.
   **ONE BLOW IS ONE SPLIT** however far under the threshold it drove the bar — the `splitting` state is what
   refuses a second — and **A CHILD IS BORN FULL AT ITS OWN SMALLER MAX**, which is the whole of why a split cannot
   cascade inside one frame. **THE GROUP IS WALKED BY INDEX**, because a slice taken once is the array as it was

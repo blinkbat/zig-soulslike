@@ -142,8 +142,8 @@ pub fn rect(x: i32, y: i32, w: i32, h: i32) rl.Rectangle {
     return .{ .x = fi(x), .y = fi(y), .width = fi(w), .height = fi(h) };
 }
 
-/// A LIVE PORTRAIT IS DARKENED INTO ITS FRAME, and the book's doll and the dialog's face were doing it with the same
-/// five calls a few points apart. The alphas and the two band divisors stay each screen's own; only the shape is here.
+/// A live portrait darkened into its frame. The alphas and the two band divisors stay each screen's own; only the
+/// shape is here.
 pub const Vignette = struct { top: u8, bottom: u8, side: u8, bandDiv: i32, sideDiv: i32, rim: u8 };
 pub fn vignette(dst: rl.Rectangle, x: i32, y: i32, w: i32, h: i32, v: Vignette) void {
     const band = @divTrunc(h, v.bandDiv);

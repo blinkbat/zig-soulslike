@@ -5449,7 +5449,6 @@ test "A BENCH COLUMN THE SWING DOES NOT CARRY IS A DEAD DIAL — `gore` and `lau
     const out = weigh(dialled, row, sheet, 0);
     try std.testing.expectApproxEqAbs(@as(f32, 17), out.gore, 1e-5);
     try std.testing.expectApproxEqAbs(@as(f32, 2.5), out.launch, 1e-5);
-    // Untouched, the bench changes nothing: the authored blow weighs exactly as it always did.
     const plain = weigh(ATK_HEAVY_HIT, row, sheet, 0);
     try std.testing.expectApproxEqAbs(@as(f32, 0), plain.gore, 1e-6);
     try std.testing.expectApproxEqAbs(@as(f32, 0), plain.launch, 1e-6);

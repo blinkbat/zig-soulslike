@@ -57,7 +57,7 @@ const BREAK_LOW: f32 = 0.26;
 /// THE COPING ON AN INTACT HEAD — where its slab sits over the wall's own height and how thick it is.
 const CAP_Y: f32 = 0.09;
 const CAP_HALF: f32 = 0.10;
-/// WHAT A CAPPED PIECE REACHES OVER ITS OWN HEIGHT, and the only thing `props.INFO` has to know about the coping: eleven rows spelled `+ 0.3` by hand.
+/// What a capped piece reaches over its own height, and the only thing `props.INFO` has to know about the coping.
 pub const CAP_PROUD: f32 = 0.30;
 
 comptime {
@@ -298,8 +298,8 @@ fn wallModel(shader: rl.Shader, seed: u64, w: Wall) rl.Model {
     return b.toModel(shader);
 }
 
-/// THE THREE AN ILLUSION IS CUT FROM, named once: `illusoryLongMesh` and friends build the SAME seed and the SAME spec, which is the whole of the
-/// disguise. Written out at both ends the twins drifted apart the first time one of them was retuned.
+/// Named once: `illusoryLongMesh` and friends build the SAME seed and the SAME spec, which is the whole of the
+/// disguise. Written out at both ends the twins drift apart the first time either is retuned.
 const PLAIN_LONG = Twin{ .seed = 7101, .wall = .{ .run = MOD } };
 const PLAIN_SHORT = Twin{ .seed = 7105, .wall = .{ .run = HALF } };
 const PLAIN_TALL = Twin{ .seed = 7109, .wall = .{ .run = MOD, .h = TALL_H } };

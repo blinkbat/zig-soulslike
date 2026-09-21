@@ -231,8 +231,8 @@ pub const Shelf = struct {
         return self.head[i] != null or self.unreadable[i];
     }
 
-    /// A SLOT THE GAME REFUSED TO LOAD IS NOT A FREE ONE EITHER: the file parses (so `peek` filled `head`) but the
-    /// run behind it will not open, and clearing `head` alone offers it for a new game over the top of a live save.
+    /// The file parses (so `peek` filled `head`) but the run behind it will not open. Clearing `head` alone offers the
+    /// slot for a new game over the top of a live save.
     pub fn refused(self: *Shelf, i: usize) void {
         self.head[i] = null;
         self.unreadable[i] = onDisk(i);
@@ -266,8 +266,9 @@ pub fn peek(i: usize) ?Head {
     return .{ .level = taken + 1, .souls = d.souls, .playtime = d.elapsed, .map = MapName.of(d.mapName()) };
 }
 
-/// THE WORLD A SLOT WAS WRITTEN IN, READ WITHOUT LOADING THE RUN — `game.loadGame` opens this map before it scatters the file, so a save brings its own world with it.
-/// It is the FIRST read of the slot, so it owes `drain`'s rule as much as `read` does: unwaited, the one read that can cross a half-written file is the one the load begins with.
+/// The world a slot was written in, read without loading the run: `game.loadGame` opens this map before it scatters
+/// the file. It is the FIRST read of the slot and owes `drain`'s rule — unwaited, it is the read that crosses a
+/// half-written file.
 pub fn mapOf(i: usize) ?MapName {
     drain();
     return mapOfFile(path(i));
@@ -305,10 +306,9 @@ var bg: Bg = .{};
 
 pub const Done = struct { ok: bool, slot: usize, shelf: Shelf };
 
-/// WHAT A `map:` ROW CAN CARRY, or why it cannot — refused OUTRIGHT, never truncated, because either fault leaves a slot that writes clean and then
-/// reads back as an unreadable file. TOO LONG: `MapName.of` clamps it and a clamped name no longer matches the map it names. A SPACE: the row is read
-/// back with a whitespace tokeniser, so `readFrom` compares the first word against the whole path and refuses every time.
-/// EVERY writer of a map name asks here — both write paths and `game.nameable`.
+/// Refused OUTRIGHT, never truncated: either fault writes a clean slot that reads back unloadable. TOO LONG —
+/// `MapName.of` clamps it and a clamped name no longer matches. A SPACE — the row is read back with a whitespace
+/// tokeniser, so `readFrom` compares the first word against the whole path. Every writer of a map name asks here.
 pub fn refuses(map: []const u8) ?[]const u8 {
     if (map.len > MAP_CAP) return "is longer than a slot can hold";
     for (map) |c| {
@@ -404,7 +404,7 @@ pub fn shutdown() void {
         t.join();
         bg.thread = null;
     }
-    // The latch goes with the thread: left set, the next `writeAsync` spawns a worker that returns at once and every save after it queues behind a thread that is gone.
+    // The latch goes with the thread: left set, every save after this one queues behind a thread that is gone.
     bg.quit = false;
 }
 
@@ -729,10 +729,9 @@ pub fn parse(text: []const u8, d: *Data) !void {
             d.arrows = try int(u8, &it);
             d.fireArrows = try int(u8, &it);
         } else if (std.mem.eql(u8, key, "quick:")) {
-            // **A POSITIONAL RACK IS READ WHOLE AND STORED SHORT** — `quick:`, `memory:`, `worn:` and `tiers:` all: a row WIDER than this build's rack is
-            // an older one and its tail is DROPPED, a row SHORTER is an older one too and the rest keeps its default, and a malformed token anywhere in it
-            // is a bad file wherever it falls. `tiers:` read the tail as the end of the row (`catch break`) and `tiers: 3 x 1` loaded with every tier past
-            // the first at zero; `quick:` refused the wide row outright, which makes a save from a wider rack unloadable rather than short.
+            // A positional rack (`quick:`, `memory:`, `worn:`, `tiers:`) is read WHOLE and stored SHORT: a wider row is
+            // a newer build's and its tail is dropped, a shorter one keeps the defaults, and a malformed token anywhere
+            // in it is a bad file wherever it falls — including in the tail.
             d.quick = [_]?item.Kind{null} ** combat.QUICK_SLOTS;
             var i: usize = 0;
             while (it.next()) |tok| : (i += 1) {

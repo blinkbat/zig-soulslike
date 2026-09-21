@@ -462,7 +462,8 @@ pub const Vitals = struct {
         for (&self.ails, 0..) |*s, i| {
             const row = AILS[i];
             const due = s.tick(row, dt, self.hpMax);
-            if (s.justProcced) self.ailWear[i] += 1;
+            // Creatures only, the way `strikeK` charges the other two: `build` reads this wear behind the same gate.
+            if (s.justProcced and self.side == .foe) self.ailWear[i] += 1;
             if (due <= 0) continue;
             const pulse = ailPulse(row, due);
             owed.elem = owed.elem.plus(pulse.elem);

@@ -256,7 +256,7 @@ pub fn priceBank(k: Kind) u32 {
     return switch (k) {
         .soul_binding_ring, .gold_purse => 0,
 
-        // Dearer than the crock it retired off the cracked wall, and dear enough that you plant it rather than lob it at a toad.
+        // Dearer than the crock it retired off the cracked wall.
         .bomb => 220,
 
         .envenomed_dagger => 900,

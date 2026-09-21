@@ -544,8 +544,7 @@ pub fn runMapShots(g: *Game) void {
     std.debug.print("MAP SHOTS: {d} body(s) into " ++ DIR_MAP ++ "/\n", .{n});
 }
 
-/// ONE CAVE VIEW AND ONE SOLVE, for every cave bench — the two of them shot the same way off a table of the same shape,
-/// and the second copy carried neither of the derivations the first one spells out.
+/// One cave view and one solve for every cave bench, off a table of the same shape.
 const CaveView = struct { tag: []const u8, hx: f32, hz: f32, under: bool, ax: f32, az: f32, up: f32, yaw: f32, pitch: f32, dist: f32 };
 /// What the eye keeps under the roof.
 const CAVE_CAM_CLEAR: f32 = 0.45;
@@ -750,10 +749,8 @@ fn stageOn(tag: []const u8) bool {
     return std.mem.indexOf(u8, tag, onlyStage) != null;
 }
 
-/// The two stages that REPLACE the run rather than sit inside it (`runShots` returns on either), so they cannot be
-/// picked by `stageOn`'s substring — `--shot-only day` would take one instead of falling through to the harness.
-/// WHOLE UNDERSCORE-SEPARATED WORDS OFF THE FRONT name them (`objview`, `objview_sweep`), so `--shot-only o` cannot
-/// swallow the harness the way a bare prefix would.
+/// The two stages that REPLACE the run rather than sit inside it (`runShots` returns on either), named by whole
+/// underscore-separated words off the front so `--shot-only o` cannot swallow the harness the way a prefix would.
 const TERRAIN_EDITOR_STUDY = "terrain_editor_study";
 const OBJVIEW_SWEEP = "objview_sweep";
 fn wholeStage(tag: []const u8) bool {
@@ -5185,9 +5182,8 @@ fn editorFrames(g: *Game, n: i32) void {
     }
 }
 
-/// DEV ONLY (`--shot --shot-only objview_sweep`): every state of the object viewer, with the WORLD drawn behind it
-/// each frame. `drawScene`'s `checkFoeModels` is the sensor — a pass that walks over a group's model panics on the
-/// frame after it happens, which is where the viewer's `DrawMesh` crash was reported from.
+/// DEV ONLY (`--shot --shot-only objview_sweep`): every state of the viewer with the WORLD drawn behind it each frame,
+/// because `drawScene`'s `checkFoeModels` is the sensor that catches a pass walking over a group's model.
 fn objviewSweep(g: *Game) void {
     g.editor.enter(mathx.ground(0, -66));
     g.editor.applyCamForShot();
@@ -5790,10 +5786,8 @@ pub fn runArtShots(g: *Game) void {
     }
 }
 
-/// THE SPLIT IS THE WHOLE POINT OF THIS BODY AND ONE GATHER FRAME CANNOT SHOW IT — `runMapShots` asks for
-/// `stageGather(1.0)` and nothing else, so the pinch, the spread and the two halves parting were never photographed.
-/// Driven through the REAL group update, which is also the only way the CHILDREN appear at all: the parent reports
-/// and `Mire` seats them, so a study posing one body by hand would shoot the split and never the result.
+/// `runMapShots` asks for `stageGather(1.0)` and nothing else, so the pinch and the two halves parting go unphotographed.
+/// Driven through the REAL group update, which is the only way the CHILDREN appear: the parent reports and `Mire` seats them.
 fn slimeStudyShots(g: *Game) void {
     const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("slime plate target");
     defer rl.unloadRenderTexture(rt);
@@ -5819,8 +5813,7 @@ fn slimeStudyShots(g: *Game) void {
                 }
                 var tag: [80]u8 = undefined;
                 const name = std.fmt.bufPrint(&tag, "slime_study_{d}_{d}_{d}", .{ side, mode, frame }) catch unreachable;
-                // THE WHOLE BED, not one body — after the split there are TWO, and a frame of the parent alone is the
-                // frame that hides what happened. Aimed at the origin the halves part either side of.
+                // The whole bed: after the split there are TWO, aimed at the origin they part either side of.
                 slimePlate(g, rt, &mire, name);
             }
         }

@@ -257,10 +257,9 @@ pub const Lurker = struct {
     ext: f32 = 0,
     extL: f32 = 0,
     aimD: f32 = 0,
-    /// ONE FRAME: whether the tongue's own sweep crossed the shield. **A SWEPT WEAPON DELIVERS ITS CATCH OFF THE
-    /// GEOMETRY, NEVER OFF `toImpact` CROSSING ZERO** — solved for where he stands the clock still lands ~0.02 s
-    /// behind the frame `tryTongue` bills at, and a shield held through the whole stroke ate the tongue and only
-    /// then deflected it. The skull is exempt: that one bills at its own `LASH_IMPACT_K`, which is what the clock says.
+    /// One frame: whether the tongue's own sweep crossed the shield. A swept weapon delivers its catch off the
+    /// GEOMETRY, never off `toImpact` crossing zero — solved for where he stands the clock still lands ~0.02 s behind
+    /// the frame `tryTongue` bills at. The skull is exempt: it bills at its own `LASH_IMPACT_K`, which is the clock.
     onGuard: bool = false,
     pull: f32 = 0,
 

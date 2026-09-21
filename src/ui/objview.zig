@@ -778,7 +778,7 @@ fn seedHero(h: *heromod.Hero) void {
     h.pose();
 }
 
-/// HIS DRIVER IS THE LOOP'S INPUT, and the bench has none, so playing him is his own gait walked on the spot.
+/// His driver is the loop's input and the bench has none, so playing him is his own gait walked on the spot.
 fn stepHero(h: *heromod.Hero, dt: f32) void {
     h.update(dt, heromod.WALK_SPEED * dt, heromod.WALK_SPEED, h.facing);
 }

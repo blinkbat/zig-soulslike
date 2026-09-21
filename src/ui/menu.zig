@@ -18,8 +18,7 @@ const padPressed = rumblemod.padPressed;
 const padDown = rumblemod.padDown;
 
 
-/// THE GAME'S NAME, IN ONE PLACE — the boot card, the pause card and the window all read it. The rename off the
-/// old one had to find three literals in two files, and the window's is the one nobody looks at.
+/// The game's name in ONE place: the boot card, the pause card and the window all read it.
 pub const TITLE: [:0]const u8 = "GOLEM";
 /// The same name as the OS bar shows it.
 pub const TITLE_WINDOW: [:0]const u8 = "Golem";

@@ -152,10 +152,9 @@ const CAVE_GLSL = std.fmt.comptimePrint(
 
 const SoilTone = struct { soil: wf.Soil, rgb: [3]f32, note: []const u8 };
 
-/// THE GROUND'S OWN PALETTE, one row per `wf.Soil` past `none`, and the GLSL's `soilColor` is GENERATED from it (`EDGE_K`'s rule):
-/// that function falls back to deep moss, so a material with no row of its own came up green with nothing to say so.
-/// Authored NEAR-BLACK like every other albedo here — the hot key plus the gamma lift turns any mid-dark value pale on a big sunward face.
-/// The five past `moss` separate from the six before it on HUE, not value: neutral-cool, warm-black, violet, pink, orange.
+/// One row per `wf.Soil` past `none`, and the GLSL's `soilColor` is GENERATED from it (`EDGE_K`'s rule): that function
+/// falls back to deep moss, so a material with no row comes up green with nothing to say so. Authored NEAR-BLACK like
+/// every albedo here. The five past `moss` separate from the six before it on HUE, not value.
 pub const SOIL_TONE = [_]SoilTone{
     .{ .soil = .dirt, .rgb = .{ 0.130, 0.106, 0.074 }, .note = "trodden dirt / a path worn through" },
     .{ .soil = .turf, .rgb = .{ 0.072, 0.098, 0.042 }, .note = "green turf" },

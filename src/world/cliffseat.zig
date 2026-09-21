@@ -464,11 +464,9 @@ pub fn ramp(m: *wf.Map, from: [2]f32, to: [2]f32, radius: f32, span: *[4]usize) 
     return changed;
 }
 
-/// THE GRADE ACROSS THE BRUSH COLLAPSED ONTO ONE LINE: each side of the drag is flattened in CROSS-SECTION only,
-/// onto the land at its own edge of the band, so the drop the slope spent over the brush width is spent at the line
-/// instead. The map is the IDENTITY at the band's edge, so nothing outside it moves and no seam steps. Both levels
-/// are read ALONG the drag, so a lip over rolling ground keeps its roll, and the WIDTH is the drop: a wider brush
-/// gathers more grade into the cut.
+/// The grade across the brush collapsed onto one line: each side is flattened in CROSS-SECTION only, onto the land at
+/// its own edge of the band, so the map is the IDENTITY there and nothing outside it moves. Both levels are read ALONG
+/// the drag, so a lip over rolling ground keeps its roll, and the WIDTH is the drop.
 pub const Sheer = struct {
     drop: f32,
     /// The drop a face needs before the paint cuts at all (`wf.cliffMinDrop`).
@@ -627,14 +625,13 @@ test "terrain editor: sheer spends a walkable grade at one line and leaves the l
     try std.testing.expectApproxEqAbs(2 * R * GRADE, sh.drop, wf.HEIGHT_STEP);
     std.debug.print("sheer: {d:.2} m face out of a {d:.3} grade over {d:.1} m, cut needs {d:.2} m; {d} levels hold the lattice's {d:.0}-cell diagonal\n", .{ sh.drop, GRADE, 2 * R, sh.min, SHEER_LEVELS, @sqrt(2.0) * @as(f32, @floatFromInt(wf.HEIGHT_N - 1)) });
 
-    // Flat in cross-section either side, the whole drop at the line, and the identity past the band's own edge.
+    // Flat in cross-section either side, the whole drop at the line, identity past the band's edge.
     try std.testing.expectApproxEqAbs(m.heightAt(-15, 0), m.heightAt(-4, 0), wf.HEIGHT_STEP);
     try std.testing.expectApproxEqAbs(m.heightAt(4, 0), m.heightAt(15, 0), wf.HEIGHT_STEP);
     try std.testing.expectApproxEqAbs(2 * R * GRADE, m.heightAt(2, 0) - m.heightAt(-2, 0), wf.HEIGHT_STEP);
     for ([_]f32{ 22, 30, 60, -22, -30, -60 }) |x| {
         try std.testing.expectApproxEqAbs(x * GRADE, m.heightAt(x, 0), wf.HEIGHT_STEP);
     }
-    // And past the ends of the drag, where the cut simply is not.
     try std.testing.expectApproxEqAbs(10 * GRADE, m.heightAt(10, 40), wf.HEIGHT_STEP);
     const mid = wf.HEIGHT_N / 2;
     try std.testing.expect(wf.cliffFace(m.cliff[mid * wf.HEIGHT_N + mid]));

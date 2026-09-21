@@ -1111,8 +1111,8 @@ fn loopOfChance(cx: f32, cy: f32, px: f32) void {
     }
 }
 
-/// The SHELL, the pitch seal and the cord with the spark on it — the one picture in the set that is lit, because the fuse is
-/// what the item IS. Read against the thundercrock beside it on the shelf: that one is clay and light, this one is clay and black.
+/// The one picture in the set that is LIT, because the fuse is what the item is. Against the thundercrock on the
+/// shelf beside it: that one is clay and light, this one clay and black.
 fn bomb(cx: f32, cy: f32, px: f32) void {
     const s = px;
     const k = strokeK(px);

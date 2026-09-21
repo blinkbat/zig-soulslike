@@ -80,10 +80,8 @@ const SRC = "src/game.zig";
 /// The build script, for the one test that reads a figure back out of it.
 const BUILD_SRC = "build.zig";
 
-/// `build.zig`'s `STACK_SIZE`, said again where a TEST can read it. The two are not one symbol because `build.zig`
-/// is its own compilation unit and cannot import this file, so the test below READS IT OFF THE BUILD SCRIPT. The slab
-/// total alone does not hold them: lowered in `build.zig` and left here, every slab still fits the stale figure and
-/// the exe overflows at BOOT with the suite green — which is the split this constant exists to close.
+/// `build.zig`'s `STACK_SIZE` said again: `build.zig` is its own compilation unit and cannot import this file, so the
+/// test below reads the figure OFF THE BUILD SCRIPT. Lowered there and left here, the exe overflows at BOOT, suite green.
 pub const STACK_BYTES: usize = 256 * 1024 * 1024;
 
 const v3 = mathx.v3;
@@ -241,9 +239,9 @@ pub const Game = struct {
     retro: gfx.Retro,
     menu: menumod.Menu,
     map: worldfmt.Map,
-    /// THE WORLD THE RUN IS ACTUALLY STANDING IN, not the one the exe booted — what a slot is labelled with.
+    /// The world the run is STANDING in, not the one the exe booted: what a slot is labelled with.
     mapAt: savemod.MapName = .{},
-    /// The editor path `mapAt` was last solved FROM, refused or not, so the door is asked once a swap and never once a frame.
+    /// The editor path `mapAt` was last solved FROM, so the door is asked once a SWAP and never once a frame.
     mapFrom: savemod.MapName = .{},
     editor: editormod.Editor,
     env: envmod.Env,
@@ -635,14 +633,14 @@ fn enterNow(g: *Game, act: Enter) void {
     g.enterIn = ENTER_IN;
 }
 
-/// A NAME THE `map:` ROW CANNOT CARRY IS REFUSED, NOT TRUNCATED — carried anyway, every slot written in that world reads back unloadable. `--map` and the editor's own Open are the other ways in, so `init` and the editor swap ask too.
+/// A name the `map:` row cannot carry is REFUSED, not truncated: carried anyway, every slot written in that world reads back unloadable.
 fn nameable(path: []const u8) bool {
     const why = savemod.refuses(path) orelse return true;
     std.debug.print("world: {s} cannot label a save — it {s}\n", .{ path, why });
     return false;
 }
 
-/// THE WORLD SWAPPED UNDER THE RUN — everything downstream of `g.map` moves with it, `g.mapAt` included, so the next slot written is labelled with the map it actually holds. The caller decides whether a refusal is fatal.
+/// Everything downstream of `g.map` moves with the swap, `g.mapAt` included. The caller decides whether a refusal is fatal.
 fn swapMap(g: *Game, path: []const u8) bool {
     if (!nameable(path)) return false;
     var line: usize = 0;
@@ -651,7 +649,7 @@ fn swapMap(g: *Game, path: []const u8) bool {
         return false;
     };
     g.mapAt = savemod.MapName.of(path);
-    // `mapAt` no longer came from the editor's path, so the editor's own door has to solve it again the next frame it is open.
+    // `mapAt` no longer came from the editor's path, so its door solves again the next frame it is open.
     g.mapFrom = .{};
     PLAY_HALF = playHalfOf(g.map.half);
     g.env.replay(&g.map);
@@ -701,7 +699,7 @@ fn tickEnter(g: *Game, dt: f32) void {
     g.enterIn = mathx.maxF(0, g.enterIn - dt);
 }
 
-/// `savemod.readFrom` still refuses a file whose `map:` differs from this, which is what catches a world swapped without `swapMap`: the save would be labelled with one map and hold another's hero position.
+/// `savemod.readFrom` refuses a file whose `map:` differs from this — the tripwire for a world swapped without `swapMap`.
 fn saveMap(g: *const Game) []const u8 {
     return g.mapAt.name();
 }
@@ -710,11 +708,9 @@ comptime {
     if (BOSS_RAILS.len > savemod.BOSS_RAILS) @compileError("game: more boss rails than the save file has rows for");
 }
 
-/// THE EDITOR'S OWN DOOR, read AFTER its step: Open/New/Save As swap the world, and a save taken the same frame would be
-/// labelled with the map he just left. `mapAt` is the world STANDING and is stamped whatever the name is — a name the
-/// `map:` row cannot carry is spent at `savemod.writeAsync`, which refuses the slot outright. Held back on a refusal,
-/// `mapAt` goes on naming the map he LEFT and the next bonfire writes a slot that LOADS A DIFFERENT WORLD. Asked once a
-/// swap, not once a frame, because `game.nameable` PRINTS and an unnameable path is a standing condition.
+/// Read AFTER the editor's step: Open/New/Save As swap the world, and a save taken the same frame is labelled with the
+/// map he just left. `mapAt` is stamped whatever the name is — held back on a refusal it names the map he LEFT and the
+/// next bonfire writes a slot that LOADS A DIFFERENT WORLD. Asked once a swap because `game.nameable` PRINTS.
 fn adoptEditorMap(at: *savemod.MapName, from: *savemod.MapName, path: []const u8) bool {
     if (path.len == 0 or from.is(path)) return false;
     from.* = savemod.MapName.of(path);
@@ -729,9 +725,8 @@ test "THE EDITOR'S MAP IS ADOPTED WHATEVER ITS NAME — the write refuses it; `m
     try std.testing.expect(!adoptEditorMap(&at, &from, worldfmt.START_MAP));
     try std.testing.expect(adoptEditorMap(&at, &from, spaced));
     try std.testing.expectEqualStrings(spaced, at.name());
-    // The refusal lands at the WRITE, so the run cannot save rather than saving a slot that opens another world.
+    // The refusal lands at the WRITE: the run cannot save, rather than saving a slot that opens another world.
     try std.testing.expect(savemod.refuses(at.name()) != null);
-    // ASKED ONCE A SWAP: the latch holds, so the refusal is not a line a frame.
     try std.testing.expect(!adoptEditorMap(&at, &from, spaced));
     std.debug.print("\n  editor map door: {s} adopted and refused at the write, not swallowed onto {s}\n", .{ spaced, worldfmt.START_MAP });
 }
@@ -741,11 +736,11 @@ test "A MAP NAME IS REFUSED, NEVER CLAMPED — the boot path and a swap ask the 
     try std.testing.expect(nameable(worldfmt.START_MAP) and nameable(worldfmt.startMap()));
     std.debug.print("\n  a {d}-char map path is refused against a {d} cap", .{ over.len, savemod.MAP_CAP });
     try std.testing.expect(!nameable(over));
-    // The refusal is the whole guard: clamped, the name no longer opens the file it came from.
+    // Clamped instead of refused, the name no longer opens the file it came from.
     try std.testing.expect(!std.mem.eql(u8, savemod.MapName.of(over).name(), over));
     std.debug.print(" (clamped it would read {d} chars)\n", .{savemod.MapName.of(over).name().len});
 
-    // …and the same door catches the OTHER byte a `map:` row cannot carry: the row is read back one token at a time.
+    // The `map:` row is read back one token at a time, so a space is the other byte it cannot carry.
     const spaced = worldfmt.DIR ++ "/fallen plain" ++ worldfmt.EXT;
     try std.testing.expect(!nameable(spaced));
     var buf: [savemod.MAP_CAP * 2]u8 = undefined;
@@ -814,7 +809,7 @@ fn slotOf(g: *Game) savemod.Slot {
     };
 }
 
-/// A SLOT BRINGS ITS OWN WORLD — the file's `map:` is opened BEFORE `beginGame`, which plants the hero and rehomes every foe off `g.map`.
+/// The file's `map:` is opened BEFORE `beginGame`, which plants the hero and rehomes every foe off `g.map`.
 fn loadGame(g: *Game, i: usize) bool {
     const want = savemod.mapOf(i) orelse return false;
     if (!worldfmt.namesAMap(want.name())) return false;
@@ -1410,6 +1405,13 @@ comptime {
         if (@hasDecl(B, "raisable") != @hasDecl(B, "reraise")) @compileError("game: `" ++ gr.field ++
             "` has one of `raisable`/`reraise` and not the other — `applyRaises` picks a body it cannot stand up");
     }
+    // `gateChill` reaches `warped()` by a bare `@hasDecl` and falls back to "this body only ever steps", so a `warp`
+    // field without the accessor has its BLINK scaled by `CHILL_TRAVEL` — a set, not a step — silently.
+    for (FOE_GROUPS) |gr| {
+        const B = memberOf(gr.field);
+        if (@hasField(B, "warp") != @hasDecl(B, "warped")) @compileError("game: `" ++ gr.field ++
+            "` has one of the `warp` field / `warped` method and not the other — the cold bills its blink as travel");
+    }
 }
 
 pub fn inCombat(g: *const Game) bool {
@@ -1437,9 +1439,8 @@ test "WHAT THE FRAME COSTS — the group slabs, the biggest bodies, and one Game
         std.debug.print("  {s:<9} {d:>7.0} KB slab, {d:>6} B a body\n", .{ gr.field, @as(f64, @floatFromInt(@sizeOf(T))) / KB, @sizeOf(M) });
     }
     std.debug.print("  ---- {d:.1} MB of foe slabs, {d:.1} MB for the whole Game\n", .{ total / KB / KB, @as(f64, @floatFromInt(@sizeOf(Game))) / KB / KB });
-    // AND THE SLAB TOTAL IS WHAT THE STACK HAS TO HOLD: `Game` is `alloc.create`d, but `init` takes each group's
-    // `init` RETURN by value before it lands, so every slab is live on the stack at once. Printed and not asserted,
-    // the 35th group overflowed the exe at BOOT while the whole suite still went green — the worst possible split.
+    // `Game` is `alloc.create`d, but `init` takes each group's `init` RETURN by value, so every slab is live on the
+    // stack at once. Printed and not asserted, the 35th group overflowed the exe at BOOT with the suite green.
     try std.testing.expect(total <= @as(f64, @floatFromInt(STACK_BYTES)));
     std.debug.print("  ---- {d:.1} MB of stack left for it over the slabs\n", .{(@as(f64, @floatFromInt(STACK_BYTES)) - total) / KB / KB});
     try std.testing.expect(@sizeOf(Game) < 512 * 1024 * 1024);
@@ -1766,7 +1767,6 @@ const SparKept = struct {
 };
 var sparKept: ?SparKept = null;
 
-/// ASKED for and never listed: a new sorcery is in his hands the build it is written.
 fn sparKit(g: *Game) void {
     sparKept = .{
         .bag = g.bag,
@@ -2822,9 +2822,8 @@ fn mixStamp(h: *u64, x: u64) void {
     h.* = (h.* ^ x) *% 0x9E3779B97F4A7C15;
 }
 
-/// The stamp cannot watch the shader, and `DrawMesh` reads `material.shader.locs` BEFORE anything else it is
-/// handed — a material left holding a shader that is neither of the scene's two faults inside raylib with no
-/// Zig frame to name it. Printed once, never fatal: a model may legitimately carry a material of its own.
+/// `DrawMesh` reads `material.shader.locs` BEFORE anything else, so a material holding neither of the scene's two
+/// shaders faults inside raylib with no Zig frame to name it. Printed once, never fatal.
 var shaderWarned = false;
 
 fn watchShader(sc: *const gfx.Scene, mat: rl.Material, field: []const u8) void {
@@ -2838,8 +2837,7 @@ fn watchShader(sc: *const gfx.Scene, mat: rl.Material, field: []const u8) void {
     );
 }
 
-/// ONE WALK OF A GROUP'S MODEL, BOTH SENSORS ON IT — the clobber stamp and the shader watch reach the same leaves, so a
-/// second traversal only doubled the per-frame cost and gave the type filter a second place to drift.
+/// One walk, BOTH sensors: the clobber stamp and the shader watch reach the same leaves.
 fn stampParts(h: *u64, sc: *const gfx.Scene, field: []const u8, v: anytype) void {
     const T = @TypeOf(v);
     if (T == rl.Mesh) {
@@ -2882,7 +2880,6 @@ fn checkFoeModels(g: *const Game, where: []const u8) void {
     foeWatched = true;
 }
 
-/// What one `checkFoeModels` pass actually costs, counted off the same type walk the sensor takes.
 fn stampLeaves(comptime T: type) usize {
     if (T == rl.Mesh or T == rl.Material or T == rl.Model) return 1;
     return switch (@typeInfo(T)) {
@@ -2907,7 +2904,7 @@ test "THE MODEL SENSOR IS ONE WALK, NOT TWO — the clobber stamp and the shader
         break :blk n;
     };
     try std.testing.expect(leaves > 0);
-    // Two calls a frame (`the frame ahead of it`, `the shadow pass`); a second traversal for the shader watch doubled it.
+    // Two calls a frame: the frame ahead of it, and the shadow pass.
     std.debug.print("\n  model sensor: {d} mesh/material parts over {d} groups, walked {d} times a frame ({d} leaf visits, was {d})\n", .{ leaves, FOE_GROUPS.len, 2, leaves * 2, leaves * 4 });
 }
 
@@ -2919,7 +2916,7 @@ fn heroAimPoint(g: *const Game) rl.Vector3 {
     return v3(g.hero.pos.x, heroCenterY(g), g.hero.pos.z);
 }
 
-/// Metres ahead of his own centre anything he THROWS leaves from, so the shell clears him rather than starting inside his chest.
+/// Metres ahead of his centre anything THROWN leaves from, so the shell clears him.
 const THROW_OUT: f32 = 0.4;
 fn forwardPoint(g: *const Game, reach: f32) rl.Vector3 {
     return mathx.addV(heroAimPoint(g), mathx.scaleV(mathx.headingDir(g.hero.facing), reach));
@@ -4380,7 +4377,7 @@ fn whisperAt(g: *Game) void {
 
 const WHISPER_R: f32 = 1.1;
 
-/// The voice is the AIL'S, like the tint is — a toll is what a whisper sounds like, not what a rot does. Exhaustive like `hud.ailTint` beside it: an eleventh meter names its own voice or it does not compile.
+/// Exhaustive like `hud.ailTint`: an eleventh meter names its own voice or it does not compile.
 fn whisperLand(a: combat.Ail) sfx.Id {
     return switch (a) {
         .poison => .acid_burn,
@@ -5173,29 +5170,28 @@ fn justLanded(ar: *const archermod.Arrow) bool {
     return ar.stuck and ar.age == 0;
 }
 
-/// THE FOURTH WAY A SHAFT OF HIS LEAVES THE POOL: the flight ran out in the air (`archer.lifeOf`) and it never stuck.
-/// **`!live` ALONE IS NOT IT** — a PLANTED shaft is dropped from the pool a frame later still carrying `stuck` (a zero
-/// `archer.lingerOf`), which reaches `planted` a second time; read without `stuck`, one thrown bomb lit two fuses.
+/// The fourth way a shaft leaves the pool: the flight ran out in the air (`archer.lifeOf`) and it never stuck.
+/// `!live` alone is NOT it — a planted shaft is dropped a frame later still carrying `stuck`, and one bomb lit two fuses.
 fn lostInFlight(ar: *const archermod.Arrow) bool {
     return !ar.live and !ar.stuck;
 }
 
 fn planted(g: *Game, ar: *const archermod.Arrow, his: bool) void {
     if (!justLanded(ar)) {
-        // Only the bomb is owed anything: the rest have already spent themselves in the air.
+        // Only the bomb is owed anything here.
         if (his and ar.shot == .bomb and lostInFlight(ar)) lightFuse(g, ar.pos);
         return;
     }
     if (ar.shot != .venom) sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
-    // A BOMB does not open anything where it LANDS — the fuse does, when it goes off (`bombBlast`). Everything else plants as a point.
+    // A bomb opens nothing where it LANDS; the fuse does, at `bombBlast`.
     if (his and ar.shot != .bomb) {
         if (g.env.breachTouched(ar.pos, BREACH_ARROW_R, .arrow)) |i| openBreach(g, i, ar.pos);
     }
     cameToRest(g, ar, his);
 }
 
-/// WHAT A SHOT OF HIS LEAVES WHERE IT STOPS, and the one thing `planted` may not own: a shaft stopped by a BODY never
-/// reaches `planted` at all (`stepShafts` plants it itself), so a bomb thrown at a lock lit no fuse and simply vanished.
+/// A shaft stopped by a BODY never reaches `planted` (`stepShafts` plants it itself), so this is the one thing
+/// `planted` may not own — a bomb thrown at a lock lit no fuse and vanished.
 fn cameToRest(g: *Game, ar: *const archermod.Arrow, his: bool) void {
     if (his and ar.shot == .bomb) lightFuse(g, ar.pos);
     splashOf(g, ar);
@@ -5221,7 +5217,7 @@ fn splashOf(g: *Game, ar: *const archermod.Arrow) void {
         .powder => powderBurst(g, ground),
         .rock => rockBurst(g, ground),
         .acorn => acornBurst(g, ground),
-        // Nothing on landing: the FUSE is the bomb's whole event and `planted` has already lit it.
+        // Nothing on landing: `planted` has already lit the fuse.
         .bomb => {},
         .arrow, .firearrow, .wisp, .crock, .spark => {},
     }
@@ -5282,11 +5278,10 @@ fn detonates(s: archermod.Shot) bool {
 }
 
 const BLAST_R: f32 = 3.1;
-/// What the RIM of any blast is worth against its middle. **ONE CURVE FOR EVERY BLAST** — it scales the throw and the
-/// shove as readily as the damage, so a body at the edge is pushed rather than launched.
+/// What the RIM of any blast is worth against its middle. One curve scales the throw and the shove as well as the damage.
 const BLAST_FLOOR: f32 = 0.30;
 
-/// HOW MUCH OF A BLAST A BODY STANDING `gap` METRES OUT TAKES. The radius is the source's own; the shape never is.
+/// The share a body standing `gap` METRES out takes. The radius is the source's own; the shape never is.
 fn blastFalloff(gap: f32, r: f32) f32 {
     return mathx.lerpF(1.0, BLAST_FLOOR, mathx.clampF(gap / r, 0, 1));
 }
@@ -5335,8 +5330,8 @@ fn drawArrows(g: *Game) void {
     }
 }
 
-/// EVERYTHING OF HIS STILL IN THE AIR OR STILL COUNTING, dropped together. A bomb left off this outlived the map it was
-/// lit on and went off at those coordinates in the next one, and outlived his own death to blast the spot he respawned from.
+/// Everything of his still in the air or still counting. Left off, a lit bomb outlives the map and goes off at those
+/// coordinates in the next one.
 fn clearOrdnance(g: *Game) void {
     for (quivers(g)) |pool| {
         for (pool) |*ar| ar.* = .{};
@@ -5942,7 +5937,6 @@ pub fn run(mode: Mode) void {
         if (g.editor.on) {
             rl.showCursor();
             const edAct = g.editor.update(&g.map, &g.env, &g.day, rawDt);
-            // Read AFTER the step: Open/New/Save As swap the world, and a save taken the same frame would be labelled with the map he just left.
             if (adoptEditorMap(&g.mapAt, &g.mapFrom, g.editor.curPath())) _ = nameable(g.mapAt.name());
             switch (edAct) {
                 .none => {},
@@ -7058,12 +7052,11 @@ fn useItem(g: *Game, k: item.Kind) void {
             g.hero.startCoat(combat.ailOfName(c.ail), c.amt, c.secs);
             sfx.play(.eat);
         },
-        // PLANTED UNLESS HE IS LOCKED ON, which is the one place the throw has somewhere to go — a free camera would be
-        // throwing it at the reticle, and a bomb you cannot put DOWN is the wrong tool for a wall.
+        // Planted unless he is LOCKED ON, which is the one place the throw has somewhere to aim.
         .bomb => {
             if (g.bag.take(k, 1) == 0) return;
             if (activeLock(g)) |r| {
-                // NO BLOW ON THE FLIGHT: everything the bomb is worth is in the blast, so a shell that clips a body just lands there.
+                // No blow on the flight: a shell that clips a body just lands there.
                 putIn(&g.shafts, archermod.launchShaft(forwardPoint(g, THROW_OUT), foePos(g, r), koboldmod.CLUMP_SPEED, .{}, true, .bomb));
             } else {
                 lightFuse(g, g.hero.pos);
@@ -7296,7 +7289,7 @@ const BREACH_PUFF_COLS: usize = 5;
 const BREACH_PUFF_ROWS: usize = 4;
 const BREACH_PUFF_N: i32 = 6;
 const BREACH_MOTES: usize = propsmod.FIT_CAP * BREACH_PUFF_COLS * BREACH_PUFF_ROWS * @as(usize, @intCast(BREACH_PUFF_N));
-/// A roll that brushes the face counts, as does an arrow planted in it; a blade has to reach the stone. A BOMB reaches wider than it sits.
+/// A roll that brushes the face counts, as does a planted arrow; a blade has to reach the stone, and a bomb reaches wider than it sits.
 const BREACH_ROLL_REACH: f32 = 0.35;
 const BREACH_ARROW_R: f32 = 0.30;
 const BREACH_BOMB_R: f32 = 1.60;
@@ -7308,21 +7301,20 @@ const LEAF_MOTE = mathx.rgba(74, 104, 52, 210);
 const LEAF_MOTE_THIN = mathx.rgba(110, 138, 84, 0);
 const LEAF_PUFF = foemod.Puff{ .blast = foemod.Blast.of(foemod.DUST_DRAG, 0.5, 1.0), .spdLo = 0.3, .upLo = -0.5, .upHi = 0.7, .rLo = 0.05, .rHi = 0.14, .col = LEAF_MOTE, .col1 = LEAF_MOTE_THIN };
 
-/// THE FUSE IS THE WHOLE MECHANIC — a bomb is not an impact, so it leaves the shaft pool the moment it lands and lives here
-/// instead. Planted or thrown, the clock is the same one and it does not know whose the bomb is.
+/// A bomb is not an impact: it leaves the shaft pool the moment it lands. Planted or thrown, the clock is the same one.
 const Bomb = struct {
     at: rl.Vector3 = mathx.zero3,
     left: f32 = 0,
     live: bool = false,
-    /// ITS OWN, not the pool's: the cord quickens as it runs out, so bombs lit at different moments owe sparks at different rates.
+    /// Its own, not the pool's: the cord quickens as it runs out.
     spark: f32 = 0,
 };
-/// Enough that a fistful thrown down a corridor all keep their own clock; the one nearest going off gives up its slot.
+/// Full, the one NEAREST going off gives up its slot.
 const BOMB_CAP: usize = 8;
 const BOMB_SPARK_HZ: f32 = 34.0;
-/// Metres a second the blast puts under a creature, spent by `foe.applyShove`. Past the ogre's slam because nothing walks this off.
+/// Metres a second the blast puts under a creature, spent by `foe.applyShove`.
 const BOMB_SHOVE: f32 = 7.5;
-/// Metres it throws HIM up, and metres it slides him back. `Hit.scaled` does not touch either field, so both are billed with the falloff by hand.
+/// Metres up, and metres back. `Hit.scaled` touches NEITHER field, so both are billed with the falloff by hand.
 const BOMB_LAUNCH: f32 = 1.8;
 const BOMB_PUSH: f32 = 2.6;
 const BOMB_BURST_N: i32 = 26;
@@ -7331,8 +7323,7 @@ const BOMB_FLARE = mathx.rgba(255, 246, 214, 0);
 const BOMB_SPARK = foemod.Sparks{ .spdLo = 0.5, .spdHi = 1.9, .upLo = 0.4, .upHi = 1.5, .lifeLo = 0.10, .lifeHi = 0.26, .rLo = 0.008, .rHi = 0.018, .r1 = 0.003, .col = BOMB_SHELL, .col1 = BOMB_FLARE, .grav = 3.2 };
 const BOMB_PUFF = foemod.Puff{ .blast = foemod.Blast.of(foemod.DUST_DRAG, 1.1, 2.0), .spdLo = 0.9, .upLo = 0.4, .upHi = 2.4, .rLo = 0.16, .rHi = 0.44, .col = foemod.DUST, .col1 = foemod.DUST_THIN };
 
-// THE BOMBS ARE THE BREACH RING'S SECOND FEEDER, and a ring that overwrites its oldest does it silently — so the whole
-// pool going off on one frame, sparks and all, is arithmetic here rather than headroom nobody checked.
+// The bombs are the breach ring's SECOND feeder, and a ring that overwrites its oldest does it silently.
 comptime {
     const worstFrame = BOMB_CAP * (@as(usize, @intCast(BOMB_BURST_N)) + foemod.emitCap(BOMB_SPARK_HZ));
     if (worstFrame >= BREACH_MOTES) @compileError("game: a frame of bomb blasts walks an opening's motes out of the breach ring — size it off BOTH feeders");
@@ -7350,17 +7341,15 @@ fn bombRow() BombRow {
     return item.use(.bomb).bomb;
 }
 
-/// The blow a bomb carries, off the ITEM ROW so the card and what lands cannot part company. `stance` is the poise again: a bomb
-/// is the one thing in the bag that takes a guard down.
+/// Off the ITEM ROW so the card and what lands cannot part company. `stance` is the poise again: a bomb takes a guard down.
 fn bombHit(row: BombRow) combat.Hit {
     return .{ .dmg = row.dmg, .poise = row.poise, .stance = row.poise, .elem = combat.elems(.{ .fire = row.fire }) };
 }
 
-/// A BOMB SITS ON THE FLOOR WHEREVER IT CAME TO REST — the one thrown at a lock stops against a chest, and the seat is
-/// solved here so the cord, the spark and the blast's own motes cannot part company with it.
+/// Seated here, once, so the cord, the spark and the blast's motes cannot part company with it.
 fn lightFuse(g: *Game, at: rl.Vector3) void {
     const seat = g.env.seat(at);
-    // A FREE SLOT, ELSE THE ONE NEAREST GOING OFF — picked first, so the row and the voice are written ONCE either way.
+    // A free slot, else the one nearest going off; picked first so the row and the voice are written once either way.
     var slot: usize = 0;
     for (&g.bombs, 0..) |*b, i| {
         if (!b.live) {
@@ -7379,7 +7368,6 @@ fn tickBombs(g: *Game, dt: f32) void {
         if (!b.live) continue;
         b.left -= dt;
         if (b.left > 0) {
-            // The spark eats the cord, and it QUICKENS as the cord runs out — the only tell the blast gives.
             const hz = BOMB_SPARK_HZ * mathx.lerpF(0.45, 1.0, 1.0 - mathx.clampF(b.left / row.secs, 0, 1));
             var owed = foemod.emitDue(&b.spark, dt, hz);
             const tip = mathx.addV(b.at, heromod.BOMB_CORD_TIP);
@@ -7393,8 +7381,7 @@ fn tickBombs(g: *Game, dt: f32) void {
     }
 }
 
-/// EVERYTHING INSIDE THE RING, THE HERO INCLUDED, billed once and off one falloff. The wall is asked LAST so a blast that kills
-/// him still opens it.
+/// The hero included, billed once off one falloff. The wall is asked LAST, so a blast that kills him still opens it.
 fn bombBlast(g: *Game, at: rl.Vector3, row: BombRow) void {
     const hit = bombHit(row);
     sfx.world(.delver_burst, at);
@@ -7406,14 +7393,14 @@ fn bombBlast(g: *Game, at: rl.Vector3, row: BombRow) void {
     inline for (FOE_GROUPS) |gr| {
         for (@field(g, gr.field).live()) |*f| {
             if (!foemod.corporeal(f)) continue;
-            // `doseRing`'s gate, and it is LOAD-BEARING here: a swept blade misses a sunk, deep, blinking or dissolved
-            // body on its own geometry, but `shaftThrough` is built at the body's OWN `centerWorld`, so nothing can refuse it.
+            // `doseRing`'s gate, LOAD-BEARING: `shaftThrough` is built at the body's own `centerWorld`, so no geometry
+            // can refuse it the way a swept blade refuses a sunk or blinking body.
             if (disguised(f)) continue;
             const gap = mathx.distXZ(at, f.pos) - f.bodyR();
             if (gap > row.r) continue;
             const k = blastFalloff(gap, row.r);
             f.tryHit(foemod.shaftThrough(f.centerWorld(), hit.scaled(k)));
-            // THE THROW IS THE BOMB'S, NOT THE BODY'S OWN `Push` — written after the wound so it beats the shove `wounded` just set.
+            // Written AFTER the wound so it beats the shove `wounded` just set.
             const away = mathx.dirXZ(at, f.pos);
             if (mathx.lenXZ(away) > 1e-3) f.shove = mathx.scaleV(away, BOMB_SHOVE * k);
         }
@@ -7443,7 +7430,6 @@ test "THE FUSE IS THE BOMB — it runs whether or not he is still there, and wha
     const row = bombRow();
     try std.testing.expect(row.secs > 0 and row.r > 0);
 
-    // ONE CURVE for damage, poise, throw and shove: the middle is the whole blow, the rim is `BLAST_FLOOR` of it, and it is monotone between.
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), blastFalloff(0, row.r), 1e-6);
     try std.testing.expectApproxEqAbs(BLAST_FLOOR, blastFalloff(row.r, row.r), 1e-6);
     try std.testing.expectApproxEqAbs(BLAST_FLOOR, blastFalloff(row.r * 4.0, row.r), 1e-6);
@@ -7459,12 +7445,10 @@ test "THE FUSE IS THE BOMB — it runs whether or not he is still there, and wha
     const mid = hit.scaled(blastFalloff(0, row.r));
     const rim = hit.scaled(blastFalloff(row.r, row.r));
     try std.testing.expect(mid.raw() > rim.raw());
-    // A GUARD IS NO ANSWER TO IT: the stance it takes off is the poise again, past the heavy swing's own (`hero.ATK_HEAVY_HIT`).
     try std.testing.expect(hit.stance > heromod.ATK_HEAVY_HIT.stance);
     try std.testing.expect(hit.poise > 0);
     std.debug.print("\n  bomb: {d:.1}s fuse, {d:.1} m ring — {d:.0} raw at the seat, {d:.0} at the rim; throws him {d:.2} m up and shoves {d:.1} m/s\n", .{ row.secs, row.r, mid.raw(), rim.raw(), BOMB_LAUNCH, BOMB_SHOVE });
 
-    // THE CLOCK IS THE ONLY THING THAT SETS IT OFF, and the pool gives its slot to the one nearest going off.
     var pool = [_]Bomb{.{}} ** BOMB_CAP;
     pool[0] = .{ .at = mathx.zero3, .left = row.secs, .live = true };
     var t: f32 = 0;
@@ -7474,8 +7458,8 @@ test "THE FUSE IS THE BOMB — it runs whether or not he is still there, and wha
 }
 
 test "EVERY WAY A SHAFT OF HIS STOPS ANNOUNCES IT — the fuse may not go out in the pool" {
-    // `stepShafts` plants by hand on two paths and only the WALL one ever reached `planted`: a shell stopped by a BODY
-    // left the pool with its clock unstarted, so a bomb thrown at the lock it was aimed at simply vanished.
+    // `stepShafts` plants by hand on two paths and only the WALL one reached `planted`: a shell stopped by a BODY left
+    // the pool with its clock unstarted.
     const src = try worldfmt.readForTest(std.testing.allocator, SRC, worldfmt.SRC_CAP);
     defer std.testing.allocator.free(src);
     // Split so this line is not itself a match.
@@ -7492,19 +7476,17 @@ test "EVERY WAY A SHAFT OF HIS STOPS ANNOUNCES IT — the fuse may not go out in
         }
     }
     try std.testing.expectEqual(@as(usize, 2), plants);
-    // AND A LIT ONE IS DROPPED WITH THE QUIVERS: split apart again, the clock outlives the map, the rest and his own death.
     const clear = std.mem.indexOf(u8, src, "fn clearOrdnance(") orelse return error.TestUnexpectedResult;
     try std.testing.expect(std.mem.indexOf(u8, src[clear .. clear + 400], "g.bombs = ") != null);
-    // AND THE FOURTH WAY ONE STOPS IS THE FLIGHT SIMPLY RUNNING OUT (`archer.lifeOf`): that shaft never sticks, so
-    // `justLanded` is false and every announcement below it is skipped. `planted` owes the bomb its fuse before it returns.
+    // A flight that runs out (`archer.lifeOf`) never sticks, so `justLanded` is false and every announcement below it
+    // is skipped: `planted` owes the bomb its fuse before that guard returns.
     const pl = std.mem.indexOf(u8, src, "fn planted(") orelse return error.TestUnexpectedResult;
     const guard = std.mem.indexOf(u8, src[pl..], "if (!justLanded(ar))") orelse return error.TestUnexpectedResult;
     const arm = std.mem.indexOf(u8, src[pl + guard ..], "return;") orelse return error.TestUnexpectedResult;
     try std.testing.expect(std.mem.indexOf(u8, src[pl + guard .. pl + guard + arm], "lightFuse(") != null);
 
-    // AND EXACTLY ONCE, THROUGH THE REAL STATE MACHINE. A shell that plants is dropped from the pool the NEXT frame
-    // still carrying `stuck`, which reaches `planted` a second time — read on `live` alone, every thrown bomb that
-    // landed lit TWO fuses at the same spot, one frame apart, for twice the blast.
+    // A shell that plants is dropped the NEXT frame still carrying `stuck` and reaches `planted` again: read on `live`
+    // alone, every thrown bomb lit TWO fuses one frame apart, for twice the blast.
     const dt: f32 = 1.0 / 60.0;
     for ([_]f32{ 7.0, 26.0, 84.0 }) |away| {
         var shell = archermod.launchShaft(v3(0, 1.2, 0), v3(0, 0, away), koboldmod.CLUMP_SPEED, .{}, true, .bomb);
@@ -7520,9 +7502,8 @@ test "EVERY WAY A SHAFT OF HIS STOPS ANNOUNCES IT — the fuse may not go out in
 }
 
 test "A BODY THAT IS NOT THERE TAKES NO BLAST — every ring over `FOE_GROUPS` carries `disguised`" {
-    // `foe.reached` refuses only `offField`; the rest of "cannot be struck" is GEOMETRY, and `foe.shaftThrough` built at a
-    // body's own `centerWorld` has none — the segment sinks, goes underground and blinks WITH it, so it always touches.
-    // Every ring that bills or doses over the field owes the gate its pickers carry.
+    // `foe.reached` refuses only `offField`; the rest of "cannot be struck" is GEOMETRY, and `foe.shaftThrough` built at
+    // a body's own `centerWorld` has none. Every ring that bills or doses over the field owes the gate its pickers carry.
     const src = try worldfmt.readForTest(std.testing.allocator, SRC, worldfmt.SRC_CAP);
     defer std.testing.allocator.free(src);
     const RINGS = [_][]const u8{ "fn bombBlast(", "fn doseRing(", "fn rootVictim(", "fn strikeVictim(" };
@@ -7543,7 +7524,6 @@ test "A CRACKED WALL ANSWERS THE BOMB AND NOTHING ELSE — and the bomb answers 
         try std.testing.expect(!(k == .bomb and envmod.opens(.illusion, k)));
         try std.testing.expect(!(k == .bomb and envmod.opens(.vines, k)));
     }
-    // The pot that used to do it is a point like every other planted shaft now.
     try std.testing.expect(!envmod.opens(.cracked, .arrow));
     try std.testing.expect(item.price(.bomb) > item.price(.thundercrock));
     std.debug.print("\n  bomb: {d} coin against the thundercrock's {d}; the crock no longer opens a cracked wall\n", .{ item.price(.bomb), item.price(.thundercrock) });

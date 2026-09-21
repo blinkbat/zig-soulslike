@@ -3659,7 +3659,6 @@ test "A NAME IN A TOKENISED RECORD KEEPS NO SPACE — a zone called \"north fiel
     try std.testing.expectEqualStrings("old_mill___west", m.locations[0].label());
     try std.testing.expectEqualStrings("bone_court", m.arenas[0].label());
 
-    // The whole point: what the editor writes has to come back.
     const tmp = DIR ++ "/test_spacednames" ++ EXT;
     defer std.fs.cwd().deleteFile(tmp) catch {};
     try save(tmp, m);

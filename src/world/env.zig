@@ -5822,7 +5822,7 @@ test "THREE BREACHES, THREE KEYS — steel opens the illusion and the vines, onl
     const curtain = v3(60, 0, 0);
     try std.testing.expectEqual(@as(?u8, 1), e.breachTouched(wall, 0.3, .bomb));
     for ([_]Key{ .blade, .roll, .arrow }) |k| try std.testing.expectEqual(@as(?u8, null), e.breachTouched(wall, 0.3, k));
-    // AND THE BOMB OPENS NOTHING ELSE: the illusion answers a TOUCH, and `opens` is written positively so a fourth key joins nothing by silence.
+    // The illusion answers a TOUCH, and `opens` is written positively so a fourth key joins nothing by silence.
     try std.testing.expectEqual(@as(?u8, null), e.breachTouched(v3(0, 0, 0), 0.3, .bomb));
     try std.testing.expectEqual(@as(?u8, null), e.breachStruck(v3(60, 1.2, -1), v3(60, 1.2, 1), 0.1, .bomb));
     try std.testing.expectEqual(@as(?u8, null), e.breachStruck(v3(30, 1.2, -1), v3(30, 1.2, 1), 0.1, .blade));

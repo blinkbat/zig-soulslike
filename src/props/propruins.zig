@@ -321,7 +321,7 @@ pub fn illusoryWallMesh(shader: rl.Shader) rl.Model {
     return b.toModel(shader);
 }
 
-/// The same wall, CRACKED THROUGH, dusted toward dead mortar (`art.CRACKED_WASH`). A burst brings it down (`props.Breach.cracked`).
+/// The same wall, CRACKED THROUGH, dusted toward dead mortar (`art.CRACKED_WASH`). A BOMB brings it down (`props.Breach.cracked`).
 pub fn crackedWallBuild() Builder {
     var b = wallBuild();
     var rng = mathx.Rng.init(4811);

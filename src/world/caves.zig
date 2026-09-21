@@ -916,13 +916,13 @@ pub const wfcave = struct {
         _ = m.add(.{ .op = .at, .kind = .cracked_wall, .x = l.wall[0], .z = l.wall[1], .yaw = 0, .under = true }) catch {};
         _ = m.add(.{ .op = .at, .kind = .brazier, .x = l.chamber[0] + 3, .z = l.chamber[1] - 2, .under = true }) catch {};
         _ = m.add(.{ .op = .at, .kind = .campfire_lit, .x = l.start[0] + 3, .z = l.start[1] + 5 }) catch {};
-        // THE BURST KEY IS IN REACH OF THE SPAWN, or the north wall can only be opened by a test: a lob of either lands as `.crock` or `.clump`, the two shots `game.planted` bills as a burst.
+        // THE KEY IS IN REACH OF THE SPAWN, or the north wall can only be opened by a test: `env.opens` answers a cracked wall to `.bomb` alone.
         var throws = wf.defaults(.at);
         throws.kind = .pickup;
         throws.x = l.start[0] + 2;
         throws.z = l.start[1] - 3;
-        throws.loot[0] = .thundercrock;
-        throws.loot[1] = .thundercrock;
+        throws.loot[0] = .bomb;
+        throws.loot[1] = .bomb;
         throws.loot[2] = .ember_candle;
         throws.loot[3] = .ember_candle;
         throws.nloot = 4;

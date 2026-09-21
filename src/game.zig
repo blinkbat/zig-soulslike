@@ -5142,8 +5142,19 @@ fn justLanded(ar: *const archermod.Arrow) bool {
     return ar.stuck and ar.age == 0;
 }
 
+/// THE FOURTH WAY A SHAFT OF HIS LEAVES THE POOL: the flight ran out in the air (`archer.lifeOf`) and it never stuck.
+/// **`!live` ALONE IS NOT IT** — a PLANTED shaft is dropped from the pool a frame later still carrying `stuck` (a zero
+/// `archer.lingerOf`), which reaches `planted` a second time; read without `stuck`, one thrown bomb lit two fuses.
+fn lostInFlight(ar: *const archermod.Arrow) bool {
+    return !ar.live and !ar.stuck;
+}
+
 fn planted(g: *Game, ar: *const archermod.Arrow, his: bool) void {
-    if (!justLanded(ar)) return;
+    if (!justLanded(ar)) {
+        // Only the bomb is owed anything: the rest have already spent themselves in the air.
+        if (his and ar.shot == .bomb and lostInFlight(ar)) lightFuse(g, ar.pos);
+        return;
+    }
     if (ar.shot != .venom) sfx.world(sfx.arrowImpact(ar.struck), ar.pos);
     // A BOMB does not open anything where it LANDS — the fuse does, when it goes off (`bombBlast`). Everything else plants as a point.
     if (his and ar.shot != .bomb) {
@@ -7450,7 +7461,28 @@ test "EVERY WAY A SHAFT OF HIS STOPS ANNOUNCES IT — the fuse may not go out in
     // AND A LIT ONE IS DROPPED WITH THE QUIVERS: split apart again, the clock outlives the map, the rest and his own death.
     const clear = std.mem.indexOf(u8, src, "fn clearOrdnance(") orelse return error.TestUnexpectedResult;
     try std.testing.expect(std.mem.indexOf(u8, src[clear .. clear + 400], "g.bombs = ") != null);
-    std.debug.print("\n  both hand-plants in the shaft loop announced; the ordnance clear drops the fuses too\n", .{});
+    // AND THE FOURTH WAY ONE STOPS IS THE FLIGHT SIMPLY RUNNING OUT (`archer.lifeOf`): that shaft never sticks, so
+    // `justLanded` is false and every announcement below it is skipped. `planted` owes the bomb its fuse before it returns.
+    const pl = std.mem.indexOf(u8, src, "fn planted(") orelse return error.TestUnexpectedResult;
+    const guard = std.mem.indexOf(u8, src[pl..], "if (!justLanded(ar))") orelse return error.TestUnexpectedResult;
+    const arm = std.mem.indexOf(u8, src[pl + guard ..], "return;") orelse return error.TestUnexpectedResult;
+    try std.testing.expect(std.mem.indexOf(u8, src[pl + guard .. pl + guard + arm], "lightFuse(") != null);
+
+    // AND EXACTLY ONCE, THROUGH THE REAL STATE MACHINE. A shell that plants is dropped from the pool the NEXT frame
+    // still carrying `stuck`, which reaches `planted` a second time — read on `live` alone, every thrown bomb that
+    // landed lit TWO fuses at the same spot, one frame apart, for twice the blast.
+    const dt: f32 = 1.0 / 60.0;
+    for ([_]f32{ 7.0, 26.0, 84.0 }) |away| {
+        var shell = archermod.launchShaft(v3(0, 1.2, 0), v3(0, 0, away), koboldmod.CLUMP_SPEED, .{}, true, .bomb);
+        var lit: usize = 0;
+        var frames: usize = 0;
+        while (shell.live and frames < 1200) : (frames += 1) {
+            if (archermod.stepShaft(&shell, 0, &.{}, dt) != null) continue;
+            if (justLanded(&shell) or lostInFlight(&shell)) lit += 1;
+        }
+        try std.testing.expectEqual(@as(usize, 1), lit);
+    }
+    std.debug.print("\n  both hand-plants in the shaft loop announced; a shell lights ONE fuse whether it plants or its flight runs out; the ordnance clear drops them too\n", .{});
 }
 
 test "A CRACKED WALL ANSWERS THE BOMB AND NOTHING ELSE — and the bomb answers no other wall" {

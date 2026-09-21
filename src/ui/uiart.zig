@@ -142,6 +142,19 @@ pub fn rect(x: i32, y: i32, w: i32, h: i32) rl.Rectangle {
     return .{ .x = fi(x), .y = fi(y), .width = fi(w), .height = fi(h) };
 }
 
+/// A LIVE PORTRAIT IS DARKENED INTO ITS FRAME, and the book's doll and the dialog's face were doing it with the same
+/// five calls a few points apart. The alphas and the two band divisors stay each screen's own; only the shape is here.
+pub const Vignette = struct { top: u8, bottom: u8, side: u8, bandDiv: i32, sideDiv: i32, rim: u8 };
+pub fn vignette(dst: rl.Rectangle, x: i32, y: i32, w: i32, h: i32, v: Vignette) void {
+    const band = @divTrunc(h, v.bandDiv);
+    rl.drawRectangleGradientV(x, y, w, band, rgba(0, 0, 0, v.top), rgba(0, 0, 0, 0));
+    rl.drawRectangleGradientV(x, y + h - band, w, band, rgba(0, 0, 0, 0), rgba(0, 0, 0, v.bottom));
+    const side = @divTrunc(w, v.sideDiv);
+    rl.drawRectangleGradientH(x, y, side, h, rgba(0, 0, 0, v.side), rgba(0, 0, 0, 0));
+    rl.drawRectangleGradientH(x + w - side, y, side, h, rgba(0, 0, 0, 0), rgba(0, 0, 0, v.side));
+    rl.drawRectangleLinesEx(dst, 1, withAlpha(GILT_DIM, v.rim));
+}
+
 pub fn frame(x: i32, y: i32, w: i32, h: i32, a: u8) void {
     rl.drawRectangleLinesEx(rect(x, y, w, h), 1, withAlpha(INK, 235));
     rl.drawRectangleLinesEx(rect(x + 2, y + 2, w - 4, h - 4), 2, withAlpha(GILT_DIM, a));

@@ -297,13 +297,7 @@ pub fn drawPortrait(p: Portrait, dx: i32, dy: i32, dw: i32, dh: i32) void {
         .ctx = p.ctx,
         .drawFn = p.drawFn,
     }, dst, rl.Color.white);
-    const band = @divTrunc(dh, 5);
-    rl.drawRectangleGradientV(dx, dy, dw, band, rgba(0, 0, 0, 175), rgba(0, 0, 0, 0));
-    rl.drawRectangleGradientV(dx, dy + dh - band, dw, band, rgba(0, 0, 0, 0), rgba(0, 0, 0, 195));
-    const side = @divTrunc(dw, 6);
-    rl.drawRectangleGradientH(dx, dy, side, dh, rgba(0, 0, 0, 160), rgba(0, 0, 0, 0));
-    rl.drawRectangleGradientH(dx + dw - side, dy, side, dh, rgba(0, 0, 0, 0), rgba(0, 0, 0, 160));
-    rl.drawRectangleLinesEx(dst, 1, mathx.withAlpha(uiart.GILT_DIM, 95));
+    uiart.vignette(dst, dx, dy, dw, dh, .{ .top = 175, .bottom = 195, .side = 160, .bandDiv = 5, .sideDiv = 6, .rim = 95 });
 }
 
 

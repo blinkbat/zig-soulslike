@@ -543,6 +543,34 @@ pub fn runMapShots(g: *Game) void {
     std.debug.print("MAP SHOTS: {d} body(s) into " ++ DIR_MAP ++ "/\n", .{n});
 }
 
+/// ONE CAVE VIEW AND ONE SOLVE, for every cave bench — the two of them shot the same way off a table of the same shape,
+/// and the second copy carried neither of the derivations the first one spells out.
+const CaveView = struct { tag: []const u8, hx: f32, hz: f32, under: bool, ax: f32, az: f32, up: f32, yaw: f32, pitch: f32, dist: f32 };
+/// What the eye keeps under the roof.
+const CAVE_CAM_CLEAR: f32 = 0.45;
+
+fn shootCaveViews(g: *Game, stem: []const u8, views: []const CaveView) void {
+    var buf: [256]u8 = undefined;
+    for (views, 0..) |f, i| {
+        standHero(g, f.hx, f.hz, std.math.pi);
+        // UNDER THE ROOF, not on the hill: `standAt` reads the foot height to choose a surface, so a shot that wants the chamber has to ask from inside it.
+        const foot: f32 = if (f.under) g.env.caveFloorAt(f.hx, f.hz) else g.env.groundAt(f.hx, f.hz);
+        g.hero.pos.y = g.env.standAt(f.hx, f.hz, foot);
+        g.hero.pose();
+        game.pinSkyForShot(g);
+        const aimFoot: f32 = if (f.under) g.env.caveFloorAt(f.ax, f.az) else g.env.groundAt(f.ax, f.az);
+        const name = std.fmt.bufPrintZ(&buf, DIR_LAND ++ "/{s}_{d:0>2}_{s}.png", .{ stem, i + 10, f.tag }) catch unreachable;
+        const aimY = g.env.standAt(f.ax, f.az, aimFoot) + f.up;
+        // DERIVED FROM THE ROOM, not picked: the eye ends at target + back*dist, and a boom solved for open ground puts it through the ceiling.
+        var pitch = f.pitch;
+        if (f.under) {
+            const head = g.env.caveRoofAt(f.ax, f.az) - CAVE_CAM_CLEAR - aimY;
+            pitch = mathx.clampF(head / f.dist, -0.4, f.pitch);
+        }
+        shootAt(g, name, v3(f.ax, aimY, f.az), f.yaw, pitch, f.dist);
+    }
+}
+
 pub fn runLandShots(g: *Game) void {
     std.fs.cwd().makePath(DIR_LAND) catch {};
     g.drawDt = SETTLE_DT;
@@ -620,8 +648,7 @@ pub fn runLandShots(g: *Game) void {
         frames += feet.len;
     }
     if (std.mem.startsWith(u8, stem, "test_caves")) {
-        const CAM_CLEAR: f32 = 0.45;
-        const views = [_]struct { tag: []const u8, hx: f32, hz: f32, under: bool, ax: f32, az: f32, up: f32, yaw: f32, pitch: f32, dist: f32 }{
+        const views = [_]CaveView{
             .{ .tag = "mouth", .hx = 34, .hz = 18, .under = false, .ax = 28, .az = 15, .up = 1.4, .yaw = 118, .pitch = 0.12, .dist = 13.0 },
             .{ .tag = "inside", .hx = 26, .hz = 13, .under = true, .ax = 24, .az = 11, .up = 1.2, .yaw = 118, .pitch = 0.06, .dist = 6.5 },
             .{ .tag = "lookingout", .hx = 23, .hz = 10, .under = true, .ax = 27, .az = 14, .up = 1.2, .yaw = 298, .pitch = 0.04, .dist = 7.0 },
@@ -629,24 +656,7 @@ pub fn runLandShots(g: *Game) void {
             .{ .tag = "chamber", .hx = 0, .hz = 0, .under = true, .ax = 0, .az = 0, .up = 1.0, .yaw = 45, .pitch = 0.16, .dist = 15.0 },
             .{ .tag = "overhead", .hx = 0, .hz = 0, .under = false, .ax = 16, .az = 10, .up = 4.0, .yaw = 200, .pitch = 1.10, .dist = 56.0 },
         };
-        for (views, 0..) |f, i| {
-            standHero(g, f.hx, f.hz, std.math.pi);
-            // UNDER THE ROOF, not on the hill: `standAt` reads the foot height to choose a surface, so a shot that wants the chamber has to ask from inside it.
-            const foot: f32 = if (f.under) g.env.caveFloorAt(f.hx, f.hz) else g.env.groundAt(f.hx, f.hz);
-            g.hero.pos.y = g.env.standAt(f.hx, f.hz, foot);
-            g.hero.pose();
-            game.pinSkyForShot(g);
-            const aimFoot: f32 = if (f.under) g.env.caveFloorAt(f.ax, f.az) else g.env.groundAt(f.ax, f.az);
-            const name = std.fmt.bufPrintZ(&buf, DIR_LAND ++ "/{s}_{d:0>2}_{s}.png", .{ stem, i + 10, f.tag }) catch unreachable;
-            const aimY = g.env.standAt(f.ax, f.az, aimFoot) + f.up;
-            // DERIVED FROM THE ROOM, not picked: the eye ends at target + back*dist, and a boom solved for open ground puts it through the ceiling.
-            var pitch = f.pitch;
-            if (f.under) {
-                const head = g.env.caveRoofAt(f.ax, f.az) - CAM_CLEAR - aimY;
-                pitch = mathx.clampF(head / f.dist, -0.4, f.pitch);
-            }
-            shootAt(g, name, v3(f.ax, aimY, f.az), f.yaw, pitch, f.dist);
-        }
+        shootCaveViews(g, stem, &views);
         frames += views.len;
         const probes = [_]struct { tag: []const u8, x: f32, z: f32 }{
             .{ .tag = "chamber", .x = 0, .z = 0 },
@@ -665,10 +675,9 @@ pub fn runLandShots(g: *Game) void {
         }
     }
     if (std.mem.startsWith(u8, stem, "test_wfcave")) {
-        const CAM_CLEAR: f32 = 0.45;
         const l = caves.wfcave.layout(&g.map);
         const fx = l.faceX;
-        const views = [_]struct { tag: []const u8, hx: f32, hz: f32, under: bool, ax: f32, az: f32, up: f32, yaw: f32, pitch: f32, dist: f32 }{
+        const views = [_]CaveView{
             .{ .tag = "fall", .hx = fx - 9, .hz = 3, .under = false, .ax = fx, .az = 0, .up = 3.5, .yaw = 72, .pitch = 0.06, .dist = 18.0 },
             .{ .tag = "mouth", .hx = fx - 4.5, .hz = 0.8, .under = false, .ax = fx - 1.3, .az = 0, .up = 1.5, .yaw = 90, .pitch = 0.04, .dist = 7.0 },
             .{ .tag = "lookingout", .hx = fx + 5, .hz = 0, .under = true, .ax = fx - 1, .az = 0, .up = 1.4, .yaw = 270, .pitch = 0.02, .dist = 7.0 },
@@ -676,22 +685,7 @@ pub fn runLandShots(g: *Game) void {
             .{ .tag = "northwall", .hx = l.wall[0], .hz = l.wall[1] + 7, .under = false, .ax = l.wall[0], .az = l.wall[1], .up = 1.6, .yaw = 165, .pitch = 0.05, .dist = 9.0 },
             .{ .tag = "overhead", .hx = fx - 6, .hz = 0, .under = false, .ax = fx + 8, .az = 0, .up = 7.0, .yaw = 250, .pitch = 1.05, .dist = 60.0 },
         };
-        for (views, 0..) |f, i| {
-            standHero(g, f.hx, f.hz, std.math.pi);
-            const foot: f32 = if (f.under) g.env.caveFloorAt(f.hx, f.hz) else g.env.groundAt(f.hx, f.hz);
-            g.hero.pos.y = g.env.standAt(f.hx, f.hz, foot);
-            g.hero.pose();
-            game.pinSkyForShot(g);
-            const aimFoot: f32 = if (f.under) g.env.caveFloorAt(f.ax, f.az) else g.env.groundAt(f.ax, f.az);
-            const name = std.fmt.bufPrintZ(&buf, DIR_LAND ++ "/{s}_{d:0>2}_{s}.png", .{ stem, i + 10, f.tag }) catch unreachable;
-            const aimY = g.env.standAt(f.ax, f.az, aimFoot) + f.up;
-            var pitch = f.pitch;
-            if (f.under) {
-                const head = g.env.caveRoofAt(f.ax, f.az) - CAM_CLEAR - aimY;
-                pitch = mathx.clampF(head / f.dist, -0.4, f.pitch);
-            }
-            shootAt(g, name, v3(f.ax, aimY, f.az), f.yaw, pitch, f.dist);
-        }
+        shootCaveViews(g, stem, &views);
         frames += views.len;
         // The walk in, against the real solids — the stamped face rock included — held by the curtain, then cut through it.
         var w = mathx.ground(fx - 8, 0);

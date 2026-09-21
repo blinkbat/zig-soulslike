@@ -2701,13 +2701,7 @@ fn drawPortrait(self: *const Book, col: Box, portrait: ?Portrait, caption: [:0]c
 
     rl.drawTexturePro(rt.texture, .{ .x = 0, .y = 0, .width = fi(PORT_W), .height = -fi(PORT_H) }, dst, .{ .x = 0, .y = 0 }, 0, rl.Color.white);
     uiart.candle(dx + @divTrunc(dw, 2), dy + dh - @divTrunc(dh, 7), fi(dw) * 0.44, 30);
-    const band = @divTrunc(dh, 5);
-    rl.drawRectangleGradientV(dx, dy, dw, band, rgba(0, 0, 0, 190), rgba(0, 0, 0, 0));
-    rl.drawRectangleGradientV(dx, dy + dh - band, dw, band, rgba(0, 0, 0, 0), rgba(0, 0, 0, 205));
-    const side = @divTrunc(dw, 5);
-    rl.drawRectangleGradientH(dx, dy, side, dh, rgba(0, 0, 0, 170), rgba(0, 0, 0, 0));
-    rl.drawRectangleGradientH(dx + dw - side, dy, side, dh, rgba(0, 0, 0, 0), rgba(0, 0, 0, 170));
-    rl.drawRectangleLinesEx(dst, 1, mathx.withAlpha(uiart.GILT_DIM, 90));
+    uiart.vignette(dst, dx, dy, dw, dh, .{ .top = 190, .bottom = 205, .side = 170, .bandDiv = 5, .sideDiv = 5, .rim = 90 });
 
     hud.text(
         caption,

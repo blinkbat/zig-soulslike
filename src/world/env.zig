@@ -3915,7 +3915,7 @@ fn walkUntilStalled(e: *const Env, from: rl.Vector3, dir: rl.Vector3, heroR: f32
     return p;
 }
 
-test "THE WATERFALL CAVE: in through the fall, the vines hold him until cut, the chamber sits under the pond, and the north wall opens to a burst alone" {
+test "THE WATERFALL CAVE: in through the fall, the vines hold him until cut, the chamber sits under the pond, and the north wall opens to a BOMB alone" {
     const m = try std.testing.allocator.create(wf.Map);
     defer std.testing.allocator.destroy(m);
     m.* = .{};

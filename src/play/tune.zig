@@ -28,6 +28,7 @@ const druidmod = @import("../foes/druidess.zig");
 const mimicmod = @import("../foes/mimic.zig");
 const mastodonmod = @import("../foes/mastodon.zig");
 const entmod = @import("../foes/ent.zig");
+const slimemod = @import("../foes/slime.zig");
 const owlbearmod = @import("../foes/owlbear.zig");
 const rootedmod = @import("../foes/rooted.zig");
 const rotgorgermod = @import("../foes/rotgorger.zig");
@@ -1062,6 +1063,7 @@ fn foeAggro(k: wf.FoeKind) ?*f32 {
         .bone_mimic => &mimicmod.AGGRO_R,
         .mastodon => &mastodonmod.AGGRO_R,
         .corrupt_ent => &entmod.AGGRO_R,
+        .slime => &slimemod.AGGRO_R,
     };
 }
 
@@ -1093,6 +1095,7 @@ fn foeSouls(k: wf.FoeKind) ?*u32 {
         .bone_mimic => &mimicmod.SOULS,
         .mastodon => &mastodonmod.SOULS,
         .corrupt_ent => &entmod.SOULS,
+        .slime => &slimemod.SOULS,
         .fungal_deer => &fungaldeermod.SOULS,
         .bone_skitterer => &skitterermod.SOULS,
         .fungal_swordsman => &fungalduomod.SW_SOULS,

@@ -614,7 +614,7 @@ pub const Mastodon = struct {
         }
 
         self.speedS = approach(self.speedS, self.speed, GAIT_BLEND * dt);
-        if (moved > 0) self.phase = wolf.wrap01(self.phase + moved / (strideFor(self.speed) * self.scale));
+        if (moved > 0) self.phase = mathx.wrap01(self.phase + moved / (strideFor(self.speed) * self.scale));
         self.footfalls(dt);
         self.takeParry();
         self.pose();
@@ -728,7 +728,7 @@ pub const Mastodon = struct {
         if (self.speedS < 0.3) return;
         const g = gaitAt(self.speedS);
         const ph = wolf.limbPhases(self.phase, g);
-        const was = wolf.limbPhases(wolf.wrap01(self.phase - self.speedS * dt / (strideFor(self.speedS) * self.scale)), g);
+        const was = wolf.limbPhases(mathx.wrap01(self.phase - self.speedS * dt / (strideFor(self.speedS) * self.scale)), g);
         inline for (.{ wolf.HPAWL, wolf.HPAWR, wolf.PAWL, wolf.PAWR }, 0..) |paw, i| {
             if (!wolf.planted(was[i], g) and wolf.planted(ph[i], g)) {
                 self.dust(self.footWorld(paw), DUST_STEP, 1.2 + 0.25 * self.speedS);

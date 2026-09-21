@@ -45,6 +45,7 @@ const druidmod = @import("../foes/druidess.zig");
 const mimicmod = @import("../foes/mimic.zig");
 const mastodonmod = @import("../foes/mastodon.zig");
 const entmod = @import("../foes/ent.zig");
+const slimemod = @import("../foes/slime.zig");
 const combat = @import("../play/combat.zig");
 const heromod = @import("../play/hero.zig");
 const foemod = @import("../foes/foe.zig");
@@ -387,6 +388,7 @@ pub const CharSet = struct {
     hoard: mimicmod.Hoard,
     drove: mastodonmod.Drove,
     copse: entmod.Copse,
+    mire: slimemod.Mire,
 };
 /// One group per creature, so it GROWS WITH THE ROSTER and is measured by the test at the foot of this file: as a figure it read 112.4 MB and was 150.6 by the time anyone looked.
 var charSet: ?*CharSet = null;
@@ -434,6 +436,7 @@ fn charDims(w: Who) struct { top: f32, bound: f32 } {
         .bone_mimic => .{ .top = 3.0, .bound = 1.8 },
         .mastodon => .{ .top = 3.2, .bound = 3.4 },
         .corrupt_ent => .{ .top = 6.1, .bound = 3.2 },
+        .slime => .{ .top = 0.8, .bound = 1.1 },
         .leechfly => .{ .top = 2.9, .bound = 1.8 },
         .rooted => .{ .top = 7.2, .bound = 3.6 },
         .shroom => .{ .top = 1.2, .bound = 1.0 },
@@ -491,6 +494,7 @@ pub const CHAR_DRIVE = [_]struct { field: []const u8, drive: Drive, kinds: []con
     .{ .field = "hoard", .drive = .group, .kinds = &.{.bone_mimic} },
     .{ .field = "drove", .drive = .group, .kinds = &.{.mastodon} },
     .{ .field = "copse", .drive = .group, .kinds = &.{.corrupt_ent} },
+    .{ .field = "mire", .drive = .group, .kinds = &.{.slime} },
 };
 
 comptime {
@@ -739,6 +743,10 @@ fn seedChar(cs: *CharSet, k: wf.FoeKind) void {
         .corrupt_ent => {
             cs.copse.n = 1;
             cs.copse.live()[0] = entmod.Ent.spawn(mathx.zero3, 0, 1.0, seed);
+        },
+        .slime => {
+            cs.mire.n = 1;
+            cs.mire.live()[0] = slimemod.Slime.spawn(mathx.zero3, 0, 1.0, seed);
         },
     }
 }

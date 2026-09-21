@@ -401,6 +401,11 @@ pub fn wrapDeg360(a: f32) f32 {
     return @mod(a, 360.0);
 }
 
+/// A phase back into 0..1 — what every gait driven by DISTANCE rides.
+pub fn wrap01(x: f32) f32 {
+    return x - @floor(x);
+}
+
 test "ONE TURN, AND THE DEGREES COME BACK EXACT" {
     for ([_][2]f32{
         .{ 0, 0 },      .{ 15, 15 },  .{ 180, 180 },

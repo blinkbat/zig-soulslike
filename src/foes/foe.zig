@@ -125,6 +125,7 @@ pub fn traitsOf(k: wf.FoeKind) Traits {
         .bone_mimic => .{ .nature = .undead },
         .mastodon => .{ .nature = .beast },
         .corrupt_ent => .{ .nature = .plant },
+        .slime => .{ .nature = .beast },
     };
 }
 
@@ -179,6 +180,7 @@ pub fn homeOf(k: wf.FoeKind) props.Biome {
         .bone_mimic => .bone,
         .mastodon => .rock,
         .corrupt_ent => .forest,
+        .slime => .wetland,
     };
 }
 
@@ -226,7 +228,7 @@ pub fn isBoss(k: wf.FoeKind) bool {
         .bone_skitterer, .ancient_priest, .tolling_hollow => false,
         .slumber_bloom, .cinder_wake, .rotgorger, .birchwight, .salt_husk => false,
         .fish_spearman, .fish_netter, .fish_shaman, .blinkbat => false,
-        .owlbear, .bone_mimic, .mastodon, .corrupt_ent => false,
+        .owlbear, .bone_mimic, .mastodon, .corrupt_ent, .slime => false,
     };
 }
 
@@ -326,6 +328,7 @@ pub fn bulkOf(k: wf.FoeKind) Bulk {
         .bone_mimic => .{ .tall = 1.06, .girth = 0.55 },
         .mastodon => .{ .tall = 2.35, .girth = 1.15 },
         .corrupt_ent => .{ .tall = 4.78, .girth = 0.95 },
+        .slime => .{ .tall = 0.78, .girth = 0.42 },
     };
 }
 
@@ -2745,20 +2748,27 @@ pub const Ground = struct {
     }
 };
 
-/// A BODY CALLED ONTO THE FIELD MID-FIGHT — into a gone slot first, else appended, and the cap is the map's.
-pub fn summonInto(comptime T: type, band: []T, n: *usize, kind: wf.FoeKind, body: T) void {
-    var b = body;
-    armStats(&b, kind);
-    b.leash.call();
+/// INTO A GONE SLOT FIRST, ELSE APPENDED, AND THE CAP IS THE MAP'S — the slot arithmetic ALONE, because what goes
+/// with it is not the same everywhere: a line that derives its own bar must NOT arm `foestat`, a laid SAC has no
+/// stats and no leash at all, and a hatched broodling is deliberately not roused.
+pub fn seatInto(comptime T: type, band: []T, n: *usize, body: T) void {
     for (band[0..n.*]) |*s| {
         if (s.gone) {
-            s.* = b;
+            s.* = body;
             return;
         }
     }
     if (n.* >= band.len) return;
-    band[n.*] = b;
+    band[n.*] = body;
     n.* += 1;
+}
+
+/// A BODY CALLED ONTO THE FIELD MID-FIGHT — armed off its kind and roused, then seated.
+pub fn summonInto(comptime T: type, band: []T, n: *usize, kind: wf.FoeKind, body: T) void {
+    var b = body;
+    armStats(&b, kind);
+    b.leash.call();
+    seatInto(T, band, n, b);
 }
 
 pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want: wf.FoeKind) void {

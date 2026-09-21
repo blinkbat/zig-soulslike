@@ -130,6 +130,7 @@ contents change together is fine.
 | `foes/wolf.zig` | first SPIRIT, what the BELL calls. NOT a foe; first QUADRUPED, 27 bones |
 | `foes/frog.zig` · `fenlurker.zig` | the two waterfaring bodies — sunk, the lurker is unreachable; the counter is DRY LAND, and a 4.96 m TONGUE is what closed the free water in between |
 | `foes/rooted.zig` · `slumberbloom.zig` | the FIXTURES — never move; the bloom has no blow at all and is the only SLEEP source |
+| `foes/slime.zig` | THE ONE THING THAT DIVIDES — halves at half its own bar, twice; a telescoping protrusion that STUPEFIES |
 | `foes/fungaldeer.zig` · `mastodon.zig` · `rotgorger.zig` | the quadrupeds — flower is ARTILLERY · elephant gaits only, 2.35 m withers · EATS THE DEAD, kin included |
 | `foes/skitterer.zig` · `ancientpriest.zig` | walks ON ITS RIBS, shy of flame · never melees, claws a skitterer out of bare earth |
 | `foes/hollow.zig` · `owlbear.zig` · `mimic.zig` | second lock point (a 20 HP rider) · FIRST CONSTRUCT, stone until DARK · a CHEST until pressed or hit |
@@ -617,6 +618,14 @@ What transfers:
   neither shot nor named in `STAGE_UNSHOT` with a reason.
 - **A RETRIGGER, NOT A LOOP** (`WHINE_EVERY`, `HUM_EVERY`) — raylib cannot loop a synthesized take, so cut a hair
   LONGER than its own period; gapped, it chatters and reads as a helicopter.
+- **A BODY THAT DIVIDES DERIVES ITS CHILDREN'S BAR FROM ITS OWN, NEVER FROM A TABLE** (`slime.zig`) — `foestat.arm`
+  records whatever pools a body carries as the KIND's authored ones, so a gen-2 child routed through
+  `foe.summonInto` would rewrite the line's own HP. The halves are seated by the GROUP (`Mire.seat`) and
+  `childMax` reads the parent, which is also what carries a bench multiplier and a map's `scale=` down the line.
+  **ONE BLOW IS ONE SPLIT** however far under the threshold it drove the bar — the `splitting` state is what
+  refuses a second — and **A CHILD IS BORN FULL AT ITS OWN SMALLER MAX**, which is the whole of why a split cannot
+  cascade inside one frame. **THE GROUP IS WALKED BY INDEX**, because a slice taken once is the array as it was
+  BEFORE the split and the children would stand on the field a frame before anything ticked them.
 
 ## Combat
 
@@ -708,6 +717,14 @@ as L1 is, and it asks NOTHING about whether the guard is up. On the mouse the tw
   while the attack continues unchanged, `setParry` preserves it across shield stamps, and losing shield, facing,
   reach or attack cancels it. Swept weapons resolve after posing and before damage; others use `toImpact`.
   `Parry.window` includes the impact-crossing frame so 30 Hz cannot skip a catch.
+- **A SWEPT WEAPON DELIVERS ITS CATCH OFF ITS OWN GEOMETRY, NEVER OFF `toImpact` CROSSING ZERO** — hand the sweep in
+  as `foe.caught`'s `touching` (`warrior`, `ogre`, `knight`, `kobold`, `delver`, `skitterer`, `archer`, `fungalduo`,
+  `rooted`, and now `fenlurker` and `slime`). A clock solved for the tip reaching his CENTRE arrives after a bill that
+  lands the moment the edge crosses his HIDE, `heroLatch` shuts the window on the frame in between, and the move is
+  then UNCATCHABLE with nothing on screen to say so: twelve of twelve stands for the slime's lash, eight of nine for
+  the lurker's tongue, against a shield held up through the whole stroke. **AND THE GRIP COMES OFF THE GAP IN THE
+  SOLVE**, or the clock is only right at the far edge of the band. Exempt: a swept stroke GATED at the same impact
+  share the clock reads (`brood`'s bite, at `BITE_SNAP * 0.18`) — there the first frame it can bill IS the clock's zero.
 - **THE CREATURE READS THE SHIELD, IT NEVER REACHES FOR IT** — each MOVE answers for its own frames and reach at
   its own `parryable`. Adding one is a `parry` field, a `toImpact`, a `parryable` and the group's
   `setParry`/`anyParried`. `parryBeat` fires ONCE a frame for the whole field.

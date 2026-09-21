@@ -66,6 +66,7 @@ pub const Icon = enum {
     bone_mimic,
     mastodon,
     corrupt_ent,
+    slime,
     wanderer,
     merchant,
     smith,
@@ -586,6 +587,14 @@ const G = struct {
                 g.vbar(0, -0.04, 0.30, 0.07, cut);
                 g.disc(-0.13, -0.12, 0.05, cut);
                 g.disc(0.13, -0.12, 0.05, cut);
+            },
+            .slime => {
+                g.disc(0, 0.06, 0.46, col);
+                g.hbar(0, 0.46, 0.92, 0.10, col);
+                g.bar(0.30, 0.02, 0.66, -0.14, 0.09, col);
+                g.disc(0.70, -0.16, 0.10, col);
+                g.disc(-0.10, 0.04, 0.15, cut);
+                g.disc(0.16, 0.22, 0.07, cut);
             },
             .druidess => {
                 g.trap(0, 0.14, 0.40, 0.62, 0.52, col);

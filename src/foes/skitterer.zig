@@ -268,7 +268,7 @@ pub const Skitterer = struct {
             .rest = restPose(),
         };
         s.fxRng = foe.fxStream(seed, 44851.0, 0x5C17);
-        s.phase = wolf.wrap01(seed * 7.31);
+        s.phase = mathx.wrap01(seed * 7.31);
         s.pose();
         s.tipWas = s.tipSeg();
         return s;
@@ -447,7 +447,7 @@ pub const Skitterer = struct {
             self.faceToward(hero, dt);
             self.speed = mathx.approach(self.speed, SHY_SPEED, ACCEL * dt);
             const back = foe.shyStep(self, dt, bounds, self.speed);
-            self.phase = wolf.wrap01(self.phase + back / (STRIDE * self.scale));
+            self.phase = mathx.wrap01(self.phase + back / (STRIDE * self.scale));
             self.state = if (back > 0) .move else .idle;
         } else if (gap > stop) {
             self.faceToward(self.nav.aim(self.pos, want), dt);
@@ -455,7 +455,7 @@ pub const Skitterer = struct {
             self.speed = mathx.approach(self.speed, wantSpeed, ACCEL * dt);
             const step = self.speed * dt;
             mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), step, bounds);
-            self.phase = wolf.wrap01(self.phase + step / (STRIDE * self.scale));
+            self.phase = mathx.wrap01(self.phase + step / (STRIDE * self.scale));
             self.state = .move;
         } else {
             self.faceToward(want, dt);
@@ -577,7 +577,7 @@ pub const Skitterer = struct {
         for (0..LEGS) |i| {
             const side = ribSide(i);
             const p = ribPair(i);
-            const ph = wolf.wrap01(self.phase +
+            const ph = mathx.wrap01(self.phase +
                 RIB_LAG * @as(f32, @floatFromInt(p)) +
                 (if (side < 0) RIB_SIDE_LAG else 0));
             const down = wolf.planted(ph, g);
@@ -904,7 +904,7 @@ test "THE WAVE IS METACHRONAL — most of the six are always down, and never all
     while (p < 1.0) : (p += 1.0 / 120.0) {
         var down: usize = 0;
         for (0..LEGS) |i| {
-            const ph = wolf.wrap01(p + RIB_LAG * @as(f32, @floatFromInt(ribPair(i))) + (if (ribSide(i) < 0) RIB_SIDE_LAG else 0));
+            const ph = mathx.wrap01(p + RIB_LAG * @as(f32, @floatFromInt(ribPair(i))) + (if (ribSide(i) < 0) RIB_SIDE_LAG else 0));
             if (wolf.planted(ph, g)) down += 1;
         }
         minDown = @min(minDown, down);

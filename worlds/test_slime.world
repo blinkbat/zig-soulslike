@@ -1,0 +1,21 @@
+version: 1
+name: Slime Test
+half: 70.0
+runway: -6.00 -26.00 6.00 -14.00
+start: 0.00 4.00 180.0
+
+zone: plain -400.0 -400.0 400.0 400.0 0.380 grasstall,patch,tuft,clover,moss,nettles
+clear: 0.0 0.0 36.0
+
+at: bonfire -2 -24 0 1
+
+# ONE AT THE SHIPPED SCALE, alone, so a whole line can be walked from gen 0 to the four leaves without another body in it.
+foe: slime 0.00 8.00 180.0 1.00 0.31
+
+# THE BAND SWEEP the choose-vs-bill seam is checked against — its scale moves at RUNTIME, so LO and HI both have to reach.
+foe: slime -20.00 20.00 150.0 0.50 0.62
+foe: slime 20.00 20.00 210.0 2.00 0.17
+
+# A PAIR, which is what the split is actually judged on: two lines dividing at once is the crowd the protrusion exists for.
+foe: slime -7.00 30.00 180.0 1.00 0.44
+foe: slime 7.00 30.00 180.0 1.00 0.88

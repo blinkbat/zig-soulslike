@@ -418,6 +418,7 @@ const FOE_TIPS = [NFOE_KIND]FoeTip{
     .{ .kind = .bone_mimic, .tip = "A chest, glowing BLUE, until you open it: then a bone stalk on small legs with the box for a head. Lunging bite, a full-circle head swing. Dangerous" },
     .{ .kind = .mastodon, .tip = "LARGE beast, horns over head and shoulders. Headbutt and bite up close, a CHARGE from a distance, a jump-lunge with a long recovery, and a tail swipe that turns him if you get behind" },
     .{ .kind = .corrupt_ent, .tip = "The BIGGEST thing that walks. Wide bough sweeps that answer either side, and from range it shakes its crown and rains EXPLODING ACORNS where you stand. Burns badly" },
+    .{ .kind = .slime, .tip = "DIVIDES IN TWO at half its bar, twice, each half smaller. The protrusion STUPEFIES - it takes your feet" },
 };
 
 const foeTips = blk: {
@@ -498,6 +499,7 @@ const unitIcons = [_]ui.Icon{
     .bone_mimic,
     .mastodon,
     .corrupt_ent,
+    .slime,
     .wanderer,
     .merchant,
     .smith,
@@ -753,6 +755,7 @@ const UnitBrush = enum {
     bone_mimic,
     mastodon,
     corrupt_ent,
+    slime,
     wanderer,
     merchant,
     smith,
@@ -4636,6 +4639,7 @@ fn foeSwatch(k: wf.FoeKind) rl.Color {
         .bone_mimic => ui.col(120, 160, 230, 255),
         .mastodon => ui.col(132, 112, 92, 255),
         .corrupt_ent => ui.col(108, 128, 62, 255),
+        .slime => ui.col(64, 132, 84, 255),
         .blinkbat => ui.col(170, 108, 176, 255),
         .fungal_swordsman => ui.col(196, 176, 132, 255),
         .fungal_magus => ui.col(112, 140, 96, 255),

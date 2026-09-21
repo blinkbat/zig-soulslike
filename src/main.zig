@@ -608,6 +608,7 @@ test {
     _ = @import("foes/mimic.zig");
     _ = @import("foes/mastodon.zig");
     _ = @import("foes/ent.zig");
+    _ = @import("foes/slime.zig");
     _ = @import("core/collision.zig");
     _ = @import("gfx/gfx.zig");
     _ = @import("world/daynight.zig");

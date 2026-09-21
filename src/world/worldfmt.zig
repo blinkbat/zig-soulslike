@@ -443,7 +443,7 @@ pub const Arena = struct {
 };
 
 /// APPEND-ONLY in spirit, like `gfx.Mat`: the editor's unit brushes are pinned to this enum's ORDER at comptime, and each `roleOf` reads its own entries as a CONTIGUOUS RUN off the first of them.
-pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, fungal_deer, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow, mourner, slumber_bloom, cinder_wake, rotgorger, birchwight, salt_husk, fish_spearman, fish_netter, fish_shaman, blinkbat, fungal_swordsman, fungal_magus, owlbear, druidess, bone_mimic, mastodon, corrupt_ent };
+pub const FoeKind = enum(u8) { toad, archer, ogre, berserker, priest, slinger, brood_mother, broodling, brood_sac, shieldman, greatsword, shade, leechfly, rooted, shroom, bone_knight, delver, necromancer, fungal_deer, mushroom_mage, fen_lurker, spore_golem, bone_skitterer, ancient_priest, tolling_hollow, mourner, slumber_bloom, cinder_wake, rotgorger, birchwight, salt_husk, fish_spearman, fish_netter, fish_shaman, blinkbat, fungal_swordsman, fungal_magus, owlbear, druidess, bone_mimic, mastodon, corrupt_ent, slime };
 
 pub const NFOE = @typeInfo(FoeKind).@"enum".fields.len;
 
@@ -491,6 +491,7 @@ pub fn foeName(k: FoeKind) [:0]const u8 {
         .bone_mimic => "Bone Mimic",
         .mastodon => "Mastodon",
         .corrupt_ent => "Corrupt Ent",
+        .slime => "Slime",
     };
 }
 
@@ -524,6 +525,7 @@ pub fn foeWhen(k: FoeKind) FoeWhen {
         .slumber_bloom, .cinder_wake, .rotgorger, .birchwight, .salt_husk => .any,
         .fish_spearman, .fish_netter, .fish_shaman => .any,
         .blinkbat, .fungal_swordsman, .fungal_magus, .owlbear, .druidess, .bone_mimic, .mastodon, .corrupt_ent => .any,
+        .slime => .any,
     };
 }
 

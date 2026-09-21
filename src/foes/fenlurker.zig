@@ -257,6 +257,11 @@ pub const Lurker = struct {
     ext: f32 = 0,
     extL: f32 = 0,
     aimD: f32 = 0,
+    /// ONE FRAME: whether the tongue's own sweep crossed the shield. **A SWEPT WEAPON DELIVERS ITS CATCH OFF THE
+    /// GEOMETRY, NEVER OFF `toImpact` CROSSING ZERO** — solved for where he stands the clock still lands ~0.02 s
+    /// behind the frame `tryTongue` bills at, and a shield held through the whole stroke ate the tongue and only
+    /// then deflected it. The skull is exempt: that one bills at its own `LASH_IMPACT_K`, which is what the clock says.
+    onGuard: bool = false,
     pull: f32 = 0,
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
@@ -399,6 +404,7 @@ pub const Lurker = struct {
         self.lashed = false;
         self.gaped = false;
         self.spat = false;
+        self.onGuard = false;
         self.yelped = false;
         self.sank = false;
         self.parried = false;
@@ -438,7 +444,7 @@ pub const Lurker = struct {
 
     fn takeParry(self: *Lurker) void {
         const reach = self.parryable() orelse self.parry.reach() orelse return;
-        if (!foe.caught(self, reach, self.toImpact(), null)) return;
+        if (!foe.caught(self, reach, self.toImpact(), if (self.tonguing()) self.onGuard else null)) return;
         self.heroLatch = true;
         self.splash(foe.markOn(self.xf[if (self.tonguing()) TONGUE else HEAD], mathx.zero3), 8);
         self.enterStun(foe.parryBroke(self));
@@ -537,6 +543,7 @@ pub const Lurker = struct {
                 }
                 self.settleAndPose(dt);
                 self.tryTongue(was, hero);
+                self.onGuard = self.tongueSwept(was, self.parry.at);
                 return;
             },
                         // The reel does not bill: a shaft that took him on the way home would be the same blow twice off one commitment.
@@ -637,16 +644,20 @@ pub const Lurker = struct {
         _ = foe.billFront(self, hero, lashBand(self.scale), LASH_FRONT_DOT, LASH_HIT);
     }
 
-        /// Swept segment, so it bills where the edge crosses him — and the segment is the WHOLE shaft, jaw to tip, not the pad.
-    fn tryTongue(self: *Lurker, was: [TSEGS + 1]rl.Vector3, hero: rl.Vector3) void {
-        if (self.heroLatch) return;
+    /// WHETHER THE SHAFT CROSSED THAT POINT THIS FRAME — the ONE geometry the bill and the catch both ask, so
+    /// neither can land a frame ahead of the other. The segment is the WHOLE shaft, jaw to tip, not the pad.
+    fn tongueSwept(self: *const Lurker, was: [TSEGS + 1]rl.Vector3, at: rl.Vector3) bool {
         const now = self.tongueJoints();
         const r = tongueGrip(self.scale);
-        var caught = false;
         for (0..TSEGS) |k| {
-            if (foe.weaponReaches(.{ was[k], was[k + 1] }, .{ now[k], now[k + 1] }, hero, r)) caught = true;
+            if (foe.weaponReaches(.{ was[k], was[k + 1] }, .{ now[k], now[k + 1] }, at, r)) return true;
         }
-        if (!caught) return;
+        return false;
+    }
+
+    fn tryTongue(self: *Lurker, was: [TSEGS + 1]rl.Vector3, hero: rl.Vector3) void {
+        if (self.heroLatch) return;
+        if (!self.tongueSwept(was, hero)) return;
         foe.bill(self, TONGUE_HIT);
         self.pull = TONGUE_PULL * self.scale;
         self.splash(self.tipPoint(), 7);
@@ -1622,4 +1633,56 @@ test "THE NECK IS A WHIP, NOT A HINGE — the tip carries more of the stroke tha
     try std.testing.expect(SEG_BEND_HI > SEG_BEND_LO * 2.0);
     try std.testing.expect(HEAD_BEND > SEG_BEND_HI);
     try std.testing.expect(LAG_2 < LAG_1);
+}
+
+test "THE SWEEP DELIVERS THE CATCH — a shield held through the tongue may not eat it first" {
+    const dt: f32 = 1.0 / 120.0;
+    var stands: usize = 0;
+    var missed: usize = 0;
+    var eaten: usize = 0;
+    var worst: f32 = 0;
+    for ([_]f32{ wf.FOE_SCALE_LO, 1.0, wf.FOE_SCALE_HI }) |scale| {
+        const near = lashBand(scale) + 0.05;
+        // THE SENSE RING IS THE OUTER BOUND, NOT THE BAND: at x2 the tongue outruns what the creature can notice him at.
+        const far = @min(tongueBand(scale) - 0.02, AGGRO_R - 0.05);
+        for ([_]f32{ 0.0, 0.35, 0.7, 1.0 }) |u| {
+            const stand = near + (far - near) * u;
+            if (stand <= near) continue;
+            stands += 1;
+            const hero = mathx.ground(0, stand);
+
+            // WHAT THE CLOCK PROMISED, read on the frame the shaft actually crossed him.
+            var a = Lurker.spawn(mathx.zero3, 0, scale, 0.3);
+            a.wade = .{ .here = 1.0, .quarry = 1.0 };
+            a.restT = 0;
+            var g: usize = 0;
+            while (g < 4000) : (g += 1) {
+                a.parry = .{ .at = hero, .facing = std.math.pi };
+                const before = a.toImpact();
+                _ = a.update(dt, hero, 400.0, .{});
+                if (a.heroHit != null) {
+                    worst = @max(worst, @abs(before orelse 0));
+                    break;
+                }
+            }
+
+            var b = Lurker.spawn(mathx.zero3, 0, scale, 0.3);
+            b.wade = .{ .here = 1.0, .quarry = 1.0 };
+            b.restT = 0;
+            var billed = false;
+            g = 0;
+            while (g < 4000) : (g += 1) {
+                b.parry = .{ .live = true, .active = true, .at = hero, .facing = std.math.pi };
+                _ = b.update(dt, hero, 400.0, .{});
+                if (b.heroHit != null) billed = true;
+                if (b.parried) break;
+            }
+            if (!b.parried) missed += 1;
+            if (billed) eaten += 1;
+            if (!b.parried or billed) std.debug.print("\n  x{d:.2} at {d:.2} m: caught={}, billed anyway={}\n", .{ scale, stand, b.parried, billed });
+        }
+    }
+    std.debug.print("\n  fen lurker: {d} stands, the impact clock runs {d:.3} s behind the frame the tongue bills, {d} uncaught, {d} eaten first\n", .{ stands, worst, missed, eaten });
+    try std.testing.expectEqual(@as(usize, 0), missed);
+    try std.testing.expectEqual(@as(usize, 0), eaten);
 }

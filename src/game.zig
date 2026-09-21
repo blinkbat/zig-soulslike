@@ -55,6 +55,7 @@ const druidmod = @import("foes/druidess.zig");
 const mimicmod = @import("foes/mimic.zig");
 const mastodonmod = @import("foes/mastodon.zig");
 const entmod = @import("foes/ent.zig");
+const slimemod = @import("foes/slime.zig");
 const leechmod = @import("foes/leechfly.zig");
 const shademod = @import("foes/shade.zig");
 const chestmod = @import("play/chest.zig");
@@ -76,6 +77,14 @@ const sfx = @import("core/audio.zig");
 
 /// THIS FILE, for the tests that read their own SOURCE. A stale copy does not fail — `readForTest` turns a missing path into `error.SkipZigTest`.
 const SRC = "src/game.zig";
+/// The build script, for the one test that reads a figure back out of it.
+const BUILD_SRC = "build.zig";
+
+/// `build.zig`'s `STACK_SIZE`, said again where a TEST can read it. The two are not one symbol because `build.zig`
+/// is its own compilation unit and cannot import this file, so the test below READS IT OFF THE BUILD SCRIPT. The slab
+/// total alone does not hold them: lowered in `build.zig` and left here, every slab still fits the stale figure and
+/// the exe overflows at BOOT with the suite green — which is the split this constant exists to close.
+pub const STACK_BYTES: usize = 256 * 1024 * 1024;
 
 const v3 = mathx.v3;
 const rgba = mathx.rgba;
@@ -246,6 +255,7 @@ pub const Game = struct {
     brood: broodmod.Brood,
     muster: warriormod.Muster,
     grove: rootedmod.Grove,
+    mire: slimemod.Mire,
     cluster: shroommod.Cluster,
     warrens: delvermod.Warrens,
     rite: necromod.Rite,
@@ -901,6 +911,7 @@ pub const FOE_GROUPS = [_]FoeGroup{
     .{ .field = "hoard", .kind = .bone_mimic, .aggro = aggroRing(mimicmod) },
     .{ .field = "drove", .kind = .mastodon, .aggro = aggroRing(mastodonmod), .vsHero = false, .vs = &.{ "warren", "line", "band" }, .big = .launch },
     .{ .field = "copse", .kind = .corrupt_ent, .aggro = aggroRing(entmod), .big = .{ .stance = blowAt(entmod, "SWIPE_HIT", "stance") } },
+    .{ .field = "mire", .kind = .slime, .aggro = aggroRing(slimemod) },
     .{ .field = "vigil", .kind = .bone_knight, .aggro = aggroRing(knightmod), .vsHero = false, .vs = &.{ "line", "muster" }, .big = .{ .stance = blowAt(knightmod, "CHARGE_HIT", "stance") } },
     .{ .field = "vanguard", .kind = .fungal_swordsman, .aggro = aggroRing(duomod), .vs = &.{ "cluster", "ring" }, .big = .launch },
     .{ .field = "conclave", .kind = .fungal_magus, .aggro = aggroRing(duomod), .vs = &.{ "cluster", "ring" }, .big = .launch },
@@ -1426,7 +1437,27 @@ test "WHAT THE FRAME COSTS — the group slabs, the biggest bodies, and one Game
         std.debug.print("  {s:<9} {d:>7.0} KB slab, {d:>6} B a body\n", .{ gr.field, @as(f64, @floatFromInt(@sizeOf(T))) / KB, @sizeOf(M) });
     }
     std.debug.print("  ---- {d:.1} MB of foe slabs, {d:.1} MB for the whole Game\n", .{ total / KB / KB, @as(f64, @floatFromInt(@sizeOf(Game))) / KB / KB });
+    // AND THE SLAB TOTAL IS WHAT THE STACK HAS TO HOLD: `Game` is `alloc.create`d, but `init` takes each group's
+    // `init` RETURN by value before it lands, so every slab is live on the stack at once. Printed and not asserted,
+    // the 35th group overflowed the exe at BOOT while the whole suite still went green — the worst possible split.
+    try std.testing.expect(total <= @as(f64, @floatFromInt(STACK_BYTES)));
+    std.debug.print("  ---- {d:.1} MB of stack left for it over the slabs\n", .{(@as(f64, @floatFromInt(STACK_BYTES)) - total) / KB / KB});
     try std.testing.expect(@sizeOf(Game) < 512 * 1024 * 1024);
+}
+
+test "THE STACK THE SLABS ARE MEASURED AGAINST IS `build.zig`'S OWN — said twice, so it is READ BACK" {
+    const src = try worldfmt.readForTest(std.testing.allocator, BUILD_SRC, worldfmt.SRC_CAP);
+    defer std.testing.allocator.free(src);
+    const head = "const STACK_SIZE: usize = ";
+    const at = std.mem.indexOf(u8, src, head) orelse return error.TestUnexpectedResult;
+    const tail = src[at + head.len ..];
+    const end = std.mem.indexOfScalar(u8, tail, ';') orelse return error.TestUnexpectedResult;
+    // A PRODUCT OF LITERALS is the only form it has ever been written in; anything else and this parse has to be re-read.
+    var got: usize = 1;
+    var it = std.mem.tokenizeScalar(u8, tail[0..end], '*');
+    while (it.next()) |tok| got *= try std.fmt.parseInt(usize, std.mem.trim(u8, tok, " \t"), 10);
+    try std.testing.expectEqual(STACK_BYTES, got);
+    std.debug.print("\n  exe and test binary are built with {d} MB of stack, and `game.STACK_BYTES` says the same\n", .{got / 1024 / 1024});
 }
 
 test "A FIGHT IS ON while something is roused OR simply near, and is over when the last body stops" {
@@ -6363,6 +6394,7 @@ pub fn run(mode: Mode) void {
             applyYank(g, heroTakes(g, b, b.hit.heavy(), true));
         }
         _ = billGroup(g, "cluster", dt, bladeNow);
+        _ = billGroup(g, "mire", dt, bladeNow);
         _ = billGroup(g, "warrens", dt, bladeNow);
         for (g.warrens.live()) |*d| {
             if (d.threw) {

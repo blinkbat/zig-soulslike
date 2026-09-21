@@ -380,7 +380,7 @@ pub const Gorger = struct {
         }
 
         self.speedS = approach(self.speedS, self.speed, GAIT_BLEND * dt);
-        if (moved > 0) self.phase = wolf.wrap01(self.phase + moved / (wolf.strideFor(self.speed) * self.scale));
+        if (moved > 0) self.phase = mathx.wrap01(self.phase + moved / (wolf.strideFor(self.speed) * self.scale));
         self.emitSpores(dt);
         if (self.state == .bite and self.t >= BITE_WIND and self.t - dt < BITE_WIND) sfx.world(.toad_chomp, self.pos);
         self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);

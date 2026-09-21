@@ -12,6 +12,7 @@ const frogmod = @import("foes/frog.zig");
 const archermod = @import("foes/archer.zig");
 const ogremod = @import("foes/ogre.zig");
 const shroommod = @import("foes/shroom.zig");
+const slimemod = @import("foes/slime.zig");
 const duomod = @import("foes/fungalduo.zig");
 const knightmod = @import("foes/knight.zig");
 const delvermod = @import("foes/delver.zig");
@@ -2437,6 +2438,7 @@ fn runUnitStudies(g: *Game, directOnly: bool) bool {
         .{ .tag = "shroom_study", .run = shroomStudyShots },
         .{ .tag = "delver_study", .run = delverStudyShots },
         .{ .tag = "necro_study", .run = necroStudyShots },
+        .{ .tag = "slime_study", .run = slimeStudyShots },
     };
     var ran = false;
     for (studies) |study| {
@@ -5786,4 +5788,74 @@ pub fn runArtShots(g: *Game) void {
         hudmod.dayDial(9.5);
         snap(DIR_ART ++ "/04_spells_ails_pads.png");
     }
+}
+
+/// THE SPLIT IS THE WHOLE POINT OF THIS BODY AND ONE GATHER FRAME CANNOT SHOW IT — `runMapShots` asks for
+/// `stageGather(1.0)` and nothing else, so the pinch, the spread and the two halves parting were never photographed.
+/// Driven through the REAL group update, which is also the only way the CHILDREN appear at all: the parent reports
+/// and `Mire` seats them, so a study posing one body by hand would shoot the split and never the result.
+fn slimeStudyShots(g: *Game) void {
+    const rt = rl.loadRenderTexture(game.SCREEN_W, game.SCREEN_H) catch @panic("slime plate target");
+    defer rl.unloadRenderTexture(rt);
+    for ([_]f32{ 0, 90, 180, 270 }, 0..) |turn, side| {
+        const yaw = mathx.radians(LIT_YAW + turn);
+        // 0: the whole division, gen 0 to two halves. 1: the lash. 2: a leaf, which may not divide at all.
+        for (0..3) |mode| {
+            var mire = slimemod.Mire{ .model = g.mire.model };
+            mire.n = 1;
+            mire.slimes[0] = if (mode == 2)
+                slimemod.Slime.spawnAt(mathx.zero3, yaw, 1, 0.3, slimemod.GENS - 1)
+            else
+                slimemod.Slime.spawn(mathx.zero3, yaw, 1, 0.3);
+            const quarry = mathx.scaleV(mathx.headingDir(yaw), if (mode == 1) @as(f32, 1.8) else 90);
+            if (mode != 1) mire.slimes[0].debugSplit();
+            const stamps = [_]f32{ 0, 0.10, 0.22, 0.34, 0.46, 0.58, 0.66, 0.9, 1.3, 1.9 };
+            var clock: f32 = 0;
+            for (stamps, 0..) |at, frame| {
+                while (clock + STAMP_EPS < at) {
+                    const dt = @min(SHOT_DT, at - clock);
+                    _ = mire.update(dt, quarry, game.PLAY_HALF, .{});
+                    clock += dt;
+                }
+                var tag: [80]u8 = undefined;
+                const name = std.fmt.bufPrint(&tag, "slime_study_{d}_{d}_{d}", .{ side, mode, frame }) catch unreachable;
+                // THE WHOLE BED, not one body — after the split there are TWO, and a frame of the parent alone is the
+                // frame that hides what happened. Aimed at the origin the halves part either side of.
+                slimePlate(g, rt, &mire, name);
+            }
+        }
+    }
+}
+
+fn slimePlate(g: *Game, rt: rl.RenderTexture2D, mire: *slimemod.Mire, tag: []const u8) void {
+    var name: [128]u8 = undefined;
+    const path = std.fmt.bufPrintZ(&name, DIR ++ "/{s}.png", .{tag}) catch unreachable;
+    if (!stageOn(path)) return;
+    const Plate = struct {
+        mire: *slimemod.Mire,
+        scene: *gfx.Scene,
+        fn draw(ctx: *const anyopaque) void {
+            const p: *const @This() = @ptrCast(@alignCast(ctx));
+            rl.drawGrid(32, 0.25);
+            p.mire.draw(p.scene);
+        }
+    };
+    const p = Plate{ .mire = mire, .scene = &g.scene };
+    hudmod.renderIntoTarget(rt, .{
+        .scene = &g.scene,
+        .focus = v3(0, 0.45, 0),
+        .yaw = mathx.radians(LIT_YAW),
+        .pitch = 0.10,
+        .dist = 3.6,
+        .fov = camera.FOVY,
+        .ctx = &p,
+        .drawFn = Plate.draw,
+    });
+    rl.beginDrawing();
+    rl.clearBackground(rl.Color.black);
+    rl.drawTextureRec(rt.texture, .{ .x = 0, .y = 0, .width = game.SCREEN_W, .height = -game.SCREEN_H }, .{ .x = 0, .y = 0 }, rl.Color.white);
+    var label: [160]u8 = undefined;
+    const head = &mire.slimes[0];
+    hudmod.text(std.fmt.bufPrintZ(&label, "{s}   {s}   gen {d}   bodies {d}   {d:.3}s", .{ tag, @tagName(head.state), head.gen, mire.aliveCount(), head.t }) catch unreachable, 24, 24, hudmod.BODY, rl.Color.white);
+    snap(path);
 }

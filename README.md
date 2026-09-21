@@ -43,7 +43,7 @@ each), bow, wand, torch. A faint, steady body light reaches 3 m; the carried tor
 L2 parry with a 0.16 s window, four PoE2 resistances plus an armour curve, and ten status meters all built the way
 poison is — poison, burning, chill, stun, bleed, sleep, confusion, charm, berserk, stupefy.
 
-**Foes.** 42 kinds in 34 groups, filed by the ground they belong to, plus the spirit wolf that fights on your
+**Foes.** 43 kinds in 35 groups, filed by the ground they belong to, plus the spirit wolf that fights on your
 side. Shared leash, sight, parry, nav-steering and dissipation contracts in `foes/foe.zig`.
 
 | region | what is out there |
@@ -53,7 +53,7 @@ side. Shared leash, sight, parry, nav-steering and dissipation contracts in `foe
 | village | kobold warband — berserker, priest, slinger |
 | forest | the Rooted, birchwight, slumber bloom, brood mother + egg sacs + broodlings, the corrupt ent, **the corrupted druidess** |
 | rock | Cyclops, delver, mastodon |
-| wetland | giant toad, fen lurker (a five-metre tongue that hauls you into the pool), fishman shoal — spearman, netter, shaman |
+| wetland | giant toad, fen lurker (a five-metre tongue that hauls you into the pool), fishman shoal — spearman, netter, shaman, the slime (halves itself, twice, and the protrusion stupefies) |
 | ash | cinder wake, salt husk |
 | bone | skeleton archer / shieldman / greatsword, bone skitterer, ancient priest, necromancer, tolling hollow, rotgorger, the bone mimic, **the Bone Knight** |
 | fungal | sporeling, mushroom mage, spore homunculus, fungal deer, **the fungal duo** |

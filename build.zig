@@ -1,7 +1,10 @@
 const std = @import("std");
 
-/// 189.0 MB of slabs measured across 34 rows; Windows commits stack lazily, so this is address space, not memory. The test binary needs the same: a `Map` is 5.8 MB and a round-trip test holds two in a frame.
-const STACK_SIZE: usize = 192 * 1024 * 1024;
+/// 193.7 MB of slabs measured across 35 rows; Windows commits stack lazily, so this is address space, not memory. The test binary needs the same: a `Map` is 5.8 MB and a round-trip test holds two in a frame.
+/// **`Game.init` MATERIALISES EACH GROUP'S `init` RETURN ON THE STACK**, so the slab total is the real ceiling and
+/// at 192 MB the 35th group overflowed at BOOT while every test still passed. `game.STACK_BYTES` is this number
+/// said again where a test can see it, and the slab test asserts against it — keep the two the same.
+const STACK_SIZE: usize = 256 * 1024 * 1024;
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});

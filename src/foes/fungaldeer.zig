@@ -662,7 +662,7 @@ pub const Deer = struct {
     fn travel(self: *Deer, dt: f32, bounds: f32) void {
         const step = self.speed * dt;
         mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), step, bounds);
-        self.phase = wolf.wrap01(self.phase + step / wolf.strideFor(self.speed));
+        self.phase = mathx.wrap01(self.phase + step / wolf.strideFor(self.speed));
     }
 
     fn tryButt(self: *Deer, hero: rl.Vector3) void {

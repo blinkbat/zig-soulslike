@@ -115,6 +115,7 @@ pub const BANK = [_]Row{
     .{ .foe = .bone_mimic, .common = .rune_arc, .odds = UNCOMMON, .rare = .fang_dirk, .chance = 0.22, .gold = .purse },
     .{ .foe = .mastodon, .common = .fire_tallow, .odds = UNCOMMON, .rare = .ashen_amulet, .chance = 0.14, .gold = .few },
     .{ .foe = .corrupt_ent, .common = .fire_tallow, .odds = UNCOMMON, .rare = .sporecrown, .chance = 0.16, .gold = .purse },
+    .{ .foe = .slime, .common = .purgeleaf, .rare = .rimewax, .chance = 0.06 },
 };
 
 pub const NFOE = wf.NFOE;

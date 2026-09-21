@@ -154,16 +154,11 @@ pub fn strideFor(speed: f32) f32 {
 
 pub fn limbPhases(p: f32, g: Gait) [4]f32 {
     return .{
-        wrap01(p),
-        wrap01(p + 0.5),
-        wrap01(p + g.lag),
-        wrap01(p + g.lag + 0.5),
+        mathx.wrap01(p),
+        mathx.wrap01(p + 0.5),
+        mathx.wrap01(p + g.lag),
+        mathx.wrap01(p + g.lag + 0.5),
     };
-}
-
-pub fn wrap01(x: f32) f32 {
-    const f = x - @floor(x);
-    return if (f < 0) f + 1.0 else f;
 }
 
 pub fn planted(phase: f32, g: Gait) bool {
@@ -652,7 +647,7 @@ pub const Wolf = struct {
             self.faceToward(self.nav.aim(self.pos, want), dt);
             const step = self.speed * dt;
             mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), step, bounds);
-            self.phase = wrap01(self.phase + step / strideFor(self.speed));
+            self.phase = mathx.wrap01(self.phase + step / strideFor(self.speed));
         } else {
             self.speed = mathx.approach(self.speed, 0, ACCEL * 2.0 * dt);
             self.state = .idle;
@@ -1017,8 +1012,8 @@ test "THE HIND FOOT LANDS IN THE FOREFOOT'S PRINT — one stride length for all 
     try std.testing.expectApproxEqAbs(pawAt(0, g, stride, W).z, pawAt(1.0 - 1e-6, g, stride, W).z, 1e-3);
 
     const ph = limbPhases(0.0, g);
-    try std.testing.expectApproxEqAbs(ph[0], wrap01(ph[3]), 1e-5);
-    try std.testing.expectApproxEqAbs(ph[1], wrap01(ph[2]), 1e-5);
+    try std.testing.expectApproxEqAbs(ph[0], mathx.wrap01(ph[3]), 1e-5);
+    try std.testing.expectApproxEqAbs(ph[1], mathx.wrap01(ph[2]), 1e-5);
 }
 
 /// The lowest of the four paw bones' origins, in world Y — what "standing on the ground" is measured off.

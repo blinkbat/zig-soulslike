@@ -2130,29 +2130,15 @@ pub const Brood = struct {
     }
 
     fn addSac(self: *Brood, at: rl.Vector3, seed: f32, scale: f32) void {
-        for (self.liveSacs()) |*s| {
-            if (s.gone) {
-                s.* = Sac.lay(at, seed, scale);
-                return;
-            }
-        }
-        if (self.nsacs >= SAC_CAP) return;
-        self.sacs[self.nsacs] = Sac.lay(at, seed, scale);
-        self.nsacs += 1;
+        foe.seatInto(Sac, &self.sacs, &self.nsacs, Sac.lay(at, seed, scale));
     }
 
+    /// NOT `summonInto`: a hatched broodling is not roused, so it meets him on its own senses like anything else
+    /// already standing on the field.
     fn addBroodling(self: *Brood, at: rl.Vector3, faceYaw: f32, seed: f32) void {
-        for (self.live()) |*s| {
-            if (s.gone) {
-                s.* = Spider.spawnAs(.broodling, at, faceYaw, 1.0, seed);
-                foe.armStats(s, .broodling);
-                return;
-            }
-        }
-        if (self.n >= CAP) return;
-        self.band[self.n] = Spider.spawnAs(.broodling, at, faceYaw, 1.0, seed);
-        foe.armStats(&self.band[self.n], .broodling);
-        self.n += 1;
+        var b = Spider.spawnAs(.broodling, at, faceYaw, 1.0, seed);
+        foe.armStats(&b, .broodling);
+        foe.seatInto(Spider, &self.band, &self.n, b);
     }
 
     pub fn update(

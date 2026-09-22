@@ -889,6 +889,48 @@ fn gridCell(box: ui.ModalBox, slot: i32) rl.Rectangle {
     );
 }
 
+const Picked = struct { hover: ?usize = null, opened: ?usize = null };
+
+/// EVERY GRID TAKES THE POINTER THE SAME WAY — hover, wheel (zoom the cell under it, else turn the page), and the drag
+/// that spins a thumbnail once it has travelled past `CLICK_SLOP`. Where the pose LIVES is the only thing the props
+/// grid and the characters grid differ on, so the caller hands in something answering `at(i) *Pose`.
+fn gridInput(st: *State, ctx: *ui.Ctx, box: ui.ModalBox, start: usize, end: usize, count: usize, pages: i32, poses: anytype) Picked {
+    var out = Picked{};
+    var i = start;
+    while (i < end) : (i += 1) {
+        if (rl.checkCollisionPointRec(ctx.mouse, gridCell(box, @intCast(i - start)))) out.hover = i;
+    }
+    if (ctx.wheel != 0) {
+        if (out.hover) |h| {
+            const p = poses.at(h);
+            p.zoom = mathx.clampF(p.zoom * (1.0 + ZOOM_RATE * ctx.wheel), MIN_ZOOM, MAX_ZOOM);
+        } else {
+            st.page = clampI(st.page + (if (ctx.wheel < 0) @as(i32, 1) else -1), 0, pages - 1);
+        }
+    }
+    if (ctx.pressed) {
+        st.grabbed = out.hover;
+        st.travel = 0;
+    }
+    if (st.grabbed) |g| {
+        if (g >= count) {
+            st.grabbed = null;
+        } else if (rl.isMouseButtonDown(.left)) {
+            const d = rl.getMouseDelta();
+            st.travel += @abs(d.x) + @abs(d.y);
+            if (st.travel > CLICK_SLOP) {
+                const p = poses.at(g);
+                p.yaw += d.x * ROT_RATE;
+                p.pitch = mathx.clampF(p.pitch - d.y * ROT_RATE, MIN_PITCH, MAX_PITCH);
+            }
+        } else {
+            if (st.travel <= CLICK_SLOP) out.opened = g;
+            st.grabbed = null;
+        }
+    }
+    return out;
+}
+
 /// HOW MANY PAGES A ROSTER FILLS — the grid's own bound, so a harness sweep walks exactly what the viewer draws instead of a round number.
 pub fn pageCount(n: usize) i32 {
     const total: i32 = @intCast(n);
@@ -954,48 +996,17 @@ fn gallery(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) bool {
     const start: usize = @intCast(st.page * perPage());
     const end = @min(start + @as(usize, @intCast(perPage())), list.len);
 
-    var hover: ?usize = null;
-    var hoverRect: rl.Rectangle = undefined;
+    const picked = gridInput(st, ctx, box, start, end, list.len, pages, struct {
+        st: *State,
+        list: []const Kind,
+        fn at(self: @This(), i: usize) *Pose {
+            return self.st.poseOf(self.list[i]);
+        }
+    }{ .st = st, .list = list });
+    const hover = picked.hover;
+    if (picked.opened) |g| st.open = list[g];
+
     var i = start;
-    while (i < end) : (i += 1) {
-        const r = gridCell(box, @intCast(i - start));
-        if (rl.checkCollisionPointRec(ctx.mouse, r)) {
-            hover = i;
-            hoverRect = r;
-        }
-    }
-
-    if (ctx.wheel != 0) {
-        if (hover) |h| {
-            const p = st.poseOf(list[h]);
-            p.zoom = mathx.clampF(p.zoom * (1.0 + ZOOM_RATE * ctx.wheel), MIN_ZOOM, MAX_ZOOM);
-        } else {
-            st.page = clampI(st.page + (if (ctx.wheel < 0) @as(i32, 1) else -1), 0, pages - 1);
-        }
-    }
-
-    if (ctx.pressed) {
-        st.grabbed = hover;
-        st.travel = 0;
-    }
-    if (st.grabbed) |g| {
-        if (g >= list.len) {
-            st.grabbed = null;
-        } else if (rl.isMouseButtonDown(.left)) {
-            const d = rl.getMouseDelta();
-            st.travel += @abs(d.x) + @abs(d.y);
-            if (st.travel > CLICK_SLOP) {
-                const p = st.poseOf(list[g]);
-                p.yaw += d.x * ROT_RATE;
-                p.pitch = mathx.clampF(p.pitch - d.y * ROT_RATE, MIN_PITCH, MAX_PITCH);
-            }
-        } else {
-            if (st.travel <= CLICK_SLOP) st.open = list[g];
-            st.grabbed = null;
-        }
-    }
-
-    i = start;
     while (i < end) : (i += 1) {
         const kind = list[i];
         const r = gridCell(box, @intCast(i - start));
@@ -1127,43 +1138,17 @@ fn galleryChars(st: *State, env: *envmod.Env, scene: *gfx.Scene, ctx: *ui.Ctx) b
     const start: usize = @intCast(st.page * perPage());
     const end = @min(start + @as(usize, @intCast(perPage())), CHAR_N);
 
-    var hover: ?usize = null;
-    var i = start;
-    while (i < end) : (i += 1) {
-        const r = gridCell(box, @intCast(i - start));
-        if (rl.checkCollisionPointRec(ctx.mouse, r)) hover = i;
-    }
-    if (ctx.wheel != 0) {
-        if (hover) |h| {
-            const p = &st.charPose[h];
-            p.zoom = mathx.clampF(p.zoom * (1.0 + ZOOM_RATE * ctx.wheel), MIN_ZOOM, MAX_ZOOM);
-        } else {
-            st.page = clampI(st.page + (if (ctx.wheel < 0) @as(i32, 1) else -1), 0, pages - 1);
+    const picked = gridInput(st, ctx, box, start, end, CHAR_N, pages, struct {
+        st: *State,
+        fn at(self: @This(), i: usize) *Pose {
+            return &self.st.charPose[i];
         }
-    }
-    if (ctx.pressed) {
-        st.grabbed = hover;
-        st.travel = 0;
-    }
-    if (st.grabbed) |g| {
-        if (g >= CHAR_N) {
-            st.grabbed = null;
-        } else if (rl.isMouseButtonDown(.left)) {
-            const d = rl.getMouseDelta();
-            st.travel += @abs(d.x) + @abs(d.y);
-            if (st.travel > CLICK_SLOP) {
-                const p = &st.charPose[g];
-                p.yaw += d.x * ROT_RATE;
-                p.pitch = mathx.clampF(p.pitch - d.y * ROT_RATE, MIN_PITCH, MAX_PITCH);
-            }
-        } else {
-            if (st.travel <= CLICK_SLOP) st.openChar = g;
-            st.grabbed = null;
-        }
-    }
+    }{ .st = st });
+    const hover = picked.hover;
+    if (picked.opened) |g| st.openChar = g;
 
     st.charLive = null;
-    i = start;
+    var i = start;
     while (i < end) : (i += 1) {
         const who = charAt(i);
         const r = gridCell(box, @intCast(i - start));

@@ -425,7 +425,8 @@ fn armSet(r: usize, c: usize, v: f32) void {
         .negate => g.equip.arm.negate = v,
         .arc => g.equip.arm.arc = v,
         .walk => g.equip.arm.walk = v,
-        .venom, .price => g.equip.arm.venom = v,
+        .venom => g.equip.arm.venom = v,
+        .price => {},
     }
 }
 

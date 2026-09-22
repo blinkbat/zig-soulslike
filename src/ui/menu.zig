@@ -53,18 +53,19 @@ comptime {
 const OPT_CLOSE = OPT_MIX.len;
 const OPT_COUNT = OPT_CLOSE + 1;
 
+// A ROW IS NUMBERED OFF THE ONE ABOVE IT (`RET_*`'s idiom, two blocks down), so inserting one renumbers the rest.
 const DBG_RETRO = 0;
-const DBG_STATS = 1;
-const DBG_WIREFRAME = 2;
-const DBG_HITBOX = 3;
-const DBG_HOUR = 4;
-const DBG_DAYRATE = 5;
-const DBG_TIMESCALE = 6;
+const DBG_STATS = DBG_RETRO + 1;
+const DBG_WIREFRAME = DBG_STATS + 1;
+const DBG_HITBOX = DBG_WIREFRAME + 1;
+const DBG_HOUR = DBG_HITBOX + 1;
+const DBG_DAYRATE = DBG_HOUR + 1;
+const DBG_TIMESCALE = DBG_DAYRATE + 1;
 /// Weather arrives on a clock measured in MINUTES. Cycles dry -> gentle -> moderate -> dry (`weather.Weather.cycleForce`), as a row and not a submenu so you can watch the sky while you turn it.
-const DBG_WEATHER = 7;
-const DBG_FOG = 8;
-const DBG_BIRDS = 9;
-const DBG_CLOSE = 10;
+const DBG_WEATHER = DBG_TIMESCALE + 1;
+const DBG_FOG = DBG_WEATHER + 1;
+const DBG_BIRDS = DBG_FOG + 1;
+const DBG_CLOSE = DBG_BIRDS + 1;
 const DBG_COUNT = DBG_CLOSE + 1;
 
 const Fog = enum { auto, off, thick, soup };
@@ -96,17 +97,17 @@ const ADJ_GLIDE_DELAY: f32 = 0.35;
 const ADJ_GLIDE_RATE: f32 = 0.25;
 
 const MAIN_CONTINUE = 0;
-const MAIN_OPTIONS = 1;
-const MAIN_EDITOR = 2;
-const MAIN_DEBUG = 3;
-const MAIN_TITLE = 4;
+const MAIN_OPTIONS = MAIN_CONTINUE + 1;
+const MAIN_EDITOR = MAIN_OPTIONS + 1;
+const MAIN_DEBUG = MAIN_EDITOR + 1;
+const MAIN_TITLE = MAIN_DEBUG + 1;
 const MAIN_COUNT = MAIN_TITLE + 1;
 
 const BOOT_NEW = 0;
-const BOOT_LOAD = 1;
-const BOOT_OPTIONS = 2;
-const BOOT_EDITOR = 3;
-const BOOT_QUIT = 4;
+const BOOT_LOAD = BOOT_NEW + 1;
+const BOOT_OPTIONS = BOOT_LOAD + 1;
+const BOOT_EDITOR = BOOT_OPTIONS + 1;
+const BOOT_QUIT = BOOT_EDITOR + 1;
 const BOOT_COUNT = BOOT_QUIT + 1;
 
 const SLOT_BACK = savemod.SLOTS;

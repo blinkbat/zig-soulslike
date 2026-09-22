@@ -283,12 +283,7 @@ pub fn conform(m: *wf.Map, pr: *const Prop, span: *[4]usize) Conform {
         while (ix <= xs[1]) : (ix += 1) {
             const side = sideOf(fr, m, ix, iz, lx0, lx1, lz0, lz1, cutZ, Side);
             if (side == .out) continue;
-            const i = iz * wf.HEIGHT_N + ix;
-            const want = if (side == .high) lipB else footB;
-            if (m.height[i] != want) {
-                m.height[i] = want;
-                out.changed = true;
-            }
+            if (setPoint(m, ix, iz, if (side == .high) lipB else footB)) out.changed = true;
         }
     }
     iz = zs[0];
@@ -361,6 +356,14 @@ fn grown(sp: [4]usize) [4]usize {
     return .{ sp[0] -| 1, sp[1] -| 1, @min(sp[2] + 1, wf.HEIGHT_N - 1), @min(sp[3] + 1, wf.HEIGHT_N - 1) };
 }
 
+/// Writes the lattice point and says whether it moved — every stroke here banks its span off that answer.
+fn setPoint(m: *wf.Map, ix: usize, iz: usize, want: wf.Hgt) bool {
+    const i = iz * wf.HEIGHT_N + ix;
+    if (m.height[i] == want) return false;
+    m.height[i] = want;
+    return true;
+}
+
 /// THE FOUR CELLS A LATTICE POINT CORNERS. A cell is named by its LOW corner, so the point's own cell and the three behind it are what a height moved here can cut; `HEIGHT_N - 1` is the phantom column.
 fn markCells(m: *wf.Map, ix: usize, iz: usize, case: u8) bool {
     var changed = false;
@@ -400,11 +403,7 @@ pub fn paint(m: *wf.Map, from: [2]f32, to: [2]f32, radius: f32, target: f32, spa
                 }
             }
             if (lo > hi) continue;
-            const i = iz * wf.HEIGHT_N + ix;
-            if (m.height[i] != want) {
-                m.height[i] = want;
-                changed = true;
-            }
+            if (setPoint(m, ix, iz, want)) changed = true;
             if (markCells(m, ix, iz, wf.CLIFF_FACE)) changed = true;
         }
     }
@@ -451,12 +450,7 @@ pub fn ramp(m: *wf.Map, from: [2]f32, to: [2]f32, radius: f32, span: *[4]usize) 
         for (sp[0]..sp[2] + 1) |ix| {
             const near = mathx.segNearXZ(m.heightPoint(ix, iz), from, to);
             if (near.d > r) continue;
-            const i = iz * wf.HEIGHT_N + ix;
-            const want = wf.heightByte(mathx.lerpF(a, b, near.t));
-            if (m.height[i] != want) {
-                m.height[i] = want;
-                changed = true;
-            }
+            if (setPoint(m, ix, iz, wf.heightByte(mathx.lerpF(a, b, near.t)))) changed = true;
             if (markCells(m, ix, iz, wf.CLIFF_NONE)) changed = true;
         }
     }
@@ -525,12 +519,7 @@ pub fn sheer(m: *wf.Map, from: [2]f32, to: [2]f32, radius: f32, span: *[4]usize)
             const k = @min(@as(usize, @intFromFloat(f)), n - 2);
             const tk = f - @as(f32, @floatFromInt(k));
             const level = if (side >= 0) mathx.lerpF(hi[k], hi[k + 1], tk) else mathx.lerpF(lo[k], lo[k + 1], tk);
-            const want = wf.heightByte(mathx.clampF(level, wf.HEIGHT_MIN, wf.HEIGHT_MAX));
-            const i = iz * wf.HEIGHT_N + ix;
-            if (m.height[i] != want) {
-                m.height[i] = want;
-                changed = true;
-            }
+            if (setPoint(m, ix, iz, wf.heightByte(mathx.clampF(level, wf.HEIGHT_MIN, wf.HEIGHT_MAX)))) changed = true;
             // The WHOLE band, not just the line: a flat cell takes the flag inert, and the two ends of the cut are faces as much as its length is.
             if (markCells(m, ix, iz, wf.CLIFF_FACE)) changed = true;
         }

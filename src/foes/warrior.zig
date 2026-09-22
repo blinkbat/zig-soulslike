@@ -117,12 +117,7 @@ fn kitOf(r: Role) *const Kit {
 pub const Role = enum { shieldman, greatsword };
 
 comptime {
-    // …and a SPEC ROW PER ROLE, since `spec()` indexes it by the role's own ordinal and would walk off the end.
-    if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError("warrior: a Role with no spec row");
-    if (KIT.len != @typeInfo(Role).@"enum".fields.len) @compileError("warrior: a Role with no kit row");
-    for (KIT, 0..) |row, i| {
-        if (@intFromEnum(row.role) != i) @compileError("warrior: the " ++ @tagName(row.role) ++ " kit row is out of `Role` order");
-    }
+    foe.pinSpecOrder("warrior", Role, KIT, "kit");
     foe.pinRun("warrior", Role, .shieldman, 0);
 }
 
@@ -240,7 +235,7 @@ fn spec(r: Role) *const Spec {
 }
 
 comptime {
-    foe.pinSpecOrder("warrior", Role, SPEC);
+    foe.pinSpecOrder("warrior", Role, SPEC, "spec");
     for (SPEC) |s| std.debug.assert(s.moves.len > 0);
 }
 

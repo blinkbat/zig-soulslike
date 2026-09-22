@@ -170,9 +170,7 @@ const SPEC = [NKIND]Spec{
 };
 
 comptime {
-    for (SPEC, 0..) |sp, i| {
-        if (@intFromEnum(sp.kind) != i) @compileError("npc: SPEC is out of `wf.NpcKind` order");
-    }
+    foe.pinSpecOrder("npc", wf.NpcKind, SPEC, "spec");
     if (NKIND != 3) @compileError("npc: a fourth folk owes `Model.init` its own head and bone row, or its slot comes up `undefined`");
     std.debug.assert(spec(.merchant).stoop < spec(.wanderer).stoop and spec(.merchant).headFwd < spec(.wanderer).headFwd);
     std.debug.assert(spec(.merchant).top > spec(.wanderer).top);

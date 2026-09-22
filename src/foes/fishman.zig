@@ -122,7 +122,7 @@ fn spec(r: Role) *const Spec {
 }
 
 comptime {
-    foe.pinSpecOrder("fishman", Role, SPEC);
+    foe.pinSpecOrder("fishman", Role, SPEC, "spec");
     foe.pinRun("fishman", Role, .fish_spearman, "fish_".len);
     // Read through `spec` and not by ordinal: the run above pins the ORDER, and a bare `SPEC[2]` names no role.
     std.debug.assert(spec(.shaman).souls > spec(.spearman).souls and spec(.shaman).hp < spec(.spearman).hp);

@@ -141,12 +141,27 @@ pub fn kindInRun(comptime Role: type, first: wf.FoeKind, r: Role) wf.FoeKind {
     return @enumFromInt(@intFromEnum(first) + @intFromEnum(r));
 }
 
+/// The one field on a row whose type IS the enum being pinned, so a table names its discriminant by TYPE rather than
+/// by an agreed spelling: the folk write `kind` where a warband writes `role`, and a helper that insisted on one of
+/// them left the other hand-rolling the same loop.
+fn tagFieldOf(comptime who: []const u8, comptime Role: type, comptime Row: type) []const u8 {
+    var found: ?[]const u8 = null;
+    for (@typeInfo(Row).@"struct".fields) |f| {
+        if (f.type != Role) continue;
+        if (found != null) @compileError(who ++ ": " ++ @typeName(Row) ++ " carries two `" ++ @typeName(Role) ++ "` fields, so which one orders it is a guess");
+        found = f.name;
+    }
+    return found orelse @compileError(who ++ ": " ++ @typeName(Row) ++ " writes no `" ++ @typeName(Role) ++ "` down, so its row order cannot be pinned");
+}
+
 /// NAMED, not counted: a `spec()` reads its row at the role's own ordinal, so a `Role` inserted above slides every
-/// stat one body over. Each row writes its `role` down and this walks them.
-pub fn pinSpecOrder(comptime who: []const u8, comptime Role: type, comptime SPEC: anytype) void {
-    if (SPEC.len != @typeInfo(Role).@"enum".fields.len) @compileError(who ++ ": a " ++ @typeName(Role) ++ " with no spec row");
-    for (SPEC, 0..) |s, i| {
-        if (@intFromEnum(s.role) != i) @compileError(who ++ ": the " ++ @tagName(s.role) ++ " spec row is out of `" ++ @typeName(Role) ++ "` order");
+/// stat one body over. Each row writes its own enum down and this walks them. `what` is the TABLE, because a creature
+/// parallels more than one off the same ordinal (the warrior's kit, the shade's palette) and each owes the same pin.
+pub fn pinSpecOrder(comptime who: []const u8, comptime Role: type, comptime TABLE: anytype, comptime what: []const u8) void {
+    if (TABLE.len != @typeInfo(Role).@"enum".fields.len) @compileError(who ++ ": a " ++ @typeName(Role) ++ " with no " ++ what ++ " row");
+    const tag = comptime tagFieldOf(who, Role, @TypeOf(TABLE[0]));
+    for (TABLE, 0..) |s, i| {
+        if (@intFromEnum(@field(s, tag)) != i) @compileError(who ++ ": the " ++ @tagName(@field(s, tag)) ++ " " ++ what ++ " row is out of `" ++ @typeName(Role) ++ "` order");
     }
 }
 

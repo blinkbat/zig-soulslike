@@ -3743,7 +3743,13 @@ pub fn loadSettings() void {
     defer f.close();
     const n = f.readAll(&buf) catch return;
     if (n == buf.len) return;
-    var lines = std.mem.tokenizeAny(u8, buf[0..n], "\r\n");
+    parseSettings(buf[0..n]);
+}
+
+/// Split from the file the way `save.parse` and `tune.writeDiff` are, so the rack round-trips through a buffer in a
+/// test instead of over the player's own `settings.cfg`.
+fn parseSettings(text: []const u8) void {
+    var lines = std.mem.tokenizeAny(u8, text, "\r\n");
     while (lines.next()) |line| {
         var it = std.mem.tokenizeScalar(u8, line, ' ');
         const key = it.next() orelse continue;
@@ -3792,28 +3798,48 @@ pub fn loadSettings() void {
     fxSettle = 0;
 }
 
+const SETTINGS_TMP = SETTINGS_PATH ++ ".tmp";
+
+/// **WRITTEN BESIDE ITSELF AND RENAMED OVER IT** (`worldfmt.save`'s rule, and `tune.save`'s) — `createFile` truncates
+/// first, so a write that died part-way took the rack it was replacing, and `loadSettings` reads the cut tail in silence.
 pub fn saveSettings() void {
-    const f = std.fs.cwd().createFile(SETTINGS_PATH, .{}) catch return;
+    if (writeSettingsTmp()) {
+        std.fs.cwd().rename(SETTINGS_TMP, SETTINGS_PATH) catch {
+            std.fs.cwd().deleteFile(SETTINGS_TMP) catch {};
+        };
+        return;
+    }
+    std.fs.cwd().deleteFile(SETTINGS_TMP) catch {};
+}
+
+fn writeSettingsTmp() bool {
+    const f = std.fs.cwd().createFile(SETTINGS_TMP, .{}) catch return false;
     defer f.close();
-    var w = f.writer();
+    var bw = std.io.bufferedWriter(f.writer());
+    writeSettings(bw.writer()) catch return false;
+    bw.flush() catch return false;
+    return true;
+}
+
+fn writeSettings(w: anytype) !void {
     inline for (@typeInfo(Submix).@"enum".fields) |fld| {
-        w.print("{s} {d:.3}\n", .{ fld.name, userVol[fld.value] }) catch return;
+        try w.print("{s} {d:.3}\n", .{ fld.name, userVol[fld.value] });
     }
     inline for (@typeInfo(Submix).@"enum".fields) |fld| {
-        w.print(FX_KEY ++ "{s}", .{fld.name}) catch return;
-        for (fxVals[fld.value]) |v| w.print(" {d:.3}", .{v}) catch return;
-        w.writeAll("\n") catch return;
+        try w.print(FX_KEY ++ "{s}", .{fld.name});
+        for (fxVals[fld.value]) |v| try w.print(" {d:.3}", .{v});
+        try w.writeAll("\n");
     }
     for (0..NV) |i| {
         if (!voiceEdited(@enumFromInt(i))) continue;
-        w.print(VOICE_KEY ++ "{s}", .{NAMES[i]}) catch return;
-        // OFF THE ENUM, like `loadSettings` reads it: a hand-written column order is one the reader cannot disagree with in silence.
+        try w.print(VOICE_KEY ++ "{s}", .{NAMES[i]});
+        // OFF THE ENUM, like `parseSettings` reads it: a hand-written column order is one the reader cannot disagree with in silence.
         inline for (@typeInfo(Dial).@"enum".fields) |dfld| {
             const d: Dial = @enumFromInt(dfld.value);
-            w.print(" {d:." ++ std.fmt.comptimePrint("{d}", .{dialSpec(d).dp}) ++ "}", .{dialOf(@enumFromInt(i), d)}) catch return;
+            try w.print(" {d:." ++ std.fmt.comptimePrint("{d}", .{dialSpec(d).dp}) ++ "}", .{dialOf(@enumFromInt(i), d)});
         }
-        for (voiceFx[i]) |v| w.print(" {d:.3}", .{v}) catch return;
-        w.writeAll("\n") catch return;
+        for (voiceFx[i]) |v| try w.print(" {d:.3}", .{v});
+        try w.writeAll("\n");
     }
 }
 
@@ -4673,6 +4699,39 @@ test "THE BENCH NEVER OVERWRITES THE ORIGINAL — that is what makes revert free
     }
     try std.testing.expectEqual(NV, NAMES.len);
     try std.testing.expect(std.mem.eql(u8, NAMES[@intFromEnum(Id.knight_die)], "knight_die"));
+}
+
+test "THE RACK ROUND-TRIPS IN THE FILE'S OWN GRAMMAR — written, read back and written again is the same text" {
+    const id: Id = .knight_roar;
+    const mix: Submix = .combat;
+    const volWas = userVol[@intFromEnum(mix)];
+    defer {
+        revertAllVoices();
+        setVolume(mix, volWas);
+    }
+    revertAllVoices();
+    setVolume(mix, 0.375);
+    setDial(id, .gain, 0.5);
+    setVoiceFx(id, AF_MUFFLE, 0.25);
+
+    var a: [SETTINGS_CAP]u8 = undefined;
+    var sa = std.io.fixedBufferStream(&a);
+    try writeSettings(sa.writer());
+    const first = sa.getWritten();
+
+    revertAllVoices();
+    setVolume(mix, 1.0);
+    try std.testing.expect(!anyVoiceEdited());
+
+    parseSettings(first);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.375), userVol[@intFromEnum(mix)], 1e-3);
+    try std.testing.expect(voiceEdited(id));
+
+    var b: [SETTINGS_CAP]u8 = undefined;
+    var sb = std.io.fixedBufferStream(&b);
+    try writeSettings(sb.writer());
+    try std.testing.expectEqualStrings(first, sb.getWritten());
+    std.debug.print("\n  settings: {d} B round-trips to the byte over {d} mixes and {d} voices\n", .{ first.len, NMIX, NV });
 }
 
 test "A LIQUID FOOTFALL IS A NOISE BAND SWEEPING UP, and all four carry one" {

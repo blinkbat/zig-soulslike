@@ -1071,31 +1071,41 @@ pub const Move = struct { stroke: Stroke, t: Timing };
 const SWORD_LIGHT = Timing{ .dur = ATK_LIGHT_DUR, .hitA = AL_HIT_A, .hitB = AL_HIT_B, .travelA = AL_STRIKE_A, .travelB = AL_STRIKE_B, .recovA = AL_RECOV_A, .chain = AL_CHAIN, .lunge = AL_LUNGE };
 const SWORD_HEAVY = Timing{ .dur = ATK_HEAVY_DUR, .hitA = AH_HIT_A, .hitB = AH_HIT_B, .travelA = AH_STRIKE_A, .travelB = AH_STRIKE_B, .recovA = AH_RECOV_A, .chain = AH_CHAIN, .lunge = AH_LUNGE };
 
-/// Indexed `[Blade][heavy]`. Seconds in the comments below are AFTER the row's dial (dagger 0.78, club 1.34).
-const MOVES = [@typeInfo(Blade).@"enum".fields.len][2]Move{
+/// Read at the blade's own ordinal, so the row NAMES its blade the way `BLADES` does. Seconds in the comments below
+/// are AFTER the row's dial (dagger 0.78, club 1.34).
+const MoveRow = struct { blade: Blade, light: Move, heavy: Move };
+const MOVES = [_]MoveRow{
     .{
-        .{ .stroke = .slash, .t = SWORD_LIGHT },
-        .{ .stroke = .chop, .t = SWORD_HEAVY },
+        .blade = .sword,
+        .light = .{ .stroke = .slash, .t = SWORD_LIGHT },
+        .heavy = .{ .stroke = .chop, .t = SWORD_HEAVY },
     },
     .{
+        .blade = .dagger,
         // 0.413 s, live 0.083; 0.67 m of reach.
-        .{ .stroke = .flick, .t = .{ .dur = 0.53, .hitA = 0.30, .hitB = 0.50, .travelA = 0.26, .travelB = 0.46, .recovA = 0.60, .chain = 0.74, .lunge = 0.50 } },
+        .light = .{ .stroke = .flick, .t = .{ .dur = 0.53, .hitA = 0.30, .hitB = 0.50, .travelA = 0.26, .travelB = 0.46, .recovA = 0.60, .chain = 0.74, .lunge = 0.50 } },
         // 0.671 s; the step is 1.55 m.
-        .{ .stroke = .thrust, .t = .{ .dur = 0.86, .hitA = 0.40, .hitB = 0.60, .travelA = 0.34, .travelB = 0.58, .recovA = 0.66, .chain = 0.82, .lunge = 1.55 } },
+        .heavy = .{ .stroke = .thrust, .t = .{ .dur = 0.86, .hitA = 0.40, .hitB = 0.60, .travelA = 0.34, .travelB = 0.58, .recovA = 0.66, .chain = 0.82, .lunge = 1.55 } },
     },
     .{
+        .blade = .club,
         // 0.884 s, live 0.283 — the longest live window in the kit.
-        .{ .stroke = .sweep, .t = .{ .dur = 0.66, .hitA = 0.34, .hitB = 0.66, .travelA = 0.30, .travelB = 0.62, .recovA = 0.70, .chain = 0.86, .lunge = 0.85 } },
+        .light = .{ .stroke = .sweep, .t = .{ .dur = 0.66, .hitA = 0.34, .hitB = 0.66, .travelA = 0.30, .travelB = 0.62, .recovA = 0.70, .chain = 0.86, .lunge = 0.85 } },
         // 1.447 s; the blow arrives at 0.695 of it, after the `.hold`.
-        .{ .stroke = .smash, .t = .{ .dur = 1.08, .hitA = 0.48, .hitB = 0.66, .travelA = 0.44, .travelB = 0.64, .recovA = 0.72, .chain = 0.90, .lunge = 1.10 } },
+        .heavy = .{ .stroke = .smash, .t = .{ .dur = 1.08, .hitA = 0.48, .hitB = 0.66, .travelA = 0.44, .travelB = 0.64, .recovA = 0.72, .chain = 0.90, .lunge = 1.10 } },
     },
 };
 
 // Each mistake fails SILENTLY: `travelB == travelA` divides by zero in `updateAttack`, `hitA >= hitB` never goes live, a fraction past 1 never runs.
 comptime {
     if (MOVES.len != @typeInfo(Blade).@"enum".fields.len) @compileError("hero: a Blade has no moveset row");
-    for (MOVES) |pair| {
-        for (pair) |m| {
+    // THE ROW IS NAMED, NOT COUNTED, `BLADES`' own rule: a `Blade` inserted above would hand the dagger the sword's
+    // strokes and every window with them — silently, since the invariants below hold on any row.
+    for (MOVES, 0..) |row, i| {
+        if (@intFromEnum(row.blade) != i) @compileError("hero: MOVES row " ++ @tagName(row.blade) ++ " is out of `Blade` order");
+    }
+    for (MOVES) |row| {
+        for ([_]Move{ row.light, row.heavy }) |m| {
             const t = m.t;
             if (!(t.dur > 0)) @compileError("hero: a move with no duration divides by zero in `atkDur`");
             if (!(t.hitA < t.hitB)) @compileError("hero: a move whose hit window never opens");
@@ -1109,7 +1119,8 @@ comptime {
 }
 
 pub fn moveOf(b: Blade, heavy: bool) Move {
-    return MOVES[@intFromEnum(b)][@intFromBool(heavy)];
+    const row = MOVES[@intFromEnum(b)];
+    return if (heavy) row.heavy else row.light;
 }
 
 /// Seconds a stroke takes at rest: the class's own clock times the weapon's `dur` dial. `Hero.atkDur` is this over the live haste.

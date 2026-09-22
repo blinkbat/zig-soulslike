@@ -139,7 +139,7 @@ fn spec(r: Role) *const Spec {
 }
 
 comptime {
-    foe.pinSpecOrder("kobold", Role, SPEC);
+    foe.pinSpecOrder("kobold", Role, SPEC, "spec");
     foe.pinRun("kobold", Role, .berserker, 0);
 }
 

@@ -135,12 +135,10 @@ const SPEC = [NROLE]Spec{
 };
 
 comptime {
-    for (SPEC, 0..) |sp, i| {
-        if (@intFromEnum(sp.role) != i) @compileError("shade: SPEC is out of `Role` order");
+    foe.pinSpecOrder("shade", Role, SPEC, "spec");
+    foe.pinSpecOrder("shade", Role, PAL, "palette");
+    for (SPEC) |sp| {
         if (sp.hp <= 0 or sp.size <= 0 or sp.slow <= 0) @compileError("shade: a role with no body");
-    }
-    for (PAL, 0..) |p, i| {
-        if (@intFromEnum(p.role) != i) @compileError("shade: PAL is out of `Role` order");
     }
     std.debug.assert(spec(.mourner).size > spec(.shade).size and spec(.mourner).slow > spec(.shade).slow);
     std.debug.assert(spec(.mourner).souls > spec(.shade).souls and spec(.mourner).hp > spec(.shade).hp);

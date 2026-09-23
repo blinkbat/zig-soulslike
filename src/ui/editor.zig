@@ -882,7 +882,7 @@ fn layerOf(o: *const wf.Op) Layer {
 
 pub const Action = enum { none, leave, playtest, spar, quit };
 
-pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, boss, jukebox, stats, world, zonemix, script, talk, options };
+pub const Modal = enum { none, new_map, open_map, save_as, confirm, objects, loot, boss, jukebox, stats, world, zonemix, script, talk, options, events };
 
 const VOICE_NAMES = sfx.NAMES;
 
@@ -1205,6 +1205,14 @@ pub const Editor = struct {
     grabFrom: rl.Vector3 = mathx.zero3,
     grabBanked: bool = false,
     routing: bool = false,
+    scheduleSel: ?usize = null,
+    scheduleSlot: usize = 0,
+    scheduleRouting: bool = false,
+    scheduleScroll: i32 = 0,
+    scheduleDetailScroll: i32 = 0,
+    scheduleDetailHeld: i32 = 0,
+    scheduleNameBuf: [wf.ID_CAP]u8 = [_]u8{0} ** wf.ID_CAP,
+    scheduleNameLen: usize = 0,
     trigSel: ?usize = null,
     slotLabels: [MAX_SLOT_ROWS][wf.ID_CAP]u8 = undefined,
     trigNameBuf: [wf.ID_CAP]u8 = [_]u8{0} ** wf.ID_CAP,
@@ -1804,6 +1812,7 @@ pub const Editor = struct {
     }
 
     fn dropSelection(self: *Editor) void {
+        self.scheduleRouting = false;
         self.sel = null;
         self.selUnit = null;
         self.nMarked = 0;
@@ -1857,6 +1866,18 @@ pub const Editor = struct {
     pub fn openScriptForShot(self: *Editor, m: *const wf.Map) void {
         self.modal = .script;
         if (m.ntrigs > 0) self.selectTrig(m, 0);
+    }
+
+    pub fn eventsForShot(self: *Editor, m: *const wf.Map, index: usize) void {
+        self.selectSchedule(m, index);
+        self.modal = .events;
+    }
+
+    pub fn scheduleUnitForShot(self: *Editor, index: usize) void {
+        self.modal = .none;
+        self.setLayer(.units);
+        self.selecting = true;
+        self.selUnit = .{ .foe = index };
     }
 
     pub fn selectForShot(self: *Editor, m: *const wf.Map, env: *const envmod.Env, a: rl.Vector3, b: rl.Vector3) void {
@@ -2088,6 +2109,23 @@ pub const Editor = struct {
                 self.say("Redo");
             }
             return .none;
+        }
+        if (self.scheduleRouting and !self.textFocus) {
+            if (rl.isKeyPressed(.enter) or rl.isKeyPressed(.escape)) {
+                self.scheduleRouting = false;
+                self.modal = .events;
+                return .none;
+            }
+            if (rl.isKeyPressed(.backspace)) {
+                if (self.schedulePointSlot(m)) |slot| {
+                    if (slot.nwp > 0) {
+                        self.bank(m);
+                        slot.nwp -= 1;
+                        self.requestFolk();
+                    }
+                }
+                return .none;
+            }
         }
         if (self.arenaSel != null and self.layer == .locations) {
             if (rl.isKeyPressed(.insert)) {
@@ -2345,6 +2383,12 @@ pub const Editor = struct {
             return;
         }
 
+        if (self.scheduleRouting) {
+            if (!blocked and rl.isMouseButtonPressed(.left)) {
+                if (ground) |g| self.laySchedulePoint(m, g);
+            }
+            return;
+        }
         if (self.layer == .caves and !self.selecting) {
             if (rl.isMouseButtonDown(.left) and (self.painting or !blocked)) {
                 if (ground) |g| {
@@ -3351,6 +3395,36 @@ pub const Editor = struct {
         self.sayFmt("leg {d} of {d}", .{ f.nwp, wf.MAX_WP });
     }
 
+    fn selectSchedule(self: *Editor, m: *const wf.Map, i: usize) void {
+        self.endGesture();
+        self.scheduleSel = if (i < m.nschedules) i else null;
+        self.scheduleSlot = 0;
+        self.scheduleDetailScroll = 0;
+        self.loadName(&self.scheduleNameBuf, &self.scheduleNameLen, if (i < m.nschedules) m.schedules[i].label() else "");
+    }
+
+    fn schedulePointSlot(self: *Editor, m: *wf.Map) ?*wf.ScheduleSlot {
+        const i = self.scheduleSel orelse return null;
+        if (i >= m.nschedules or self.scheduleSlot >= m.schedules[i].nslots) return null;
+        return &m.schedules[i].slots[self.scheduleSlot];
+    }
+
+    fn laySchedulePoint(self: *Editor, m: *wf.Map, at: rl.Vector3) void {
+        const slot = self.schedulePointSlot(m) orelse {
+            self.scheduleRouting = false;
+            return;
+        };
+        if (slot.nwp >= wf.MAX_WP) {
+            self.sayFmt("route full: {d} points; Enter returns to Events", .{wf.MAX_WP});
+            return;
+        }
+        self.bank(m);
+        slot.wp[slot.nwp] = .{ .x = at.x, .z = at.z };
+        slot.nwp += 1;
+        self.requestFolk();
+        self.sayFmt("route point {d}; click to add, Backspace removes, Enter finishes", .{slot.nwp});
+    }
+
     fn selectTrig(self: *Editor, m: *const wf.Map, i: usize) void {
         self.trigSel = i;
         self.loadName(&self.trigNameBuf, &self.trigNameLen, if (i < m.ntrigs) m.trigs[i].label() else "");
@@ -3919,6 +3993,7 @@ pub const Editor = struct {
         self.nMarked = 0;
         var seed = self.freshSeed(m);
         var landed: usize = 0;
+        var detached: usize = 0;
         for (clipOps[0..nOps], clipScats[0..nOps]) |src, srcScat| {
             var o = src;
             var sc = srcScat;
@@ -3943,6 +4018,7 @@ pub const Editor = struct {
             var np = src;
             np.x += at.x;
             np.z += at.z;
+            detached += @intFromBool(detachMissingSchedule(m, &np.schedule));
             np.under = self.underAt(m, np.x, np.z);
             // BOTH SPANS ARE OFFSETS INTO THE MAP THEY CAME FROM: the conversation and the call are named again by the text the clipboard carried, or a pasted body reads another map's bytes.
             const talk = wf.idText(&clipTalk[ci]);
@@ -3963,6 +4039,7 @@ pub const Editor = struct {
             }
             var f = src;
             f.translate(at.x, at.z);
+            detached += @intFromBool(detachMissingSchedule(m, &f.schedule));
             f.under = self.underAt(m, f.x, f.z);
             if (foemod.poolBand(f.kind)) |band| {
                 const d = env.wadeDepth(f.x, f.z);
@@ -3978,7 +4055,9 @@ pub const Editor = struct {
         }
         self.rebuild(m, env);
         const want = nOps + nFoes + nNpcs;
-        if (landed == want) {
+        if (detached > 0) {
+            self.sayFmt("pasted {d} of {d}; {d} missing schedules detached", .{ landed, want, detached });
+        } else if (landed == want) {
             self.sayFmt("pasted {d}", .{landed});
         } else if (dry > 0) {
             self.sayFmt("pasted {d} of {d} - {d} out of their water", .{ landed, want, dry });
@@ -4186,6 +4265,15 @@ pub const Editor = struct {
         gizmoView = self.camView();
         self.seatRead = null;
         const y: f32 = 0.05;
+        if (self.scheduleSel) |si| {
+            if (si < m.nschedules and self.scheduleSlot < m.schedules[si].nslots) {
+                const path = m.schedules[si].slots[self.scheduleSlot].route();
+                for (path, 0..) |q, i| {
+                    handlePost(q.x, q.z, y, i == 0);
+                    if (i > 0) groundLine(path[i - 1].x, path[i - 1].z, q.x, q.z, y + 0.05, ui.LIVE);
+                }
+            }
+        }
         rl.drawCubeWires(v3(0, envmod.groundY() + y, 0), m.half * 2, 0.02, m.half * 2, ui.alpha(ui.TRIM, 90));
         outline(m.runway.x, m.runway.z, m.runway.x1, m.runway.z1, y, ui.alpha(ui.HOT, 70));
 
@@ -4993,6 +5081,12 @@ fn drawTopBar(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i32) 
         ed.modal = .script;
         if (ed.trigSel == null and m.ntrigs > 0) ed.selectTrig(m, 0);
     }
+    if (row.button("Events", ed.modal == .events, "Author daily schedules: times, orders and routes. Assign them to creatures or folk in Units")) {
+        ed.menuOpen = false;
+        ed.modal = .events;
+        ed.scheduleRouting = false;
+        if (ed.scheduleSel == null and m.nschedules > 0) ed.selectSchedule(m, 0);
+    }
     if (row.button("Stats", ed.modal == .stats, "The stats bench - every table-able number in the game, and a revert on each one")) {
         ed.menuOpen = false;
         ed.modal = .stats;
@@ -5755,6 +5849,16 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                     changed = true;
                 }
                 y += ROW_H + 6;
+                if (wf.canSchedule(fo.kind)) {
+                    changed = drawSchedulePick(ed, ctx, m, &fo.schedule, x, y, w, f) or changed;
+                    y += ROW_H + 6;
+                }
+                const windows = [_][:0]const u8{ "presence: kind default", "presence: all hours", "presence: day only", "presence: night only" };
+                if (ui.dropdown(ctx, ui.rect(x, y, w, 22), ui.ddId(25, f, 0), &windows, @intFromEnum(fo.when), "When this body exists, independently of its movement schedule")) |pick| {
+                    fo.when = @enumFromInt(pick);
+                    changed = true;
+                }
+                y += ROW_H + 6;
                 if (ui.button(ctx, ui.rect(x, y, 80, 24), "delete", hud.MONO, false, "Remove this spawn (Del)")) {
                     ed.deleteSel(m, env);
                     return;
@@ -5784,6 +5888,8 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 y += ROW_H;
                 changed = ui.stepperF(ctx, x, y, w, "roam", &np.roam, 0.5, 0, wf.NPC_ROAM_MAX, "How far it wanders from this post, in metres. At 0 it stands still") or changed;
                 y += ROW_H;
+                changed = drawSchedulePick(ed, ctx, m, &np.schedule, x, y, w, NPC_MARK + i) or changed;
+                y += ROW_H + 6;
                 hud.mono("says", x, y + 4, hud.MONO, ui.LABEL);
                 {
                     const shown = @min(m.ndialogs, MAX_SLOT_ROWS);
@@ -6407,6 +6513,10 @@ fn drawStatus(ed: *Editor, m: *const wf.Map, env: *const envmod.Env, ctx: *ui.Ct
         hud.mono(msg[0..len :0], CHROME_PAD, ty, hud.MONO, ui.HOT);
         return;
     }
+    if (ed.scheduleRouting) {
+        hud.mono("Route: LMB point  Backspace undo point  Enter/Esc done", CHROME_PAD, ty, hud.MONO, ui.LIVE);
+        return;
+    }
     if (ed.seatRead) |st| {
         var sb: [160]u8 = undefined;
         const line = if (!st.cut())
@@ -6673,6 +6783,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             }
         },
         .script => drawScriptModal(ed, ctx, m, confirm),
+        .events => drawEventsModal(ed, ctx, m, day, confirm),
         .talk => {
             drawTalkModal(ed, ctx, m);
             if (confirm and ed.modal == .talk) {
@@ -7433,6 +7544,253 @@ fn drawTalkModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map) void {
         return;
     }
     if (ui.button(ctx, ui.rect(x + 134, by, 120, DLG_BTN_H), "Cancel", hud.MONO, false, "Leave the conversation as it was (Esc)")) ed.modal = .none;
+}
+
+fn detachMissingSchedule(m: *const wf.Map, id: *wf.Id) bool {
+    if (wf.idText(id).len == 0 or m.findSchedule(wf.idText(id)) != null) return false;
+    id.* = [_]u8{0} ** wf.ID_CAP;
+    return true;
+}
+
+fn drawSchedulePick(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, id: *wf.Id, x: i32, y: i32, w: i32, unit: usize) bool {
+    var labels: [wf.MAX_SCHEDULES + 1][:0]const u8 = undefined;
+    labels[0] = "(no schedule)";
+    for (m.schedules[0..m.nschedules], 0..) |*s, i| {
+        ed.slotLabels[i] = s.id;
+        labels[i + 1] = ed.slotLabels[i][0..s.label().len :0];
+    }
+    const selected = m.findSchedule(wf.idText(id));
+    var changed = false;
+    if (ui.dropdown(ctx, ui.rect(x, y, w - 65, 22), ui.ddId(23, unit, 0), labels[0 .. m.nschedules + 1], if (selected) |i| @as(usize, i) + 1 else 0, "Daily movement schedule. Outside its time slots this unit resumes its usual orders")) |pick| {
+        id.* = if (pick == 0) [_]u8{0} ** wf.ID_CAP else m.schedules[pick - 1].id;
+        changed = true;
+    }
+    if (ui.button(ctx, ui.rect(x + w - 60, y, 60, 22), "edit...", hud.MONO, false, "Open Events to edit or create a schedule")) {
+        if (m.findSchedule(wf.idText(id))) |i| ed.selectSchedule(m, i);
+        ed.modal = .events;
+    }
+    return changed;
+}
+
+const EVENTS_W: i32 = 960;
+const EVENTS_H: i32 = 660;
+
+test "SCHEDULE route editing banks real map data and undo restores the route" {
+    undoReset();
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++
+        \\schedule: rounds
+        \\shift: 22 3 travel
+    );
+    defer std.testing.allocator.destroy(m);
+    var ed = Editor{};
+    ed.selectSchedule(m, 0);
+    ed.scheduleRouting = true;
+    ed.laySchedulePoint(m, v3(3, 0, 5));
+    ed.laySchedulePoint(m, v3(8, 0, 9));
+    try std.testing.expectEqual(@as(u8, 2), m.schedules[0].slots[0].nwp);
+    try std.testing.expectEqual(@as(usize, 0), m.nfoes);
+    try std.testing.expect(ed.undo(m));
+    try std.testing.expectEqual(@as(u8, 1), m.schedules[0].slots[0].nwp);
+    try std.testing.expectEqualDeep(wf.Wp{ .x = 3, .z = 5 }, m.schedules[0].slots[0].wp[0]);
+    try std.testing.expect(ed.redo(m));
+    try std.testing.expectEqual(@as(u8, 2), m.schedules[0].slots[0].nwp);
+    try std.testing.expect(EVENTS_H + 16 <= SCREEN_H);
+    var copied = m.schedules[0].id;
+    try std.testing.expect(!detachMissingSchedule(m, &copied));
+    m.removeSchedule(0);
+    try std.testing.expect(detachMissingSchedule(m, &copied));
+    try std.testing.expectEqualStrings("", wf.idText(&copied));
+}
+
+fn drawEventsModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, day: *daynight.Clock, confirm: bool) void {
+    const box = ui.beginModal(ctx, EVENTS_W, EVENTS_H, "Events - daily schedules");
+    const x = box.x + DLG_PAD;
+    const top = box.y + DLG_PAD + 28;
+    const listW: i32 = 210;
+    if (ui.button(ctx, ui.rect(x, top, listW, 24), "+ schedule", hud.MONO, false, "Create an empty schedule. Assign it to creatures or folk in Units")) {
+        if (m.nschedules < wf.MAX_SCHEDULES) {
+            var s = wf.Schedule{};
+            var serial: usize = 1;
+            while (true) : (serial += 1) {
+                var buf: [wf.ID_CAP]u8 = undefined;
+                wf.setNameIn(&s.id, std.fmt.bufPrint(&buf, "schedule{d}", .{serial}) catch unreachable);
+                if (m.findSchedule(s.label()) == null) break;
+            }
+            ed.bank(m);
+            m.schedules[m.nschedules] = s;
+            m.nschedules += 1;
+            ed.selectSchedule(m, m.nschedules - 1);
+            ed.requestFolk();
+        } else ed.say("schedule cap reached");
+    }
+    const view = ui.rect(x, top + 32, listW, box.y + box.h - DLG_FOOT - top - 40);
+    const held: i32 = @as(i32, @intCast(m.nschedules)) * ROW_H;
+    const clip = beginScroll(ctx, view, &ed.scheduleScroll, held);
+    for (m.schedules[0..m.nschedules], 0..) |*s, i| {
+        var buf: [48]u8 = undefined;
+        const label = std.fmt.bufPrintZ(&buf, "{s}{s}", .{ s.label(), if (s.enabled) "" else " (off)" }) catch "?";
+        const y = top + 32 + @as(i32, @intCast(i)) * ROW_H - ed.scheduleScroll;
+        if (ui.button(ctx, ui.rect(x, y, listW, 22), label, hud.MONO, ed.scheduleSel == i, "Edit this daily schedule")) ed.selectSchedule(m, i);
+    }
+    endScroll(ctx, view, &ed.scheduleScroll, held, clip);
+
+    const rx = x + listW + DLG_PAD;
+    const rw = EVENTS_W - listW - 3 * DLG_PAD;
+    const detailTop = top + 34;
+    if (ed.scheduleSel) |si| {
+        if (si < m.nschedules) drawScheduleHeader(ed, ctx, m, si, rx, top, rw - 10);
+    }
+    const right = ui.rect(rx, detailTop, rw, box.y + box.h - DLG_FOOT - detailTop - 8);
+    const rightClip = beginScroll(ctx, right, &ed.scheduleDetailScroll, ed.scheduleDetailHeld);
+    const end = drawScheduleDetail(ed, ctx, m, day, rx, detailTop - ed.scheduleDetailScroll, rw - 10);
+    ed.scheduleDetailHeld = end - detailTop + ed.scheduleDetailScroll;
+    endScroll(ctx, right, &ed.scheduleDetailScroll, ed.scheduleDetailHeld, rightClip);
+    if (ctx.buttonUp) ed.endGesture();
+    scriptDone(ed, ctx, box, confirm);
+}
+
+fn drawScheduleHeader(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, si: usize, x: i32, y: i32, w: i32) void {
+    const s = &m.schedules[si];
+    if (nameField(ed, ctx, x, y, w - 100, &ed.scheduleNameBuf, &ed.scheduleNameLen, s.label(), 0xEC01, ed.modal == .events, "Unique schedule name. Units keep their assignment when it is renamed")) |typed| {
+        ed.bankTyping(m, 0xEC01);
+        if (m.renameSchedule(si, typed)) ed.requestFolk() else ed.say("schedule name must be unique and nonempty");
+    }
+    if (ui.button(ctx, ui.rect(x + w - 94, y, 94, 24), "delete", hud.MONO, false, "Delete this schedule and detach its units. Units and their usual orders remain")) {
+        ed.bank(m);
+        m.removeSchedule(si);
+        ed.selectSchedule(m, if (si > 0) si - 1 else 0);
+        ed.requestFolk();
+    }
+}
+
+fn drawScheduleDetail(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, day: *daynight.Clock, x: i32, y0: i32, w: i32) i32 {
+    var y = y0;
+    const si = ed.scheduleSel orelse {
+        hud.mono("Create a schedule, then assign it in Units.", x, y, hud.MONO, ui.LABEL);
+        return y + ROW_H;
+    };
+    if (si >= m.nschedules) {
+        ed.scheduleSel = null;
+        return y;
+    }
+    const s = &m.schedules[si];
+    const before = s.*;
+    var changed = false;
+    var chipW: i32 = 0;
+    if (ui.chip(ctx, x, y, "enabled", s.enabled, &chipW, "Run this schedule each day. Off, its units use their usual orders")) {
+        s.enabled = !s.enabled;
+        changed = true;
+    }
+    var clockBuf: [8]u8 = undefined;
+    var nowBuf: [96]u8 = undefined;
+    const active = s.at(day.hour);
+    const now = if (active) |a|
+        std.fmt.bufPrintZ(&nowBuf, "{s} - slot {d}", .{ daynight.clockText(day.hour, &clockBuf), @as(usize, a) + 1 }) catch ""
+    else
+        std.fmt.bufPrintZ(&nowBuf, "{s} - usual orders", .{daynight.clockText(day.hour, &clockBuf)}) catch "";
+    hud.mono(now, x + chipW + 14, y + 4, hud.MONO, ui.VALUE);
+    y += ROW_H + 4;
+    hud.mono("First matching slot wins; gaps use usual orders.", x, y, hud.MONO, ui.LABEL);
+    y += ROW_H + 4;
+    var tx = x;
+    for (0..s.nslots) |i| {
+        var buf: [12]u8 = undefined;
+        if (ui.button(ctx, ui.rect(tx, y, 42, 22), std.fmt.bufPrintZ(&buf, "{d}", .{i + 1}) catch "", hud.MONO, ed.scheduleSlot == i, "Select a time slot. Earlier slots take priority over overlapping later slots")) ed.scheduleSlot = i;
+        tx += 46;
+    }
+    if (s.nslots < wf.MAX_SCHEDULE_SLOTS and ui.button(ctx, ui.rect(tx, y, 42, 22), "+", hud.MONO, false, "Add a time slot. Equal start and end times mean all day")) {
+        s.slots[s.nslots] = .{};
+        ed.scheduleSlot = s.nslots;
+        s.nslots += 1;
+        changed = true;
+    }
+    y += ROW_H + 8;
+    if (ed.scheduleSlot >= s.nslots) ed.scheduleSlot = 0;
+    if (s.nslots > 0) {
+        const slot = &s.slots[ed.scheduleSlot];
+        changed = ui.stepperF(ctx, x, y, w, "start hour", &slot.start, 0.25, 0, 23.75, "24-hour clock. 0 is midnight, 12 is noon; 0.25 is fifteen minutes") or changed;
+        y += ROW_H;
+        changed = ui.stepperF(ctx, x, y, w, "end hour", &slot.end, 0.25, 0, 23.75, "Earlier than start crosses midnight. Equal to start lasts all day") or changed;
+        y += ROW_H + 4;
+        const labels = [_][:0]const u8{ "hold", "travel once", "patrol", "roam near post", "roam freely" };
+        if (ui.dropdown(ctx, ui.rect(x, y, 190, 24), ui.ddId(24, si, ed.scheduleSlot), &labels, @intFromEnum(slot.order), "Hold at the first point; travel follows every point and stops; patrol walks back and forth; roam uses the first point as its post")) |pick| {
+            slot.order = @enumFromInt(pick);
+            changed = true;
+        }
+        if (ui.chip(ctx, x + 204, y, "peaceful", slot.passive, &chipW, "Creatures ignore proximity until attacked. They still defend themselves; conversation still stops a folk's walk")) {
+            slot.passive = !slot.passive;
+            changed = true;
+        }
+        if (ui.button(ctx, ui.rect(x + w - 116, y, 116, 24), "set clock", hud.MONO, false, "Set the editor clock to this slot's start; F5 plays from here")) day.set(slot.start);
+        y += ROW_H + 8;
+        if (ui.button(ctx, ui.rect(x, y, 136, 24), "lay route", hud.MONO, false, "Append points by clicking the ground. Backspace removes the last; Enter or Esc returns here")) {
+            ed.scheduleRouting = true;
+            ed.routing = false;
+            ed.selecting = false;
+            ed.modal = .none;
+            ed.textFocus = false;
+            ed.say("route: click ground; Backspace removes last; Enter / Esc finishes");
+        }
+        if (ui.button(ctx, ui.rect(x + 144, y, 136, 24), "clear route", hud.MONO, false, "Remove this slot's points")) {
+            slot.nwp = 0;
+            changed = true;
+        }
+        if (ui.button(ctx, ui.rect(x + 288, y, 136, 24), "focus route", hud.MONO, false, "Move the editor camera to the first point")) {
+            if (slot.nwp > 0) ed.lookAtGround(slot.wp[0].x, slot.wp[0].z, 30);
+        }
+        y += ROW_H + 6;
+        var routeBuf: [64]u8 = undefined;
+        hud.mono(std.fmt.bufPrintZ(&routeBuf, "ROUTE {d}/{d} - world coordinates", .{ slot.nwp, wf.MAX_WP }) catch "", x, y, hud.MONO, ui.TITLE);
+        y += ROW_H;
+        if (slot.nwp == 0) {
+            hud.mono("No route: holds here; roaming starts here.", x, y, hud.MONO, ui.LABEL);
+            y += ROW_H;
+        }
+        var i: usize = 0;
+        while (i < slot.nwp) : (i += 1) {
+            const q = &slot.wp[i];
+            var ib: [8]u8 = undefined;
+            hud.mono(std.fmt.bufPrintZ(&ib, "{d}", .{i + 1}) catch "", x, y + 4, hud.MONO, ui.LABEL);
+            const half = @divTrunc(w - 92, 2);
+            changed = ui.stepperF(ctx, x + 24, y, half, "x", &q.x, 0.5, -COORD_LIM, COORD_LIM, "Waypoint east-west position") or changed;
+            changed = ui.stepperF(ctx, x + 28 + half, y, half, "z", &q.z, 0.5, -COORD_LIM, COORD_LIM, "Waypoint north-south position") or changed;
+            if (i > 0 and ui.button(ctx, ui.rect(x + w - 52, y, 24, 22), "^", hud.MONO, false, "Move this point earlier in the route")) {
+                std.mem.swap(wf.Wp, q, &slot.wp[i - 1]);
+                changed = true;
+            }
+            if (ui.button(ctx, ui.rect(x + w - 24, y, 24, 22), "x", hud.MONO, false, "Remove this point")) {
+                std.mem.copyForwards(wf.Wp, slot.wp[i .. slot.nwp - 1], slot.wp[i + 1 .. slot.nwp]);
+                slot.nwp -= 1;
+                changed = true;
+                break;
+            }
+            y += ROW_H;
+        }
+        y += 8;
+        if (ed.scheduleSlot > 0 and ui.button(ctx, ui.rect(x, y, 150, 24), "earlier priority", hud.MONO, false, "Move this time slot before the previous one")) {
+            std.mem.swap(wf.ScheduleSlot, slot, &s.slots[ed.scheduleSlot - 1]);
+            ed.scheduleSlot -= 1;
+            changed = true;
+        }
+        if (ui.button(ctx, ui.rect(x + w - 150, y, 150, 24), "remove slot", hud.MONO, false, "Delete this time slot")) {
+            const at = ed.scheduleSlot;
+            std.mem.copyForwards(wf.ScheduleSlot, s.slots[at .. s.nslots - 1], s.slots[at + 1 .. s.nslots]);
+            s.nslots -= 1;
+            ed.scheduleSlot = 0;
+            changed = true;
+        }
+        y += ROW_H + 8;
+    }
+    var members: usize = 0;
+    for (m.foes[0..m.nfoes]) |*f| members += @intFromBool(std.mem.eql(u8, wf.idText(&f.schedule), s.label()));
+    for (m.npcs[0..m.nnpcs]) |*p| members += @intFromBool(std.mem.eql(u8, wf.idText(&p.schedule), s.label()));
+    var memberBuf: [80]u8 = undefined;
+    hud.mono(std.fmt.bufPrintZ(&memberBuf, "{d} assigned units - change assignments in Units", .{members}) catch "", x, y, hud.MONO, ui.LABEL);
+    if (changed) {
+        ed.bankGesture(wf.Schedule, m, s, before);
+        ed.requestFolk();
+    }
+    return y + ROW_H + 8;
 }
 
 fn drawScriptModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, confirm: bool) void {

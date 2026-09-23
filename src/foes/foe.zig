@@ -469,6 +469,7 @@ pub fn dozing(self: anytype, nightAt: f32) bool {
 }
 
 pub const Leash = struct {
+    passive: bool = false,
     win: Win = .{},
     sinceCombat: f32 = mathx.LONG_AGO,
     sinceSeen: f32 = 0,
@@ -550,6 +551,7 @@ pub const Leash = struct {
 
 pub fn sensedDist(l: *const Leash, real: f32, aggroR: f32) f32 {
     if (l.win.shut()) return mathx.LONG_AGO;
+    if (l.passive and !l.roused()) return mathx.LONG_AGO;
     if (l.blind()) return mathx.LONG_AGO;
     if (l.goingHome()) return mathx.LONG_AGO;
     if (l.roused()) return mathx.minF(real, aggroR);
@@ -655,7 +657,20 @@ const DWELL_LO: f32 = 1.4;
 const DWELL_HI: f32 = 5.0;
 pub const ARRIVE: f32 = 1.1;
 
+const PostOrders = struct {
+    ai: Ai = .hold,
+    home: rl.Vector3 = mathx.zero3,
+    wp: [MAX_WP]Wp = [_]Wp{.{}} ** MAX_WP,
+    nwp: u8 = 0,
+};
+
 pub const Post = struct {
+    schedule: ?u8 = null,
+    shift: ?u8 = null,
+    base: PostOrders = .{},
+    once: bool = false,
+    returning: bool = false,
+    passive: bool = false,
     ai: Ai = .hold,
     home: rl.Vector3 = mathx.zero3,
     wp: [MAX_WP]Wp = [_]Wp{.{}} ** MAX_WP,
@@ -674,6 +689,42 @@ pub const Post = struct {
             self.wp[i] = p;
             self.nwp = @intCast(i + 1);
         }
+        self.base = .{ .ai = self.ai, .home = self.home, .wp = self.wp, .nwp = self.nwp };
+    }
+
+    pub fn setHour(self: *Post, m: *const wf.Map, hour: f32, at: rl.Vector3, busy: bool) void {
+        const si = self.schedule orelse return;
+        if (si >= m.nschedules or busy) return;
+        const s = &m.schedules[si];
+        const next = s.at(hour);
+        if (next == self.shift) return;
+        self.shift = next;
+        self.leg = 0;
+        self.back = false;
+        self.marked = false;
+        self.dwell = 0;
+        self.once = false;
+        self.returning = next == null;
+        self.passive = false;
+        const index = next orelse {
+            self.ai = self.base.ai;
+            self.home = self.base.home;
+            self.wp = self.base.wp;
+            self.nwp = self.base.nwp;
+            return;
+        };
+        const slot = &s.slots[index];
+        self.passive = slot.passive;
+        self.ai = switch (slot.order) {
+            .hold => if (slot.nwp > 0) .patrol else .hold,
+            .travel, .patrol => .patrol,
+            .roam => .roam,
+            .roam_free => .roam_free,
+        };
+        self.once = slot.order == .travel or slot.order == .hold;
+        self.home = if (slot.nwp > 0) v3(slot.wp[0].x, at.y, slot.wp[0].z) else at;
+        self.nwp = if (slot.nwp > 0 and slot.order != .hold) slot.nwp - 1 else 0;
+        for (0..self.nwp) |i| self.wp[i] = slot.wp[i + 1];
     }
 
     pub fn idles(self: *const Post) bool {
@@ -710,7 +761,7 @@ pub const Post = struct {
     }
 
     pub fn legHere(self: *const Post, fallback: rl.Vector3) rl.Vector3 {
-        if (self.nwp == 0) return fallback;
+        if (self.nwp == 0) return if (self.once) self.home else fallback;
         return self.legAt(self.leg);
     }
 
@@ -721,10 +772,11 @@ pub const Post = struct {
     }
 
     fn walkRoute(self: *Post, at: rl.Vector3) ?rl.Vector3 {
-        if (self.nwp == 0) return null;
+        if (self.nwp == 0 and !self.once) return null;
         const last: u8 = self.nwp;
         const target = self.legAt(self.leg);
         if (mathx.distXZ(at, target) > ARRIVE) return target;
+        if (self.once and self.leg >= last) return null;
         if (self.back) {
             if (self.leg == 0) {
                 self.back = false;
@@ -753,6 +805,94 @@ pub const Nav = struct {
         return self.dir orelse want;
     }
 };
+
+test "SCHEDULE swaps orders without teleporting, finishes travel, and resumes its original patrol" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++
+        \\schedule: rounds
+        \\shift: 22 3 travel passive=1 wp=2,0 wp=8,0 wp=8,6
+        \\shift: 6 12 patrol wp=-2,0 wp=-8,0
+    );
+    defer std.testing.allocator.destroy(m);
+    var p = Post{};
+    const home = mathx.zero3;
+    p.arm(.patrol, home, &.{.{ .x = 0, .z = 10 }}, 0.3);
+    p.schedule = 0;
+    p.setHour(m, 12, home, false);
+    try std.testing.expectEqual(@as(?u8, null), p.shift);
+    p.setHour(m, 23, home, false);
+    try std.testing.expect(p.passive);
+    try std.testing.expectEqualDeep(v3(2, 0, 0), p.want(0.1, home).?);
+    try std.testing.expectEqualDeep(v3(8, 0, 0), p.want(0.1, v3(2, 0, 0)).?);
+    try std.testing.expectEqualDeep(v3(8, 0, 6), p.want(0.1, v3(8, 0, 0)).?);
+    try std.testing.expect(p.want(0.1, v3(8, 0, 6)) == null);
+    p.setHour(m, 0, v3(8, 0, 6), false);
+    try std.testing.expect(p.want(0.1, v3(8, 0, 6)) == null);
+    p.setHour(m, 7, v3(8, 0, 6), true);
+    try std.testing.expectEqual(@as(?u8, 0), p.shift);
+    p.setHour(m, 7, v3(8, 0, 6), false);
+    try std.testing.expectEqualDeep(v3(-2, 0, 0), p.want(0.1, v3(8, 0, 6)).?);
+    try std.testing.expectEqualDeep(v3(-8, 0, 0), p.want(0.1, v3(-2, 0, 0)).?);
+    try std.testing.expectEqualDeep(v3(-2, 0, 0), p.want(0.1, v3(-8, 0, 0)).?);
+    p.setHour(m, 12, v3(-2, 0, 0), false);
+    try std.testing.expectEqual(@as(?u8, null), p.shift);
+    try std.testing.expect(!p.passive);
+    try std.testing.expectEqual(Ai.patrol, p.ai);
+    try std.testing.expectEqualDeep(home, p.want(0.1, v3(-2, 0, 0)).?);
+    try std.testing.expectEqualDeep(v3(0, 0, 10), p.want(0.1, home).?);
+    p.setHour(m, 23, home, false);
+    try std.testing.expectEqualDeep(v3(2, 0, 0), p.want(0.1, home).?);
+}
+
+test "SCHEDULE a single destination holds there, an empty route stays put, and peaceful bodies defend themselves" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++
+        \\schedule: walk
+        \\shift: 0 6 hold wp=12,4
+        \\shift: 6 12 travel
+    );
+    defer std.testing.allocator.destroy(m);
+    var p = Post{};
+    p.arm(.hold, mathx.zero3, &.{}, 0);
+    p.schedule = 0;
+    p.setHour(m, 0, mathx.zero3, false);
+    try std.testing.expectEqualDeep(v3(12, 0, 4), p.want(0.1, mathx.zero3).?);
+    try std.testing.expectEqualDeep(v3(12, 0, 4), p.legHere(mathx.zero3));
+    try std.testing.expect(p.want(0.1, v3(12, 0, 4)) == null);
+    p.setHour(m, 7, v3(12, 0, 4), false);
+    try std.testing.expect(p.want(0.1, v3(12, 0, 4)) == null);
+    var l = Leash{ .passive = true };
+    try std.testing.expect(sensedDist(&l, 1, 10) > 10);
+    l.provoke();
+    try std.testing.expect(sensedDist(&l, 1, 10) <= 10);
+}
+
+test "SCHEDULE real walkers use their normal gait, follow bends and stop at the authored destination" {
+    const Hollow = @import("hollow.zig").Hollow;
+    const Shade = @import("shade.zig").Shade;
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++
+        \\schedule: rounds
+        \\shift: 22 3 travel passive=1 wp=0,0 wp=8,0 wp=8,6
+        \\foe: tolling_hollow 0 0 0 1 0.3 schedule=rounds
+        \\foe: shade 0 0 0 1 0.3 schedule=rounds
+    );
+    defer std.testing.allocator.destroy(m);
+    inline for (.{ Hollow, Shade }, .{ wf.FoeKind.tolling_hollow, wf.FoeKind.shade }) |T, kind| {
+        var row: [1]T = undefined;
+        var n: usize = 0;
+        resetGroup(T, &row, &n, m, kind);
+        try std.testing.expectEqual(@as(usize, 1), n);
+        const f = &row[0];
+        try std.testing.expectEqual(@as(?u8, 0), f.post.schedule);
+        f.post.setHour(m, 23, f.pos, false);
+        f.leash.passive = f.post.passive;
+        for (0..1800) |_| {
+            _ = f.update(1.0 / 60.0, v3(0, 0, 250), 300, .{});
+        }
+        try std.testing.expect(mathx.distXZ(f.pos, v3(8, 0, 6)) <= ARRIVE + 0.1);
+        const at = f.pos;
+        for (0..120) |_| _ = f.update(1.0 / 60.0, v3(0, 0, 250), 300, .{});
+        try std.testing.expect(mathx.distXZ(f.pos, at) < 0.1);
+    }
+}
 
 test "AN UNSTAMPED WAY CHANGES NOTHING — steering is a bend on a refused heading, never a layer on top of one" {
     const at = mathx.ground(0, 0);
@@ -2619,9 +2759,10 @@ pub fn postStep(self: anytype, dt: f32, bounds: f32, speed: f32, sensed: f32, ag
     if (comptime !@hasField(T, "post")) return .{};
     if (sensed <= aggroR or speed <= 0) return .{};
     const go = self.post.want(dt, self.pos) orelse return .{};
-    const dir = mathx.dirXZ(self.pos, go);
+    const target = if (self.post.shift != null and @hasField(T, "nav")) self.nav.aim(self.pos, go) else go;
+    const dir = mathx.dirXZ(self.pos, target);
     if (mathx.lenXZ(dir) < 1e-4) return .{};
-    const moved = speed * dt;
+    const moved = @min(speed * dt, mathx.distXZ(self.pos, go));
     mathx.stepXZ(&self.pos, mathx.normV(dir), moved, bounds);
     return .{ .moved = moved, .speed = speed, .yaw = mathx.headingXZ(dir) };
 }
@@ -2629,7 +2770,7 @@ pub fn postStep(self: anytype, dt: f32, bounds: f32, speed: f32, sensed: f32, ag
 pub fn homeFor(self: anytype) rl.Vector3 {
     const T = @TypeOf(self.*);
     if (comptime !@hasField(T, "post")) return self.home;
-    return if (self.post.ai == .hold) self.home else self.pos;
+    return if (self.post.ai == .hold) (if (self.post.shift != null) self.post.home else self.home) else self.pos;
 }
 
 /// A ROUTINE'S `.hold` ARM, THE SAME ON EVERY CREATURE: too far from home it walks back, otherwise it stands. Answers
@@ -2646,7 +2787,7 @@ pub fn tetherFor(self: anytype) rl.Vector3 {
     const T = @TypeOf(self.*);
     if (comptime !@hasField(T, "post")) return self.home;
     return switch (self.post.ai) {
-        .hold => self.home,
+        .hold => if (self.post.shift != null) self.post.home else self.home,
         .roam => self.post.home,
         .patrol => self.post.legHere(self.home),
         .roam_free => self.pos,
@@ -2658,7 +2799,7 @@ pub fn postAim(self: anytype) ?rl.Vector3 {
     if (comptime !@hasField(T, "post")) return null;
     return switch (self.post.ai) {
         .hold => null,
-        .patrol => if (self.post.nwp == 0) null else self.post.legHere(self.home),
+        .patrol => if (self.post.nwp == 0 and !self.post.once) null else self.post.legHere(self.post.home),
         .roam, .roam_free => if (self.post.marked) self.post.mark else null,
     };
 }
@@ -2712,14 +2853,15 @@ pub fn postAmble(
         self.speed = mathx.approach(self.speed, 0, accel * dt);
         return false;
     };
-    const dir = mathx.dirXZ(self.pos, go);
+    const target = if (self.post.shift != null and @hasField(@TypeOf(self.*), "nav")) self.nav.aim(self.pos, go) else go;
+    const dir = mathx.dirXZ(self.pos, target);
     if (mathx.lenXZ(dir) < 1e-4) {
         self.speed = mathx.approach(self.speed, 0, accel * dt);
         return false;
     }
             // THE EASE IS THE BODY'S, NOT THE GAIT BLEND'S: stepped by the speed asked for rather than the one reached, `accel` moved nothing and a round started at full pace.
     self.speed = mathx.approach(self.speed, speed, accel * dt);
-    const moved = self.speed * dt;
+    const moved = @min(self.speed * dt, mathx.distXZ(self.pos, go));
     const w = mathx.headingXZ(dir);
     mathx.stepXZ(&self.pos, dir, moved, bounds);
     movedDist.* = moved;
@@ -2804,10 +2946,11 @@ pub fn postWant(self: anytype, dt: f32, sensed: f32, aggroR: f32) ?rl.Vector3 {
     return self.post.want(dt, self.pos);
 }
 
-pub fn armPost(f: anytype, h: wf.Foe, home: rl.Vector3) void {
+pub fn armPost(f: anytype, h: wf.Foe, home: rl.Vector3, m: *const wf.Map) void {
     const T = @TypeOf(f.*);
     if (comptime !@hasField(T, "post")) return;
     f.post.arm(h.ai, home, h.route(), h.seed);
+    f.post.schedule = m.findSchedule(wf.idText(&h.schedule));
 }
 
 /// The authored window onto the body, since the map row is gone by the time the hour turns.
@@ -2867,7 +3010,7 @@ pub fn resetGroup(comptime T: type, out: []T, n: *usize, m: *const wf.Map, want:
         const home = v3(h.x, caves.homeY(m, h.x, h.z, h.under), h.z);
         out[n.*] = T.spawn(home, mathx.radians(h.yaw), h.scale, h.seed);
         armStats(&out[n.*], want);
-        armPost(&out[n.*], h, home);
+        armPost(&out[n.*], h, home, m);
         armWindow(&out[n.*], h);
         n.* += 1;
     }
@@ -2888,7 +3031,7 @@ pub fn resetRoles(
         const home = v3(h.x, caves.homeY(m, h.x, h.z, h.under), h.z);
         out[n.*] = T.spawnAs(role, home, mathx.radians(h.yaw), h.scale, h.seed);
         armStats(&out[n.*], h.kind);
-        armPost(&out[n.*], h, home);
+        armPost(&out[n.*], h, home, m);
         armWindow(&out[n.*], h);
         n.* += 1;
     }
@@ -4125,4 +4268,3 @@ test "AND THE HOUR IS ARMED OFF THE MAP ROW, both ways a group is filled" {
     try std.testing.expectEqual(wf.FoeWhen.night, out[0].leash.win.when);
     try std.testing.expectEqual(wf.FoeWhen.day, out[1].leash.win.when);
 }
-

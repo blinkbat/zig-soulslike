@@ -1647,6 +1647,8 @@ fn rehomeFoes(g: *Game, sighted: Sighted) void {
 
 fn foePlacementStamp(m: *const worldfmt.Map) u64 {
     var h = std.hash.Wyhash.init(0);
+    h.update(std.mem.asBytes(&m.nschedules));
+    h.update(std.mem.sliceAsBytes(m.schedules[0..m.nschedules]));
     h.update(std.mem.asBytes(&m.nfoes));
     for (m.foes[0..m.nfoes]) |f| {
         h.update(std.mem.asBytes(&f));
@@ -5008,6 +5010,32 @@ fn spendTurnedBlows(g: *Game) void {
 const TURNED_R: f32 = 0.45;
 const TURNED_SELF: f32 = 0.30;
 
+fn markSchedules(g: *Game) void {
+    inline for (FOE_GROUPS) |gr| {
+        const M = std.meta.Child(@TypeOf(@field(g, gr.field).live()));
+        if (comptime !@hasField(M, "post")) continue;
+        for (@field(g, gr.field).live()) |*f| {
+            f.post.setHour(&g.map, g.day.hour, f.pos, f.leash.roused() or f.leash.sinceCombat < foemod.LEASH_CALM);
+            f.leash.passive = f.post.passive;
+        }
+    }
+    for (g.folk.live()) |*p| p.post.setHour(&g.map, g.day.hour, p.pos, p.talking);
+}
+
+pub fn schedulesForShot(g: *Game) void {
+    markSchedules(g);
+    markHour(g, null);
+}
+
+test "SCHEDULE authoring only offers orders to creatures which implement them" {
+    inline for (FOE_GROUPS) |gr| {
+        if (gr.kind) |kind| {
+            try std.testing.expectEqual(@hasField(memberOf(gr.field), "post"), worldfmt.canSchedule(kind));
+        }
+    }
+    try std.testing.expect(!worldfmt.canSchedule(.brood_sac));
+}
+
 /// The hour onto every body: its own window (`foe.Win`), how far it can see through the dark (`foe.sightShare`) and, for the creatures whose BEHAVIOUR turns on the clock, the night itself.
 fn markHour(g: *Game, flame: ?gfx.Light) void {
     const day = daynight.dayShare(g.day.hour);
@@ -6457,6 +6485,7 @@ pub fn run(mode: Mode) void {
         const hitsBefore = allHits(g);
         // ONE FLAME A FRAME: both stamps answer for the same fire, and `torchLight` flickers off `rl.getTime`.
         const flame = g.hero.torchLight();
+        markSchedules(g);
         markHour(g, flame);
         markGlare(g, flame);
         markSight(g);

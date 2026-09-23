@@ -772,6 +772,10 @@ fn harnessKit(g: *Game) void {
 
 pub fn runShots(g: *Game) void {
     std.fs.cwd().makePath(DIR) catch {};
+    if (wholeStage("schedule_study")) {
+        scheduleStudy(g);
+        return;
+    }
     if (wholeStage(TERRAIN_EDITOR_STUDY)) {
         terrainEditorStudy(g);
         return;
@@ -5084,6 +5088,70 @@ fn talkShot(g: *Game, name: [:0]const u8, at: rl.Vector3, frames: i32, in: dialo
     drawScene(g);
     game.drawTalkForShot(g);
     snap(name);
+}
+
+fn scheduleStudy(g: *Game) void {
+    const stage = onlyStage;
+    onlyStage = "";
+    defer onlyStage = stage;
+    g.drawDt = SETTLE_DT;
+    g.menu.screen = .closed;
+    g.retro.allOff();
+    game.clearWeatherForShot(g);
+    game.pinHourForShot(g, game.daynight.SHOT_HOUR);
+    game.clearFoesForShot(g);
+    g.map.blank("Schedule authoring");
+    g.env.replay(&g.map);
+    g.folk.reset(&g.map);
+    g.editor.enter(mathx.zero3);
+    g.editor.applyCamForShot();
+    g.editor.eventsForShot(&g.map, 0);
+    editorSnap(g, DIR ++ "/schedule_01_empty.png");
+
+    var line: usize = 0;
+    worldfmt.parse(worldfmt.TEST_HEAD ++
+        \\schedule: road_rounds
+        \\shift: 6 18 patrol passive=1 wp=-10,-6 wp=-10,0 wp=-4,0 wp=-4,6 wp=4,6 wp=4,0 wp=10,0 wp=10,-6
+        \\shift: 22 3 travel passive=1 wp=10,-6 wp=10,0 wp=-10,0 wp=-10,-6
+        \\schedule: market_walk
+        \\shift: 6 18 travel wp=-8,-6 wp=-8,2 wp=8,2
+        \\foe: tolling_hollow -10 -6 0 1 0.3 schedule=road_rounds
+        \\npc: merchant -8 -6 0 1 0.4 schedule=market_walk
+    , &g.map, &line) catch @panic("schedule study map");
+    g.map.setName("Schedule authoring");
+    g.env.replay(&g.map);
+    game.rehomeFoesForShot(g);
+    g.folk.reset(&g.map);
+    g.editor.eventsForShot(&g.map, 0);
+    editorFrames(g, 2);
+    editorSnap(g, DIR ++ "/schedule_02_slots.png");
+    g.editor.scheduleDetailScroll = 10000;
+    editorFrames(g, 2);
+    editorSnap(g, DIR ++ "/schedule_03_route_tail.png");
+    g.editor.modal = .none;
+    g.editor.scheduleRouting = true;
+    g.editor.selecting = false;
+    g.editor.focus = v3(0, 0, 0);
+    g.editor.pitch = -0.95;
+    g.editor.dist = 40;
+    g.editor.applyCamForShot();
+    editorSnap(g, DIR ++ "/schedule_04_route.png");
+    g.editor.scheduleRouting = false;
+    g.editor.scheduleUnitForShot(0);
+    editorSnap(g, DIR ++ "/schedule_05_assignment.png");
+    g.editor.on = false;
+    standHero(g, 0, 14, 0);
+    game.schedulesForShot(g);
+    shootAt(g, DIR ++ "/schedule_06_before.png", v3(0, 1, 0), LIT_YAW, 0.48, 29);
+    for (0..720) |_| {
+        game.schedulesForShot(g);
+        for (g.belfry.live()) |*f| _ = f.update(SHOT_DT, g.hero.pos, game.PLAY_HALF, .{});
+        game.stepFolkForShot(g, SHOT_DT);
+    }
+    shootAt(g, DIR ++ "/schedule_07_moving.png", v3(0, 1, 0), LIT_YAW, 0.48, 29);
+    std.debug.print("schedule study: leader ({d:.2}, {d:.2}), folk ({d:.2}, {d:.2})\n", .{
+        g.belfry.live()[0].pos.x, g.belfry.live()[0].pos.z, g.folk.live()[0].pos.x, g.folk.live()[0].pos.z,
+    });
 }
 
 fn terrainEditorStudy(g: *Game) void {

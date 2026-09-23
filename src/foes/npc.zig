@@ -344,6 +344,7 @@ fn merchantBones(head: rl.Mesh) [N]rl.Mesh {
 }
 
 pub const Wanderer = struct {
+    post: foe.Post = .{},
     pos: rl.Vector3 = mathx.zero3,
     home: rl.Vector3 = mathx.zero3,
     postYaw: f32 = 0,
@@ -450,10 +451,11 @@ pub const Wanderer = struct {
         if (sees and !self.noticed and !self.talking) self.greet();
         self.noticed = sees;
 
-        const attend = self.talking or sees;
+        const attend = self.talking or (sees and self.post.shift == null);
         var moved: f32 = 0;
         var moveYaw: ?f32 = null;
         var speed: f32 = 0;
+        if (self.post.returning and mathx.distXZ(self.pos, self.home) <= ARRIVE) self.post.returning = false;
         if (attend) {
             const to = mathx.dirXZ(self.pos, heroPos);
             if (mathx.lenXZ(to) > 0.001) {
@@ -474,6 +476,20 @@ pub const Wanderer = struct {
                     if (self.gesture == .none) self.begin(.point);
                 }
             } else self.beat = TALK_BEAT;
+        } else if (self.post.shift != null or self.post.returning) {
+            const go = if (self.post.shift != null) self.post.want(dt, self.pos) else self.home;
+            if (go) |toPos| {
+                const to = mathx.dirXZ(self.pos, toPos);
+                if (mathx.lenXZ(to) > 0.001) {
+                    self.wantYaw = mathx.headingXZ(to);
+                    if (@abs(mathx.wrapPi(self.wantYaw - self.facing)) < TURN_GATE) {
+                        moveYaw = self.wantYaw;
+                        speed = AMBLE_SPEED;
+                        moved = @min(speed * dt, mathx.distXZ(self.pos, toPos));
+                        mathx.stepXZ(&self.pos, to, moved, bounds);
+                    }
+                }
+            }
         } else if (self.roamR > 0.01) {
             if (self.dwell > 0) {
                 self.dwell -= dt;
@@ -1006,6 +1022,8 @@ pub const Folk = struct {
                 p.seed,
                 p.roam,
             );
+            self.list[self.n].post.arm(.hold, self.list[self.n].home, &.{}, p.seed);
+            self.list[self.n].post.schedule = m.findSchedule(wf.idText(&p.schedule));
             self.n += 1;
         }
     }
@@ -1551,6 +1569,40 @@ test "he looks up when you come near and settles back to his post when you go" {
     try std.testing.expect(@abs(mathx.wrapPi(p.facing)) < @abs(mathx.wrapPi(turned)) + 0.001);
     try std.testing.expect(@abs(mathx.wrapPi(p.facing - 0)) < 0.05);
     try std.testing.expectEqual(Gesture.none, p.gesture);
+}
+
+test "SCHEDULE folk travel while followed, pause for conversation, and return to their authored post" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++
+        \\schedule: rounds
+        \\shift: 22 3 travel wp=0,0 wp=8,0 wp=8,6
+        \\npc: merchant 0 0 0 1 0.3 schedule=rounds
+    );
+    defer std.testing.allocator.destroy(m);
+    var folk = Folk{};
+    folk.reset(m);
+    const p = &folk.list[0];
+    try std.testing.expectEqual(@as(?u8, 0), p.post.schedule);
+    p.post.setHour(m, 23, p.pos, false);
+    const dt: f32 = 1.0 / 60.0;
+    for (0..1200) |_| p.update(dt, mathx.addV(p.pos, v3(0, 0, 4)), 100);
+    try std.testing.expect(mathx.distXZ(p.pos, v3(8, 0, 6)) <= foe.ARRIVE + 0.01);
+    const at = p.pos;
+    p.talking = true;
+    p.post.setHour(m, 7, p.pos, p.talking);
+    for (0..60) |_| p.update(dt, v3(0, 0, 50), 100);
+    try std.testing.expectEqualDeep(at, p.pos);
+    try std.testing.expectEqual(@as(?u8, 0), p.post.shift);
+    p.talking = false;
+    p.post.setHour(m, 7, p.pos, false);
+    for (0..1200) |_| p.update(dt, v3(0, 0, 50), 100);
+    try std.testing.expect(mathx.distXZ(p.pos, p.home) <= ARRIVE + 0.01);
+    p.roamR = 3;
+    var far: f32 = 0;
+    for (0..1800) |_| {
+        p.update(dt, v3(0, 0, 50), 100);
+        far = @max(far, mathx.distXZ(p.pos, p.home));
+    }
+    try std.testing.expect(far > 1);
 }
 
 test "a roamer stays inside its tether and a posted one never moves" {

@@ -546,6 +546,121 @@ pub const FoeAi = enum(u8) {
 pub const Wp = struct { x: f32 = 0, z: f32 = 0 };
 pub const MAX_WP: usize = 8;
 
+pub const MAX_SCHEDULES: usize = 32;
+pub const MAX_SCHEDULE_SLOTS: usize = 8;
+pub const ScheduleOrder = enum(u8) { hold, travel, patrol, roam, roam_free };
+
+pub const ScheduleSlot = struct {
+    start: f32 = 0,
+    end: f32 = 0,
+    order: ScheduleOrder = .hold,
+    passive: bool = false,
+    wp: [MAX_WP]Wp = [_]Wp{.{}} ** MAX_WP,
+    nwp: u8 = 0,
+
+    pub fn contains(self: ScheduleSlot, hour: f32) bool {
+        const h = @mod(hour, 24);
+        if (self.start == self.end) return true;
+        return if (self.start < self.end) h >= self.start and h < self.end else h >= self.start or h < self.end;
+    }
+
+    pub fn route(self: *const ScheduleSlot) []const Wp {
+        return self.wp[0..@min(self.nwp, MAX_WP)];
+    }
+};
+
+pub const Schedule = struct {
+    id: Id = [_]u8{0} ** ID_CAP,
+    enabled: bool = true,
+    slots: [MAX_SCHEDULE_SLOTS]ScheduleSlot = [_]ScheduleSlot{.{}} ** MAX_SCHEDULE_SLOTS,
+    nslots: u8 = 0,
+
+    pub fn label(self: *const Schedule) []const u8 {
+        return idText(&self.id);
+    }
+
+    pub fn at(self: *const Schedule, hour: f32) ?u8 {
+        if (!self.enabled) return null;
+        for (self.slots[0..self.nslots], 0..) |slot, i| {
+            if (slot.contains(hour)) return @intCast(i);
+        }
+        return null;
+    }
+};
+
+pub fn canSchedule(kind: FoeKind) bool {
+    return switch (kind) {
+        .rooted, .fen_lurker, .slumber_bloom, .brood_sac => false,
+        else => true,
+    };
+}
+
+test "SCHEDULE hours wrap midnight, boundaries are exclusive, gaps and priority are explicit" {
+    var s = Schedule{ .nslots = 2 };
+    s.slots[0] = .{ .start = 22, .end = 3, .order = .travel };
+    s.slots[1] = .{ .start = 6, .end = 18, .order = .patrol };
+    for ([_]f32{ 22, 23.9, 0, 2.99, 24, -1 }) |h| try std.testing.expectEqual(@as(?u8, 0), s.at(h));
+    for ([_]f32{ 3, 5.99, 18, 21.99 }) |h| try std.testing.expectEqual(@as(?u8, null), s.at(h));
+    try std.testing.expectEqual(@as(?u8, 1), s.at(6));
+    s.slots[1] = .{};
+    try std.testing.expectEqual(@as(?u8, 0), s.at(0));
+    try std.testing.expectEqual(@as(?u8, 1), s.at(12));
+    s.enabled = false;
+    try std.testing.expectEqual(@as(?u8, null), s.at(0));
+}
+
+test "SCHEDULE round trip, forward references, renaming and removal preserve unit assignments" {
+    const text = TEST_HEAD ++
+        \\foe: tolling_hollow 0 0 0 1 0.3 schedule=rounds
+        \\npc: merchant 4 0 0 1 0.4 schedule=rounds
+        \\schedule: rounds enabled=1
+        \\  shift: 22 3 travel passive=1 wp=0,0 wp=10,0 wp=10,8
+        \\  shift: 6 18 patrol wp=2,3 wp=5,6
+    ;
+    const m = try testMap(std.testing.allocator, text);
+    defer std.testing.allocator.destroy(m);
+    var buf: [8192]u8 = undefined;
+    var stream = std.io.fixedBufferStream(&buf);
+    try write(m, stream.writer());
+    const back = try testMap(std.testing.allocator, stream.getWritten());
+    defer std.testing.allocator.destroy(back);
+    try std.testing.expectEqual(@as(usize, 1), back.nschedules);
+    try std.testing.expectEqualDeep(m.schedules[0], back.schedules[0]);
+    try std.testing.expectEqualDeep(m.foes[0], back.foes[0]);
+    try std.testing.expectEqualDeep(m.npcs[0], back.npcs[0]);
+    try std.testing.expect(back.renameSchedule(0, "evening_rounds"));
+    try std.testing.expectEqualStrings("evening_rounds", idText(&back.foes[0].schedule));
+    try std.testing.expectEqualStrings("evening_rounds", idText(&back.npcs[0].schedule));
+    back.removeSchedule(0);
+    try std.testing.expectEqual(@as(usize, 0), back.nschedules);
+    try std.testing.expectEqual(@as(usize, 1), back.nfoes);
+    try std.testing.expectEqual(@as(usize, 1), back.nnpcs);
+    try std.testing.expectEqualStrings("", idText(&back.foes[0].schedule));
+    try std.testing.expectEqualStrings("", idText(&back.npcs[0].schedule));
+}
+
+test "SCHEDULE malformed and impossible authored orders fail loudly" {
+    const m = try std.testing.allocator.create(Map);
+    defer std.testing.allocator.destroy(m);
+    var line: usize = 0;
+    const rows = [_]struct { text: []const u8, err: anyerror }{
+        .{ .text = "schedule: a\nschedule: a\n", .err = ParseError.DuplicateSchedule },
+        .{ .text = "shift: 0 4 patrol\n", .err = ParseError.NoOwner },
+        .{ .text = "schedule: a\nshift: 24 4 patrol\n", .err = ParseError.BadNumber },
+        .{ .text = "schedule: a\nshift: 0 nan patrol\n", .err = ParseError.BadNumber },
+        .{ .text = "schedule: a\nshift: 0 4 patrol bad=1\n", .err = ParseError.UnknownKey },
+        .{ .text = "schedule: a\nshift: 0 4 patrol wp=0,0 wp=0,0 wp=0,0 wp=0,0 wp=0,0 wp=0,0 wp=0,0 wp=0,0 wp=0,0\n", .err = ParseError.TooManyWaypoints },
+        .{ .text = "foe: toad 0 0 0 1 0 schedule=missing\n", .err = ParseError.UnknownRef },
+        .{ .text = "npc: merchant 0 0 0 1 0 schedule=missing\n", .err = ParseError.UnknownRef },
+        .{ .text = "schedule: a\nfoe: slumber_bloom 0 0 0 1 0 schedule=a\n", .err = ParseError.ImmobileSchedule },
+    };
+    for (rows) |r| {
+        const doc = try std.mem.concat(std.testing.allocator, u8, &.{ TEST_HEAD, r.text });
+        defer std.testing.allocator.free(doc);
+        try std.testing.expectError(r.err, parse(doc, m, &line));
+    }
+}
+
 pub const Foe = struct {
     kind: FoeKind = .toad,
     x: f32 = 0,
@@ -554,6 +669,7 @@ pub const Foe = struct {
     scale: f32 = 1,
     seed: f32 = 0,
     ai: FoeAi = .hold,
+    schedule: Id = [_]u8{0} ** ID_CAP,
     when: FoeWhen = .derived,
     /// POSTED IN THE CHAMBER, not on the hill over it. A row without it is the outdoor placement it always was.
     under: bool = false,
@@ -1234,6 +1350,7 @@ pub fn npcName(k: NpcKind) [:0]const u8 {
 pub const NPC_ROAM_MAX: f32 = 8.0;
 
 pub const Npc = struct {
+    schedule: Id = [_]u8{0} ** ID_CAP,
     kind: NpcKind = .wanderer,
     x: f32 = 0,
     z: f32 = 0,
@@ -1725,6 +1842,8 @@ pub const Sculpt = enum {
 };
 
 pub const Map = struct {
+    schedules: [MAX_SCHEDULES]Schedule = undefined,
+    nschedules: usize = 0,
     name: [NAME_CAP]u8 = [_]u8{0} ** NAME_CAP,
     half: f32 = DEFAULT_HALF,
     runway: Runway = .{},
@@ -1780,6 +1899,46 @@ pub const Map = struct {
 
     pub fn label(self: *const Map) []const u8 {
         return nameText(&self.name);
+    }
+
+    pub fn findSchedule(self: *const Map, name: []const u8) ?u8 {
+        if (name.len == 0) return null;
+        for (self.schedules[0..self.nschedules], 0..) |*s, i| {
+            if (std.mem.eql(u8, s.label(), name)) return @intCast(i);
+        }
+        return null;
+    }
+
+    pub fn renameSchedule(self: *Map, i: usize, name: []const u8) bool {
+        var id: Id = undefined;
+        setNameIn(&id, name);
+        const text = idText(&id);
+        if (text.len == 0) return false;
+        if (self.findSchedule(text)) |other| {
+            if (other != i) return false;
+        }
+        const old = self.schedules[i].id;
+        for (self.foes[0..self.nfoes]) |*f| {
+            if (std.mem.eql(u8, idText(&f.schedule), idText(&old))) f.schedule = id;
+        }
+        for (self.npcs[0..self.nnpcs]) |*p| {
+            if (std.mem.eql(u8, idText(&p.schedule), idText(&old))) p.schedule = id;
+        }
+        self.schedules[i].id = id;
+        return true;
+    }
+
+    pub fn removeSchedule(self: *Map, i: usize) void {
+        if (i >= self.nschedules) return;
+        const old = self.schedules[i].id;
+        for (self.foes[0..self.nfoes]) |*f| {
+            if (std.mem.eql(u8, idText(&f.schedule), idText(&old))) f.schedule = [_]u8{0} ** ID_CAP;
+        }
+        for (self.npcs[0..self.nnpcs]) |*p| {
+            if (std.mem.eql(u8, idText(&p.schedule), idText(&old))) p.schedule = [_]u8{0} ** ID_CAP;
+        }
+        std.mem.copyForwards(Schedule, self.schedules[i .. self.nschedules - 1], self.schedules[i + 1 .. self.nschedules]);
+        self.nschedules -= 1;
     }
 
     pub fn setName(self: *Map, s: []const u8) void {
@@ -2488,10 +2647,19 @@ pub fn write(m: *const Map, w: anytype) !void {
         try writeGrid(w, "cliff", &m.cliff);
     }
 
+    for (m.schedules[0..m.nschedules]) |*s| {
+        try w.print("\nschedule: {s} enabled={d}\n", .{ s.label(), @intFromBool(s.enabled) });
+        for (s.slots[0..s.nslots]) |*slot| {
+            try w.print("  shift: {d:.2} {d:.2} {s} passive={d}", .{ slot.start, slot.end, @tagName(slot.order), @intFromBool(slot.passive) });
+            for (slot.route()) |q| try w.print(" wp={d:.2},{d:.2}", .{ q.x, q.z });
+            try w.writeAll("\n");
+        }
+    }
     if (m.nfoes > 0) try w.writeAll("\n");
     for (m.foes[0..m.nfoes]) |f| {
         try w.print("foe: {s} {d:.2} {d:.2} {d:.1} {d:.2} {d:.2}", .{ @tagName(f.kind), f.x, f.z, f.yaw, f.scale, f.seed });
         if (f.ai != .hold) try w.print(" ai={s}", .{@tagName(f.ai)});
+        if (idText(&f.schedule).len > 0) try w.print(" schedule={s}", .{idText(&f.schedule)});
         if (f.when != .derived) try w.print(" when={s}", .{@tagName(f.when)});
         if (f.under) try w.writeAll(" under=1");
         for (f.route()) |q| try w.print(" wp={d:.2},{d:.2}", .{ q.x, q.z });
@@ -2522,6 +2690,7 @@ fn writeScript(m: *const Map, w: anytype) !void {
     for (m.npcSlice()) |*p| {
         try w.print("npc: {s} {d:.2} {d:.2} {d:.1} {d:.2} {d:.2}", .{ @tagName(p.kind), p.x, p.z, p.yaw, p.scale, p.seed });
         if (p.roam != 0) try w.print(" roam={d}", .{p.roam});
+        if (idText(&p.schedule).len > 0) try w.print(" schedule={s}", .{idText(&p.schedule)});
         if (p.under) try w.writeAll(" under=1");
         if (p.dlgRef.len > 0) try w.print(" dlg={s}", .{m.spanText(p.dlgRef)});
         try w.writeAll("\n");
@@ -2759,6 +2928,10 @@ pub const ParseError = error{
     ShortArena,
     TooManyFoes,
     TooManyWaypoints,
+    TooManySchedules,
+    TooManyScheduleSlots,
+    DuplicateSchedule,
+    ImmobileSchedule,
     TooManyNpcs,
     TooManyTriggers,
     TooManyConds,
@@ -2777,6 +2950,7 @@ pub const ParseError = error{
 };
 
 const Cursor = struct {
+    schedule: ?usize = null,
     trig: ?usize = null,
     npc: ?usize = null,
     dlg: ?usize = null,
@@ -2892,6 +3066,8 @@ pub fn parse(text: []const u8, m: *Map, lineOut: *usize) !void {
                 const val = tok[eq + 1 ..];
                 if (std.mem.eql(u8, key, "ai")) {
                     f.ai = try enumFromName(FoeAi, val);
+                } else if (std.mem.eql(u8, key, "schedule")) {
+                    try setId(&f.schedule, val);
                 } else if (std.mem.eql(u8, key, "when")) {
                     f.when = try enumFromName(FoeWhen, val);
                 } else if (std.mem.eql(u8, key, "under")) {
@@ -3087,6 +3263,50 @@ fn readGrid(comptime T: type, it: *std.mem.TokenIterator(u8, .any), cells: []T, 
 const Toks = std.mem.TokenIterator(u8, .any);
 
 fn parseScript(m: *Map, rec: []const u8, rest: []const u8, it: *Toks, cur: *Cursor) !bool {
+    if (std.mem.eql(u8, rec, "schedule")) {
+        if (m.nschedules >= MAX_SCHEDULES) return ParseError.TooManySchedules;
+        var s = Schedule{};
+        try setId(&s.id, it.next() orelse return ParseError.MissingField);
+        if (s.label().len == 0) return ParseError.MissingField;
+        if (m.findSchedule(s.label()) != null) return ParseError.DuplicateSchedule;
+        while (it.next()) |tok| {
+            const eq = std.mem.indexOfScalar(u8, tok, '=') orelse return ParseError.UnknownKey;
+            if (!std.mem.eql(u8, tok[0..eq], "enabled")) return ParseError.UnknownKey;
+            s.enabled = try parseVal(bool, tok[eq + 1 ..]);
+        }
+        cur.schedule = m.nschedules;
+        m.schedules[m.nschedules] = s;
+        m.nschedules += 1;
+        return true;
+    }
+    if (std.mem.eql(u8, rec, "shift")) {
+        const si = cur.schedule orelse return ParseError.NoOwner;
+        const s = &m.schedules[si];
+        if (s.nslots >= MAX_SCHEDULE_SLOTS) return ParseError.TooManyScheduleSlots;
+        var slot = ScheduleSlot{
+            .start = try nextFloat(it),
+            .end = try nextFloat(it),
+            .order = try enumFromName(ScheduleOrder, it.next() orelse return ParseError.MissingField),
+        };
+        if (slot.start < 0 or slot.start >= 24 or slot.end < 0 or slot.end >= 24) return ParseError.BadNumber;
+        while (it.next()) |tok| {
+            const eq = std.mem.indexOfScalar(u8, tok, '=') orelse return ParseError.UnknownKey;
+            const key = tok[0..eq];
+            const val = tok[eq + 1 ..];
+            if (std.mem.eql(u8, key, "passive")) {
+                slot.passive = try parseVal(bool, val);
+            } else if (std.mem.eql(u8, key, "wp")) {
+                if (slot.nwp >= MAX_WP) return ParseError.TooManyWaypoints;
+                const comma = std.mem.indexOfScalar(u8, val, ',') orelse return ParseError.MissingField;
+                slot.wp[slot.nwp] = .{ .x = try finiteFloat(f32, val[0..comma]), .z = try finiteFloat(f32, val[comma + 1 ..]) };
+                slot.nwp += 1;
+            } else return ParseError.UnknownKey;
+        }
+        s.slots[s.nslots] = slot;
+        s.nslots += 1;
+        return true;
+    }
+    cur.schedule = null;
     if (std.mem.eql(u8, rec, "flags")) {
         while (it.next()) |t| _ = try m.internFlag(t);
         return true;
@@ -3116,6 +3336,8 @@ fn parseScript(m: *Map, rec: []const u8, rest: []const u8, it: *Toks, cur: *Curs
             const val = tok[eq + 1 ..];
             if (std.mem.eql(u8, key, "under")) {
                 p.under = try parseVal(bool, val);
+            } else if (std.mem.eql(u8, key, "schedule")) {
+                try setId(&p.schedule, val);
             } else if (std.mem.eql(u8, key, "roam")) {
                 p.roam = try finiteFloat(f32, val);
                 if (p.roam < 0 or p.roam > NPC_ROAM_MAX) return ParseError.BadNumber;
@@ -3348,7 +3570,13 @@ fn nextI32(it: *Toks) !i32 {
 }
 
 fn link(m: *Map) !void {
+    for (m.foes[0..m.nfoes]) |*f| {
+        if (idText(&f.schedule).len == 0) continue;
+        if (m.findSchedule(idText(&f.schedule)) == null) return ParseError.UnknownRef;
+        if (!canSchedule(f.kind)) return ParseError.ImmobileSchedule;
+    }
     for (m.npcs[0..m.nnpcs]) |*p| {
+        if (idText(&p.schedule).len > 0 and m.findSchedule(idText(&p.schedule)) == null) return ParseError.UnknownRef;
         if (p.dlgRef.len == 0) continue;
         p.dlg = m.findDialog(m.spanText(p.dlgRef)) orelse return ParseError.UnknownRef;
     }
@@ -3727,7 +3955,8 @@ pub const TEXT_CAP: usize =
     MAX_OPS * OP_LINE_TYPICAL +
     // EVERY grid the writer can emit, at its worst case. A grid left out is a legal map `save` refuses.
     (3 * SOIL_CELLS + 4 * WATER_CELLS + 2 * HEIGHT_CELLS + 3 * CAVE_CELLS) * GRID_CELL_CAP +
-    MAX_FOES * (longestTag(FoeKind) + 48) +
+    MAX_FOES * (longestTag(FoeKind) + ID_CAP + 64) +
+    MAX_SCHEDULES * (ID_CAP + 32 + MAX_SCHEDULE_SLOTS * (96 + MAX_WP * 40)) +
     (MAX_FLAGS + MAX_COUNTERS + MAX_TIMERS) * (ID_CAP + 2) + 64 +
     MAX_NPCS * (ID_CAP + NAME_CAP + 128) +
     MAX_TRIGGERS * (ID_CAP + 64 + (MAX_CONDS + MAX_ACTS) * (ID_CAP + 48)) +
@@ -5883,4 +6112,3 @@ test "A SPAWN'S HOUR IS DERIVED UNTIL THE EDITOR SAYS OTHERWISE, and an old map 
     }
     std.debug.print("\n  spawns: {d} of {d} kinds keep half the clock by default\n", .{ nocturnal, NFOE });
 }
-

@@ -101,6 +101,8 @@ pub const Table = struct {
     limits: ?*const fn (usize, usize) Col = null,
     codeValue: ?*const fn (usize, usize) f32 = null,
     setRatio: ?*const fn (usize, usize, f32) void = null,
+    /// Read directly: off `get / codeValue` it is 0/0 for a kind no body was made of this session.
+    ratioOf: ?*const fn (usize, usize) f32 = null,
 };
 
 pub const Knob = struct {
@@ -1186,6 +1188,17 @@ fn foeCode(r: usize, c: usize) f32 {
     };
 }
 
+fn foeRatioOf(r: usize, c: usize) f32 {
+    const m = foestat.mult[r];
+    return switch (@as(FoeCol, @enumFromInt(c))) {
+        .hp => m.hp,
+        .poise => m.poise,
+        .stance => m.stance,
+        .flinch => m.brk,
+        .souls, .aggro => 1,
+    };
+}
+
 fn foeRatio(r: usize, c: usize, v: f32) void {
     const m = &foestat.mult[r];
     switch (@as(FoeCol, @enumFromInt(c))) {
@@ -1454,6 +1467,7 @@ pub const TABLES = [_]Table{
         .has = foeHas,
         .codeValue = foeCode,
         .setRatio = foeRatio,
+        .ratioOf = foeRatioOf,
     },
     .{
         .name = "Hero",
@@ -1534,6 +1548,15 @@ pub const TABLES = [_]Table{
 
 pub const NT = TABLES.len;
 
+comptime {
+    for (TABLES) |tb| {
+        for (tb.cols) |col| {
+            if (col.ratio and (tb.setRatio == null or tb.ratioOf == null or tb.codeValue == null))
+                @compileError("tune: table `" ++ tb.key ++ "` has a ratio column without all three ratio hooks");
+        }
+    }
+}
+
 /// Where each table's cells start in `base`. Comptime, so a cell is one add away and nothing walks the list.
 const OFF = blk: {
     var out: [NT + 1]usize = undefined;
@@ -1611,6 +1634,7 @@ pub fn setValue(t: usize, r: usize, c: usize, v: f32) void {
 }
 
 pub fn edited(t: usize, r: usize, c: usize) bool {
+    if (TABLES[t].cols[c].ratio) return TABLES[t].ratioOf.?(r, c) != 1;
     return value(t, r, c) != baseValue(t, r, c);
 }
 
@@ -1636,7 +1660,12 @@ pub fn anyEdited() bool {
 }
 
 pub fn revertRow(t: usize, r: usize) void {
-    for (0..TABLES[t].cols.len) |c| TABLES[t].set(r, c, baseValue(t, r, c));
+    for (0..TABLES[t].cols.len) |c| {
+        // Through the ratio: `set` does nothing while the code value is 0.
+        if (TABLES[t].cols[c].ratio) {
+            TABLES[t].setRatio.?(r, c, 1);
+        } else TABLES[t].set(r, c, baseValue(t, r, c));
+    }
 }
 
 pub fn revertTable(t: usize) void {
@@ -1688,12 +1717,7 @@ pub fn writeDiff(w: anytype) !void {
             if (!rowEdited(ti, r)) continue;
             for (0..tb.cols.len) |c| {
                 if (!edited(ti, r, c)) continue;
-                var out = value(ti, r, c);
-                if (tb.cols[c].ratio) {
-                    const code = baseValue(ti, r, c);
-                    if (code <= 0) continue;
-                    out /= code;
-                }
+                const out = if (tb.cols[c].ratio) tb.ratioOf.?(r, c) else value(ti, r, c);
                 try w.print("{s}.", .{tb.key});
                 try writeToken(w, tb.rowKey(r));
                 if (tb.cols[c].pick) |p| {
@@ -1891,6 +1915,29 @@ test "a pool is typed in absolute and kept as a ratio, so a re-authored creature
     apply("foe", "fungal_deer", "hp", 1.5);
     try std.testing.expectApproxEqAbs(@as(f32, 144), value(foes, deer, 0), 1e-3);
     foestat.mult[deer] = .{};
+}
+
+test "A MULTIPLIER ON A KIND NO BODY WAS MADE OF THIS SESSION IS STILL WRITTEN, and still reverts" {
+    init();
+    defer revertAll();
+    const foes = blk: {
+        for (TABLES, 0..) |tb, i| {
+            if (std.mem.eql(u8, tb.key, "foe")) break :blk i;
+        }
+        unreachable;
+    };
+    const k = wf.FoeKind.salt_husk;
+    const r: usize = @intFromEnum(k);
+    foestat.forget(k);
+    apply("foe", @tagName(k), "hp", 1.5);
+    try std.testing.expect(edited(foes, r, 0) and rowEdited(foes, r));
+    var buf: [512]u8 = undefined;
+    var st = std.io.fixedBufferStream(&buf);
+    try writeDiff(st.writer());
+    try std.testing.expect(std.mem.indexOf(u8, st.getWritten(), "foe." ++ @tagName(k) ++ ".hp 1.5000") != null);
+    revertRow(foes, r);
+    try std.testing.expectEqual(@as(f32, 1), foestat.mult[r].hp);
+    try std.testing.expect(!rowEdited(foes, r));
 }
 
 test "a dial writes the field its own getter reads, at its own step, and moves nothing beside it" {

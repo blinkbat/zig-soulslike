@@ -395,6 +395,11 @@ pub fn fireTipped(h: combat.Hit) combat.Hit {
 
 /// THE BOW'S ONE BLOW, asked by the shot, the card and the compare. The perks land BEFORE the row where the sword's land after, so `TIER_FLAT` is
 /// unperked here and perked there; that asymmetry is a retune, not a bug.
+/// What the page prints; `attackHit` adds what is on him this second.
+pub fn swingBlow(heavy: bool, perk: ptree.Bonus, row: item.Arm, sheet: statsmod.Sheet, tier: u8) combat.Hit {
+    return weigh(if (heavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT, row, sheet, tier).scaled(perk.dmg);
+}
+
 pub fn bowBlow(k: combat.ArrowKind, aimed: bool, perk: ptree.Bonus, row: item.Arm, sheet: statsmod.Sheet, tier: u8) combat.Hit {
     const base = (if (aimed) BOW_AIMED_HIT else BOW_QUICK_HIT).scaled(perk.bowDmg * perk.dmg);
     return weigh(switch (k) {
@@ -1447,6 +1452,20 @@ pub const Off = Armament;
 pub const RIGHT: usize = 0;
 pub const LEFT: usize = 1;
 
+/// Where a hand's cell sits in `Hero.rack`'s order: arm, arm-alt, off, off-alt.
+pub fn rackCell(hand: usize, slot: usize) usize {
+    return (if (hand == RIGHT) @as(usize, 0) else 2) + @min(slot, 1);
+}
+
+/// `a` goes into `into`, and the cell that held it takes what `into` held; the book previews the same swap.
+pub fn rackTake(cells: *[4]Armament, into: usize, a: Armament) void {
+    const displaced = cells[into];
+    cells[into] = a;
+    for (cells, 0..) |*c, i| {
+        if (i != into and c.* == a) c.* = displaced;
+    }
+}
+
 pub fn armSwings(a: Armament) bool {
     return switch (a) {
         .sword, .dagger, .club => true,
@@ -1478,6 +1497,12 @@ pub fn meleeArmOf(arm: Armament, off: Armament) ?Armament {
     if (armSwings(arm) and handsHold(arm, off, arm)) return arm;
     if (armSwings(off) and handsHold(arm, off, off)) return off;
     return null;
+}
+
+/// A two-hander takes both hands; of two swinging weapons the right one wins.
+pub fn offInHandOf(arm: Armament, off: Armament) bool {
+    if (armTwoHanded(arm) or armTwoHanded(off)) return false;
+    return !(armSwings(arm) and armSwings(off));
 }
 
 pub fn swingSocket(arm: Armament, off: Armament) item.Wear {
@@ -1596,6 +1621,8 @@ pub const Hero = struct {
     drinking: bool = false,
     drinkT: f32 = 0,
     poured: bool = false,
+    /// Latched at `startDrink`: the book can re-point `flasks.sel` mid-drink.
+    drinkKind: combat.FlaskKind = .crimson,
     stamRefused: f32 = 0,
     sprinting: bool = false,
     aimLean: f32 = 0,
@@ -1755,7 +1782,7 @@ pub const Hero = struct {
             if (self.perk.hpRegen > 0) _ = self.vit.heal(self.perk.hpRegen * dt);
             if (self.perk.fpRegen > 0) _ = self.fp.restore(self.perk.fpRegen * dt);
         }
-        self.snare = @max(0, self.snare - dt);
+        if (!self.held) self.snare = @max(0, self.snare - dt);
         self.stamRefused = @max(0, self.stamRefused - dt);
         self.fpRefused = @max(0, self.fpRefused - dt);
         self.guardB = mathx.approach(self.guardB, if (self.guarding or self.parrying) 1.0 else 0.0, dt * GUARD_BLEND_RATE);
@@ -2025,6 +2052,7 @@ pub const Hero = struct {
         const moved = speed * dt;
         mathx.stepXZ(&self.pos, self.rollDir, moved, bounds);
         self.speed = speed;
+        self.tickFogGrace(dt);
         self.speedS = mathx.approach(self.speedS, speed, dt * SPEED_SMOOTH);
         self.rollT += dt;
         self.pose();
@@ -2077,8 +2105,7 @@ pub const Hero = struct {
     }
 
     pub fn offInHand(self: *const Hero) bool {
-        if (armTwoHanded(self.arm) or armTwoHanded(self.off)) return false;
-        return !(armSwings(self.arm) and armSwings(self.off));
+        return offInHandOf(self.arm, self.off);
     }
 
     pub fn armInHand(self: *const Hero) Armament {
@@ -2137,15 +2164,12 @@ pub const Hero = struct {
 
     pub fn equip(self: *Hero, hand: usize, slot: usize, a: Armament) bool {
         if (!self.bodyFree()) return false;
-        const into = self.cell(hand, slot);
-        if (into.* == a) return false;
+        if (self.cell(hand, slot).* == a) return false;
         const wasArm = self.arm;
         const wasOff = self.off;
-        const displaced = into.*;
-        into.* = a;
-        for (self.rack()) |c| {
-            if (c != into and c.* == a) c.* = displaced;
-        }
+        var cells = [4]Armament{ self.arm, self.armAlt, self.off, self.offAlt };
+        rackTake(&cells, rackCell(hand, slot), a);
+        for (self.rack(), cells) |c, v| c.* = v;
         if (self.arm != wasArm or self.off != wasOff) {
             self.drawAmt = 0;
             self.startXfade();
@@ -2695,6 +2719,8 @@ pub const Hero = struct {
     }
 
     pub fn requestAttack(self: *Hero, kind: Attack) void {
+        // No exit off a ladder fires the buffer.
+        if (self.onLadder()) return;
         if (self.committed()) {
             self.queued = .{ .attack = kind };
         } else self.startAttack(kind);
@@ -2748,6 +2774,7 @@ pub const Hero = struct {
         const moved = speed * dt;
         mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), moved, bounds);
         self.speed = speed;
+        self.tickFogGrace(dt);
         self.speedS = mathx.approach(self.speedS, speed, dt * SPEED_SMOOTH);
         if (faceYaw) |ty| {
             if (u >= tm.recovA) self.facing = mathx.approachAngle(self.facing, ty, dt * ATK_RETRACK);
@@ -2820,6 +2847,7 @@ pub const Hero = struct {
             return false;
         }
         self.drinking = true;
+        self.drinkKind = self.flasks.sel;
         self.drinkT = 0;
         self.poured = false;
         self.startXfade();
@@ -2831,7 +2859,7 @@ pub const Hero = struct {
         const u = self.drinkT / combat.FLASK_DRINK_DUR;
         if (!self.poured and u >= combat.FLASK_POUR_AT) {
             self.poured = true;
-            switch (self.flasks.sel) {
+            switch (self.drinkKind) {
                 .crimson => _ = self.vit.heal(self.vit.hpMax * combat.FLASK_HP_FRAC * self.perk.flaskHeal),
                 .cerulean => _ = self.fp.restore(self.fp.max * combat.FLASK_FP_FRAC),
             }
@@ -3219,7 +3247,7 @@ pub const Hero = struct {
     }
 
     pub fn attackHit(self: *const Hero) combat.Hit {
-        const base = weigh(if (self.atkHeavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT, self.swingRow(), self.sheet, self.tierOf(self.swingArm())).scaled(self.perk.dmg * self.vit.dmgMult());
+        const base = swingBlow(self.atkHeavy, self.perk, self.swingRow(), self.sheet, self.tierOf(self.swingArm())).scaled(self.vit.dmgMult());
         if (!self.grease.on() and !self.coat.on()) return base;
         var out = base;
         if (self.grease.on()) out.elem.v[@intFromEnum(self.greaseElem)] += base.dmg * self.grease.value(0);
@@ -3580,6 +3608,7 @@ pub const Hero = struct {
         // Asleep is a stagger that will not time out; the wake is on the blow path (`takeHit`), so a poison tick will not raise him.
         if (self.stunT >= dur and !self.vit.asleep()) {
             self.stun = .none;
+            self.vit.endStun();
             self.startXfade();
         }
     }
@@ -4263,10 +4292,10 @@ pub const Hero = struct {
         setLocal(&wx, bel.sh, self.rest, mul3(rx(-RING_SH_FWD * lift), ry(0), rz(bel.mirror * (-ARM_ABD - RING_SH_ABD * lift))));
         setLocal(&wx, bel.el, self.rest, rx(-(IDLE_ELBOW + (RING_ELBOW - IDLE_ELBOW) * lift) + 5.0 * shake));
         setLocal(&wx, bel.wr, self.rest, mul(rz(bel.mirror * RING_FLICK * shake), rx(-14.0 * lift)));
-        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         setLocal(&wx, free.sh, self.rest, mul(rx(-6.0 * lift), rz(free.mirror * ARM_ABD)));
         setLocal(&wx, free.el, self.rest, rx(-(IDLE_ELBOW + 10.0 * lift)));
         setLocal(&wx, free.wr, self.rest, rl.math.matrixIdentity());
+        placeSword(&wx, self.rest, rl.math.matrixIdentity(), self.meleeLeft());
         self.publish(&wx);
     }
 
@@ -5653,6 +5682,19 @@ test "a Cerulean is refused into a full bar rather than pouring a charge away" {
     try std.testing.expectEqual(combat.FLASK_CRIMSON - 1, g.flasks.ready());
 }
 
+test "THE FLASK POURS WHAT WAS UNCORKED — a selection moved mid-drink does not change the pour" {
+    var h = testHero();
+    h.vit.hp = h.vit.hpMax * 0.2;
+    h.fp.cur = 10;
+    try std.testing.expect(h.startDrink());
+    h.flasks.sel = .cerulean;
+    const hp = h.vit.hp;
+    const fp = h.fp.cur;
+    while (h.drinking) h.tickDrink(1.0 / 60.0);
+    try std.testing.expect(h.vit.hp > hp);
+    try std.testing.expectApproxEqAbs(fp, h.fp.cur, 1e-4);
+}
+
 test "roll knots are ordered and the somersault lands exactly 360 before the rise" {
     comptime {
         std.debug.assert(0 < ROLL_TUCK_IN and ROLL_TUCK_IN < ROLL_UNTUCK_A);
@@ -6112,11 +6154,54 @@ test "A NET TAKES THE FEET AND NOTHING ELSE — no walk, no roll, and the sword 
     h.snareFor(0.4);
     try std.testing.expect(h.snare > 0.4);
 
+    const netted = h.snare;
+    h.held = true;
     var t: f32 = 0;
+    while (t < 3.0) : (t += 1.0 / 60.0) h.update(1.0 / 60.0, 0, 0, null);
+    h.held = false;
+    try std.testing.expectApproxEqAbs(netted, h.snare, 1e-6);
+
+    t = 0;
     while (t < 1.5) : (t += 1.0 / 60.0) h.update(1.0 / 60.0, 0, 0, null);
     try std.testing.expect(!h.snared());
     try std.testing.expectApproxEqAbs(rate, h.moveRate(), 1e-4);
     std.debug.print("\n  net: {d:.2} s of held feet, then the walk comes back at {d:.2}\n", .{ @as(f32, 1.35), h.moveRate() });
+}
+
+test "WOKEN, HE IS NOT STILL REELING — the stun a sleep holds ends with his stagger" {
+    var h = testHero();
+    const dt: f32 = 1.0 / 60.0;
+    h.vit.build(.sleep, combat.ailRow(.sleep).max);
+    _ = h.tickPoison(dt);
+    try std.testing.expect(h.staggered() and h.vit.asleep());
+    var t: f32 = 0;
+    while (t < combat.heroStunDur(true) * 2.0) : (t += dt) {
+        h.vit.tick(dt);
+        _ = h.tickPoison(dt);
+        h.updateStun(dt);
+    }
+    try std.testing.expect(h.staggered());
+    _ = h.takeHit(.{ .dmg = 1 }, v3(1, 0, 0));
+    try std.testing.expect(!h.vit.asleep());
+    var guard: usize = 0;
+    while (h.staggered() and guard < 600) : (guard += 1) {
+        h.vit.tick(dt);
+        h.updateStun(dt);
+    }
+    try std.testing.expect(!h.staggered());
+    try std.testing.expect(!h.vit.stunned());
+    try std.testing.expectApproxEqAbs(h.vit.poiseMax, h.vit.poise, 1e-4);
+}
+
+test "A SWING PRESSED ON A LADDER IS REFUSED, NOT HELD — no way off one fires the buffer" {
+    var h = testHero();
+    for ([_]bool{ true, false }) |climb| {
+        h.climbing = climb;
+        h.mantling = !climb;
+        h.requestAttack(.light);
+        try std.testing.expectEqual(@as(?Queued, null), h.queued);
+        try std.testing.expect(!h.attacking);
+    }
 }
 
 test "i-frames beat the shield, and a committed action drops it" {
@@ -6992,6 +7077,21 @@ fn wristAt(m: rl.Matrix) rl.Vector3 {
     return rl.math.vector3Transform(mathx.zero3, m);
 }
 
+test "THE SWORD RIDES THE FREE HAND THROUGH THE RING — placed off that arm's own chain, never an unset wrist" {
+    var h = testHero();
+    h.arm = .sword;
+    h.off = .bell;
+    try std.testing.expect(h.bellLeft() and !h.meleeLeft());
+    const grip = mathx.lenV(mathx.subV(h.rest[SWORD], h.rest[WRR]));
+    for ([_]f32{ 0.1, RING_AT, 0.9 }) |u| {
+        h.ringing = true;
+        h.ringT = RING_DUR * u;
+        h.pose();
+        const gap = mathx.lenV(mathx.subV(wristAt(h.xf[SWORD]), wristAt(h.xf[WRR])));
+        try std.testing.expectApproxEqAbs(grip, gap, 1e-3);
+    }
+}
+
 test "A TWO-HANDER CLAIMS BOTH HANDS FROM EITHER SLOT" {
     var h = testHero();
     h.arm = .shield;
@@ -7436,6 +7536,26 @@ test "THE FOG GRACE HOLDS WHILE HE STANDS AND ONLY THE STEP HE TAKES HIMSELF SPE
     var d: f32 = 0;
     while (d < DEATH_DUR + 0.1) : (d += dt) h.updateDeath(dt);
     try std.testing.expect(!h.iFramed());
+}
+
+test "A ROLL AND A LUNGE ARE STEPS HE TAKES HIMSELF — each spends the fog grace a walk would" {
+    const dt: f32 = 1.0 / 60.0;
+    var r = testHero();
+    r.startFogGrace();
+    r.startRoll(v3(0, 0, 1));
+    try std.testing.expect(r.rolling);
+    var rolled: f32 = 0;
+    while (r.rolling) : (rolled += dt) r.updateRoll(dt, 400.0);
+    try std.testing.expect(r.fogGraceT < FOG_GRACE_TAIL - 0.2);
+
+    var a = testHero();
+    a.startFogGrace();
+    a.startAttack(.heavy);
+    try std.testing.expect(a.attacking);
+    var swung: f32 = 0;
+    while (a.attacking) : (swung += dt) a.updateAttack(dt, 400.0, null);
+    try std.testing.expect(a.fogGraceT < FOG_GRACE_TAIL);
+    std.debug.print("\n  fog grace: a {d:.2} s roll spends {d:.2} s of it, a {d:.2} s heavy's lunge {d:.2} s\n", .{ rolled, FOG_GRACE_TAIL - r.fogGraceT, swung, FOG_GRACE_TAIL - a.fogGraceT });
 }
 
 test "A RUN'S FX DIE WITH IT — the root patch outlives the death card and had to be cleared by hand" {

@@ -780,8 +780,6 @@ pub const Archer = struct {
                 if (first) {
                     self.looseFired = true;
                     loosed = true;
-                    self.leash.noteCombat();
-                    sfx.world(.bow_loose, self.pos);
                 }
                 if (!first) {
                     const u = mathx.clampF(self.t / LOOSE_DUR, 0, 1);
@@ -890,7 +888,11 @@ pub const Archer = struct {
         self.takeParry(wasBow);
         self.tryHit(blade);
         if (jabLive and !self.staggered()) self.tryButt(hero, wasBow);
-        return loosed;
+        // After the blade is billed: a stagger on the loose frame keeps the arrow.
+        if (!loosed or self.staggered()) return false;
+        self.leash.noteCombat();
+        sfx.world(.bow_loose, self.pos);
+        return true;
     }
 
     fn toImpact(self: *const Archer) ?f32 {
@@ -1010,14 +1012,12 @@ pub const Archer = struct {
     }
 
     pub fn raisable(self: *const Archer) bool {
-        return self.state == .dead and !self.gone and !self.wasRaised and self.t >= DEATH_DUR;
+        return foe.raisableAfter(self, DEATH_DUR);
     }
 
     pub fn reraise(self: *Archer, frac: f32) void {
         foe.rekindle(self, frac);
-        self.wasRaised = true;
         self.enterStun(.stunlight);
-        self.leash.noteCombat();
         self.pose();
     }
 
@@ -2074,6 +2074,16 @@ test "archer release keeps its arrow until the projectile takes over" {
             if (seen) try std.testing.expect(a.nockVis);
         }
         try std.testing.expect(fired);
+    }
+}
+
+test "A BLOW ON THE LOOSE FRAME KEEPS THE ARROW ON THE STRING — the shot is let go after the blade is billed" {
+    for ([_]bool{ false, true }) |struck| {
+        var a = Archer.spawn(mathx.zero3, 0, 1, 0.37);
+        a.enter(.loose);
+        const blade: foe.Blade = if (struck) foe.shaftThrough(a.centerWorld(), .{ .dmg = 40 }) else .{};
+        try std.testing.expectEqual(!struck, a.update(1.0 / 60.0, v3(0, 0, 12), 200, blade));
+        try std.testing.expectEqual(struck, a.staggered());
     }
 }
 

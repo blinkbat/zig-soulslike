@@ -99,8 +99,6 @@ const SWIPE_R: f32 = 3.50;
 const SWIPE_ARC: f32 = 150.0;
 /// Where the sector sits relative to facing, in the swinging hand's own sign: the bough finishes across the body.
 const SWIPE_ARC_MID: f32 = -46.0;
-/// The parry cone. Wide, because the sector it has to cover runs from `SWIPE_ARC_MID - SWIPE_ARC/2` to `+SWIPE_ARC/2`.
-const SWIPE_FRONT_DOT: f32 = -0.2;
 const SWIPE_WIND: f32 = 0.72;
 const SWIPE_STRIKE: f32 = 0.24;
 const SWIPE_IMPACT_K: f32 = 0.60;
@@ -447,7 +445,7 @@ pub const Ent = struct {
         if (self.impactAt()) |at| {
             const c = self.clock().?;
             const until: ?f32 = if (self.sweeping()) at - self.t else null;
-            if (foe.catchMelee(self, self.swipeReach(), SWIPE_FRONT_DOT, until)) {
+            if (foe.catchAimed(self, self.swipeReach(), self.inSweep(self.parry.at), until)) {
                 self.chips(foe.markOn(self.xf[if (self.hand > 0) WRR else WRL], mathx.zero3), mathx.dirXZ(self.pos, self.parry.at), PARRY_CHIPS);
             } else if (self.state == .shake) {
                 if (self.crossed(at, dt)) self.letGo(quarry);
@@ -474,13 +472,18 @@ pub const Ent = struct {
             combat.subtendedArc(foe.HERO_REACH, d);
     }
 
-    fn trySweep(self: *Ent, quarry: rl.Vector3) void {
-        if (self.heroLatch) return;
-        const d = mathx.distXZ(self.pos, quarry);
-        if (d > self.swipeReach()) return;
+    /// The one sector both the bill and the catch ask.
+    fn inSweep(self: *const Ent, at: rl.Vector3) bool {
+        const d = mathx.distXZ(self.pos, at);
+        if (d > self.swipeReach()) return false;
         const mid = self.hand * SWIPE_ARC_MID;
         const slack = combat.subtendedArc(foe.HERO_REACH, mathx.maxF(d, 0.6));
-        if (@abs(mathx.wrapDeg(foe.bearingDeg(self.pos, self.facing, quarry) - mid)) > SWIPE_ARC * 0.5 + slack) return;
+        return @abs(mathx.wrapDeg(foe.bearingDeg(self.pos, self.facing, at) - mid)) <= SWIPE_ARC * 0.5 + slack;
+    }
+
+    fn trySweep(self: *Ent, quarry: rl.Vector3) void {
+        if (self.heroLatch) return;
+        if (!self.inSweep(quarry)) return;
         foe.bill(self, if (self.state == .ret) RET_HIT else SWIPE_HIT);
     }
 
@@ -1019,6 +1022,44 @@ test "THE BOUGH LANDS ON THE MAN WHERE HE STANDS - thrown for real, either side,
     }
     std.debug.print("\n  corrupt ent: {d} stands thrown across three scales and both sides, {d} billed nothing; the widest gate handed out is {d:.0} deg\n", .{ thrown, misses, widest });
     try std.testing.expectEqual(@as(usize, 0), misses);
+}
+
+test "EVERY BOUGH THAT LANDS CAN BE CAUGHT — the catch asks the bill's own sector, never a cone inside it" {
+    const dt: f32 = 1.0 / 120.0;
+    var billed: usize = 0;
+    var widest: f32 = 0;
+    for ([_]State{ .swipe, .ret }) |st| {
+        for ([_]f32{ -1.0, 1.0 }) |hand| {
+            for ([_]f32{ 0.3, 0.8 }) |u| {
+                for ([_]f32{ -0.98, -0.5, 0.0, 0.5, 0.98 }) |s| {
+                    const probe = Ent.spawn(mathx.ground(0, 0), 0, 1.0, 0.31);
+                    const stand = lerpF(foe.closestApproach(probe.bodyR()) + 0.05, probe.swipeReach() - 0.05, u);
+                    const deg = hand * SWIPE_ARC_MID + SWIPE_ARC * 0.5 * s;
+                    const a = mathx.radians(deg);
+                    const hero = v3(@sin(a) * stand, 0, @cos(a) * stand);
+                    for ([_]bool{ false, true }) |shield| {
+                        var c = probe;
+                        c.enter(st);
+                        c.hand = hand;
+                        c.t = c.impactAt().? - dt * 0.5;
+                        if (shield) c.parry = .{ .live = true, .active = true, .at = hero, .facing = mathx.headingXZ(mathx.dirXZ(hero, c.pos)) };
+                        const took = c.update(dt, hero, 400.0, .{});
+                        if (!shield) {
+                            try std.testing.expect(took != null);
+                            continue;
+                        }
+                        if (!c.parried or took != null) {
+                            std.debug.print("\n  {s} at {d:.2} m, {d:.0} deg off: the bough bills there and a held shield caught NOTHING\n", .{ @tagName(st), stand, deg });
+                            return error.TestUnexpectedResult;
+                        }
+                        billed += 1;
+                        widest = @max(widest, @abs(deg));
+                    }
+                }
+            }
+        }
+    }
+    std.debug.print("\n  corrupt ent: all {d} billed stands catchable, out to {d:.0} deg off his facing\n", .{ billed, widest });
 }
 
 test "THE CROWN LETS GO ALL AT ONCE - one nut on the man, the rest fanned round him" {

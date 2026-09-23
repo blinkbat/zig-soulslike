@@ -167,6 +167,7 @@ pub const THRUST_HIT = combat.Hit{ .dmg = 32, .poise = 26, .stance = 16 };
 const NET_R: f32 = 8.5;
 const NET_MIN: f32 = 2.2;
 const NET_WIND: f32 = 0.58;
+const NET_LOOSE: f32 = NET_WIND + 0.068;
 const NET_RECOVER: f32 = 0.74;
 const NET_CD: f32 = 7.5;
 const NET_SPEED: f32 = 12.0;
@@ -576,7 +577,7 @@ pub const Fishman = struct {
         if (self.state == .thrust and self.t >= THRUST_WIND and self.t - dt < THRUST_WIND) sfx.world(.swing_light, self.pos);
         self.motion.tick(self.strokeTarget(), self.stunAmount(), dt);
         self.pose();
-        if (self.state == .cast and self.t >= NET_WIND + 0.068 and self.t - dt < NET_WIND + 0.068) self.loose(quarry);
+        const loosing = self.state == .cast and self.t >= NET_LOOSE and self.t - dt < NET_LOOSE;
         const at = THRUST_WIND + THRUST_STRIKE * THRUST_IMPACT_K;
         const until: ?f32 = if (self.state == .thrust) at - self.t else null;
         if (foe.catchMelee(self, foe.hurtReach(THRUST_R, self.rigSize()), THRUST_FRONT_DOT, until)) {
@@ -585,6 +586,8 @@ pub const Fishman = struct {
             self.tryThrust(quarry);
         }
         self.tryHit(blade);
+        // After the blade is billed: a stagger on the release frame keeps the net.
+        if (loosing and !self.staggered()) self.loose(quarry);
         return self.heroHit;
     }
 
@@ -1312,6 +1315,22 @@ test "A NET IN THE AIR OUTLIVES THE THROWER, AND IT CAN BE STEPPED OUT OF" {
     }
     std.debug.print("  the net travels: standing still it lands, running sideways it does not\n", .{});
     try std.testing.expect(dodged);
+}
+
+test "A STROKE ON THE RELEASE FRAME KEEPS THE NET IN HIS HANDS — it is thrown after the blade is billed" {
+    const dt: f32 = 1.0 / 60.0;
+    const hero = v3(0, 0, 6.0);
+    for ([_]bool{ false, true }) |struck| {
+        var f = Fishman.spawnAs(.netter, mathx.zero3, 0, 1.0, 0.3);
+        f.facing = mathx.headingXZ(mathx.dirXZ(f.pos, hero));
+        f.debugAct();
+        var guard: usize = 0;
+        while (f.state == .cast and f.t + dt < NET_LOOSE and guard < 600) : (guard += 1) _ = f.update(dt, hero, 400, .{}, false);
+        const blade: foe.Blade = if (struck) foe.shaftThrough(f.centerWorld(), .{ .dmg = 40 }) else .{};
+        _ = f.update(dt, hero, 400, blade, false);
+        try std.testing.expectEqual(!struck, f.net.live);
+        try std.testing.expectEqual(struck, f.staggered());
+    }
 }
 
 test "THE RITE PUTS BACK A SHARE OF EACH BODY'S OWN BAR — and it reaches the whole band" {

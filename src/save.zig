@@ -39,6 +39,26 @@ comptime {
     std.debug.assert(std.mem.eql(u8, DEV_PATHS[0], "devsave1.dat"));
 }
 
+/// Positional rows: an APPEND passes both pins; an insert, a removal or a rename fails them.
+const TIERS_SAVED = [_][]const u8{ "sword", "dagger", "club", "bow", "bell", "shield", "wand", "torch" };
+const TREE_SAVED: usize = 81;
+const TREE_SAVED_FNV: u64 = 0xead516985217e25f;
+
+comptime {
+    for (TIERS_SAVED, 0..) |n, i| {
+        if (i >= heromod.NARM or !std.mem.eql(u8, @tagName(@as(heromod.Armament, @enumFromInt(i))), n))
+            @compileError("save: `tiers:` is positional over `hero.Armament`, and `" ++ n ++ "` is no longer where the files put it");
+    }
+    @setEvalBranchQuota(200000);
+    if (ptree.N < TREE_SAVED) @compileError("save: `tree:` is positional over the node table, and a node the files index has gone");
+    var h = std.hash.Fnv1a_64.init();
+    for (ptree.NODES_BANK[0..TREE_SAVED]) |n| {
+        h.update(n.name);
+        h.update("|");
+    }
+    if (h.final() != TREE_SAVED_FNV) @compileError(std.fmt.comptimePrint("save: `tree:` is positional over the node table and its first {d} nodes moved (fnv 0x{x}) - append, never insert", .{ TREE_SAVED, h.final() }));
+}
+
 var devShelf = false;
 
 pub fn useDevShelf(on: bool) void {
@@ -217,6 +237,14 @@ pub const Shelf = struct {
 
     pub fn full(self: *const Shelf) bool {
         return self.firstFree() == null;
+    }
+
+    /// Good or bad: what opens the picker, since DELETE is only there.
+    pub fn anyHeld(self: *const Shelf) bool {
+        for (0..SLOTS) |i| {
+            if (self.holds(i)) return true;
+        }
+        return false;
     }
 
     pub fn firstFree(self: *const Shelf) ?usize {
@@ -748,6 +776,10 @@ pub fn parse(text: []const u8, d: *Data) !void {
             while (it.next()) |tok| : (i += 1) {
                 if (std.mem.eql(u8, tok, "-")) continue;
                 const sp = std.meta.stringToEnum(combat.Spell, tok) orelse return Error.BadField;
+                // One of each (`Memory.put` MOVES): a doubled spell stalls `Memory.next` between its two slots.
+                for (d.memory) |held| {
+                    if (held == sp) return Error.BadField;
+                }
                 if (i < d.memory.len) d.memory[i] = sp;
             }
         } else if (std.mem.eql(u8, key, "quicksel:")) {
@@ -1115,6 +1147,13 @@ test "a file that does not open with its version is refused" {
 test "an unknown key is a load error, never a shrug" {
     var d = Data{};
     try testing.expectError(Error.BadKey, parse("version: 1\nhelmet: iron\n", &d));
+}
+
+test "A RACK HOLDING ONE SPELL TWICE IS A BAD FILE — the ring walk would stall between the two" {
+    var d = Data{};
+    try testing.expectError(Error.BadField, parse("version: 1\nmemory: bolt bolt -\n", &d));
+    try parse("version: 1\nmemory: bolt - levin\n", &d);
+    try testing.expectEqual(@as(?combat.Spell, .levin), d.memory[2]);
 }
 
 test "a short run pads with the default and a long one is refused" {

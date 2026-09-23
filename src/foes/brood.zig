@@ -835,6 +835,8 @@ pub const Sac = struct {
     hitLatch: bool = false,
     flash: f32 = 0,
     killed: bool = false,
+    /// A flag, not an edge: a shaft kills a sac through `Brood.pierce`, outside the update that watches `killed`.
+    counted: bool = false,
     hatched: bool = false,
     gone: bool = false,
     parts: [SAC_PARTS]Particle = [_]Particle{.{}} ** SAC_PARTS,
@@ -1106,6 +1108,7 @@ pub const Spider = struct {
     wade: foe.Wade = .{},
     glare: foe.Glare = .{},
     shirking: bool = false,
+    homing: bool = false,
 
     xf: [NP]rl.Matrix = undefined,
 
@@ -1177,7 +1180,8 @@ pub const Spider = struct {
     }
     pub fn navWant(self: *const Spider, hero: rl.Vector3) ?rl.Vector3 {
         if (self.state != .walk) return null;
-        return if (self.role == .mother) mathx.addV(self.pos, self.moveDir) else hero;
+        if (self.role == .mother) return mathx.addV(self.pos, self.moveDir);
+        return if (self.homing) foe.tetherFor(self) else hero;
     }
 
     fn faceToward(self: *Spider, target: rl.Vector3, dt: f32) void {
@@ -1425,6 +1429,9 @@ pub const Spider = struct {
                 if (self.shirking) {
                     self.faceToward(hero, dt);
                     mathx.stepXZ(&self.pos, self.moveDir, moved, bounds);
+                } else if (self.homing) {
+                    self.faceToward(self.nav.aim(self.pos, foe.tetherFor(self)), dt);
+                    mathx.stepXZ(&self.pos, self.fdir(), moved, bounds);
                 } else {
                     self.faceToward(self.nav.aim(self.pos, hero), dt);
                     mathx.stepXZ(&self.pos, self.fdir(), moved, bounds);
@@ -1468,6 +1475,7 @@ pub const Spider = struct {
 
     fn decideBroodling(self: *Spider, d: f32, hero: rl.Vector3) void {
         self.shirking = false;
+        self.homing = false;
         switch (classifyBroodling(d, self.scale, self.leapCdReady() and foe.canLeap(&self.root), self.biteCd <= 0, foe.shyOfFlame(self))) {
             .shirk => {
                 self.shirking = true;
@@ -1475,8 +1483,11 @@ pub const Spider = struct {
                 self.enter(.walk);
             },
             .idle => {
-                if (mathx.distXZ(self.pos, self.home) > B_HOME_R) {
-                    self.facing = mathx.headingXZ(mathx.dirXZ(self.pos, self.home));
+                // `homeFor`/`tetherFor`, never the spawn pin.
+                if (mathx.distXZ(self.pos, foe.homeFor(self)) > B_HOME_R) {
+                    self.homing = true;
+                    self.moveDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
+                    self.facing = mathx.headingXZ(self.moveDir);
                     self.enter(.walk);
                 } else self.enterIdle(0.7 + self.seed * 1.1);
             },
@@ -1518,6 +1529,7 @@ pub const Spider = struct {
             self.resolvePlanted();
             return;
         }
+        if (foe.launchRefused(self, B_LEAP_COIL, dt)) return self.enterIdle(0.05);
         if (self.t < B_LEAP_COIL + B_LEAP_FLIGHT) {
             const u = (self.t - B_LEAP_COIL) / B_LEAP_FLIGHT;
             const p = mathx.clampXZ(mathx.lerpV(self.leapFrom, self.leapTo, u), bounds);
@@ -2157,9 +2169,9 @@ pub const Brood = struct {
             const sac = &self.sacs[s];
             const at = sac.pos;
             const seed = sac.seed;
-            const wasKilled = sac.killed;
             const split = sac.update(dt, blade);
-            if (sac.killed and !wasKilled) {
+            if (sac.killed and !sac.counted) {
+                sac.counted = true;
                 self.bursts += 1;
                 self.burstsFrame += 1;
             }
@@ -2496,6 +2508,19 @@ test "A BURST SAC PAYS, ONCE — and a sac that hatched pays nothing" {
     }
     try std.testing.expect(b.hatches > 0);
     try std.testing.expectEqual(@as(u32, 0), paid);
+
+    b.clear();
+    b.sacs[0] = Sac.lay(mathx.ground(0, 0), 0.5, 1.0);
+    b.nsacs = 1;
+    try std.testing.expect(b.pierce(foe.shaftThrough(b.sacs[0].centerWorld(), .{ .dmg = SAC_HP + 1 })));
+    try std.testing.expect(b.sacs[0].killed);
+    paid = 0;
+    for (0..3) |_| {
+        _ = b.update(1.0 / 60.0, far, 400, .{}, &ctx, Nowt.spit);
+        paid += b.soulsDropped();
+    }
+    try std.testing.expectEqual(SAC_SOULS, paid);
+    try std.testing.expectEqual(@as(u32, 1), b.bursts);
 }
 
 test "a pool spreads, DOSES while he stands in it, thins out and stops" {
@@ -2791,5 +2816,39 @@ test "brood sac rupture retains the struck size and settles to nothing before re
             _ = sac.update(1.0 / 60.0, .{});
             try std.testing.expect(sac.gone and !sac.hatched);
         }
+    }
+}
+
+test "A ROOT CAST INTO THE BROODLING'S COIL REFUSES THE LEAP — re-asked at the launch, never carried off the spot" {
+    const dt: f32 = 1.0 / 60.0;
+    var s = Spider.spawnAs(.broodling, mathx.zero3, 0, 1.0, 0.3);
+    const hero = mathx.ground(0, 3.0);
+    s.startLeap(hero);
+    var t: f32 = 0;
+    while (t < B_LEAP_COIL + B_LEAP_FLIGHT + 0.2) : (t += dt) {
+        if (s.state == .leap and s.t > B_LEAP_COIL * 0.5) s.root.grab();
+        _ = s.update(dt, hero, 400.0, .{});
+        try std.testing.expect(!s.airborne());
+    }
+    try std.testing.expect(mathx.lenXZ(s.pos) < 0.05);
+}
+
+test "A BROODLING GOES HOME TO ITS TETHER, NOT AT HIM — and one on orders is never hauled back to its spawn pin" {
+    const dt: f32 = 1.0 / 60.0;
+    const far = mathx.ground(60, 0);
+    var s = Spider.spawnAs(.broodling, mathx.ground(0, 0), 0, 1.0, 0.3);
+    s.pos = mathx.ground(6, 0);
+    const straight = (6.0 - B_HOME_R) / B_SPEED;
+    var t: f32 = 0;
+    while (t < 12.0 and mathx.distXZ(s.pos, s.home) > B_HOME_R) : (t += dt) _ = s.update(dt, far, 400.0, .{});
+    try std.testing.expect(mathx.distXZ(s.pos, s.home) <= B_HOME_R + 0.2);
+    try std.testing.expect(t < straight * 1.6 + 1.5);
+
+    var r = Spider.spawnAs(.broodling, mathx.ground(0, 0), 0, 1.0, 0.3);
+    r.post.arm(.roam, r.home, &.{}, 0.3);
+    t = 0;
+    while (t < 12.0) : (t += dt) {
+        _ = r.update(dt, far, 400.0, .{});
+        try std.testing.expect(!r.homing);
     }
 }

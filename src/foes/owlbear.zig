@@ -546,6 +546,10 @@ pub const Owlbear = struct {
     }
 
     fn tickBurst(self: *Owlbear, dt: f32, bounds: f32, movedDist: *f32, moveSpeed: *f32, moveYaw: *?f32) void {
+        if (foe.launchRefused(self, BURST_GATHER, dt)) {
+            self.hop = 0;
+            return self.enter(.idle);
+        }
         const u = self.leapU();
         self.hop = BURST_RISE * mathx.sinf(u * std.math.pi);
         const uWas = mathx.clampF((self.t - dt - BURST_GATHER) / BURST_FLIGHT, 0, 1);
@@ -1402,4 +1406,20 @@ test "AND DAWN PUTS IT BACK INTO THE STONE — it walks its own plinth down and 
     try std.testing.expect(seated);
     try std.testing.expect(mathx.distXZ(o.pos, home) <= SEAT_R);
     try std.testing.expectApproxEqAbs(HP_MAX, o.vit.hp, 1e-3);
+}
+
+test "A ROOT CAST INTO THE BURST'S GATHER REFUSES THE LEAP — re-asked at the launch, never carried off the spot" {
+    const dt: f32 = 1.0 / 120.0;
+    var o = Owlbear.spawn(mathx.zero3, 0, 1.0, 0.3);
+    o.sky.night = 1.0;
+    const hero = mathx.ground(0, 3.0);
+    o.burstYaw = mathx.headingXZ(mathx.dirXZ(hero, o.pos));
+    o.enter(.burst);
+    var t: f32 = 0;
+    while (t < BURST_GATHER + BURST_FLIGHT + 0.1) : (t += dt) {
+        if (o.state == .burst and o.t > BURST_GATHER * 0.5) o.root.grab();
+        _ = o.update(dt, hero, 400.0, .{});
+        try std.testing.expect(!o.airborne());
+    }
+    try std.testing.expect(mathx.lenXZ(o.pos) < 0.05);
 }

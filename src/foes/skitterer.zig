@@ -329,15 +329,7 @@ pub const Skitterer = struct {
     /// -1 fully reared back to +1 fully through, zero outside the move, so the same channel poses the settle back to a standing spine. No second timer for either to read.
     pub fn sliceAmt(self: *const Skitterer) f32 {
         if (self.state != .slice) return 0;
-        if (self.t < SLICE_WIND) return -mathx.smoothstep(0, SLICE_WIND * 0.88, self.t);
-        if (self.t < SLICE_WIND + SLICE_STRIKE) {
-            return mathx.lerpF(-1.0, 1.0, foe.swingCurve((self.t - SLICE_WIND) / SLICE_STRIKE));
-        }
-        return 1.0 - mathx.smoothstep(
-            SLICE_WIND + SLICE_STRIKE,
-            SLICE_WIND + SLICE_STRIKE + SLICE_RECOVER * SLICE_SETTLE,
-            self.t,
-        );
+        return foe.strokeAmt(self.t, SLICE_WIND, 0.88, SLICE_STRIKE, SLICE_RECOVER, SLICE_SETTLE);
     }
 
     pub fn navWant(self: *const Skitterer, hero: rl.Vector3) ?rl.Vector3 {
@@ -435,9 +427,9 @@ pub const Skitterer = struct {
         const round = foe.postWant(self, dt, sensed, AGGRO_R);
         const want = if (hunting) hero else (round orelse foe.homeFor(self));
         const gap = mathx.distXZ(self.pos, want);
-        const stop: f32 = if (hunting) stopR(foe.HERO_R) else if (round != null) foe.ARRIVE else HOME_R;
+        const stop: f32 = if (hunting) stopR(foe.HERO_R, self.scale) else if (round != null) foe.ARRIVE else HOME_R;
 
-        if (hunting and gap <= triggerR(foe.HERO_R) and self.sliceCool <= 0) {
+        if (hunting and gap <= triggerR(foe.HERO_R, self.scale) and self.sliceCool <= 0) {
             self.state = .slice;
             self.t = 0;
             self.dealt = false;
@@ -598,14 +590,15 @@ pub const Skitterer = struct {
     }
 };
 
-pub fn triggerR(quarryR: f32) f32 {
-    return SLICE_TRIGGER_R + quarryR;
+/// Both rings ride the body (`foe.triggerBand`, shipped at 1): the slice is swept off a scaled tip.
+pub fn triggerR(quarryR: f32, scale: f32) f32 {
+    return foe.triggerBand(SLICE_TRIGGER_R + quarryR, 1.0, scale);
 }
-fn stopR(quarryR: f32) f32 {
-    return SLICE_TRIGGER_R * STOP_FRAC + quarryR;
+fn stopR(quarryR: f32, scale: f32) f32 {
+    return foe.triggerBand(SLICE_TRIGGER_R * STOP_FRAC + quarryR, 1.0, scale);
 }
 comptime {
-    std.debug.assert(stopR(foe.HERO_R) < triggerR(foe.HERO_R));
+    std.debug.assert(stopR(foe.HERO_R, 1.0) < triggerR(foe.HERO_R, 1.0));
 }
 
 const EYE_C = v3(0, 0.05 * W, 0.10 * W);
@@ -1058,19 +1051,23 @@ test "A CLAWED BODY CARRIES THE BENCH'S POOLS — the same door the map's own pl
     try std.testing.expectEqual(c.live()[0].vit.hpMax, c.live()[0].vit.hp);
 }
 
-test "A BIG PLACEMENT STILL ATTACKS — the stop ring may never grow past the trigger ring" {
+test "A BIG PLACEMENT STILL ATTACKS — the rings ride the body, and the slice LANDS with the body held at `closestApproach`" {
     for ([_]f32{ wf.FOE_SCALE_LO, 1.0, 1.4, wf.FOE_SCALE_HI }) |sc| {
         var s = Skitterer.spawn(mathx.zero3, 0, sc, 0.3);
-        s.leash.noteSeen();
         const hero = mathx.ground(0, 9.0);
-        var sliced = false;
+        const apart = foe.closestApproach(s.bodyR());
+        var cut = false;
         var t: f32 = 0;
-        while (t < 6.0) : (t += 1.0 / 60.0) {
-            _ = s.update(1.0 / 60.0, hero, 200.0, .{});
-            if (s.sliced) sliced = true;
+        while (t < 6.0 and !cut) : (t += 1.0 / 60.0) {
+            s.leash.noteSeen();
+            cut = s.update(1.0 / 60.0, hero, 200.0, .{}) != null;
+            if (mathx.distXZ(s.pos, hero) < apart) {
+                const back = mathx.dirXZ(hero, s.pos);
+                s.pos = v3(hero.x + back.x * apart, s.pos.y, hero.z + back.z * apart);
+            }
         }
-        std.debug.print("  scale {d:.2}: halted {d:.2} m off, trigger ring {d:.2} m, sliced={}\n", .{ sc, mathx.distXZ(s.pos, hero), triggerR(foe.HERO_R), sliced });
-        try std.testing.expect(sliced);
+        std.debug.print("  scale {d:.2}: held {d:.2} m off, trigger ring {d:.2} m, cut={}\n", .{ sc, mathx.distXZ(s.pos, hero), triggerR(foe.HERO_R, s.scale), cut });
+        try std.testing.expect(cut);
     }
 }
 

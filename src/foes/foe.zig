@@ -919,6 +919,14 @@ pub fn swingCurve(u: f32) f32 {
     return std.math.pow(f32, mathx.smoothstep(0, 1, u), 1.35);
 }
 
+/// ONE SIGNED STROKE CHANNEL: -1 cocked by `windK` of the wind, `swingCurve` to +1 through the strike, back to 0 over `settleK` of the recover.
+pub fn strokeAmt(t: f32, wind: f32, windK: f32, drive: f32, recover: f32, settleK: f32) f32 {
+    if (t < wind) return -mathx.smoothstep(0, wind * windK, t);
+    const s = t - wind;
+    if (s < drive) return mathx.lerpF(-1.0, 1.0, swingCurve(s / drive));
+    return 1.0 - mathx.smoothstep(drive, drive + recover * settleK, s);
+}
+
 /// `t` is SECONDS since the stun began, not a share of it — the window is divided out HERE. Normalised at the call site the heavy reel only
 /// reaches `u` 0.42 by the time the state ends, so the body stands at full reel on the frame it snaps back to idle.
 pub fn stunCurve(t: f32, heavy: bool) f32 {
@@ -1050,7 +1058,11 @@ pub fn parryBroke(self: anytype) bool {
 }
 
 pub fn catchMelee(self: anytype, reach: f32, frontDot: f32, until: ?f32) bool {
-    const aimed = inFront(self.pos, self.facing, self.parry.at, reach, frontDot);
+    return catchAimed(self, reach, inFront(self.pos, self.facing, self.parry.at, reach, frontDot), until);
+}
+
+/// `catchMelee` for a stroke whose bill is not a frontal cone: `aimed` is the stroke's own test of where he stands.
+pub fn catchAimed(self: anytype, reach: f32, aimed: bool, until: ?f32) bool {
     if (!caught(self, reach, if (self.heroLatch or !aimed) null else until, null)) return false;
     self.stagger(parryBroke(self));
     return true;
@@ -1183,6 +1195,11 @@ pub const Grip = struct {
 
 pub fn canLeap(root: *const combat.Root) bool {
     return !root.held();
+}
+
+/// The re-ask at the launch: a root cast into the wind closes after the choose asked `canLeap`.
+pub fn launchRefused(self: anytype, wind: f32, dt: f32) bool {
+    return self.t >= wind and self.t - dt < wind and !canLeap(&self.root);
 }
 
 pub fn grip(root: *combat.Root, chill: *combat.Chill, vit: *combat.Vitals, dt: f32, at: rl.Vector3) Grip {
@@ -2207,7 +2224,14 @@ pub fn dissipate(self: anytype, dt: f32, still: f32, diss: f32, d: Dissolve) voi
     if (self.t >= still + diss) self.gone = true;
 }
 
+/// A BODY MAY BE RAISED ONCE: dead, not yet gone, never raised, and done falling.
+pub fn raisableAfter(self: anytype, fall: f32) bool {
+    return self.state == .dead and !self.gone and !self.wasRaised and self.t >= fall;
+}
+
 pub fn rekindle(self: anytype, frac: f32) void {
+    self.wasRaised = true;
+    self.leash.noteCombat();
     self.vit.revive(frac);
     self.fade = 0;
     self.gone = false;
@@ -2984,11 +3008,42 @@ pub const Blade = struct {
     by: Victim = .hero,
 };
 
-/// THE BENCH'S ARROW: an 8 m pierce line through `at` along X, the bow's own 0.06 m shaft. Every creature's "a shaft to the X" test throws this one.
+/// THE BENCH'S ARROW: an 8 m pierce line through `at` along X. Every creature's "a shaft to the X" test throws this one.
 pub fn shaftThrough(at: rl.Vector3, hit: combat.Hit) Blade {
-    const a = v3(at.x - 4.0, at.y, at.z);
-    const b = v3(at.x + 4.0, at.y, at.z);
+    return pierceLine(v3(at.x - 4.0, at.y, at.z), v3(at.x + 4.0, at.y, at.z), hit);
+}
+
+/// Starts past `r` so the midpoint `shielded` reads is on the source's side; straight under, it comes from the front.
+pub fn shaftFrom(from: rl.Vector3, at: rl.Vector3, r: f32, facing: f32, hit: combat.Hit) Blade {
+    const toward = mathx.dirXZ(from, at);
+    const dir = if (mathx.lenXZ(toward) > 0) toward else mathx.scaleV(mathx.headingDir(facing), -1);
+    const back = @max(mathx.distXZ(from, at), r + 1.0);
+    return pierceLine(v3(at.x - dir.x * back, at.y, at.z - dir.z * back), v3(at.x + dir.x * r, at.y, at.z + dir.z * r), hit);
+}
+
+fn pierceLine(a: rl.Vector3, b: rl.Vector3, hit: combat.Hit) Blade {
     return .{ .active = true, .pierce = true, .r = 0.06, .a = a, .b = b, .a0 = a, .b0 = b, .hit = hit };
+}
+
+test "A BLAST'S SHAFT POINTS BACK AT THE BLAST — the snap faces it and the shield's midpoint is on its side, even from under the body" {
+    const r: f32 = 1.2;
+    const at = v3(2, 1.4, -3);
+    for ([_]f32{ 0, 0.3, 1.0, 4.0 }) |dk| {
+        var deg: f32 = 0;
+        while (deg < 360) : (deg += 45) {
+            const a = mathx.radians(deg);
+            const from = v3(at.x + mathx.sinf(a) * r * dk, 0, at.z + mathx.cosf(a) * r * dk);
+            const facing = mathx.radians(deg + 90);
+            const toSource = if (dk > 0) mathx.dirXZ(at, from) else mathx.headingDir(facing);
+            const blade = shaftFrom(from, at, r, facing, .{ .dmg = 1 });
+            const mid = mathx.dirXZ(at, mathx.lerpV(blade.a, blade.b, 0.5));
+            try std.testing.expect(mathx.dotV(mid, toSource) > 0.999);
+            var vit = combat.Vitals.initFoe(100, 999, 999);
+            var latch = false;
+            const s = strike(&vit, &latch, at, r, blade) orelse return error.TestUnexpectedResult;
+            try std.testing.expect(mathx.dotV(mathx.scaleV(s.dir, -1), toSource) > 0.999);
+        }
+    }
 }
 
 

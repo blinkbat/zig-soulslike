@@ -93,7 +93,7 @@ pub const Award = struct {
         if (n == 0) return;
         for (self.toasts[0..self.ntoasts]) |*t| {
             if (t.coin == 0) continue;
-            t.coin += n;
+            t.coin +|= n;
             t.t = 0;
             return;
         }
@@ -383,4 +383,11 @@ test "the pending notices clear without un-discovering anything" {
     try std.testing.expectEqual(@as(usize, 0), a.ntoasts);
     try std.testing.expect(a.seen[@intFromEnum(item.Kind.empty_flask)]);
     try std.testing.expect(a.seen[@intFromEnum(item.Kind.iron_key)]);
+}
+
+test "A PURSE TOAST SATURATES — a map may put any u32 in a chest" {
+    var a = Award{};
+    a.gainCoin(std.math.maxInt(u32));
+    a.gainCoin(5);
+    try std.testing.expectEqual(@as(u32, std.math.maxInt(u32)), a.toasts[0].coin);
 }

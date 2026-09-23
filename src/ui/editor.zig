@@ -122,6 +122,8 @@ var nClipFoes: usize = 0;
 var clipNpcs: [wf.MAX_NPCS]wf.Npc = undefined;
 var clipCalls: [wf.MAX_NPCS][wf.NAME_CAP]u8 = undefined;
 var clipCallLen: [wf.MAX_NPCS]usize = undefined;
+/// By name: `removeDialog` renumbers the table.
+var clipTalk: [wf.MAX_NPCS]wf.Id = undefined;
 var nClipNpcs: usize = 0;
 
 var listing: wf.Listing = .{};
@@ -1033,20 +1035,31 @@ fn opAnchorAt(m: *const wf.Map, i: usize) rl.Vector3 {
 fn translatePair(o: *wf.Op, s: *wf.Scatter, dx: f32, dz: f32) void {
     o.x += dx;
     o.z += dz;
-    if (hasSpan(o.op)) {
-        s.x1 += dx;
-        s.z1 += dz;
-    }
+    shiftScat(o.op, s, dx, dz);
 }
 
 fn translateOp(m: *wf.Map, i: usize, dx: f32, dz: f32) void {
     const o = &m.ops[i];
     o.x += dx;
     o.z += dz;
-    if (!hasSpan(o.op)) return;
+    if (o.scat == 0) return;
     const s = m.scatMut(i) catch return;
-    s.x1 += dx;
-    s.z1 += dz;
+    shiftScat(o.op, s, dx, dz);
+}
+
+/// The gradient's ends are world metres (`Scatter.gradAt`), so they move with the op.
+fn shiftScat(op: wf.OpKind, s: *wf.Scatter, dx: f32, dz: f32) void {
+    if (hasSpan(op)) {
+        s.x1 += dx;
+        s.z1 += dz;
+    }
+    const d = switch (s.gAxis) {
+        .none => return,
+        .x => dx,
+        .z => dz,
+    };
+    s.gA += d;
+    s.gB += d;
 }
 
 fn eraseMiss(l: Layer) [:0]const u8 {
@@ -1141,6 +1154,7 @@ pub const Editor = struct {
     sideHeld: i32 = 0,
     propScroll: i32 = 0,
     propHeld: i32 = 0,
+    trigScroll: i32 = 0,
 
     cursor: ?rl.Vector3 = null,
 
@@ -1418,6 +1432,7 @@ pub const Editor = struct {
         if (self.dragging or self.painting or self.wipe.on) return;
         if (self.layer != l) {
             self.nMarked = 0;
+            self.routing = false;
             // Both panels hold LAST frame's content height, so a tall layer left scrolled would show the short one that follows it scrolled off for a frame.
             self.sideScroll = 0;
             self.propScroll = 0;
@@ -1536,7 +1551,10 @@ pub const Editor = struct {
         if (self.layer == .units) {
             switch (self.selUnit.?) {
                 .foe => |i| m.foes[i].under = !was,
-                .npc => |i| m.npcs[i].under = !was,
+                .npc => |i| {
+                    m.npcs[i].under = !was;
+                    self.touchFolk();
+                },
             }
         } else m.ops[self.sel.?].under = !was;
         self.rebuild(m, env);
@@ -2086,7 +2104,8 @@ pub const Editor = struct {
                 self.closeArena(m);
                 return .none;
             }
-            if (rl.isKeyPressed(.backspace)) {
+            // The selected room's name field takes Backspace too.
+            if (rl.isKeyPressed(.backspace) and !self.textFocus) {
                 self.nPend -= 1;
                 self.sayFmt("{d} corners", .{self.nPend});
                 return .none;
@@ -2163,7 +2182,7 @@ pub const Editor = struct {
             }
             if (rl.isKeyPressed(.r)) self.rerollSel(m, env);
             if (rl.isKeyPressed(.delete)) {
-                if (self.nMarked > 0) self.deleteMarked(m, env) else self.deleteSel(m, env);
+                if (self.nMarked > 0) self.deleteMarked(m, env, .free) else self.deleteSel(m, env);
             }
         }
 
@@ -2206,10 +2225,16 @@ pub const Editor = struct {
         len.* = hud.copyInto(buf, s);
     }
 
+    /// Another record under the same field is another rename.
+    fn loadName(self: *Editor, buf: []u8, len: *usize, s: []const u8) void {
+        self.typingId = null;
+        loadField(buf, len, s);
+    }
+
     fn selectZone(self: *Editor, m: *const wf.Map, i: usize) void {
         self.clearRegionSel();
         self.zoneSel = i;
-        loadField(&self.zoneNameBuf, &self.zoneNameLen, if (i < m.nzones) m.zones[i].label() else "");
+        self.loadName(&self.zoneNameBuf, &self.zoneNameLen, if (i < m.nzones) m.zones[i].label() else "");
     }
 
     /// EVERY FIELD THE WORLD PANEL EDITS, or the undo step is taken with that field already moved.
@@ -2269,7 +2294,7 @@ pub const Editor = struct {
         self.hover = if (self.hoverLive) self.hoverInLayer(m, env) else .none;
 
         if (self.wipe.on and !rl.isMouseButtonDown(.left)) self.wipeEnd();
-        if (self.painting and !rl.isMouseButtonDown(.left)) self.endPaint(m, env);
+        if (self.painting and !rl.isMouseButtonDown(.left)) self.finishStroke(m, env);
         if (self.dragging and !rl.isMouseButtonDown(.left)) {
             if (ground) |g| self.dragTo = g;
             self.dragging = false;
@@ -2363,10 +2388,6 @@ pub const Editor = struct {
                         self.caveStroke = true;
                     }
                 }
-            } else if (self.painting and rl.isMouseButtonReleased(.left)) {
-                if (@as(CaveBrush, @enumFromInt(self.brushIdx())) == .entrance) self.finishEntrance(m, env);
-                self.entranceFrom = null;
-                self.endPaint(m, env);
             }
             return;
         }
@@ -2476,21 +2497,6 @@ pub const Editor = struct {
                         },
                     }
                 }
-            } else if (self.painting and rl.isMouseButtonReleased(.left)) {
-                switch (@as(GroundBrush, @enumFromInt(self.brushIdx()))) {
-                    .ramp => {
-                        var span: [4]usize = wf.EMPTY_SPAN;
-                        if (cliffseat.ramp(m, .{ self.dragFrom.x, self.dragFrom.z }, .{ self.dragTo.x, self.dragTo.z }, self.radius, &span)) {
-                            env.sculptHeight(m, span);
-                            self.heightStroke = true;
-                            self.say("Ramp connected.");
-                        } else self.say("Ramp: drag farther from the foot to the top of the cliff.");
-                    },
-                    .sheer => self.sheerAt(m, env),
-                    .plateau => self.terraceAt(m, env),
-                    else => {},
-                }
-                self.endPaint(m, env);
             }
             return;
         }
@@ -2752,6 +2758,29 @@ pub const Editor = struct {
         } else {
             self.sayFmt("reset - {d} placement(s) gone", .{gone});
         }
+    }
+
+    /// Where every stroke ends: a brush that applies on release commits here, before `painting` is cleared.
+    fn finishStroke(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
+        if (!self.selecting) switch (self.layer) {
+            .caves => if (@as(CaveBrush, @enumFromInt(self.brushIdx())) == .entrance) self.finishEntrance(m, env),
+            .ground => switch (@as(GroundBrush, @enumFromInt(self.brushIdx()))) {
+                .ramp => {
+                    var span: [4]usize = wf.EMPTY_SPAN;
+                    if (cliffseat.ramp(m, .{ self.dragFrom.x, self.dragFrom.z }, .{ self.dragTo.x, self.dragTo.z }, self.radius, &span)) {
+                        env.sculptHeight(m, span);
+                        self.heightStroke = true;
+                        self.say("Ramp connected.");
+                    } else self.say("Ramp: drag farther from the foot to the top of the cliff.");
+                },
+                .sheer => self.sheerAt(m, env),
+                .plateau => self.terraceAt(m, env),
+                else => {},
+            },
+            else => {},
+        };
+        self.entranceFrom = null;
+        self.endPaint(m, env);
     }
 
     fn endPaint(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
@@ -3026,7 +3055,6 @@ pub const Editor = struct {
         var o = wf.defaults(.at);
         o.kind = self.kindForLayer();
         o.rise = props.info(o.kind).stack * 4.0;
-        o.under = self.underAt(m, a.x, a.z);
         var sc = wf.Scatter{};
         switch (self.layer) {
             .ground, .caves, .units => return,
@@ -3109,6 +3137,8 @@ pub const Editor = struct {
                 .erase => return,
             },
         }
+        // After the switch: every generator branch builds a fresh `o`.
+        o.under = self.underAt(m, a.x, a.z);
 
         if (m.nops >= wf.MAX_OPS) {
             self.say(FULL_MSG);
@@ -3194,7 +3224,7 @@ pub const Editor = struct {
     fn selectArena(self: *Editor, m: *const wf.Map, i: usize) void {
         self.clearRegionSel();
         self.arenaSel = i;
-        loadField(&self.arenaNameBuf, &self.arenaNameLen, if (i < m.narenas) m.arenas[i].label() else "");
+        self.loadName(&self.arenaNameBuf, &self.arenaNameLen, if (i < m.narenas) m.arenas[i].label() else "");
     }
 
     fn dragRegion(self: *Editor, m: *wf.Map, to: rl.Vector3) void {
@@ -3323,7 +3353,7 @@ pub const Editor = struct {
 
     fn selectTrig(self: *Editor, m: *const wf.Map, i: usize) void {
         self.trigSel = i;
-        loadField(&self.trigNameBuf, &self.trigNameLen, if (i < m.ntrigs) m.trigs[i].label() else "");
+        self.loadName(&self.trigNameBuf, &self.trigNameLen, if (i < m.ntrigs) m.trigs[i].label() else "");
     }
 
     fn selectClearing(self: *Editor, i: usize) void {
@@ -3334,7 +3364,7 @@ pub const Editor = struct {
     fn selectLocation(self: *Editor, m: *const wf.Map, i: usize) void {
         self.clearRegionSel();
         self.locSel = i;
-        loadField(&self.locNameBuf, &self.locNameLen, if (i < m.nlocations) m.locations[i].label() else "");
+        self.loadName(&self.locNameBuf, &self.locNameLen, if (i < m.nlocations) m.locations[i].label() else "");
     }
 
     fn dropCorner(self: *Editor, m: *wf.Map) void {
@@ -3448,7 +3478,8 @@ pub const Editor = struct {
         std.mem.copyBackwards(wf.Arena, m.arenas[1 .. m.narenas + 1], m.arenas[0..m.narenas]);
         m.arenas[0] = a;
         m.narenas += 1;
-        self.arenaSel = 0;
+        // Through `selectArena`, which loads the focused name field.
+        self.selectArena(m, 0);
         if (a.nboss == 0) {
             self.sayFmt("+{s} ({d} corners) - NO GATE ON ITS WALL, so it holds nothing", .{ m.arenas[0].label(), a.n });
         } else {
@@ -3548,6 +3579,8 @@ pub const Editor = struct {
                 while (i > 0) : (i -= 1) {
                     const f = m.foes[i - 1];
                     if (mathx.dist2XZ(v3(f.x, 0, f.z), g) > self.radius * self.radius) continue;
+                    // The pick's and the marquee's gate.
+                    if (!self.onLevel(env, f.under, f.x, f.z)) continue;
                     self.bankStroke(m);
                     wf.removeFoe(m, i - 1);
                     self.dropSelection();
@@ -3558,6 +3591,7 @@ pub const Editor = struct {
                 while (j > 0) : (j -= 1) {
                     const nn = m.npcs[j - 1];
                     if (mathx.dist2XZ(v3(nn.x, 0, nn.z), g) > self.radius * self.radius) continue;
+                    if (!self.onLevel(env, nn.under, nn.x, nn.z)) continue;
                     self.bankStroke(m);
                     const gone = self.removeFolk(m, j - 1);
                     if (gone.conds > 0) {
@@ -3835,6 +3869,7 @@ pub const Editor = struct {
                     const call = m.spanText(np.call);
                     clipCallLen[nClipNpcs] = @min(call.len, wf.NAME_CAP);
                     @memcpy(clipCalls[nClipNpcs][0..clipCallLen[nClipNpcs]], call[0..clipCallLen[nClipNpcs]]);
+                    clipTalk[nClipNpcs] = if (np.dlg != wf.NO_DIALOG and np.dlg < m.ndialogs) m.dialogs[np.dlg].id else [_]u8{0} ** wf.ID_CAP;
                     clipNpcs[nClipNpcs] = np;
                     nClipNpcs += 1;
                     continue;
@@ -3855,7 +3890,7 @@ pub const Editor = struct {
             }
         }
         self.sayFmt("{s} {d}", .{ if (cut) "cut" else "copied", nClipOps + nClipFoes + nClipNpcs });
-        if (cut) self.deleteMarked(m, env);
+        if (cut) self.deleteMarked(m, env, .keep);
     }
 
     fn paste(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
@@ -3909,8 +3944,9 @@ pub const Editor = struct {
             np.x += at.x;
             np.z += at.z;
             np.under = self.underAt(m, np.x, np.z);
-            // BOTH SPANS ARE OFFSETS INTO THE MAP THEY CAME FROM: the conversation is named again by index and the call by the text the clipboard carried, or a pasted body reads another map's bytes.
-            np.dlg = if (np.dlg != wf.NO_DIALOG and np.dlg < m.ndialogs) np.dlg else wf.NO_DIALOG;
+            // BOTH SPANS ARE OFFSETS INTO THE MAP THEY CAME FROM: the conversation and the call are named again by the text the clipboard carried, or a pasted body reads another map's bytes.
+            const talk = wf.idText(&clipTalk[ci]);
+            np.dlg = if (talk.len == 0) wf.NO_DIALOG else m.findDialog(talk) orelse wf.NO_DIALOG;
             np.dlgRef = if (np.dlg == wf.NO_DIALOG) wf.Span{} else (m.addText(m.dialogs[np.dlg].label()) catch wf.Span{});
             np.call = if (clipCallLen[ci] == 0) wf.Span{} else (m.addText(clipCalls[ci][0..clipCallLen[ci]]) catch wf.Span{});
             m.npcs[m.nnpcs] = np;
@@ -3951,7 +3987,10 @@ pub const Editor = struct {
         }
     }
 
-    fn deleteMarked(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
+    const Talk = enum { free, keep };
+
+    /// `.keep` for a cut: the conversation is the clipboard's until it is pasted.
+    fn deleteMarked(self: *Editor, m: *wf.Map, env: *envmod.Env, talk: Talk) void {
         if (self.nMarked == 0) return;
         self.bank(m);
         var idx: [MAX_MARKED]usize = undefined;
@@ -3967,7 +4006,7 @@ pub const Editor = struct {
                     if (k >= m.nnpcs) continue;
                     const doomed = m.npcs[k].dlg;
                     broke += wf.removeNpc(m, k).conds;
-                    if (doomed != wf.NO_DIALOG) _ = wf.removeDialog(m, doomed);
+                    if (doomed != wf.NO_DIALOG and talk == .free) _ = wf.removeDialog(m, doomed);
                     folk = true;
                 } else {
                     if (i >= m.nfoes) continue;
@@ -5309,9 +5348,9 @@ fn gradientRows(ctx: *ui.Ctx, x: i32, y: *i32, w: i32, o: *wf.Op, s: *wf.Scatter
     }
     y.* += ROW_H + 4;
     if (s.gAxis == .none) return ch;
-    ch = ui.stepperF(ctx, x, y.*, w, "from", &s.gA, 1, -COORD_LIM, COORD_LIM, "The FULL end of the fade, in world metres") or ch;
+    ch = ui.stepperF(ctx, x, y.*, w, "from", &s.gA, 1, -COORD_LIM, COORD_LIM, "The THIN end of the fade, in world metres") or ch;
     y.* += ROW_H;
-    ch = ui.stepperF(ctx, x, y.*, w, "to", &s.gB, 1, -COORD_LIM, COORD_LIM, "The THIN end of the fade, in world metres") or ch;
+    ch = ui.stepperF(ctx, x, y.*, w, "to", &s.gB, 1, -COORD_LIM, COORD_LIM, "The FULL end of the fade, in world metres") or ch;
     y.* += ROW_H;
     ch = ui.slider(ctx, x, y.*, w, "thin end", &s.gFloor, 0, 1, "What share survives at the thin end. 0 fades to nothing, 1 is no fade at all") or ch;
     y.* += ROW_H;
@@ -5722,7 +5761,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 }
                 if (changed) {
                     ed.bankGesture(wf.Foe, m, fo, before);
-                } else if (!ctx.down) ed.endGesture();
+                } else if (ctx.buttonUp) ed.endGesture();
             },
             .npc => |i| {
                 if (i >= m.nnpcs) return;
@@ -5782,7 +5821,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 if (changed) {
                     ed.bankGesture(wf.Npc, m, np, before);
                     ed.requestFolk();
-                } else if (!ctx.down) ed.endGesture();
+                } else if (ctx.buttonUp) ed.endGesture();
             },
         }
         return;
@@ -5935,7 +5974,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 ed.editing = true;
             }
             ed.requestRebuild();
-        } else if (!ctx.down) ed.endGesture();
+        } else if (ctx.buttonUp) ed.endGesture();
         return;
     }
 
@@ -6117,7 +6156,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     if (changed) {
         ed.bankOpGesture(m, s, before, beforeScat);
         ed.requestRebuild();
-    } else if (!ctx.down) {
+    } else if (ctx.buttonUp) {
         ed.endGesture();
     }
 }
@@ -6519,7 +6558,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             if (ui.stepperI(ctx, box.x + DLG_PAD, box.y + box.h - DLG_FOOT - ROW_H - 6, box.w - DLG_PAD * 2, "gold", &coin, GOLD_STEP, 0, GOLD_LIM, "Coin in this container. It goes straight into his purse on opening, and is not one of the eight item kinds")) {
                 o.gold = @intCast(@max(coin, 0));
                 ed.bankGesture(u32, m, &o.gold, goldWas);
-            } else if (!ctx.down) ed.endGesture();
+            } else if (ctx.buttonUp) ed.endGesture();
             if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false, "Close it - every change is already applied (Enter)") or confirm) {
                 ed.modal = .none;
             }
@@ -6732,7 +6771,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             if (changed) {
                 ed.bankWorld(m, halfBefore, before, startBefore);
                 ed.requestRebuild();
-            } else if (!ctx.down) ed.endGesture();
+            } else if (ctx.buttonUp) ed.endGesture();
 
             if (ui.button(ctx, ui.rect(box.x + DLG_PAD, box.y + box.h - DLG_FOOT, 120, DLG_BTN_H), "Done", hud.MONO, false, "Close it - every change is already applied (Enter)") or confirm) {
                 ed.modal = .none;
@@ -7418,18 +7457,26 @@ fn drawScriptModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, confirm: bool) void {
             m.trigs[m.ntrigs] = t;
             m.ntrigs += 1;
             ed.selectTrig(m, m.ntrigs - 1);
+            ed.trigScroll = std.math.maxInt(i32);
             ed.dirty = true;
         } else ed.say("trigger cap reached");
     }
     y += ROW_H + 4;
-    for (m.trigs[0..m.ntrigs], 0..) |*t, i| {
-        var lb: [40]u8 = undefined;
-        const on = ed.trigSel == i;
-        const lab = std.fmt.bufPrintZ(&lb, "{s}{s}", .{ t.label(), if (t.wip) " ~" else "" }) catch "?";
-        if (ui.button(ctx, ui.rect(x, y, listW, 22), lab, hud.MONO, on, "Select this trigger. A ~ means it is parked")) {
-            if (on) ed.trigSel = null else ed.selectTrig(m, i);
+    {
+        const view = ui.rect(x, y, listW, box.y + box.h - DLG_FOOT - 8 - y);
+        const held: i32 = @as(i32, @intCast(m.ntrigs)) * ROW_H;
+        const was = beginScroll(ctx, view, &ed.trigScroll, held);
+        var ly = y - ed.trigScroll;
+        for (m.trigs[0..m.ntrigs], 0..) |*t, i| {
+            var lb: [40]u8 = undefined;
+            const on = ed.trigSel == i;
+            const lab = std.fmt.bufPrintZ(&lb, "{s}{s}", .{ t.label(), if (t.wip) " ~" else "" }) catch "?";
+            if (ui.button(ctx, ui.rect(x, ly, listW, 22), lab, hud.MONO, on, "Select this trigger. A ~ means it is parked")) {
+                if (on) ed.trigSel = null else ed.selectTrig(m, i);
+            }
+            ly += ROW_H;
         }
-        y += ROW_H;
+        endScroll(ctx, view, &ed.trigScroll, held, was);
     }
 
     const rx = x + listW + DLG_PAD;
@@ -7551,7 +7598,7 @@ fn drawScriptModal(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, confirm: bool) void {
         ed.trigSel = null;
         ed.dirty = true;
     }
-    if (!ctx.down) ed.endGesture();
+    if (ctx.buttonUp) ed.endGesture();
     scriptDone(ed, ctx, box, confirm);
 }
 
@@ -7697,7 +7744,8 @@ fn foeRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, k: *wf.FoeKind, x: i32, y: i32,
     return false;
 }
 
-fn dialogRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, span: *wf.Span, x: i32, y: i32, w: i32, tag: u8) bool {
+/// Writes the slot too: the runtime opens `slot`, and `link` only resolves it at load.
+fn dialogRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, span: *wf.Span, slot: *u16, x: i32, y: i32, w: i32, tag: u8) bool {
     if (m.ndialogs == 0) {
         hud.mono("no conversations in this map", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 160));
         return false;
@@ -7705,7 +7753,8 @@ fn dialogRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, span: *wf.Span, x: i32, y: i
     const shown = @min(m.ndialogs, MAX_SLOT_ROWS);
     var labels: [MAX_SLOT_ROWS][:0]const u8 = undefined;
     const txt = m.spanText(span.*);
-    var sel: usize = 0;
+    // Past the list, drawn "(none)": nothing is picked.
+    var sel: usize = shown;
     for (0..shown) |i| {
         const lbl = m.dialogs[i].label();
         const cap = @min(lbl.len, wf.ID_CAP - 1);
@@ -7720,6 +7769,7 @@ fn dialogRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, span: *wf.Span, x: i32, y: i
         ed.say("the map's text arena is full");
         return false;
     };
+    slot.* = @intCast(pick);
     return true;
 }
 
@@ -7821,7 +7871,7 @@ fn condFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, c: *wf.Cond, x: i32, y: i32
             hit = npcRow(ed, ctx, m, &c.slot, x, y, 150) or hit;
             hit = trigF(ed, ctx, m, x + numAt(.near_r), y, numW(.near_r, w), "r", &c.r, 0.5, 0.5, 200, "How near he has to come, in metres") or hit;
         },
-        .talked => hit = dialogRow(ed, ctx, m, &c.ref, x, y, w, 11) or hit,
+        .talked => hit = dialogRow(ed, ctx, m, &c.ref, &c.slot, x, y, w, 11) or hit,
         .deaths, .alive => {
             hit = foeRow(ed, ctx, m, &c.foe, x, y, w - 120) or hit;
             hit = cmpRow(ed, ctx, m, &c.cmp, x + 154, y) or hit;
@@ -7835,7 +7885,7 @@ fn actFields(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, a: *wf.Act, x: i32, y: i32, 
     var hit = false;
     switch (a.kind) {
         .preserve, .shop, .smithy => hud.mono("-", x, y + 3, hud.MONO, ui.alpha(ui.LABEL, 140)),
-        .dialog => hit = dialogRow(ed, ctx, m, &a.ref, x, y, w, 8) or hit,
+        .dialog => hit = dialogRow(ed, ctx, m, &a.ref, &a.slot, x, y, w, 8) or hit,
         .text => {
             const txt = m.spanText(a.line);
             var tb: [64]u8 = undefined;
@@ -8231,9 +8281,41 @@ test "THE UNITS MARQUEE TAKES BOTH KINDS — a body that talks was marked by not
 
     ed.marqueeSelect(m, env, v3(-100, 0, -100), v3(100, 0, 100));
     try std.testing.expectEqual(@as(usize, 5), ed.nMarked);
-    ed.deleteMarked(m, env);
+    ed.deleteMarked(m, env, .free);
     try std.testing.expectEqual(@as(usize, 0), m.nnpcs);
     try std.testing.expectEqual(@as(usize, 0), m.nfoes);
+}
+
+test "A CUT BODY KEEPS ITS OWN CONVERSATION — the table renumbers under the clipboard" {
+    undoReset();
+    const alloc = std.testing.allocator;
+    const m = try wf.testMap(alloc, wf.TEST_HEAD ++
+        \\dlg: first
+        \\  node: root
+        \\  say: One.
+        \\  then: end
+        \\dlg: second
+        \\  node: root
+        \\  say: Two.
+        \\  then: end
+        \\npc: wanderer 0.00 0.00 0.0 1.00 0.00 dlg=first
+        \\npc: merchant 40.00 0.00 0.0 1.00 0.00 dlg=second
+    );
+    defer alloc.destroy(m);
+    const env = try testEnv(alloc);
+    defer alloc.destroy(env);
+    var ed = Editor{};
+    ed.layer = .units;
+    ed.marqueeSelect(m, env, v3(-5, 0, -5), v3(5, 0, 5));
+    try std.testing.expectEqual(@as(usize, 1), ed.nMarked);
+    ed.copyMarked(m, env, true);
+    try std.testing.expectEqual(@as(usize, 1), m.nnpcs);
+    ed.cursor = v3(-30, 0, -30);
+    ed.paste(m, env);
+    const pasted = m.npcs[m.nnpcs - 1];
+    try std.testing.expectEqual(wf.NpcKind.wanderer, pasted.kind);
+    try std.testing.expectEqualStrings("first", m.dialogs[pasted.dlg].label());
+    try std.testing.expectEqualStrings("second", m.dialogs[m.npcs[0].dlg].label());
 }
 
 test "A RENAME IS ONE UNDO STEP, NOT ONE A KEYSTROKE" {
@@ -8251,6 +8333,9 @@ test "A RENAME IS ONE UNDO STEP, NOT ONE A KEYSTROKE" {
     try std.testing.expectEqual(@as(usize, 2), undoN);
     ed.bankTyping(m, KB_ZONE_NAME);
     try std.testing.expectEqual(@as(usize, 3), undoN);
+    ed.selectZone(m, 0);
+    ed.bankTyping(m, KB_ZONE_NAME);
+    try std.testing.expectEqual(@as(usize, 4), undoN);
 }
 
 test "THE WORLD PANEL'S UNDO PUTS THE START BACK — its snapshot rolled the half and the runway and left the spawn moved" {
@@ -8823,6 +8908,137 @@ test "THE REMOVAL COLOUR IS WORN BY THE TOOLS THAT REMOVE, and by nothing else" 
     try std.testing.expect(worn == @typeInfo(Layer).@"enum".fields.len + 1);
 }
 
+test "A MOVED BELT TAKES ITS FADE WITH IT — the gradient's ends are world metres, and `from` is the THIN one" {
+    var s = wf.scatDefaults(.belt);
+    s.x1 = 40;
+    s.z1 = 10;
+    s.gAxis = .x;
+    s.gA = 10;
+    s.gB = 40;
+    s.gFloor = 0.25;
+    try std.testing.expectApproxEqAbs(s.gFloor, s.gradAt(s.gA, 0), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 1), s.gradAt(s.gB, 0), 1e-6);
+    const was = s.gradAt(20, 5);
+    var o = wf.defaults(.belt);
+    translatePair(&o, &s, 100, -30);
+    try std.testing.expectApproxEqAbs(was, s.gradAt(120, -25), 1e-6);
+    try std.testing.expectApproxEqAbs(@as(f32, 140), s.x1, 1e-6);
+}
+
+test "A CLOSED ROOM IS SELECTED WITH ITS OWN NAME IN THE FIELD — not the last room's, which the field would write onto it" {
+    undoReset();
+    const m = try std.testing.allocator.create(wf.Map);
+    defer std.testing.allocator.destroy(m);
+    m.* = .{};
+    m.blank("rooms");
+    var ed = Editor{};
+    ed.layer = .locations;
+    Editor.loadField(&ed.arenaNameBuf, &ed.arenaNameLen, "stale_room");
+    for ([_][2]f32{ .{ 0, 0 }, .{ 10, 0 }, .{ 5, 8 } }) |c| ed.arenaCorner(m, v3(c[0], 0, c[1]));
+    ed.closeArena(m);
+    try std.testing.expectEqual(@as(usize, 1), m.narenas);
+    try std.testing.expectEqual(@as(?usize, 0), ed.arenaSel);
+    try std.testing.expectEqualStrings(m.arenas[0].label(), ed.arenaNameBuf[0..ed.arenaNameLen]);
+}
+
+test "A ROUTE BEING LAID IS PUT DOWN WITH ITS LAYER — the next layer's first click is its own" {
+    var ed = Editor{};
+    ed.layer = .units;
+    ed.routing = true;
+    ed.setLayer(.props);
+    try std.testing.expect(!ed.routing);
+}
+
+test "THE ERASER TAKES ONLY WHAT THE LEVEL SHOWS — underground it cannot reach the body on the hill it has cut away" {
+    undoReset();
+    const alloc = std.testing.allocator;
+    const m = try alloc.create(wf.Map);
+    defer alloc.destroy(m);
+    const env = try testEnv(alloc);
+    defer alloc.destroy(env);
+    m.* = .{};
+    m.blank("erase level");
+    var span: [4]usize = undefined;
+    _ = m.sculpt(0, 0, 40, .raise, 8, &span);
+    _ = caves.carve(caves.gridsOf(m), .{ .px = 0, .pz = 0, .r = 6, .floor = -2, .roof = 1 }, &span);
+    env.adoptHeight(m);
+    env.adoptCave(m);
+    m.foes[0] = .{ .kind = .toad, .x = 0, .z = 0 };
+    m.foes[1] = .{ .kind = .toad, .x = 0, .z = 0, .under = true };
+    m.nfoes = 2;
+    var ed = Editor{};
+    ed.hasCave = env.caveAny;
+    ed.layer = .units;
+    ed.radius = 2.0;
+    ed.setUnder(true);
+    try std.testing.expect(ed.eraseAt(m, env, v3(0, 0, 0)));
+    try std.testing.expectEqual(@as(usize, 1), m.nfoes);
+    try std.testing.expect(!m.foes[0].under);
+    try std.testing.expect(!ed.eraseAt(m, env, v3(0, 0, 0)));
+    ed.setUnder(false);
+    try std.testing.expect(ed.eraseAt(m, env, v3(0, 0, 0)));
+    try std.testing.expectEqual(@as(usize, 0), m.nfoes);
+}
+
+test "A FOLK FLIPPED BETWEEN LEVELS IS STOOD AGAIN — `rebuild` never re-places a body" {
+    undoReset();
+    const alloc = std.testing.allocator;
+    const m = try alloc.create(wf.Map);
+    defer alloc.destroy(m);
+    const env = try testEnv(alloc);
+    defer alloc.destroy(env);
+    m.* = .{};
+    m.blank("flip folk");
+    var span: [4]usize = undefined;
+    _ = m.sculpt(0, 0, 40, .raise, 8, &span);
+    _ = caves.carve(caves.gridsOf(m), .{ .px = 0, .pz = 0, .r = 6, .floor = -2, .roof = 1 }, &span);
+    env.adoptHeight(m);
+    env.adoptCave(m);
+    m.npcs[0] = .{ .kind = .wanderer, .x = 0, .z = 0 };
+    m.nnpcs = 1;
+    var ed = Editor{};
+    ed.hasCave = env.caveAny;
+    ed.layer = .units;
+    ed.selUnit = .{ .npc = 0 };
+    const gen = ed.mapGen;
+    ed.flipLevel(m, env);
+    try std.testing.expect(m.npcs[0].under);
+    try std.testing.expect(ed.mapGen != gen);
+}
+
+test "A GENERATOR STAMPED UNDERGROUND IS UNDERGROUND — every drag brush, not only the single stamp" {
+    undoReset();
+    const alloc = std.testing.allocator;
+    const m = try alloc.create(wf.Map);
+    defer alloc.destroy(m);
+    const env = try testEnv(alloc);
+    defer alloc.destroy(env);
+    m.* = .{};
+    m.blank("stamp under");
+    var span: [4]usize = undefined;
+    _ = m.sculpt(0, 0, 40, .raise, 8, &span);
+    _ = caves.carve(caves.gridsOf(m), .{ .px = 0, .pz = 0, .r = 6, .floor = -2, .roof = 1 }, &span);
+    // Adopted first: a stale tile would be rebuilt, and that is a GPU upload.
+    env.adoptHeight(m);
+    env.adoptCave(m);
+    var ed = Editor{};
+    ed.hasCave = env.caveAny;
+    ed.layer = .props;
+    ed.setUnder(true);
+    inline for (.{ PropBrush.stamp, PropBrush.row, PropBrush.ring, PropBrush.cluster, PropBrush.ivy }) |b| {
+        ed.setBrush(@intFromEnum(b));
+        ed.dragFrom = v3(0, 0, 0);
+        ed.dragTo = v3(2.5, 0, 1.5);
+        const before = m.nops;
+        ed.commitDrag(m, env);
+        try std.testing.expectEqual(before + 1, m.nops);
+        if (!m.ops[m.nops - 1].under) {
+            std.debug.print("\n  the {s} brush stamped a {s} op on the hill over the chamber\n", .{ @tagName(b), @tagName(m.ops[m.nops - 1].op) });
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
 test "THE LEVEL FILTERS THE STRIP AND THE PICK: underground the Ground layer keeps its four sculpts and the roof pair, and a surface body over an open cell is not on offer" {
     undoReset();
     const alloc = std.testing.allocator;
@@ -8878,4 +9094,19 @@ test "THE LEVEL FILTERS THE STRIP AND THE PICK: underground the Ground layer kee
     try std.testing.expect(ed.under);
     ed.setLayer(.props);
     try std.testing.expect(ed.under);
+}
+
+test "A BRUSH THAT APPLIES ON RELEASE IS COMMITTED WHERE THE STROKE ENDS — the end at the top of the frame ran first and the release branches never saw `painting`" {
+    const src = try wf.readForTest(std.testing.allocator, "src/ui/editor.zig", wf.SRC_CAP);
+    defer std.testing.allocator.free(src);
+    // Split so these lines are not themselves the matches.
+    try std.testing.expect(std.mem.indexOf(u8, src, "self.painting and rl.isMouseButton" ++ "Released(") == null);
+    const fin = std.mem.indexOf(u8, src, "fn finish" ++ "Stroke(") orelse return error.TestUnexpectedResult;
+    const body = src[fin .. std.mem.indexOfPos(u8, src, fin, "\n    }\n") orelse return error.TestUnexpectedResult];
+    inline for (.{ ".ramp =>", ".sheer =>", ".plateau =>", ".entrance)" }) |b| {
+        if (std.mem.indexOf(u8, body, b) == null) {
+            std.debug.print("\n  `{s}` applies on release and is not committed in `finishStroke`\n", .{b});
+            return error.TestUnexpectedResult;
+        }
+    }
 }

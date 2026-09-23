@@ -87,7 +87,7 @@ pub const View = struct {
         return heromod.handsHold(self.arm, self.off, a);
     }
     pub fn offInHand(self: *const View) bool {
-        return !heromod.armTwoHanded(self.arm) and !heromod.armTwoHanded(self.off);
+        return heromod.offInHandOf(self.arm, self.off);
     }
 };
 
@@ -103,8 +103,6 @@ const Loadout = struct {
     quick: ?item.Kind,
     spell: combat.Spell,
     worn: heromod.Worn = .{},
-    /// The smith's work on the hand this loadout is weighing (`hero.tiers`), 0 for a bare one.
-    tier: u8 = 0,
 };
 
 const Unit = enum { flat, pct, count, secs };
@@ -206,9 +204,10 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     const row = heromod.armRow(l.worn, if (bow) .hand_bow else heromod.swingSocket(l.arm, l.off));
     const perk = v.tree.bonus();
     const sheet = sheetOf(l, perk);
-    const tier = l.tier;
-    const light = if (bow) heromod.bowBlow(l.ammo, false, perk, row, sheet, tier) else heromod.weigh(heromod.ATK_LIGHT_HIT, row, sheet, tier);
-    const heavy = if (bow) heromod.bowBlow(l.ammo, true, perk, row, sheet, tier) else heromod.weigh(heromod.ATK_HEAVY_HIT, row, sheet, tier);
+    // As the live blow asks it (`Hero.swingArm`, `tierOf(.bow)`).
+    const tier = v.tierOf(if (bow) .bow else heromod.meleeArmOf(l.arm, l.off) orelse l.arm);
+    const light = if (bow) heromod.bowBlow(l.ammo, false, perk, row, sheet, tier) else heromod.swingBlow(false, perk, row, sheet, tier);
+    const heavy = if (bow) heromod.bowBlow(l.ammo, true, perk, row, sheet, tier) else heromod.swingBlow(true, perk, row, sheet, tier);
     var d: [ND]f32 = undefined;
     d[@intFromEnum(Der.light)] = if (attacks) light.dmg else 0;
     d[@intFromEnum(Der.heavy)] = if (attacks) heavy.dmg else 0;
@@ -589,20 +588,29 @@ fn inForce(v: View) Loadout {
     };
 }
 
-fn withCand(base: Loadout, c: Cand) Loadout {
+/// The swap as the hero makes it (`hero.rackTake`, `Quick.put`).
+fn withCand(base: Loadout, c: Cand, v: View) Loadout {
     var l = base;
     switch (c.act) {
-        .arm => |h| {
-            l.arm = h.a;
+        .arm, .off, .armAlt, .offAlt => |h| {
+            var cells = [4]heromod.Armament{ l.arm, v.armAlt, l.off, v.offAlt };
+            const into = switch (c.act) {
+                .arm => heromod.rackCell(heromod.RIGHT, 0),
+                .armAlt => heromod.rackCell(heromod.RIGHT, 1),
+                .off => heromod.rackCell(heromod.LEFT, 0),
+                else => heromod.rackCell(heromod.LEFT, 1),
+            };
+            heromod.rackTake(&cells, into, h.a);
+            l.arm = cells[heromod.rackCell(heromod.RIGHT, 0)];
+            l.off = cells[heromod.rackCell(heromod.LEFT, 0)];
             wearInto(&l.worn, h);
         },
-        .off => |h| {
-            l.off = h.a;
-            wearInto(&l.worn, h);
-        },
-        .armAlt, .offAlt => |h| wearInto(&l.worn, h),
         .ammo => |a| l.ammo = a,
-        .quick => |q| l.quick = q.kind,
+        .quick => |q| {
+            var bar = v.quick.*;
+            bar.put(q.slot, q.kind);
+            l.quick = bar.selected();
+        },
         .wear => |wr| l.worn.put(wr.slot, wr.kind),
         .none, .use => {},
     }
@@ -1679,7 +1687,7 @@ const HEADLINE_ROWS = [_]Der{ .light, .heavy, .elem, .spell, .quick, .ammo, .hp,
 const Headline = struct { text: [:0]const u8, good: bool };
 
 fn headline(c: Cand, v: View, base: Loadout, now: [ND]f32) ?Headline {
-    const then = derive(withCand(base, c), v);
+    const then = derive(withCand(base, c, v), v);
     var best: ?Der = null;
     var bestShare: f32 = 0;
     for (HEADLINE_ROWS) |k| {
@@ -1764,7 +1772,7 @@ fn dialsOf(k: ?item.Kind, socket: ?item.Wear, v: View) Dials {
                 d.set(.swing, heromod.drawSecs(true, a));
             } else if (heromod.bladeForWear(a.slot)) |b| {
                 const tier = v.tierOf(armInSocket(a.slot) orelse .sword);
-                setBlow(&d, heromod.weigh(heromod.ATK_LIGHT_HIT, a, v.sheet.*, tier), heromod.weigh(heromod.ATK_HEAVY_HIT, a, v.sheet.*, tier));
+                setBlow(&d, heromod.swingBlow(false, perk, a, v.sheet.*, tier), heromod.swingBlow(true, perk, a, v.sheet.*, tier));
                 d.set(.swing, heromod.swingSecs(b, true, a));
             }
             if (a.venom > 0) d.set(.venom, a.venom);
@@ -1852,7 +1860,7 @@ fn drawGearCompare(box: Box, v: View, c: Cand, f: Facing) void {
     const b = dialsOf(f.then, f.socket, v);
     const base = inForce(v);
     const now = derive(base, v);
-    const then = derive(withCand(base, c), v);
+    const then = derive(withCand(base, c, v), v);
 
     // ONLY THE DIALS THAT CHANGE, or appear, or go — a like-for-like swap (the dirk for the dirk) falls back to reading the piece whole, so the card is never blank.
     var show = [_]bool{false} ** NGD;
@@ -2058,7 +2066,7 @@ fn drawDerived(box: Box, v: View, cand: ?Cand) void {
     const inner = panel(box, "");
     const base = inForce(v);
     const now = derive(base, v);
-    const then = if (cand) |c| derive(withCand(base, c), v) else now;
+    const then = if (cand) |c| derive(withCand(base, c, v), v) else now;
 
     // TAKEN OFF THE ROTATING SCRATCH BEFORE THE ROWS RUN: `rowSays` builds through `fmt`, which cycles a 16-slot buffer, and the loop below spends 28 slots on `unitStr`.
     const says = saysOwn(if (cand) |c| candSays(c, v) else armSays(v.arm, v.off));
@@ -2498,7 +2506,7 @@ fn drawBody(col: Box, v: View) void {
         L.put("Guard negation", "{d:.0}%", .{worth(d, .guard)}, uiart.TEXT_VALUE);
         L.put("Guard arc", "{d:.0} deg", .{worth(d, .arc)}, uiart.TEXT_VALUE);
     }
-    L.put("Roll i-frames", "{d:.2}s", .{heromod.ROLL_IFRAME_END_BANK + perk.iframe}, if (perk.iframe > 0) uiart.GOOD else uiart.TEXT_VALUE);
+    L.put("Roll i-frames", "{d:.2}s", .{heromod.ROLL_IFRAME_END + perk.iframe}, if (perk.iframe > 0) uiart.GOOD else uiart.TEXT_VALUE);
     L.put("Roll costs", "{d:.0} stamina", .{combat.STAM_ROLL * perk.rollStam}, if (perk.rollStam < 1) uiart.GOOD else uiart.TEXT_VALUE);
     const move = heromod.moveRateOf(v.worn, perk);
     if (@abs(move - 1) > 0.005) L.put("Move speed", "{d:.0}%", .{move * 100}, goodIf(move > 1));
@@ -2763,6 +2771,80 @@ test "EVERY WORN SOCKET ON THE DOLL OPENS ONCE HE IS CARRYING SOMETHING FOR IT" 
         }
     }
     try std.testing.expectEqual(@as(usize, 7), worn);
+}
+
+test "THE PREVIEW MAKES THE SWAP THE HERO MAKES — an armament moved across the rack, a kind moved along the bar" {
+    const bag = item.Bag{};
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+    const v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+    const moved = withCand(inForce(v), .{ .name = "", .act = .{ .arm = .{ .a = .shield } } }, v);
+    try std.testing.expectEqual(heromod.Armament.shield, moved.arm);
+    try std.testing.expectEqual(heromod.Armament.sword, moved.off);
+    try std.testing.expect(worth(derive(moved, v), .light) > 0);
+
+    var cells = [4]heromod.Armament{ v.arm, v.armAlt, v.off, v.offAlt };
+    heromod.rackTake(&cells, heromod.rackCell(heromod.RIGHT, 0), .shield);
+    try std.testing.expectEqual(moved.arm, cells[heromod.rackCell(heromod.RIGHT, 0)]);
+    try std.testing.expectEqual(moved.off, cells[heromod.rackCell(heromod.LEFT, 0)]);
+
+    const selected = v.quick.selected();
+    const barred = withCand(inForce(v), .{ .name = "", .act = .{ .quick = .{ .slot = 5, .kind = .cerulean_flask } } }, v);
+    try std.testing.expectEqual(selected, barred.quick);
+}
+
+test "TWO WEAPONS IN TWO HANDS: THE PAGE SAYS THE RIGHT ONE WINS, as the rig does" {
+    const bag = item.Bag{};
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+    const v = testViewOff(&bag, &sheet, &res, &flasks, &quiver, .sword, .dagger);
+    try std.testing.expect(!v.offInHand());
+    try std.testing.expectEqualStrings("One weapon hand. The right takes it.", locked(.left, v).?);
+    const boards = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+    try std.testing.expect(boards.offInHand());
+}
+
+test "THE TREE'S DAMAGE IS ON THE PAGE'S SWING AS IT IS ON ITS BOW — the live swing is scaled by it" {
+    const bag = item.Bag{};
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+    const plainV = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+    const plain = derive(inForce(plainV), plainV);
+    var tree = ptree.Tree{};
+    for (ptree.NODES, 0..) |n, i| {
+        if (std.meta.activeTag(n.grant) != .strike) continue;
+        tree.taken[i] = true;
+        break;
+    }
+    var v = plainV;
+    v.tree = &tree;
+    const bonus = tree.bonus();
+    try std.testing.expect(bonus.dmg > 1);
+    const row = heromod.armRow(v.worn, heromod.swingSocket(v.arm, v.off));
+    const unscaled = heromod.weigh(heromod.ATK_LIGHT_HIT, row, sheetOf(inForce(v), bonus), 0).dmg;
+    try std.testing.expect(unscaled >= worth(plain, .light));
+    try std.testing.expectApproxEqAbs(unscaled * bonus.dmg, worth(derive(inForce(v), v), .light), 1e-3);
+}
+
+test "THE PAGE WEIGHS THE SMITH'S WORK — the tier the live blow reads is the tier the sheet reads" {
+    const bag = item.Bag{};
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+    var v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+    const plain = derive(inForce(v), v);
+    v.tiers[@intFromEnum(heromod.Armament.sword)] = 3;
+    const smithed = derive(inForce(v), v);
+    try std.testing.expect(worth(smithed, .light) > worth(plain, .light));
+    const row = heromod.armRow(v.worn, heromod.swingSocket(v.arm, v.off));
+    try std.testing.expectApproxEqAbs(heromod.swingBlow(false, v.tree.bonus(), row, sheetOf(inForce(v), v.tree.bonus()), 3).dmg, worth(smithed, .light), 1e-4);
 }
 
 test "A BOON IS PRICED INTO THE PAGE'S OWN DAMAGE ROWS, and only counted once" {

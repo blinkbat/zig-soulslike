@@ -763,7 +763,9 @@ fn applyRail(bits: *const savemod.BossBits, i: usize, bodies: anytype) void {
     }
 }
 
+/// Before the field is wiped (`clearFoes`/`resetFoes` take the bodies); a spar kill never reaches the rail.
 fn snapBosses(g: *Game) void {
+    if (editormod.Editor.sparring()) return;
     inline for (BOSS_RAILS, 0..) |row, i| snapRail(&g.bossBits, i, @field(g, row.field).liveConst());
 }
 
@@ -790,6 +792,33 @@ test "A BOSS THE BONFIRE CLEARED IS STILL DOWN — the rail ACCUMULATES, it is n
     try std.testing.expect(bits[0][0]);
     applyRail(&bits, 0, fresh[0..]);
     try std.testing.expect(fresh[0].vit.dead);
+}
+
+test "A KILL IS READ OFF THE FIELD BEFORE THE FIELD GOES — asked after `clearFoes`/`resetFoes`, no boss ever stayed down" {
+    const src = try worldfmt.readForTest(std.testing.allocator, SRC, worldfmt.SRC_CAP);
+    defer std.testing.allocator.free(src);
+    // Split so these lines are not themselves the matches.
+    const snap = "snapBosses" ++ "(g);";
+    for ([_][]const u8{ "clearFoes" ++ "(g);", "resetFoes" ++ "(g);" }) |wipe| {
+        var at: usize = 0;
+        var sites: usize = 0;
+        while (std.mem.indexOfPos(u8, src, at, wipe)) |i| {
+            at = i + 1;
+            const line = std.mem.lastIndexOfScalar(u8, src[0..i], '\n') orelse 0;
+            const own = std.mem.lastIndexOf(u8, src[0..i], "\nfn ") orelse 0;
+            const public = std.mem.lastIndexOf(u8, src[0..i], "\npub fn ") orelse 0;
+            const nameAt = if (public > own) public + "\npub fn ".len else own + "\nfn ".len;
+            const fnName = src[nameAt .. std.mem.indexOfScalarPos(u8, src, nameAt, '(') orelse continue];
+            if (!std.mem.eql(u8, fnName, "tickRest") and !std.mem.eql(u8, fnName, "run")) continue;
+            sites += 1;
+            const prev = std.mem.lastIndexOfScalar(u8, src[0..line], '\n') orelse 0;
+            if (std.mem.indexOf(u8, src[prev..line], snap) == null) {
+                std.debug.print("\n  `{s}` in `{s}` wipes the field with no `{s}` on the line above it\n", .{ wipe, fnName, snap });
+                return error.TestUnexpectedResult;
+            }
+        }
+        try std.testing.expect(sites >= 1);
+    }
 }
 
 fn slotOf(g: *Game) savemod.Slot {
@@ -1764,6 +1793,15 @@ const SparKept = struct {
     offAlt: heromod.Armament,
     mem: combat.Memory,
     spell: combat.Spell,
+    at: rl.Vector3,
+    facing: f32,
+    spawnAt: rl.Vector3,
+    spawnFacing: f32,
+    /// Souls and the tree go back TOGETHER, or a node bought at the room's fire is refunded.
+    souls: combat.Souls,
+    tree: ptree.Tree,
+    flasks: combat.Flasks,
+    quiver: combat.Quiver,
 };
 var sparKept: ?SparKept = null;
 
@@ -1777,6 +1815,14 @@ fn sparKit(g: *Game) void {
         .offAlt = g.hero.offAlt,
         .mem = g.hero.mem,
         .spell = g.hero.spell,
+        .at = g.hero.pos,
+        .facing = g.hero.facing,
+        .spawnAt = g.hero.spawnPos,
+        .spawnFacing = g.hero.spawnFacing,
+        .souls = g.hero.souls,
+        .tree = g.tree,
+        .flasks = g.hero.flasks,
+        .quiver = g.hero.quiver,
     };
     for (0..item.NK) |i| {
         const k: item.Kind = @enumFromInt(i);
@@ -1803,11 +1849,20 @@ fn leaveSpar(g: *Game) bool {
         g.hero.offAlt = k.offAlt;
         g.hero.mem = k.mem;
         g.hero.spell = k.spell;
+        g.hero.pos = k.at;
+        g.hero.facing = k.facing;
+        g.hero.setSpawn(k.spawnAt, k.spawnFacing);
+        g.hero.souls = k.souls;
+        g.tree = k.tree;
+        applyTree(g);
         inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
             const w: item.Wear = @enumFromInt(f.value);
             _ = g.hero.wear(w, k.worn.at(w));
         }
+        g.hero.flasks = k.flasks;
+        g.hero.quiver = k.quiver;
     }
+    clearOrdnance(g);
     return true;
 }
 
@@ -1824,8 +1879,23 @@ test "THE KIT COMES OFF AT THE SAME DOOR THE MAP DOES — nothing reaches `endSp
     }
     try std.testing.expectEqual(@as(usize, 1), doors);
     try std.testing.expect(std.mem.indexOf(u8, src, "fn leaveSpar(") != null);
-    inline for (.{ "bag", "worn", "arm", "armAlt", "off", "offAlt", "mem", "spell" }) |f| {
+    inline for (.{ "bag", "worn", "arm", "armAlt", "off", "offAlt", "mem", "spell", "at", "spawnAt", "souls", "tree", "flasks", "quiver" }) |f| {
         try std.testing.expect(@hasField(SparKept, f));
+    }
+}
+
+test "WHAT THE ROOM TAKES IT HANDS BACK — `sparKit` fills every field and `leaveSpar` reads every one" {
+    const src = try worldfmt.readForTest(std.testing.allocator, SRC, worldfmt.SRC_CAP);
+    defer std.testing.allocator.free(src);
+    const take0 = std.mem.indexOf(u8, src, "\nfn sparKit(") orelse return error.TestUnexpectedResult;
+    const take = src[take0 .. std.mem.indexOfPos(u8, src, take0, "\n}\n") orelse return error.TestUnexpectedResult];
+    const give0 = std.mem.indexOf(u8, src, "\nfn leaveSpar(") orelse return error.TestUnexpectedResult;
+    const give = src[give0 .. std.mem.indexOfPos(u8, src, give0, "\n}\n") orelse return error.TestUnexpectedResult];
+    inline for (std.meta.fields(SparKept)) |f| {
+        if (std.mem.indexOf(u8, take, "." ++ f.name ++ " = ") == null or std.mem.indexOf(u8, give, "k." ++ f.name) == null) {
+            std.debug.print("\n  SparKept.{s} is not both taken in `sparKit` and handed back in `leaveSpar`\n", .{f.name});
+            return error.TestUnexpectedResult;
+        }
     }
 }
 
@@ -2500,10 +2570,15 @@ test "THE BOOM'S OWN GATHER CANNOT OVERFLOW — it drops the rest SILENTLY, and 
     );
 }
 
+/// Not where its corpse last lay: `foe.seatInto` fills gone slots first.
+const NOWHERE = rl.Vector3{ .x = std.math.inf(f32), .y = 0, .z = 0 };
+
 fn snapshotPos(foes: anytype, out: []rl.Vector3) void {
+    const T = @typeInfo(@TypeOf(foes)).pointer.child;
     for (foes, 0..) |*f, i| {
         if (i >= out.len) return;
-        out[i] = f.pos;
+        const here = if (comptime @hasDecl(T, "alive")) f.alive() else true;
+        out[i] = if (here) f.pos else NOWHERE;
     }
 }
 
@@ -2525,6 +2600,7 @@ fn gateTerrain(g: *const Game, foes: anytype, was: []const rl.Vector3, group: ?F
         if (comptime @hasDecl(T, "alive")) {
             if (!f.alive()) continue;
         }
+        if (!std.math.isFinite(was[i].x)) continue;
         if (mathx.distXZ(was[i], f.pos) < 1e-5) continue;
         if (!crossesWards and g.env.wardCrossed(was[i], f.pos) != null) {
             f.pos.x = was[i].x;
@@ -2614,7 +2690,7 @@ fn gateHeroTerrain(g: *Game, was: rl.Vector3) void {
 fn gatedXZ(e: *const envmod.Env, was: rl.Vector3, to: rl.Vector3, airborne: bool) rl.Vector3 {
     if (mathx.distXZ(was, to) < 1e-5) return to;
     if (airborne) {
-        if (e.deepRefused(was.x, was.z, to.x, to.z)) return v3(was.x, to.y, was.z);
+        if (e.deepRefused(was.x, was.z, to.x, to.z, was.y)) return v3(was.x, to.y, was.z);
         return to;
     }
     const stepped = e.walkSegment(was, to);
@@ -2960,7 +3036,7 @@ fn applyYank(g: *Game, out: combat.HitOutcome) void {
     if (!out.landed()) return;
     const dir = mathx.dirXZ(g.hero.pos, h.from);
     if (mathx.lenXZ(dir) < 1e-3) return;
-    g.hero.pos = inBounds(g.env.walkStep(g.hero.pos, mathx.normV(dir), h.pull));
+    shoveHero(g, dir, h.pull);
     g.rig.addShake(SHAKE_GUARD_BREAK);
     g.rumble.play(rumblemod.hit_heavy);
 }
@@ -2969,7 +3045,16 @@ fn heroShoved(g: *Game, from: rl.Vector3, push: f32, out: combat.HitOutcome) voi
     if (!out.landed()) return;
     const dir = mathx.dirXZ(from, g.hero.pos);
     if (mathx.lenXZ(dir) < 1e-3) return;
-    g.hero.pos = inBounds(g.env.walkStep(g.hero.pos, mathx.normV(dir), push));
+    shoveHero(g, dir, push);
+}
+
+/// A shove meets the two walls a step does (`gateHeroTerrain`): the ward and a sealed room.
+fn shoveHero(g: *Game, dir: rl.Vector3, dist: f32) void {
+    const was = g.hero.pos;
+    const to = inBounds(g.env.walkStep(was, mathx.normV(dir), dist));
+    if (g.env.wardRefusing(was, to, null) != null) return;
+    const room = holdIn(g, was, to, HERO_R);
+    g.hero.pos = v3(room.x, to.y, room.z);
 }
 
 pub fn leechSip(g: *Game, h: combat.Hit) void {
@@ -3548,6 +3633,8 @@ fn knockOffLadder(g: *Game, b: foemod.Blow) void {
     const from = g.hero.footY();
     const away = mathx.dirXZ(b.from, g.hero.pos);
     leaveLadder(g);
+    // A blow with its own `launch` already threw him off inside `takeHit`.
+    if (g.hero.launched) return;
     _ = g.hero.launchFrom(away, LADDER_KNOCK_APEX, from);
 }
 
@@ -4127,6 +4214,7 @@ fn digitPressed() ?usize {
 fn tickRest(g: *Game, dt: f32) void {
     g.rest.update(dt);
     if (g.rest.justEntered) {
+        snapBosses(g);
         clearFoes(g);
         clearOrdnance(g);
         g.lock = null;
@@ -4630,7 +4718,7 @@ fn gateChill(foes: anytype, was: []const rl.Vector3) void {
     const T = @typeInfo(@TypeOf(foes)).pointer.child;
     if (comptime !@hasField(T, "chill")) return;
     for (foes, 0..) |*f, i| {
-        if (i >= was.len or !f.chill.held()) continue;
+        if (i >= was.len or !f.chill.held() or !std.math.isFinite(was[i].x)) continue;
         // A BLINK IS NOT TRAVEL, so the ones that WARP say so: the delta is a set and not a step, and scaling it stood the body 45% short of a flank it had already solved.
         if (comptime @hasDecl(T, "warped")) {
             if (f.warped()) continue;
@@ -4652,6 +4740,20 @@ test "THE COLD TAKES THE FEET, AND A BLINK HAS NONE — the gate bills a step, n
     gateChill(live, was[0..]);
     try std.testing.expectApproxEqAbs(combat.CHILL_TRAVEL, bats[0].pos.z, 1e-4);
     try std.testing.expectApproxEqAbs(@as(f32, 12.0), bats[1].pos.z, 1e-4);
+}
+
+test "A SLOT THAT HELD NOBODY GATES NOBODY — a body seated into it mid-frame did not step from the corpse's spot" {
+    const home = mathx.ground(0, 0);
+    var bats = [_]batmod.Bat{ batmod.Bat.spawn(home, 0, 1.0, 0.3), batmod.Bat.spawn(mathx.ground(9, 9), 0, 1.0, 0.3) };
+    bats[1].gone = true;
+    var was: [2]rl.Vector3 = undefined;
+    const live: []batmod.Bat = &bats;
+    snapshotPos(live, &was);
+    try std.testing.expect(std.math.isFinite(was[0].x) and !std.math.isFinite(was[1].x));
+    bats[1] = batmod.Bat.spawn(mathx.ground(2, 0), 0, 1.0, 0.3);
+    bats[1].chill.touch();
+    gateChill(live, was[0..]);
+    try std.testing.expectApproxEqAbs(@as(f32, 2.0), bats[1].pos.x, 1e-4);
 }
 
 pub fn castRootsForShot(g: *Game) rl.Vector3 {
@@ -6309,6 +6411,7 @@ pub fn run(mode: Mode) void {
         if (g.hero.dead) {
             g.hero.updateDeath(dt);
             if (!g.hero.dead) {
+                snapBosses(g);
                 resetFoes(g);
                 saveNow(g, .withShot);
             }
@@ -6371,7 +6474,12 @@ pub fn run(mode: Mode) void {
             if (a.update(dt, a.threat.aim(g.hero.pos), PLAY_HALF, bladeNow)) {
                 spawnArrow(g, a.nockWorld(), heroAimPoint(g));
             }
-            if (a.heroHit) |h| _ = heroTakes(g, .{ .hit = h, .from = a.pos, .on = a.threat.on }, false, true);
+            // Through `worseBlow`, like every group's: a charmed archer's blow is turned.
+            if (a.heroHit) |h| {
+                var b: ?foemod.Blow = null;
+                foemod.worseBlow(&b, h, a.pos, &a.threat);
+                if (b) |blow| _ = heroTakes(g, blow, false, true);
+            }
         }
         if (g.band.update(dt, g.hero.pos, PLAY_HALF, bladeNow, g, spawnClump)) |b| {
             _ = heroTakes(g, b, b.hit.poise >= koboldmod.ZERK_HIT.poise, true);
@@ -6565,8 +6673,6 @@ pub fn run(mode: Mode) void {
             }
             if (m.justDied) sfx.world(.ogre_die, m.pos);
         }
-        tickBoltGas(g, dt);
-        tickBombs(g, dt);
         tickBreaches(g, dt);
         if (g.vigil.gasDose(dt, g.hero.pos)) |b| {
             _ = heroTakes(g, b, false, false);
@@ -6598,6 +6704,9 @@ pub fn run(mode: Mode) void {
             var burst = burstsBefore;
             while (burst < g.brood.bursts) : (burst += 1) g.trig.died(.brood_sac);
         }
+        // After every group's update: each clears `justDied` at its top.
+        tickBoltGas(g, dt);
+        tickBombs(g, dt);
         if (anyParried(g)) parryBeat(g);
         spendTurnedBlows(g);
         gatherDoses(g, dt);
@@ -6692,7 +6801,7 @@ pub fn run(mode: Mode) void {
             g.rumble.play(rumblemod.land);
             g.rig.addShake(SHAKE_LAND);
             sfx.playAt(.land, 1.0);
-            if (stepOverlay(g, g.hero.pos.x, g.hero.pos.z)) |over| sfx.playAt(over, 1.0);
+            if (stepOverlay(g, g.hero.pos)) |over| sfx.playAt(over, 1.0);
         }
         if (g.hero.swings != wasSwings) {
             g.rumble.play(if (g.hero.atkHeavy) rumblemod.swing_heavy else rumblemod.swing_light);
@@ -6760,12 +6869,14 @@ fn footsteps(g: *Game, last: *f32) void {
     };
     const vol = mathx.clampF(0.45 + 0.55 * h.speed / heromod.SPRINT_SPEED, 0.35, 1.0);
     sfx.playAt(id, vol);
-    if (stepOverlay(g, h.pos.x, h.pos.z)) |over| sfx.playAt(over, vol);
+    if (stepOverlay(g, h.pos)) |over| sfx.playAt(over, vol);
 }
 
-fn stepOverlay(g: *const Game, x: f32, z: f32) ?sfx.Id {
-    if (g.env.inWater(x, z, 1.0)) return LIQUID_VOICE[@intFromEnum(g.env.liquidAt(x, z))].step;
-    const i = g.map.soilIndex(x, z) orelse return null;
+fn stepOverlay(g: *const Game, at: rl.Vector3) ?sfx.Id {
+    // The pools and the soil are both painted on the LAND: a chamber floor under them has neither.
+    if (g.env.underground(at.x, at.z, at.y)) return null;
+    if (g.env.liquidUnder(at)) |l| return LIQUID_VOICE[@intFromEnum(l)].step;
+    const i = g.map.soilIndex(at.x, at.z) orelse return null;
     const v = g.map.soil[i];
     if (v >= worldfmt.Soil.N) return null;
     return switch (@as(worldfmt.Soil, @enumFromInt(v))) {
@@ -6842,9 +6953,7 @@ fn tickLiquid(g: *Game, dt: f32) void {
         if (seen[k] > 0) sfx.world(voice, pick[k]);
     }
 
-    const wet = g.env.inWater(g.hero.pos.x, g.hero.pos.z, 1.0);
-    const in: ?worldfmt.Liquid = if (wet) g.env.liquidAt(g.hero.pos.x, g.hero.pos.z) else null;
-    const bill = liquidmod.tick(&g.liquidSoak, in, dt) orelse {
+    const bill = liquidmod.tick(&g.liquidSoak, g.env.liquidUnder(g.hero.pos), dt) orelse {
         g.searT = 0;
         return;
     };
@@ -7284,11 +7393,14 @@ pub fn heroBlade(g: *const Game) foemod.Blade {
     };
 }
 
-/// One opening is the worst frame: every solid of the face puffed on a `BREACH_PUFF_COLS` x `BREACH_PUFF_ROWS` grid, `BREACH_PUFF_N` motes a puff. The ring is that arithmetic, not a round number.
+/// One opening is every solid of the face puffed on a `BREACH_PUFF_COLS` x `BREACH_PUFF_ROWS` grid, `BREACH_PUFF_N` motes a puff.
 const BREACH_PUFF_COLS: usize = 5;
 const BREACH_PUFF_ROWS: usize = 4;
 const BREACH_PUFF_N: i32 = 6;
-const BREACH_MOTES: usize = propsmod.FIT_CAP * BREACH_PUFF_COLS * BREACH_PUFF_ROWS * @as(usize, @intCast(BREACH_PUFF_N));
+const OPENING_MOTES: usize = propsmod.FIT_CAP * BREACH_PUFF_COLS * BREACH_PUFF_ROWS * @as(usize, @intCast(BREACH_PUFF_N));
+const BOMB_FRAME_MOTES: usize = BOMB_CAP * (@as(usize, @intCast(BOMB_BURST_N)) + foemod.emitCap(BOMB_SPARK_HZ));
+/// Both feeders' worst frames: a bomb that opens a cracked wall puffs it on its own blast frame.
+const BREACH_MOTES: usize = OPENING_MOTES + BOMB_FRAME_MOTES;
 /// A roll that brushes the face counts, as does a planted arrow; a blade has to reach the stone, and a bomb reaches wider than it sits.
 const BREACH_ROLL_REACH: f32 = 0.35;
 const BREACH_ARROW_R: f32 = 0.30;
@@ -7322,12 +7434,6 @@ const BOMB_SHELL = mathx.rgba(255, 214, 132, 255);
 const BOMB_FLARE = mathx.rgba(255, 246, 214, 0);
 const BOMB_SPARK = foemod.Sparks{ .spdLo = 0.5, .spdHi = 1.9, .upLo = 0.4, .upHi = 1.5, .lifeLo = 0.10, .lifeHi = 0.26, .rLo = 0.008, .rHi = 0.018, .r1 = 0.003, .col = BOMB_SHELL, .col1 = BOMB_FLARE, .grav = 3.2 };
 const BOMB_PUFF = foemod.Puff{ .blast = foemod.Blast.of(foemod.DUST_DRAG, 1.1, 2.0), .spdLo = 0.9, .upLo = 0.4, .upHi = 2.4, .rLo = 0.16, .rHi = 0.44, .col = foemod.DUST, .col1 = foemod.DUST_THIN };
-
-// The bombs are the breach ring's SECOND feeder, and a ring that overwrites its oldest does it silently.
-comptime {
-    const worstFrame = BOMB_CAP * (@as(usize, @intCast(BOMB_BURST_N)) + foemod.emitCap(BOMB_SPARK_HZ));
-    if (worstFrame >= BREACH_MOTES) @compileError("game: a frame of bomb blasts walks an opening's motes out of the breach ring — size it off BOTH feeders");
-}
 
 const BombRow = @FieldType(item.Use, "bomb");
 
@@ -7393,13 +7499,13 @@ fn bombBlast(g: *Game, at: rl.Vector3, row: BombRow) void {
     inline for (FOE_GROUPS) |gr| {
         for (@field(g, gr.field).live()) |*f| {
             if (!foemod.corporeal(f)) continue;
-            // `doseRing`'s gate, LOAD-BEARING: `shaftThrough` is built at the body's own `centerWorld`, so no geometry
+            // `doseRing`'s gate, LOAD-BEARING: `shaftFrom` is built through the body's own `centerWorld`, so no geometry
             // can refuse it the way a swept blade refuses a sunk or blinking body.
             if (disguised(f)) continue;
             const gap = mathx.distXZ(at, f.pos) - f.bodyR();
             if (gap > row.r) continue;
             const k = blastFalloff(gap, row.r);
-            f.tryHit(foemod.shaftThrough(f.centerWorld(), hit.scaled(k)));
+            f.tryHit(foemod.shaftFrom(at, f.centerWorld(), f.hurtRadius(), f.facing, hit.scaled(k)));
             // Written AFTER the wound so it beats the shove `wounded` just set.
             const away = mathx.dirXZ(at, f.pos);
             if (mathx.lenXZ(away) > 1e-3) f.shove = mathx.scaleV(away, BOMB_SHOVE * k);
@@ -7501,8 +7607,28 @@ test "EVERY WAY A SHAFT OF HIS STOPS ANNOUNCES IT — the fuse may not go out in
     std.debug.print("\n  both hand-plants in the shaft loop announced; a shell lights ONE fuse whether it plants or its flight runs out; the ordnance clear drops them too\n", .{});
 }
 
+test "THE RINGS RUN AFTER EVERY GROUP'S UPDATE — each clears `justDied` at its top, so a kill made before it was never counted" {
+    const src = try worldfmt.readForTest(std.testing.allocator, SRC, worldfmt.SRC_CAP);
+    defer std.testing.allocator.free(src);
+    const start = std.mem.indexOf(u8, src, "pub fn run(") orelse return error.TestUnexpectedResult;
+    const body = src[start..];
+    // Split so these lines are not themselves the matches.
+    const ring = std.mem.indexOf(u8, body, "tickBombs" ++ "(g, dt);") orelse return error.TestUnexpectedResult;
+    const gas = std.mem.indexOf(u8, body, "tickBoltGas" ++ "(g, dt);") orelse return error.TestUnexpectedResult;
+    const read = std.mem.indexOfPos(u8, body, @max(ring, gas), "anyFoeDied" ++ "(g)") orelse return error.TestUnexpectedResult;
+    const between = body[@min(ring, gas)..read];
+    inline for (FOE_GROUPS) |gr| {
+        if (std.mem.indexOf(u8, between, "billGroup(g, \"" ++ gr.field ++ "\"") != null or
+            std.mem.indexOf(u8, between, "g." ++ gr.field ++ ".update(") != null)
+        {
+            std.debug.print("\n  `{s}` updates between the rings and the read of what they killed\n", .{gr.field});
+            return error.TestUnexpectedResult;
+        }
+    }
+}
+
 test "A BODY THAT IS NOT THERE TAKES NO BLAST — every ring over `FOE_GROUPS` carries `disguised`" {
-    // `foe.reached` refuses only `offField`; the rest of "cannot be struck" is GEOMETRY, and `foe.shaftThrough` built at
+    // `foe.reached` refuses only `offField`; the rest of "cannot be struck" is GEOMETRY, and `foe.shaftFrom` built through
     // a body's own `centerWorld` has none. Every ring that bills or doses over the field owes the gate its pickers carry.
     const src = try worldfmt.readForTest(std.testing.allocator, SRC, worldfmt.SRC_CAP);
     defer std.testing.allocator.free(src);

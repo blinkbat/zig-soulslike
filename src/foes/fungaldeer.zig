@@ -484,11 +484,7 @@ pub const Deer = struct {
 /// How far into the drive it is: -1 cocked through +1 followed through, one signed channel.
     pub fn driveAmt(self: *const Deer) f32 {
         if (self.state != .butt) return 0;
-        if (self.t < BUTT_WIND) return -mathx.smoothstep(0, BUTT_WIND * 0.88, self.t);
-        if (self.t < BUTT_WIND + BUTT_STRIKE) {
-            return lerpF(-1.0, 1.0, foe.swingCurve((self.t - BUTT_WIND) / BUTT_STRIKE));
-        }
-        return 1.0 - mathx.smoothstep(BUTT_WIND + BUTT_STRIKE, BUTT_WIND + BUTT_STRIKE + BUTT_RECOVER * 0.7, self.t);
+        return foe.strokeAmt(self.t, BUTT_WIND, 0.88, BUTT_STRIKE, BUTT_RECOVER, 0.7);
     }
 
     fn swayAt(self: *const Deer) f32 {

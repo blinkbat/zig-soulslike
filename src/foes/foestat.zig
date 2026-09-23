@@ -27,6 +27,11 @@ pub fn known(k: wf.FoeKind) bool {
     return authored[@intFromEnum(k)].hp > 0;
 }
 
+/// For a test: a session before any body of the kind was made.
+pub fn forget(k: wf.FoeKind) void {
+    authored[@intFromEnum(k)] = .{};
+}
+
 pub fn pools(k: wf.FoeKind) Pools {
     return authored[@intFromEnum(k)];
 }

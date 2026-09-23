@@ -282,6 +282,7 @@ pub const State = struct {
     }
 
     pub fn show(self: *State, k: Kind) void {
+        self.mode = .objects;
         self.shelf = Shelf.of(k);
         self.open = k;
         self.grabbed = null;
@@ -1732,4 +1733,12 @@ test "EVERY CREATURE ON THE BENCH CAN BE PLAYED, and the decoy is the only thing
             "  decoy walks a {d:.0} m ring at {d:.2} rad/s, {d:.1}..{d:.1} m of range\n",
         .{ kinds, CHAR_DRIVE.len, member, withSpawn, far, BENCH_ORBIT, BENCH_NEAR, BENCH_FAR },
     );
+}
+
+test "VIEW OPENS THE OBJECT — whichever bench the viewer was last left on" {
+    var st = State{};
+    st.mode = .icons;
+    st.show(.pillar);
+    try std.testing.expectEqual(Mode.objects, st.mode);
+    try std.testing.expectEqual(@as(?Kind, .pillar), st.open);
 }

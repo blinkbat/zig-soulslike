@@ -596,10 +596,7 @@ pub const Mimic = struct {
     /// -1 reared back, 0 rest, +1 driven down and out: the bite's one clock, and the lid reads off it.
     fn biteAmt(self: *const Mimic) f32 {
         if (self.state != .bite) return 0;
-        if (self.t < BITE_WIND) return -mathx.smoothstep(0, BITE_WIND * 0.85, self.t);
-        const s = self.t - BITE_WIND;
-        if (s < BITE_STRIKE) return lerpF(-1.0, 1.0, foe.swingCurve(s / BITE_STRIKE));
-        return 1.0 - mathx.smoothstep(BITE_STRIKE, BITE_STRIKE + BITE_RECOVER * 0.7, s);
+        return foe.strokeAmt(self.t, BITE_WIND, 0.85, BITE_STRIKE, BITE_RECOVER, 0.7);
     }
     fn gapeAmt(self: *const Mimic) f32 {
         if (self.state != .bite) return 0;
@@ -611,10 +608,7 @@ pub const Mimic = struct {
     /// -1 coiled back the other way, +1 swung through.
     fn swingAmt(self: *const Mimic) f32 {
         if (self.state != .swing) return 0;
-        if (self.t < SWING_WIND) return -mathx.smoothstep(0, SWING_WIND * 0.85, self.t);
-        const s = self.t - SWING_WIND;
-        if (s < SWING_DUR) return lerpF(-1.0, 1.0, foe.swingCurve(s / SWING_DUR));
-        return 1.0 - mathx.smoothstep(SWING_DUR, SWING_DUR + SWING_RECOVER * 0.8, s);
+        return foe.strokeAmt(self.t, SWING_WIND, 0.85, SWING_DUR, SWING_RECOVER, 0.8);
     }
     fn stunAmount(self: *const Mimic) f32 {
         return foe.stunShape(self, foe.stunCurve);

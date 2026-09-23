@@ -57,6 +57,8 @@ pub const Ctx = struct {
     clip: ?rl.Rectangle = null,
     /// A LIST INSIDE A SCROLLED PANEL OWNS THE WHEEL OVER IT, or one notch moves the list AND the panel under it.
     wheelTaken: bool = false,
+    /// The button is physically up, live or dead: what ends a gesture, since `!down` is also true under a modal.
+    buttonUp: bool = true,
 
     pub fn begin(t: f32) Ctx {
         if (!rl.isMouseButtonDown(.left)) dragOwner = null;
@@ -88,6 +90,7 @@ pub const Ctx = struct {
         ctx.pressed = press and !ctx.ddOver;
         ctx.down = held and !ctx.ddOver;
         ctx.wheel = if (ctx.ddOver) 0 else notch;
+        ctx.buttonUp = !raw.held;
     }
 
     /// The click is spent. A widget that ACTED on it says so, or the widgets drawn after it act on it too.
@@ -615,6 +618,9 @@ var ddBox: ?rl.Rectangle = null;
 /// A list longer than this loses its TAIL with nothing on screen saying so — the rows past it can never be picked.
 pub const DD_ROWS_CAP: usize = 128;
 var ddRows: [DD_ROWS_CAP][:0]const u8 = undefined;
+/// The open list owns its text: it draws at frame end, after rows that may refill the caller's buffer.
+const DD_TEXT_CAP: usize = 64;
+var ddText: [DD_ROWS_CAP][DD_TEXT_CAP]u8 = undefined;
 
 const Pending = struct {
     r: rl.Rectangle,
@@ -687,10 +693,27 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
         }
     }
     if (openId != null) {
-        @memcpy(ddRows[0..nRows], labels[0..nRows]);
+        holdRows(labels[0..nRows]);
         pending = .{ .r = r, .n = nRows, .sel = sel };
     }
     return picked;
+}
+
+fn holdRows(labels: []const [:0]const u8) void {
+    for (labels, 0..) |l, i| {
+        const n = @min(l.len, DD_TEXT_CAP - 1);
+        @memcpy(ddText[i][0..n], l[0..n]);
+        ddText[i][n] = 0;
+        ddRows[i] = ddText[i][0..n :0];
+    }
+}
+
+test "THE OPEN LIST DRAWS WHAT IT WAS HANDED, not what the caller's buffer holds by the end of the frame" {
+    var buf = [_]u8{ 'f', 'l', 'a', 'g', '1', 0 };
+    const labels = [_][:0]const u8{buf[0..5 :0]};
+    holdRows(&labels);
+    @memcpy(buf[0..5], "timer");
+    try std.testing.expectEqualStrings("flag1", ddRows[0]);
 }
 
 pub fn endDropdowns() void {
@@ -837,4 +860,19 @@ test "A WIDGET THAT ACTS ON THE CLICK SPENDS IT" {
     var ctx = Ctx{ .mouse = .{ .x = 0, .y = 0 }, .pressed = true, .down = true, .wheel = 0 };
     ctx.consume();
     try std.testing.expect(!ctx.pressed and !ctx.down);
+}
+
+test "A GESTURE ENDS WHEN THE BUTTON DOES — not when the panel is drawn dead, and not over an open list" {
+    var ctx = Ctx{ .mouse = .{ .x = 0, .y = 0 }, .pressed = false, .down = false, .wheel = 0 };
+    const held = Ctx.Raw{ .press = false, .held = true, .notch = 0 };
+    ctx.applyRaw(false, held);
+    try std.testing.expect(!ctx.down and !ctx.buttonUp);
+    ctx.ddOver = true;
+    ctx.applyRaw(true, held);
+    try std.testing.expect(!ctx.down and !ctx.buttonUp);
+    ctx.consume();
+    try std.testing.expect(!ctx.buttonUp);
+    ctx.ddOver = false;
+    ctx.applyRaw(false, .{ .press = false, .held = false, .notch = 0 });
+    try std.testing.expect(ctx.buttonUp);
 }

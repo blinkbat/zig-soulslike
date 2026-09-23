@@ -391,6 +391,13 @@ pub const Vitals = struct {
         self.clearAils();
     }
 
+    /// The reel over and poise back to FULL, for a body whose own stagger ends early.
+    pub fn endStun(self: *Vitals) void {
+        self.stunLeft = 0;
+        self.stunAs = .none;
+        self.poise = self.poiseMax;
+    }
+
     pub fn beginStun(self: *Vitals, kind: StunKind) void {
         self.stunAs = kind;
         self.stunLeft = switch (kind) {
@@ -434,11 +441,7 @@ pub const Vitals = struct {
         if (!self.dead and self.asleep()) self.beginStun(.heavy);
         if (self.stunLeft > 0) {
             self.stunLeft -= dt;
-            if (self.stunLeft <= 0) {
-                self.stunLeft = 0;
-                self.stunAs = .none;
-                self.poise = self.poiseMax;
-            }
+            if (self.stunLeft <= 0) self.endStun();
         }
         const wearK = @exp2(-dt / WEAR_HALFLIFE);
         self.lightWear *= wearK;

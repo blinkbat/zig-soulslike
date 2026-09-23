@@ -225,7 +225,8 @@ pub const Menu = struct {
     fn rowLive(self: *const Menu, i: usize, shelf: *const savemod.Shelf) bool {
         return switch (self.screen) {
             .boot => switch (i) {
-                BOOT_LOAD => shelf.any(),
+                // Held, not loadable: DELETE is only in the picker.
+                BOOT_LOAD => shelf.anyHeld(),
                 BOOT_NEW => !shelf.full(),
                 else => true,
             },
@@ -297,6 +298,16 @@ pub const Menu = struct {
             const m = OPT_MIX[self.cursor];
             const d = self.adjustDelta(dt);
             if (d != 0) sfx.setVolume(m, sfx.volume(m) + d);
+        } else if (self.screen == .debug and self.cursor == DBG_HOUR) {
+            // THE HOUR: its own delta rather than `adjustDelta`'s, which is scaled for a 0..1 dial — a tap of 0.01 h is nine game seconds.
+            const step: f32 = if (coarseHeld()) HOUR_COARSE else HOUR_TAP;
+            if (adjTapped(.left)) day.nudge(-step);
+            if (adjTapped(.right)) day.nudge(step);
+            const dir = adjHeldDir();
+            if (dir != 0) {
+                self.adjHoldT += dt;
+                if (self.adjHoldT > ADJ_GLIDE_DELAY) day.nudge(@as(f32, @floatFromInt(dir)) * HOUR_GLIDE * dt);
+            } else self.adjHoldT = 0;
         } else {
             self.adjHoldT = 0;
         }
@@ -308,17 +319,6 @@ pub const Menu = struct {
         }
         if (self.screen == .debug and self.cursor == DBG_FOG) {
             if (adjTapped(.left) or adjTapped(.right)) self.cycleFog();
-        }
-        // THE HOUR: its own delta rather than `adjustDelta`'s, which is scaled for a 0..1 dial — a tap of 0.01 h is nine game seconds.
-        if (self.screen == .debug and self.cursor == DBG_HOUR) {
-            const step: f32 = if (coarseHeld()) HOUR_COARSE else HOUR_TAP;
-            if (adjTapped(.left)) day.nudge(-step);
-            if (adjTapped(.right)) day.nudge(step);
-            const dir = adjHeldDir();
-            if (dir != 0) {
-                self.adjHoldT += dt;
-                if (self.adjHoldT > ADJ_GLIDE_DELAY) day.nudge(@as(f32, @floatFromInt(dir)) * HOUR_GLIDE * dt);
-            }
         }
 
         if (confirmPressed()) {
@@ -1096,4 +1096,14 @@ test "THE DEBUG ROWS ARE ALL THERE, and the birds row is a ONE-SHOT that cannot 
         try std.testing.expect(r.len > 0);
     }
     try std.testing.expectEqual(@as(usize, DBG_COUNT), rows.len);
+}
+
+test "A SHELF OF UNREADABLE FILES STILL OPENS THE PICKER — it is the only door to DELETE" {
+    var m = Menu{};
+    m.screen = .boot;
+    var sh = savemod.Shelf{};
+    sh.unreadable = [_]bool{true} ** savemod.SLOTS;
+    try std.testing.expect(!m.rowLive(BOOT_NEW, &sh));
+    try std.testing.expect(m.rowLive(BOOT_LOAD, &sh));
+    try std.testing.expect(!m.rowLive(BOOT_LOAD, &savemod.Shelf{}));
 }

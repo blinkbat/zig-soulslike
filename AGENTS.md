@@ -1204,7 +1204,8 @@ Conditions: `always`, `never`, `flag N=0|1`, `counter N <cmp> n`, `timer N=done|
 - **EVERY PANEL EDIT BANKS ONCE A GESTURE, NEVER ONCE A CLICK** — `Editor.bankGesture` for a number,
   `bankWorld`/`bankOpGesture` where the edit spans more than one record, and `bankTyping` for a name, which
   answers on every frame the buffer differs from the record. A bare `bank` inside a widget's `if` fills a
-  24-slot ring with one rename. The gesture ends on `!ctx.down`, ONE place per panel.
+  24-slot ring with one rename. The gesture ends on `ctx.buttonUp`, ONE place per panel — never `!ctx.down`,
+  which is also true for every panel drawn dead under a modal.
 - **BOTH SIDE PANELS SCROLL** (`beginScroll`/`endScroll`) — the Ground layer alone lays out 1038 px of brush
   strip in a 704 px panel and the last nine tools could not be clicked. A list inside one owns the wheel over it
   (`ui.Ctx.wheelTaken`), and a scrolled panel scissors its POINTER as well as its drawing (`ui.Ctx.clip`), or the
@@ -1728,9 +1729,10 @@ the map places it like any prop.
   `planted` owes the fuse before its own `justLanded` guard returns. One falloff (`blastFalloff`, the fireball's
   own) bills damage, poise, the throw and the shove together, it does not know whose the bomb is, and the wall is
   asked LAST so a blast that kills him still opens it. **BUT IT ONLY REACHES A BODY THAT IS THERE** — the ring
-  carries `disguised`, because `foe.shaftThrough` is built at the body's own centre and no geometry can refuse it.
-  **A LIT BOMB IS DROPPED WITH HIS QUIVERS** (`clearOrdnance`) — left off it, the clock outlived the map it was
-  lit on and went off at those coordinates in the next one.
+  carries `disguised`, because `foe.shaftFrom` is built through the body's own centre and no geometry can refuse
+  it. **AND IT COMES FROM THE BOMB** — the facing snap and a shield both read the blade's bearing, and the bench's
+  `shaftThrough` runs along world X. **A LIT BOMB IS DROPPED WITH HIS QUIVERS** (`clearOrdnance`) — left off it,
+  the clock outlived the map it was lit on and went off at those coordinates in the next one.
 - **IT STOPS BEING A WALL THE FRAME IT IS OPENED**, and only LOOKS like one for its `breachFade` (0.7 s for the
   illusion): `eachSolid` drops every solid whose `breachLife` is under 1, so look, step, arrow and roll all pass at
   once while the face thins in place (`Prop.dissolve`, alpha only — never `shrink`, which would sink it).

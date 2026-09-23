@@ -821,7 +821,12 @@ pub const Druidess = struct {
                     self.summoned = self.wave;
                     self.bloom(self.orbWorld(), SUMMON_BURST);
                     sfx.world(.druid_summon, self.pos);
-                    self.startArc(RETREAT_ARC, hero, .retreat);
+                    if (foe.canLeap(&self.root)) {
+                        self.startArc(RETREAT_ARC, hero, .retreat);
+                    } else {
+                        sfx.world(.druid_hum, self.pos);
+                        self.enter(.passive);
+                    }
                 }
             },
             .passive => {
@@ -2781,6 +2786,25 @@ test "THE TANGLE RINGS PAST HER TURN AND SETTLES ON IT — springs, not eases" {
     std.debug.print("\n  druidess tangle: overshot the turn by {d:.1} deg, settled within {d:.2} deg\n", .{ mathx.degrees(over), mathx.degrees(@abs(d.trailSpring[1].v - d.facing)) });
     try std.testing.expect(over > mathx.radians(3.0));
     for (d.trailSpring) |s| try std.testing.expect(@abs(s.v - d.facing) < mathx.radians(1.5));
+}
+
+test "THE ROOTS REFUSE THE RETREAT — held through the summon, she channels where she stands" {
+    const dt: f32 = 1.0 / 60.0;
+    const hero = mathx.ground(0, 6.0);
+    var d = Druidess.spawn(mathx.zero3, 0, 1.0, 0.3);
+    d.leash.noteSeen();
+    d.vit.hp = d.vit.hpMax * 0.4;
+    d.enter(.summon_cast);
+    d.root.grab();
+    var channelled = false;
+    var t: f32 = 0;
+    while (t < SUMMON_CAST + 0.1) : (t += dt) {
+        _ = d.update(dt, hero, 200.0, .{});
+        try std.testing.expect(d.state != .retreat);
+        channelled = channelled or d.state == .passive;
+    }
+    try std.testing.expect(channelled);
+    try std.testing.expect(mathx.lenXZ(d.pos) < 0.05);
 }
 
 test "A STROKE ON THE RELEASE FRAME CANCELS THE CAST — the blade is billed inside `update`, before the coven reads what she let go" {

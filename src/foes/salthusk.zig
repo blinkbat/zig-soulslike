@@ -609,7 +609,13 @@ pub const Pan = struct {
             const o = &self.husks[j];
             if (!o.alive() or o.dying()) continue;
             if (mathx.distXZ(at, o.centerWorld()) > r + o.hurtRadius()) continue;
-            if (o.vit.hit(SHATTER_HIT) == .death) o.enterBurst();
+            // `Vitals` latches the stun on a flinch, so the husk staggers on it too.
+            switch (o.vit.hit(SHATTER_HIT)) {
+                .death => o.enterBurst(),
+                .heavy => o.stagger(true),
+                .light => o.stagger(false),
+                .none => {},
+            }
         }
     }
 
@@ -897,6 +903,24 @@ test "A BURST DOES NOT HARVEST THE CLUSTER — a whole neighbour survives it, an
     try std.testing.expect(p.husks[1].vit.hp < HP_MAX);
     std.debug.print("  a burst leaves a whole neighbour on {d:.0}/{d:.0} hp — hurt, not harvested\n", .{ p.husks[1].vit.hp, HP_MAX });
     try std.testing.expect(SHATTER_HIT.dmg < HP_MAX);
+}
+
+test "A SHATTER THAT FLINCHES A NEIGHBOUR STAGGERS IT — the reel `Vitals` latched is the one the body plays" {
+    var p = Pan{ .model = undefined };
+    p.husks[0] = Husk.spawn(mathx.zero3, 0, 1.0, 0.3);
+    p.husks[1] = Husk.spawn(v3(0, 0, SHATTER_R * 0.6), 0, 1.0, 0.5);
+    p.n = 2;
+    p.husks[0].debugBurst();
+    const away = v3(400, 0, 400);
+    var reeled = false;
+    var t: f32 = 0;
+    while (t < BURST_FUSE * FUSE_HI * 2.0 and !reeled) : (t += 1.0 / 60.0) {
+        _ = p.update(1.0 / 60.0, away, 400, .{});
+        if (!p.husks[1].vit.stunned()) continue;
+        reeled = true;
+        try std.testing.expect(foe.inStun(&p.husks[1]));
+    }
+    try std.testing.expect(reeled);
 }
 
 test "…BUT THEY DO CHAIN OFF A HURT ONE, and each keeps its OWN fuse so a line goes as a run" {

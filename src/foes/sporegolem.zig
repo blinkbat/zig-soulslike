@@ -374,7 +374,9 @@ pub const Golem = struct {
             .smash_rec => if (self.t >= SMASH_RECOVER) self.decide(d),
             .slam_wind => {
                 self.face(hero, dt);
-                if (self.t >= SLAM_WIND) {
+                if (foe.launchRefused(self, SLAM_WIND, dt)) {
+                    self.decide(d);
+                } else if (self.t >= SLAM_WIND) {
                     const way = mathx.dirXZ(self.pos, hero);
                     const gap = mathx.minF(mathx.distXZ(self.pos, hero), SLAM_REACH);
                     self.launch = mathx.scaleV(way, gap);
@@ -970,4 +972,17 @@ test "A FULL STUN METER PUTS IT DOWN — the one creature that reads `vit.stunne
     corpse.vit.build(.stun, combat.ailRow(.stun).max);
     _ = corpse.update(dt, v3(0, 0, 30), 200, .{});
     try std.testing.expectEqual(State.dead, corpse.state);
+}
+
+test "A ROOT CAST INTO THE SLAM'S WIND REFUSES THE LEAP — re-asked at the launch, never carried off the spot" {
+    const dt: f32 = 1.0 / 60.0;
+    var g = Golem.spawn(mathx.zero3, 0, 1.0, 0.3);
+    g.enter(.slam_wind);
+    var t: f32 = 0;
+    while (t < SLAM_WIND + SLAM_AIR + 0.2) : (t += dt) {
+        if (g.state == .slam_wind and g.t > SLAM_WIND * 0.5) g.root.grab();
+        _ = g.update(dt, mathx.ground(0, 5.0), 400.0, .{});
+        try std.testing.expect(g.state != .slam_air and !g.airborne());
+    }
+    try std.testing.expect(mathx.lenXZ(g.pos) < 0.05);
 }

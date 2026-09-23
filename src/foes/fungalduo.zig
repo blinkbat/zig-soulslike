@@ -474,7 +474,7 @@ comptime {
     std.debug.assert(MG_REAPPEAR_R > MG_FLEE_R);
     std.debug.assert(MG_PUFF_WIND >= foe.TELL_MIN);
     std.debug.assert(MG_PUFF_R < MG_FLEE_R); // …or the dust would answer a band he is already casting into
-    std.debug.assert(MG_PUFF_REACH + foe.HERO_R > MG_PUFF_R); // …or the ring hands out a breath that stops short of the man it was blown at
+    std.debug.assert(foe.hurtReach(MG_PUFF_REACH, SCALE) > MG_PUFF_R); // …or the ring hands out a breath that stops short of the man it was blown at
     std.debug.assert(MG_PUFF_CD > MG_PUFF_WIND + MG_PUFF_DUR + MG_REC);
     std.debug.assert(DUST_BLOOM < DUST_LIFE * 0.5 and DUST_EVERY < DUST_LIFE);
     std.debug.assert(CAP_GROW > CAP_GLOW * 2.0);
@@ -549,10 +549,15 @@ const MgState = enum { idle, drift, orb_wind, orb_throw, sprout_wind, sprout, pu
 
 const MgChoice = enum { hold, back, keep, orb, sprout, puff, vanish };
 
+/// Radians: the wind's turn plus the breath's cone, `swSlashArc`'s shape.
+fn mgPuffArc() f32 {
+    return MG_TURN_RATE * MG_PUFF_WIND + mathx.radians(MG_PUFF_ARC);
+}
+
 /// The puff outranks both the retreat AND the blink; he only vanishes once the breath is spent.
-fn mgClassify(dist: f32, orbReady: bool, sproutReady: bool, fadeReady: bool, puffReady: bool, pressed: bool) MgChoice {
+fn mgClassify(dist: f32, scale: f32, off: f32, orbReady: bool, sproutReady: bool, fadeReady: bool, puffReady: bool, pressed: bool) MgChoice {
     if (dist > AGGRO_R) return .hold;
-    if (dist <= MG_PUFF_R and puffReady) return .puff;
+    if (dist <= foe.triggerBand(MG_PUFF_R, SCALE, scale) and @abs(off) <= mgPuffArc() and puffReady) return .puff;
     if (pressed and fadeReady) return .vanish;
     if (dist < MG_FLEE_R) return .back;
     if (sproutReady and dist >= MG_SPROUT_MIN and dist <= MG_SPROUT_MAX) return .sprout;
@@ -934,9 +939,14 @@ pub const Swordsman = struct {
                 self.faceToward(hero, dt);
                 self.chanSet(samplePose(&SW_LUNGE_WIND_KEYS, mathx.clampF(self.t / SW_LUNGE_WIND, 0, 1)));
                 if (self.t >= SW_LUNGE_WIND) {
-                    self.hopDir = self.fdir();
-                    sfx.world(.swing_heavy, self.pos);
-                    self.enter(.lunge);
+                    // Re-asked: a root cast into the wind closes after the choose.
+                    if (!foe.canLeap(&self.root)) {
+                        self.enter(.idle);
+                    } else {
+                        self.hopDir = self.fdir();
+                        sfx.world(.swing_heavy, self.pos);
+                        self.enter(.lunge);
+                    }
                 }
             },
             .lunge => {
@@ -997,7 +1007,7 @@ pub const Swordsman = struct {
         self.homing = false;
         const f = mathx.dirXZ(self.pos, toward);
         const off = mathx.wrapPi(mathx.headingXZ(f) - self.facing);
-        switch (swClassify(dist, self.scale, off, self.slashCd <= 0, self.heavyCd <= 0, self.lungeCd <= 0, self.backCd <= 0, self.crowd >= SW_CROWD_HOLD)) {
+        switch (swClassify(dist, self.scale, off, self.slashCd <= 0, self.heavyCd <= 0, self.lungeCd <= 0 and foe.canLeap(&self.root), self.backCd <= 0, self.crowd >= SW_CROWD_HOLD)) {
             .slash => {
                 self.doubling = self.rng.float() < SW_SLASH2_CHANCE;
                 self.enter(.slash_wind);
@@ -1387,7 +1397,7 @@ pub const Magus = struct {
                 if (d <= AGGRO_R) self.faceToward(hero, dt);
                 self.chanSet(MG_CARRY.chan());
                 _ = foe.postDrive(self, dt, bounds, MG_SPEED, d, AGGRO_R, MG_TURN_RATE, &movedDist, &moveSpeed, &moveYaw);
-                if (self.t >= 0.16) self.decide(d);
+                if (self.t >= 0.16) self.decide(d, hero);
             },
             .drift => {
                 self.faceToward(hero, dt);
@@ -1395,7 +1405,7 @@ pub const Magus = struct {
                 if (self.routine.running) {
                     const w = self.routine.step(dt, .{ .at = self.pos, .facing = self.facing, .quarry = hero, .nav = self.nav });
                     if (behave.heading(w, self.pos)) |way| behave.walk(&self.pos, way, dt, bounds, MG_SPEED, &movedDist, &moveSpeed, &moveYaw);
-                    if (!self.routine.running) self.decide(d);
+                    if (!self.routine.running) self.decide(d, hero);
                 } else {
                     const way = self.nav.along(self.moveDir);
                     moveSpeed = MG_SPEED;
@@ -1406,7 +1416,7 @@ pub const Magus = struct {
                     if (self.homing and mathx.distXZ(self.pos, foe.tetherFor(self)) <= foe.LEASH_HOME_R) {
                         self.homing = false;
                         self.enter(.idle);
-                    } else if (self.t >= MG_DRIFT_DUR) self.decide(d);
+                    } else if (self.t >= MG_DRIFT_DUR) self.decide(d, hero);
                 }
             },
             .orb_wind => {
@@ -1530,7 +1540,7 @@ pub const Magus = struct {
         self.pose();
     }
 
-    fn decide(self: *Magus, dist: f32) void {
+    fn decide(self: *Magus, dist: f32, toward: rl.Vector3) void {
         self.routine.stop();
         if (self.leash.goingHome()) {
             self.homing = true;
@@ -1538,7 +1548,8 @@ pub const Magus = struct {
             return self.enter(.drift);
         }
         self.homing = false;
-        switch (mgClassify(dist, self.orbCd <= 0, self.sproutCd <= 0, self.fadeCd <= 0, self.puffCd <= 0, self.press >= MG_PRESS_HOLD)) {
+        const off = mathx.wrapPi(mathx.headingXZ(mathx.dirXZ(self.pos, toward)) - self.facing);
+        switch (mgClassify(dist, self.scale, off, self.orbCd <= 0, self.sproutCd <= 0, self.fadeCd <= 0, self.puffCd <= 0, self.press >= MG_PRESS_HOLD)) {
             .orb => self.enter(.orb_wind),
             .sprout => self.enter(.sprout_wind),
             .puff => self.enter(.puff_wind),
@@ -1607,6 +1618,8 @@ pub const Magus = struct {
         self.sowed = false;
         self.misted = false;
         self.puffed = false;
+        // The breath is the cloud's frame: a stagger that drops the cloud drops the breath.
+        self.heroHit = null;
     }
 
     fn enterDeath(self: *Magus) void {
@@ -2548,23 +2561,60 @@ test "ONE STROKE THROWS HIM AND IT IS THE SLOW ONE — the lunge stopped jugglin
 }
 
 test "THE MAGUS NEVER CLOSES, and being pressed outranks casting — but the DUST outranks both" {
-    try std.testing.expectEqual(MgChoice.back, mgClassify(MG_FLEE_R - 0.1, true, true, false, true, false));
-    try std.testing.expectEqual(MgChoice.vanish, mgClassify(MG_FLEE_R - 0.1, true, true, true, true, true));
-    try std.testing.expectEqual(MgChoice.back, mgClassify(MG_FLEE_R - 0.1, true, true, false, true, true));
-    try std.testing.expectEqual(MgChoice.sprout, mgClassify(MG_SPROUT_MIN + 0.1, true, true, false, true, false));
-    try std.testing.expectEqual(MgChoice.orb, mgClassify(MG_SPROUT_MIN + 0.1, true, false, false, true, false));
-    try std.testing.expectEqual(MgChoice.hold, mgClassify(AGGRO_R + 1.0, true, true, true, true, true));
+    try std.testing.expectEqual(MgChoice.back, mgClassify(MG_FLEE_R - 0.1, SCALE, 0, true, true, false, true, false));
+    try std.testing.expectEqual(MgChoice.vanish, mgClassify(MG_FLEE_R - 0.1, SCALE, 0, true, true, true, true, true));
+    try std.testing.expectEqual(MgChoice.back, mgClassify(MG_FLEE_R - 0.1, SCALE, 0, true, true, false, true, true));
+    try std.testing.expectEqual(MgChoice.sprout, mgClassify(MG_SPROUT_MIN + 0.1, SCALE, 0, true, true, false, true, false));
+    try std.testing.expectEqual(MgChoice.orb, mgClassify(MG_SPROUT_MIN + 0.1, SCALE, 0, true, false, false, true, false));
+    try std.testing.expectEqual(MgChoice.hold, mgClassify(AGGRO_R + 1.0, SCALE, 0, true, true, true, true, true));
 
-    try std.testing.expectEqual(MgChoice.puff, mgClassify(MG_PUFF_R - 0.1, false, false, false, true, false));
-    try std.testing.expectEqual(MgChoice.puff, mgClassify(MG_PUFF_R - 0.1, true, true, true, true, true));
-    try std.testing.expectEqual(MgChoice.vanish, mgClassify(MG_PUFF_R - 0.1, true, true, true, false, true));
-    try std.testing.expectEqual(MgChoice.back, mgClassify(MG_PUFF_R + 0.1, false, false, false, true, false));
+    try std.testing.expectEqual(MgChoice.puff, mgClassify(MG_PUFF_R - 0.1, SCALE, 0, false, false, false, true, false));
+    try std.testing.expectEqual(MgChoice.puff, mgClassify(MG_PUFF_R - 0.1, SCALE, 0, true, true, true, true, true));
+    try std.testing.expectEqual(MgChoice.vanish, mgClassify(MG_PUFF_R - 0.1, SCALE, 0, true, true, true, false, true));
+    try std.testing.expectEqual(MgChoice.back, mgClassify(MG_PUFF_R + 0.1, SCALE, 0, false, false, false, true, false));
     var d: f32 = 0;
     while (d <= AGGRO_R) : (d += 0.25) {
-        const c = mgClassify(d, false, false, false, false, false);
+        const c = mgClassify(d, SCALE, 0, false, false, false, false, false);
         try std.testing.expect(c == .back or c == .keep);
     }
     std.debug.print("\n  magus: dust inside {d:.1} m on a {d:.1} s cooldown, flees inside {d:.1}, casts out to {d:.1}\n", .{ MG_PUFF_R, MG_PUFF_CD, MG_FLEE_R, MG_KEEP_R });
+}
+
+test "THE DUST IS CHOSEN ONLY WHERE THE BREATH LANDS — its band rides the body and its bearing is the wind's" {
+    try std.testing.expectApproxEqAbs(MG_PUFF_R, foe.triggerBand(MG_PUFF_R, SCALE, SCALE), 1e-5);
+    const dt: f32 = 1.0 / 60.0;
+    var thrown: usize = 0;
+    for ([_]f32{ wf.FOE_SCALE_LO, 1.0, wf.FOE_SCALE_HI }) |k| {
+        const probe = Magus.spawn(mathx.zero3, 0, k, 0.3);
+        const band = foe.triggerBand(MG_PUFF_R, SCALE, probe.scale);
+        try std.testing.expect(mgClassify(band + 0.05, probe.scale, 0, false, false, false, true, false) != .puff);
+        try std.testing.expect(mgClassify(band - 0.05, probe.scale, mgPuffArc() + 0.02, false, false, false, true, false) != .puff);
+        const near = foe.closestApproach(probe.bodyR()) + 0.05;
+        for ([_]f32{ 0, 0.5, 1.0 }) |u| {
+            for ([_]f32{ 0, 0.5, 0.97 }) |b| {
+                var m = Magus.spawn(mathx.zero3, 0, k, 0.3);
+                m.orbCd = 99;
+                m.sproutCd = 99;
+                m.fadeCd = 99;
+                m.puffCd = 0;
+                const stand = lerpF(near, band - 0.02, u);
+                const a = mgPuffArc() * b;
+                const hero = mathx.ground(mathx.sinf(a) * stand, mathx.cosf(a) * stand);
+                var hit = false;
+                var t: f32 = 0;
+                while (t < 1.5 and !hit) : (t += dt) {
+                    m.leash.noteSeen();
+                    if (m.update(dt, hero, 400.0, .{})) |h| hit = h.dmg == PUFF_HIT.dmg;
+                }
+                thrown += 1;
+                if (!hit) {
+                    std.debug.print("\n  magus x{d:.2}: dust at {d:.2} m, {d:.0} deg off, never breathed on him\n", .{ k, stand, mathx.degrees(a) });
+                    return error.TestUnexpectedResult;
+                }
+            }
+        }
+    }
+    std.debug.print("\n  magus dust: chosen inside {d:.2} m at the shipped size and {d:.0} deg off; {d} stands thrown, all landed\n", .{ MG_PUFF_R, mathx.degrees(mgPuffArc()), thrown });
 }
 
 test "THE DUST IS BLOWN INTO A FRONTAL CONE AND THEN HANGS THERE, biting on its own clock" {
@@ -3095,22 +3145,52 @@ test "A DISSOLVED MAGUS IS NOT THERE FOR ANY OF THE THREE QUESTIONS" {
 
 test "A STROKE ON THE RELEASE FRAME CANCELS THE MAGUS'S CAST — `tryHit` runs before the Conclave reads what he let go" {
     const dt: f32 = 1.0 / 60.0;
-    const hero = mathx.ground(0, 11.0);
-    var m = Magus.spawn(mathx.zero3, 0, 1.0, 0.3);
-    m.leash.noteSeen();
-    var frames: u32 = 0;
-    while (frames < 1800) : (frames += 1) {
-        var probe = m;
-        _ = probe.update(dt, hero, 200.0, .{});
-        if (probe.threw or probe.sowed or probe.misted or probe.puffed) {
-            const at = m.centerWorld();
-            const blade = foe.Blade{ .active = true, .r = 1.2, .a = at, .b = at, .a0 = at, .b0 = at, .hit = .{ .dmg = 200, .poise = 999, .stance = 999 } };
-            _ = m.update(dt, hero, 200.0, blade);
-            try std.testing.expect(m.staggered());
-            try std.testing.expect(!m.threw and !m.sowed and !m.misted and !m.puffed);
-            return;
+    stands: for ([_]f32{ 11.0, 2.0 }) |far| {
+        const hero = mathx.ground(0, far);
+        var m = Magus.spawn(mathx.zero3, 0, 1.0, 0.3);
+        if (far < MG_PUFF_R) {
+            m.orbCd = 99;
+            m.sproutCd = 99;
+            m.fadeCd = 99;
+            m.puffCd = 0;
         }
-        m = probe;
+        m.leash.noteSeen();
+        var frames: u32 = 0;
+        while (frames < 1800) : (frames += 1) {
+            var probe = m;
+            _ = probe.update(dt, hero, 200.0, .{});
+            if (probe.threw or probe.sowed or probe.misted or probe.puffed) {
+                if (far < MG_PUFF_R) try std.testing.expect(probe.puffed and probe.heroHit != null);
+                const at = m.centerWorld();
+                const blade = foe.Blade{ .active = true, .r = 1.2, .a = at, .b = at, .a0 = at, .b0 = at, .hit = .{ .dmg = 200, .poise = 999, .stance = 999 } };
+                try std.testing.expectEqual(@as(?combat.Hit, null), m.update(dt, hero, 200.0, blade));
+                try std.testing.expect(m.staggered());
+                try std.testing.expect(!m.threw and !m.sowed and !m.misted and !m.puffed);
+                continue :stands;
+            }
+            m = probe;
+        }
+        try std.testing.expect(false);
     }
-    try std.testing.expect(false);
+}
+
+test "THE ROOTS REFUSE THE LUNGE — it carries a hop, so a held swordsman never leaves his spot" {
+    const dt: f32 = 1.0 / 60.0;
+    for ([_]bool{ true, false }) |beforeChoose| {
+        var s = Swordsman.spawn(mathx.zero3, 0, 1.0, 0.3);
+        s.slashCd = 99;
+        s.heavyCd = 99;
+        s.backCd = 99;
+        s.lungeCd = 0;
+        const hero = mathx.ground(0, swNearR(s.scale) + 0.3);
+        if (beforeChoose) s.root.grab() else s.enter(.lunge_wind);
+        var t: f32 = 0;
+        while (t < SW_LUNGE_WIND + SW_LUNGE_DUR + 0.5) : (t += dt) {
+            s.leash.noteSeen();
+            if (!beforeChoose and s.state == .lunge_wind and s.t > SW_LUNGE_WIND * 0.5) s.root.grab();
+            _ = s.update(dt, hero, 400.0, .{});
+            try std.testing.expect(s.state != .lunge);
+        }
+        try std.testing.expect(mathx.lenXZ(s.pos) < 0.05);
+    }
 }

@@ -65,7 +65,7 @@ pub const Runtime = struct {
     }
 
     pub fn died(self: *Runtime, k: wf.FoeKind) void {
-        self.deaths[@intFromEnum(k)] += 1;
+        self.deaths[@intFromEnum(k)] +|= 1;
     }
 
     pub fn finished(self: *Runtime, dlg: u16) void {
@@ -494,4 +494,11 @@ test "a text action puts a line up and it times out" {
     var t: f32 = 0;
     while (t < BANNER_DUR + 0.2) : (t += 1.0 / 60.0) _ = rt.tick(m, .{}, 1.0 / 60.0, false);
     try std.testing.expectEqual(@as(usize, 0), rt.bannerText().len);
+}
+
+test "A COUNT READ OFF A SAVE SATURATES — a hand-edited file cannot overflow the next kill" {
+    var rt = Runtime{};
+    rt.deaths[0] = std.math.maxInt(u32);
+    rt.died(@enumFromInt(0));
+    try std.testing.expectEqual(@as(u32, std.math.maxInt(u32)), rt.deaths[0]);
 }

@@ -2529,13 +2529,14 @@ fn writeScript(m: *const Map, w: anytype) !void {
     }
 
     for (m.dialogs[0..m.ndialogs]) |*d| {
-        if (d.synth) continue;
+        if (d.synth and !namedAnywhere(m, d.label())) continue;
         try w.print("\ndlg: {s}\n", .{d.label()});
         for (m.nodesOf(d)) |*nd| {
             try w.print("  node: {s}\n", .{idText(&nd.id)});
             if (nd.who.len > 0) try w.print("  who: {s}\n", .{m.spanText(nd.who)});
             if (nd.text.len > 0) try w.print("  say: {s}\n", .{m.spanText(nd.text)});
             for (m.dactRun(nd.act0, nd.nact)) |*a| {
+                if (!writable(m, a)) continue;
                 try w.writeAll("  act: ");
                 try writeAct(m, w, a);
             }
@@ -2546,11 +2547,13 @@ fn writeScript(m: *const Map, w: anytype) !void {
                     try writeCond(m, w, &m.gates[@intCast(c.gate)]);
                 }
                 for (m.dactRun(c.act0, c.nact)) |*a| {
+                    if (!writable(m, a)) continue;
                     try w.writeAll("  gets: ");
                     try writeAct(m, w, a);
                 }
             }
-            if (nd.nchoices == 0) try w.print("  then: {s}\n", .{if (nd.thenRef.len > 0) m.spanText(nd.thenRef) else END_TARGET});
+            // With asks, it is where the talk goes when every one is gated off.
+            if (nd.nchoices == 0 or nd.thenRef.len > 0) try w.print("  then: {s}\n", .{if (nd.thenRef.len > 0) m.spanText(nd.thenRef) else END_TARGET});
         }
     }
 
@@ -2566,6 +2569,7 @@ fn writeScript(m: *const Map, w: anytype) !void {
             try writeCond(m, w, c);
         }
         for (t.actSlice()) |*a| {
+            if (!writable(m, a)) continue;
             try w.writeAll("  do: ");
             try writeAct(m, w, a);
         }
@@ -2585,11 +2589,47 @@ fn writeCond(m: *const Map, w: anytype, c: *const Cond) !void {
         .timer => try w.print("timer {s}={s}\n", .{ slotName(&m.timerNames, m.ntimers, c.slot), if (c.on) "done" else "running" }),
         .elapsed => try w.print("elapsed {s} {d}\n", .{ c.cmp.tok(), c.r }),
         .region => try w.print("region {d:.1} {d:.1} {d:.1} {d:.1}\n", .{ c.x, c.z, c.x1, c.z1 }),
-        .near => try w.print("near npc={d} r={d}\n", .{ c.slot, c.r }),
-        .talked => try w.print("talked {s}\n", .{m.spanText(c.ref)}),
+        // `never`, as `removeNpc` turns a condition whose referent went; written bare, both refuse the load.
+        .near => if (c.slot < m.nnpcs) try w.print("near npc={d} r={d}\n", .{ c.slot, c.r }) else try w.writeAll("never\n"),
+        .talked => if (resolves(m, c.ref)) try w.print("talked {s}\n", .{m.spanText(c.ref)}) else try w.writeAll("never\n"),
         .deaths => try w.print("deaths {s} {s} {d}\n", .{ @tagName(c.foe), c.cmp.tok(), c.n }),
         .alive => try w.print("alive {s} {s} {d}\n", .{ @tagName(c.foe), c.cmp.tok(), c.n }),
     }
+}
+
+/// Nothing picked, or no words: the loader would refuse the line.
+fn writable(m: *const Map, a: *const Act) bool {
+    return switch (a.kind) {
+        .dialog => resolves(m, a.ref),
+        .text => a.line.len > 0,
+        else => true,
+    };
+}
+
+fn resolves(m: *const Map, ref: Span) bool {
+    return ref.len > 0 and m.findDialog(m.spanText(ref)) != null;
+}
+
+/// A synth default is not written unless something names it: `link` runs before `seedDialogs`.
+fn namedAnywhere(m: *const Map, name: []const u8) bool {
+    for (m.npcs[0..m.nnpcs]) |*p| {
+        if (p.dlgRef.len > 0 and std.mem.eql(u8, m.spanText(p.dlgRef), name)) return true;
+    }
+    for (m.trigSlice()) |*t| {
+        for (t.condSlice()) |*c| {
+            if (c.kind == .talked and std.mem.eql(u8, m.spanText(c.ref), name)) return true;
+        }
+        for (t.actSlice()) |*a| {
+            if (a.kind == .dialog and std.mem.eql(u8, m.spanText(a.ref), name)) return true;
+        }
+    }
+    for (m.gates[0..m.ngates]) |*c| {
+        if (c.kind == .talked and std.mem.eql(u8, m.spanText(c.ref), name)) return true;
+    }
+    for (m.dacts[0..m.ndacts]) |*a| {
+        if (a.kind == .dialog and std.mem.eql(u8, m.spanText(a.ref), name)) return true;
+    }
+    return false;
 }
 
 fn writeAct(m: *const Map, w: anytype, a: *const Act) !void {
@@ -5056,6 +5096,70 @@ test "AND THE WALL STANDS A BODY BACK INSIDE IT — the blink's answer, since th
     const onLine = a.hold(mathx.ground(20, 0), R);
     try std.testing.expect(a.contains(onLine.x, onLine.z));
     std.debug.print("\n  arena hold: out at x33 -> {d:.2}, on the line -> {d:.2}, corner -> ({d:.2}, {d:.2})\n", .{ gone.x, onLine.x, corner.x, corner.z });
+}
+
+test "THE WRITER NEVER EMITS A LINE THE LOADER REFUSES — an unpicked conversation, an empty banner, a folk that is gone, a synthesized default" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, TEST_HEAD ++
+        \\npc: merchant 0.00 0.00 0.0 1.00 0.00
+        \\trig: wired
+        \\  when: always
+        \\  do: preserve
+    );
+    defer alloc.destroy(m);
+    const t = &m.trigs[0];
+    t.conds[1] = .{ .kind = .talked };
+    t.conds[2] = .{ .kind = .near, .slot = 7, .r = 3 };
+    t.nconds = 3;
+    t.acts[1] = .{ .kind = .dialog };
+    t.acts[2] = .{ .kind = .text };
+    t.acts[3] = .{ .kind = .dialog, .ref = try m.addText("merchant_default") };
+    t.nacts = 4;
+
+    var buf: [16384]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    const back = try alloc.create(Map);
+    defer alloc.destroy(back);
+    var ln: usize = 0;
+    parse(fbs.getWritten(), back, &ln) catch |e| {
+        std.debug.print("\n  the written map refused its own load at line {d}: {s}\n{s}\n", .{ ln, @errorName(e), fbs.getWritten() });
+        return e;
+    };
+    const bt = &back.trigs[0];
+    try std.testing.expectEqual(CondKind.never, bt.conds[1].kind);
+    try std.testing.expectEqual(CondKind.never, bt.conds[2].kind);
+    try std.testing.expectEqual(@as(usize, 2), @as(usize, bt.nacts));
+    try std.testing.expectEqualStrings("merchant_default", back.dialogs[bt.acts[1].slot].label());
+}
+
+test "A NODE'S `then:` SURVIVES ITS ASKS — it is where the talk goes when every one is gated off" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, TEST_HEAD ++
+        \\flags: sworn
+        \\dlg: gate
+        \\  node: root
+        \\  say: Well?
+        \\  ask: I swear it. -> after
+        \\  need: flag sworn=1
+        \\  then: after
+        \\  node: after
+        \\  say: Then go.
+        \\  then: end
+    );
+    defer alloc.destroy(m);
+    var buf: [4096]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    try write(m, fbs.writer());
+    const back = try alloc.create(Map);
+    defer alloc.destroy(back);
+    var ln: usize = 0;
+    try parse(fbs.getWritten(), back, &ln);
+    const d = back.dialogs[back.findDialog("gate").?];
+    const root = back.nodes[d.node0];
+    try std.testing.expect(root.nchoices == 1);
+    try std.testing.expect(root.next != NO_NODE);
+    try std.testing.expectEqualStrings("after", idText(&back.nodes[root.next].id));
 }
 
 test "AN ARENA ROUND-TRIPS WITH ITS SEAL, and a room with under three corners is a LOAD ERROR" {

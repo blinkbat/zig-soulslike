@@ -494,7 +494,8 @@ pub const Kobold = struct {
         self.elapsed += dt;
         self.t += dt * self.vit.hasteMult();
         self.vit.tick(dt);
-        if (self.vit.ailEnded(.berserk) and !self.gone) self.stagger(true);
+        // `dying`, not `gone`: a corpse's meters still run out, and staggered it stands back up at 0 HP.
+        if (self.vit.ailEnded(.berserk) and !self.dying()) self.stagger(true);
         foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
         self.castCd = mathx.maxF(0, self.castCd - dt);
         self.slingCd = mathx.maxF(0, self.slingCd - dt);
@@ -543,14 +544,19 @@ pub const Kobold = struct {
             },
             .dash => {
                 self.faceToward(hero, dt * 0.5);
-                const want = dashTravel(self.t);
-                mathx.stepXZ(&self.pos, self.moveDir, want - self.dashDone, bounds);
-                self.dashDone = want;
-                self.hop = DASH_RISE * mathx.sinf(dashU(self.t) * std.math.pi);
-                if (self.t >= DASH_GATHER + DASH_FLIGHT + DASH_LAND) {
+                if (foe.launchRefused(self, DASH_GATHER, dt)) {
                     self.hop = 0;
-                                        // RE-MEASURED (it moved), BUT STILL THROUGH THE LEASH: on the raw distance a dash was the one exit that re-engaged a foe walking home, or one that cannot see him.
-                    self.decide(foe.senseHero(&self.leash, self.pos, hero, AGGRO_R));
+                    self.decide(d);
+                } else {
+                    const want = dashTravel(self.t);
+                    mathx.stepXZ(&self.pos, self.moveDir, want - self.dashDone, bounds);
+                    self.dashDone = want;
+                    self.hop = DASH_RISE * mathx.sinf(dashU(self.t) * std.math.pi);
+                    if (self.t >= DASH_GATHER + DASH_FLIGHT + DASH_LAND) {
+                        self.hop = 0;
+                        // RE-MEASURED (it moved), BUT STILL THROUGH THE LEASH: on the raw distance a dash was the one exit that re-engaged a foe walking home, or one that cannot see him.
+                        self.decide(foe.senseHero(&self.leash, self.pos, hero, AGGRO_R));
+                    }
                 }
             },
             .cast => {
@@ -577,8 +583,9 @@ pub const Kobold = struct {
                     self.decide(d);
                 }
             },
-            .stunlight => if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enter(.idle),
-            .stunheavy => if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enter(.idle),
+            // `t` runs hasted under a berserk: the reel can end before `Vitals`'s does.
+            .stunlight => if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.standUp(),
+            .stunheavy => if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.standUp(),
             .dead => foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE),
         }
 
@@ -599,12 +606,19 @@ pub const Kobold = struct {
         return act;
     }
 
+    fn standUp(self: *Kobold) void {
+        self.vit.endStun();
+        self.enter(.idle);
+    }
+
+    /// WORLD seconds (`shade.toImpact`'s rule): `t` runs hasted under a berserk, and `foe.PARRY_LEAD` is not.
     fn toImpact(self: *const Kobold) ?f32 {
-        return switch (self.state) {
+        const left: f32 = switch (self.state) {
             .chop => ZERK_CHOP * ZERK_HIT_A - self.t,
             .bite => BITE_DUR * BITE_HIT_A - self.t,
-            .idle, .approach, .reposition, .dash, .heave, .cast, .whirl, .stunlight, .stunheavy, .dead => null,
+            .idle, .approach, .reposition, .dash, .heave, .cast, .whirl, .stunlight, .stunheavy, .dead => return null,
         };
+        return left / self.vit.hasteMult();
     }
 
     fn parryable(self: *const Kobold) ?f32 {
@@ -1959,6 +1973,29 @@ test "a hurt window latches, so one swing lands once" {
     try std.testing.expectEqual(@as(u32, 0), k.chopsLeft);
 }
 
+test "A BERSERK THAT RUNS OUT ON A CORPSE LEAVES IT A CORPSE — it dissolves, it does not stand up" {
+    const dt: f32 = 1.0 / 60.0;
+    var k = Kobold.spawnAs(.berserker, mathx.zero3, 0, 1.0, 0.5);
+    k.vit.build(.berserk, RITE_ZERK);
+    _ = k.update(dt, mathx.ground(0, 40), 400.0, .{});
+    try std.testing.expect(k.vit.ailOn(.berserk));
+    var guard: usize = 0;
+    while (k.vit.ailFrac(.berserk) * combat.ailRow(.berserk).dur > 0.2 and guard < 4000) : (guard += 1) _ = k.update(dt, mathx.ground(0, 40), 400.0, .{});
+    try std.testing.expect(k.vit.ailOn(.berserk));
+    k.vit.hp = 0;
+    k.vit.dead = true;
+    k.enterDeath();
+    var ended = false;
+    var t: f32 = 0;
+    while (!k.gone and t < 30.0) : (t += dt) {
+        _ = k.update(dt, mathx.ground(0, 40), 400.0, .{});
+        ended = ended or k.vit.ailEnded(.berserk);
+        try std.testing.expect(k.gone or k.state == .dead);
+    }
+    try std.testing.expect(k.gone);
+    std.debug.print("\n  kobold: berserk ran out on the corpse {s}, and it dissolved {d:.2} s after it fell\n", .{ if (ended) "inside the dissolve" else "after it", t });
+}
+
 test "the priest never reaches for an attack window" {
     var p = Kobold.spawnAs(.priest, mathx.zero3, 0, 1.0, 0.2);
     for ([_]State{ .idle, .approach, .cast, .heave, .whirl, .bite }) |s| {
@@ -2186,4 +2223,38 @@ test "slinger release comes from the held pouch and interrupts stay continuous" 
             try std.testing.expect(mathx.lenV(mathx.subV(before, k.slingPoint())) < 0.001);
         }
     }
+}
+
+test "A ROOT CAST INTO THE DASH'S GATHER REFUSES THE LEAP — re-asked at the launch, never carried off the spot" {
+    const dt: f32 = 1.0 / 240.0;
+    var k = Kobold.spawnAs(.berserker, mathx.zero3, 0, 1.0, 0.5);
+    const hero = mathx.ground(0, 5.0);
+    k.moveDir = mathx.dirXZ(k.pos, hero);
+    k.dashDone = 0;
+    k.enter(.dash);
+    var t: f32 = 0;
+    while (t < DASH_GATHER + DASH_FLIGHT + 0.1) : (t += dt) {
+        if (k.state == .dash and k.t > DASH_GATHER * 0.5) k.root.grab();
+        _ = k.update(dt, hero, 400.0, .{});
+        try std.testing.expect(!k.airborne());
+    }
+    try std.testing.expect(mathx.lenXZ(k.pos) < 0.05);
+}
+
+test "A BERSERK HASTES THE KOBOLD, NOT THE WORLD — it stands up unreeling, and its window is `PARRY_LEAD` world seconds" {
+    const dt: f32 = 1.0 / 60.0;
+    var k = Kobold.spawnAs(.berserker, mathx.zero3, 0, 1.0, 0.5);
+    k.vit.build(.berserk, RITE_ZERK);
+    _ = k.update(dt, mathx.ground(0, 40), 400.0, .{});
+    try std.testing.expectApproxEqAbs(combat.BERSERK_HASTE, k.vit.hasteMult(), 1e-6);
+    k.enter(.chop);
+    try std.testing.expectApproxEqAbs(ZERK_CHOP * ZERK_HIT_A / combat.BERSERK_HASTE, k.toImpact().?, 1e-5);
+
+    k.enter(.idle);
+    k.tryHit(foe.shaftThrough(k.centerWorld(), .{ .dmg = 40 }));
+    try std.testing.expect(foe.inStun(&k) and k.vit.stunned());
+    var guard: usize = 0;
+    while (foe.inStun(&k) and guard < 600) : (guard += 1) _ = k.update(dt, mathx.ground(0, 40), 400.0, .{});
+    try std.testing.expect(!foe.inStun(&k));
+    try std.testing.expect(!k.vit.stunned());
 }

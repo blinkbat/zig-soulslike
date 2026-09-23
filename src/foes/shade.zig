@@ -414,6 +414,9 @@ pub const Shade = struct {
         const sp = spec(role);
         var s = Shade{ .pos = home, .home = home, .facing = faceYaw, .scale = scale * sp.size, .seed = seed, .role = role };
         s.vit = combat.Vitals.initFoe(sp.hp, POISE_MAX, STANCE_MAX).withRes(RESISTS);
+        // Its reel runs on `t`, which `slow` stretches.
+        s.vit.lightStun *= sp.slow;
+        s.vit.heavyStun *= sp.slow;
         s.fxRng = foe.fxStream(seed, 7331.0, 0x5EED);
         s.orbitSign = if (seed < 0.5) 1 else -1;
         s.cds[WISP] = seed * MOVES[WISP].cd;
@@ -1612,4 +1615,17 @@ test "mourner parry tells use real seconds despite its slower move clock" {
             if (sample.state == .wind) try std.testing.expectApproxEqAbs(1 / fps, before - sample.toImpact().?, 1e-5);
         }
     }
+}
+
+test "THE MOURNER'S REEL AND ITS IMMUNITY END TOGETHER — `slow` stretches both, or a blow in the tail re-stuns it" {
+    const dt: f32 = 1.0 / 60.0;
+    var s = Shade.spawnAs(.mourner, mathx.zero3, 0, 1, 0.3);
+    s.tryHit(foe.shaftThrough(s.centerWorld(), .{ .dmg = 90 }));
+    try std.testing.expect(foe.inStun(&s) and s.vit.stunned());
+    var guard: usize = 0;
+    while (foe.inStun(&s) and guard < 600) : (guard += 1) {
+        _ = s.update(dt, mathx.ground(0, 30), 400.0, .{});
+        if (foe.inStun(&s)) try std.testing.expect(s.vit.stunned());
+    }
+    try std.testing.expect(!foe.inStun(&s));
 }

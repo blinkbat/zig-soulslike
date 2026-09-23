@@ -1059,14 +1059,12 @@ pub const Warrior = struct {
     }
 
     pub fn raisable(self: *const Warrior) bool {
-        return self.state == .dead and !self.gone and !self.wasRaised and self.t >= DEATH_DUR;
+        return foe.raisableAfter(self, DEATH_DUR);
     }
 
     pub fn reraise(self: *Warrior, frac: f32) void {
         foe.rekindle(self, frac);
-        self.wasRaised = true;
         self.enterStun(.stunlight);
-        self.leash.noteCombat();
         self.pose();
     }
 

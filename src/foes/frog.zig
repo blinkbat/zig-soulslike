@@ -530,6 +530,7 @@ pub const Frog = struct {
     }
 
     fn updateHop(self: *Frog, dt: f32, hero: rl.Vector3, bounds: f32, coil: f32, flight: f32, land: f32) void {
+        if (foe.launchRefused(self, coil, dt)) return self.enterIdle(HOP_SETTLE_AGGRO);
         const total = coil + flight + land;
         const travelDt = mathx.maxF(0, mathx.minF(self.t, coil + flight) - mathx.maxF(self.t - dt, coil));
         if (travelDt > 0) foe.hopStep(self, travelDt, bounds, self.fdir(), flight);
@@ -1468,4 +1469,17 @@ test "toad lunge: the landing hits its body-length zone and leaves distant groun
             try std.testing.expectApproxEqAbs(f.keepOff(), mathx.distXZ(f.pos, hero), 0.0001);
         }
     }
+}
+
+test "A ROOT CAST INTO THE LUNGE'S COIL REFUSES THE LEAP — re-asked at the launch, never carried off the spot" {
+    const dt: f32 = 1.0 / 60.0;
+    var f = Frog.spawn(mathx.zero3, 0, 1.0, 0.3);
+    f.startHop(mathx.ground(0, 4.0), 400.0, true);
+    var t: f32 = 0;
+    while (t < LUNGE_COIL + LUNGE_FLIGHT + 0.2) : (t += dt) {
+        if (f.state == .lunge and f.t > LUNGE_COIL * 0.5) f.root.grab();
+        _ = f.update(dt, mathx.ground(0, 5.0), 400.0, .{});
+        try std.testing.expect(!f.airborne());
+    }
+    try std.testing.expect(mathx.lenXZ(f.pos) < 0.05);
 }

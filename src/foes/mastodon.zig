@@ -496,7 +496,9 @@ pub const Mastodon = struct {
             .lunge_wind => {
                 self.speed = approach(self.speed, 0, ACCEL * 3.0 * dt);
                 self.faceToward(hero, dt);
-                if (self.t >= LUNGE_WIND) {
+                if (foe.launchRefused(self, LUNGE_WIND, dt)) {
+                    self.enter(.idle);
+                } else if (self.t >= LUNGE_WIND) {
                     const way = mathx.dirXZ(self.pos, hero);
                     const gap = mathx.minF(mathx.distXZ(self.pos, hero), LUNGE_REACH);
                     self.launch = mathx.scaleV(way, gap);
@@ -756,17 +758,11 @@ pub const Mastodon = struct {
     /// -1 the head drawn back, +1 driven through: the butt's one clock.
     fn buttAmt(self: *const Mastodon) f32 {
         if (self.state != .butt) return 0;
-        if (self.t < BUTT_WIND) return -mathx.smoothstep(0, BUTT_WIND * 0.9, self.t);
-        const s = self.t - BUTT_WIND;
-        if (s < BUTT_STRIKE) return lerpF(-1.0, 1.0, foe.swingCurve(s / BUTT_STRIKE));
-        return 1.0 - mathx.smoothstep(BUTT_STRIKE, BUTT_STRIKE + BUTT_RECOVER * 0.7, s);
+        return foe.strokeAmt(self.t, BUTT_WIND, 0.9, BUTT_STRIKE, BUTT_RECOVER, 0.7);
     }
     fn biteAmt(self: *const Mastodon) f32 {
         if (self.state != .bite) return 0;
-        if (self.t < BITE_WIND) return -mathx.smoothstep(0, BITE_WIND * 0.9, self.t);
-        const s = self.t - BITE_WIND;
-        if (s < BITE_STRIKE) return lerpF(-1.0, 1.0, foe.swingCurve(s / BITE_STRIKE));
-        return 1.0 - mathx.smoothstep(BITE_STRIKE, BITE_STRIKE + BITE_RECOVER * 0.7, s);
+        return foe.strokeAmt(self.t, BITE_WIND, 0.9, BITE_STRIKE, BITE_RECOVER, 0.7);
     }
         /// 0..1 through the charge's wind: the head comes down, the forequarters load.
     fn loadAmt(self: *const Mastodon) f32 {
@@ -803,10 +799,7 @@ pub const Mastodon = struct {
     /// -1 the tail coiled to the far side, +1 swept through.
     fn tailAmt(self: *const Mastodon) f32 {
         if (self.state != .tail) return 0;
-        if (self.t < TAIL_WIND) return -mathx.smoothstep(0, TAIL_WIND * 0.9, self.t);
-        const s = self.t - TAIL_WIND;
-        if (s < TAIL_SWING) return lerpF(-1.0, 1.0, foe.swingCurve(s / TAIL_SWING));
-        return 1.0 - mathx.smoothstep(TAIL_SWING, TAIL_SWING + TAIL_RECOVER * 0.8, s);
+        return foe.strokeAmt(self.t, TAIL_WIND, 0.9, TAIL_SWING, TAIL_RECOVER, 0.8);
     }
 
     pub fn pose(self: *Mastodon) void {
@@ -1278,4 +1271,17 @@ test "THE BANDS ARE ORDERED: bite inside butt inside the lunge inside the charge
     const ogremod = @import("ogre.zig");
     std.debug.print("\n  mastodon blows: bite {d:.0}, butt {d:.0}, tail {d:.0}, charge {d:.0}, lunge {d:.0} (the ogre's slam is {d:.0})\n", .{ BITE_HIT.dmg, BUTT_HIT.dmg, TAIL_HIT.dmg, CHARGE_HIT.dmg, LUNGE_HIT.dmg, ogremod.SLAM_HIT.dmg });
     try std.testing.expect(LUNGE_HIT.dmg > ogremod.SLAM_HIT.dmg);
+}
+
+test "A ROOT CAST INTO THE LUNGE'S WIND REFUSES THE LEAP — re-asked at the launch, never carried off the spot" {
+    const dt: f32 = 1.0 / 60.0;
+    var m = Mastodon.spawn(mathx.zero3, 0, 1.0, 0.3);
+    m.enter(.lunge_wind);
+    var t: f32 = 0;
+    while (t < LUNGE_WIND + LUNGE_AIR + 0.2) : (t += dt) {
+        if (m.state == .lunge_wind and m.t > LUNGE_WIND * 0.5) m.root.grab();
+        _ = m.update(dt, mathx.ground(0, 6.0), 400.0, .{});
+        try std.testing.expect(m.state != .lunge_air and !m.airborne());
+    }
+    try std.testing.expect(mathx.lenXZ(m.pos) < 0.05);
 }

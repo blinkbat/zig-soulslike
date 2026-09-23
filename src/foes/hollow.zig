@@ -582,7 +582,7 @@ pub const Hollow = struct {
             },
             .idle, .walk => {
                 const sensed = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
-                switch (classify(sensed, triggerR(foe.HERO_R), self.biteCool <= 0, self.tollCool <= 0, self.sparkCool <= 0 and self.riderSeated())) {
+                switch (classify(sensed, triggerR(foe.HERO_R, self.scale), self.biteCool <= 0, self.tollCool <= 0, self.sparkCool <= 0 and self.riderSeated())) {
                     .bite => {
                         self.speed = 0;
                         self.heroLatch = false;
@@ -599,7 +599,7 @@ pub const Hollow = struct {
                     .walk => {
                         const want = hero;
                         const gap = mathx.distXZ(self.pos, want);
-                        const stop = stopR(foe.HERO_R);
+                        const stop = stopR(foe.HERO_R, self.scale);
                         self.faceToward(self.nav.aim(self.pos, want), dt);
                         if (gap > stop) {
                             self.speed = approach(self.speed, CHASE_SPEED, ACCEL * dt);
@@ -793,20 +793,13 @@ pub const Hollow = struct {
     /// -1 fully cocked back, +1 fully through: the bite's ONE clock, so the gape and the snap cannot tell different stories. Zero outside the move.
     fn biteAmt(self: *const Hollow) f32 {
         if (self.state != .bite) return 0;
-        if (self.t < BITE_WIND) return -mathx.smoothstep(0, BITE_WIND * 0.85, self.t);
-        if (self.t < BITE_WIND + BITE_STRIKE) {
-            return lerpF(-1.0, 1.0, foe.swingCurve((self.t - BITE_WIND) / BITE_STRIKE));
-        }
-        return 1.0 - mathx.smoothstep(BITE_WIND + BITE_STRIKE, BITE_WIND + BITE_STRIKE + BITE_RECOVER * 0.7, self.t);
+        return foe.strokeAmt(self.t, BITE_WIND, 0.85, BITE_STRIKE, BITE_RECOVER, 0.7);
     }
 
     /// How far round its shoulders are hauled for the toll, -1 gathered to +1 driven through.
     fn tollAmt(self: *const Hollow) f32 {
         if (self.state != .toll) return 0;
-        if (self.t < TOLL_WIND) return -mathx.smoothstep(0, TOLL_WIND * 0.92, self.t);
-        const swingT = self.t - TOLL_WIND;
-        if (swingT < TOLL_SWING) return lerpF(-1.0, 1.0, foe.swingCurve(swingT / TOLL_SWING));
-        return 1.0 - mathx.smoothstep(TOLL_SWING, TOLL_SWING + TOLL_RECOVER * 0.75, swingT);
+        return foe.strokeAmt(self.t, TOLL_WIND, 0.92, TOLL_SWING, TOLL_RECOVER, 0.75);
     }
 
     pub fn pose(self: *Hollow) void {
@@ -973,14 +966,15 @@ pub const Hollow = struct {
     }
 };
 
-pub fn triggerR(quarryR: f32) f32 {
-    return BITE_TRIGGER_R + quarryR;
+/// Both rings ride the body (`foe.triggerBand`): the bite is `hurtReach` off a scaled jaw.
+pub fn triggerR(quarryR: f32, scale: f32) f32 {
+    return foe.triggerBand(BITE_TRIGGER_R + quarryR, SCALE, scale);
 }
-fn stopR(quarryR: f32) f32 {
-    return BITE_R * STOP_FRAC + quarryR;
+fn stopR(quarryR: f32, scale: f32) f32 {
+    return foe.triggerBand(BITE_R * STOP_FRAC + quarryR, SCALE, scale);
 }
 comptime {
-    std.debug.assert(stopR(foe.HERO_R) < triggerR(foe.HERO_R));
+    std.debug.assert(stopR(foe.HERO_R, SCALE) < triggerR(foe.HERO_R, SCALE));
 }
 
 const CAP_N = wf.MAX_PER_KIND;
@@ -1369,7 +1363,7 @@ test "YOU CANNOT STUNLOCK IT — the hero's heavy swing does not flinch it" {
 }
 
 test "STANDING IN ITS FACE SILENCES THE BELL AND THE SPARKS BOTH" {
-    const ring = triggerR(foe.HERO_R);
+    const ring = triggerR(foe.HERO_R, SCALE);
     try std.testing.expectEqual(Choice.bite, classify(1.0, ring, true, true, true));
     try std.testing.expectEqual(Choice.walk, classify(1.0, ring, false, true, true));
     try std.testing.expectEqual(Choice.toll, classify(9.0, ring, true, true, true));
@@ -1534,21 +1528,25 @@ test "IT BITES ONCE PER GAPE, and only what is in front of it" {
     try std.testing.expect(back.heroHit == null);
 }
 
-test "A BIG PLACEMENT STILL BITES — the stop ring may never grow past the trigger ring" {
+test "A BIG PLACEMENT STILL BITES — the rings ride the body, and the bite LANDS with the body held at `closestApproach`" {
     for ([_]f32{ wf.FOE_SCALE_LO, 1.0, 1.3, wf.FOE_SCALE_HI }) |sc| {
         var h = Hollow.spawn(mathx.zero3, 0, sc, 0.3);
-        h.leash.noteSeen();
         h.tollCool = 99.0; // …so walking up and biting is the only answer it has left
         h.sparkCool = 99.0; // (the rider's volley is the other one, and it would hold the host at range)
         const hero = mathx.ground(0, 11.0);
-        var gaped = false;
+        const apart = foe.closestApproach(h.bodyR());
+        var bit = false;
         var t: f32 = 0;
-        while (t < 9.0) : (t += 1.0 / 60.0) {
-            _ = h.update(1.0 / 60.0, hero, 200.0, .{});
-            if (h.gaped) gaped = true;
+        while (t < 9.0 and !bit) : (t += 1.0 / 60.0) {
+            h.leash.noteSeen();
+            bit = h.update(1.0 / 60.0, hero, 200.0, .{}) != null;
+            if (mathx.distXZ(h.pos, hero) < apart) {
+                const back = mathx.dirXZ(hero, h.pos);
+                h.pos = v3(hero.x + back.x * apart, h.pos.y, hero.z + back.z * apart);
+            }
         }
-        std.debug.print("  scale {d:.2}: halted {d:.2} m off, trigger ring {d:.2} m, gaped={}\n", .{ sc, mathx.distXZ(h.pos, hero), triggerR(foe.HERO_R), gaped });
-        try std.testing.expect(gaped);
+        std.debug.print("  scale {d:.2}: held {d:.2} m off, trigger ring {d:.2} m, bit={}\n", .{ sc, mathx.distXZ(h.pos, hero), triggerR(foe.HERO_R, h.scale), bit });
+        try std.testing.expect(bit);
     }
 }
 

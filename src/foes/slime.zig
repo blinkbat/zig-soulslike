@@ -178,10 +178,14 @@ fn lashBand(scale: f32) f32 {
     return PROT_LEN * scale + protGrip(scale);
 }
 
-fn classify(sensed: f32, homeGap: f32, scale: f32, lashReady: bool, rooted: bool) Choice {
+/// Degrees the wind can bring the shaft round, off `TURN_RATE` (`fenlurker.windSweep`); a shaft adds no cone.
+const LASH_SWEEP: f32 = mathx.degrees(TURN_RATE) * LASH_WIND;
+
+/// `bearing` is degrees off the facing; past `LASH_SWEEP` the lash is REFUSED, not scored down, and `.close` turns it.
+fn classify(sensed: f32, bearing: f32, homeGap: f32, scale: f32, lashReady: bool, rooted: bool) Choice {
     if (sensed > AGGRO_R) return if (homeGap > HOME_R) .hold else .rest;
     // The grip takes the FEET, so the bail stands BELOW the band — a telescoping shaft needs none.
-    if (sensed <= lashBand(scale) and lashReady) return .lash;
+    if (sensed <= lashBand(scale) and @abs(bearing) <= LASH_SWEEP and lashReady) return .lash;
     if (rooted) return .rest;
     return .close;
 }
@@ -234,9 +238,6 @@ pub const Slime = struct {
     /// DISTANCE travelled, never a clock, so a held body stops wobbling.
     phase: f32 = 0,
     ext: f32 = 0,
-
-    /// One-frame, like `justDied`: the mire reads it after `update`.
-    splitAt: ?Act = null,
 
     squash: f32 = 1,
     lean: f32 = 0,
@@ -386,10 +387,12 @@ pub const Slime = struct {
     }
 
     pub fn update(self: *Slime, dt: f32, quarry: rl.Vector3, bounds: f32, blade: foe.Blade) Act {
-        if (self.gone) return .none;
+        if (self.gone) {
+            foe.tickParticles(&self.parts, dt, self.pos.y);
+            return .none;
+        }
         self.heroHit = null;
         self.parried = false;
-        self.splitAt = null;
         self.justDied = false;
         self.deflect.tick(dt);
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
@@ -412,7 +415,8 @@ pub const Slime = struct {
             },
             .splitting => {
                 self.speed = 0;
-                if (self.t >= SPLIT_DUR) self.divide();
+                // Before the pose, the parry and `tryHit`: its halves overwrite this body.
+                if (self.t >= SPLIT_DUR) return self.divide();
             },
             .stunlight, .stunheavy => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
@@ -431,7 +435,8 @@ pub const Slime = struct {
                 self.ext = 0;
                 const sensed = foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
                 const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
-                switch (classify(sensed, homeGap, self.scale, self.lashCd <= 0, self.root.held())) {
+                const bearing = foe.bearingDeg(self.pos, self.facing, quarry);
+                switch (classify(sensed, bearing, homeGap, self.scale, self.lashCd <= 0, self.root.held())) {
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
                         if (foe.postWant(self, dt, sensed, AGGRO_R)) |go| {
@@ -467,7 +472,7 @@ pub const Slime = struct {
         self.takeParry(dt);
         if (!self.parried and self.state == .lash and self.ext > 0) self.tryLash(quarry, dt);
         self.tryHit(blade);
-        return self.splitAt orelse .none;
+        return .none;
     }
 
     /// Billed segment by segment along the sweep (the lurker's rule): handed the whole reach as one segment the samples
@@ -510,16 +515,16 @@ pub const Slime = struct {
         return self.protSeg()[1];
     }
 
-    fn divide(self: *Slime) void {
-        self.splitAt = .{ .split = .{
+    fn divide(self: *Slime) Act {
+        self.ooze(self.centerWorld(), v3(0, 1, 0), SPLIT_OOZE);
+        self.gone = true;
+        return .{ .split = .{
             .at = self.pos,
             .facing = self.facing,
             .gen = self.gen + 1,
             .scale = self.scale * GEN_SIZE_K,
             .seed = self.seed,
         } };
-        self.ooze(self.centerWorld(), v3(0, 1, 0), SPLIT_OOZE);
-        self.gone = true;
     }
 
     pub fn tryHit(self: *Slime, blade: foe.Blade) void {
@@ -587,7 +592,9 @@ pub const Slime = struct {
         const drift = 0.035 * H * mathx.sinf(self.elapsed * 0.9 + self.seed * 7.0);
         const pull = PINCH_PULL * pinch * H;
         self.xf[NUC] = mul(tr(REST[NUC].x + drift + pull, REST[NUC].y, REST[NUC].z + drift * 0.6), root);
-        self.xf[PROT] = mul(mul(scaleM(1, 1, mathx.maxF(1e-3, self.ext)), tr(REST[PROT].x, REST[PROT].y, REST[PROT].z)), root);
+        // Off the bill's frame: `root` carries the lash lean.
+        const base = foe.markOn(root, REST[PROT]);
+        self.xf[PROT] = mul3(scaleM(fs, fs, fs * mathx.maxF(1e-3, self.ext)), ry(mathx.degrees(self.facing)), tr(base.x, base.y, base.z));
     }
 
     pub fn draw(self: *const Slime, model: *const Model) void {
@@ -684,12 +691,23 @@ pub const Mire = struct {
                 .split => |s| {
                     // The bar comes off the body still in the slot: a `Vitals` on the one-frame union is 288 B per slab slot.
                     const vit = childVit(self.slimes[i].vit);
+                    // The map's `when=` is the line's, like its `scale=`.
+                    const when = self.slimes[i].leash.win.when;
+                    // Kept across `seatInto`, which reuses the parent's slot: the ooze `divide` threw is in this pool.
+                    const motes = self.slimes[i].parts;
+                    const head = self.slimes[i].fxHead;
                     const across = mathx.perpXZNeg(mathx.headingDir(s.facing));
                     for ([_]f32{ -1, 1 }, 0..) |side, k| {
                         const off = SPLIT_SET * s.scale * side;
                         const at = v3(s.at.x + across.x * off, s.at.y, s.at.z + across.z * off);
                         const seed = mathx.wrap01(s.seed + 0.37 * @as(f32, @floatFromInt(k + 1)));
-                        self.seat(Slime.spawnGen(at, s.facing, s.scale, seed, s.gen, vit));
+                        var child = Slime.spawnGen(at, s.facing, s.scale, seed, s.gen, vit);
+                        child.leash.win.when = when;
+                        self.seat(child);
+                    }
+                    if (!self.slimes[i].gone) {
+                        self.slimes[i].parts = motes;
+                        self.slimes[i].fxHead = head;
                     }
                 },
             }
@@ -749,14 +767,14 @@ test "THE PROTRUSION LANDS ON THE MAN WHERE HE STANDS — thrown for real, at ev
         var hi: f32 = AGGRO_R;
         for (0..48) |_| {
             const mid = (lo + hi) * 0.5;
-            if (classify(mid, 0, scale, true, false) == Choice.lash) lo = mid else hi = mid;
+            if (classify(mid, 0, 0, scale, true, false) == Choice.lash) lo = mid else hi = mid;
         }
         const far = lo;
         widest = @max(widest, far - lashBand(scale));
         for ([_]f32{ 0, 18, 34 }) |deg| {
             for ([_]f32{ 0.0, 0.3, 0.6, 0.85, 1.0 }) |u| {
                 const stand = lerpF(apart + 0.05, far - 0.002, u);
-                if (classify(stand, 0, scale, true, false) != Choice.lash) continue;
+                if (classify(stand, 0, 0, scale, true, false) != Choice.lash) continue;
                 thrown += 1;
                 const a = mathx.radians(deg);
                 var c = probe(scale);
@@ -904,7 +922,7 @@ test "THE WINDOW SITS ON THE IMPACT FRAME — what `toImpact` promises is when t
         const near = foe.closestApproach(BODY_R * scale) + 0.05;
         for ([_]f32{ 0.0, 0.35, 0.7, 1.0 }) |u| {
             const stand = lerpF(near, lashBand(scale) - 0.01, u);
-            if (stand <= near - 0.001 or classify(stand, 0, scale, true, false) != Choice.lash) continue;
+            if (stand <= near - 0.001 or classify(stand, 0, 0, scale, true, false) != Choice.lash) continue;
             thrown += 1;
             const hero = v3(0, 0, stand);
 
@@ -943,4 +961,102 @@ test "THE WINDOW SITS ON THE IMPACT FRAME — what `toImpact` promises is when t
     std.debug.print("\n  slime: {d} stands, the impact clock is at worst {d:.3} s off the frame the shaft bills, {d} uncatchable\n", .{ thrown, worst, missed });
     try std.testing.expectEqual(@as(usize, 0), missed);
     try std.testing.expect(worst <= dt * 2.0);
+}
+
+test "A BEARING THE WIND CANNOT COME ROUND TO IS REFUSED AT THE CHOOSE — and what it falls through to TURNS, then lands" {
+    const stand = lashBand(1.0) - 0.3;
+    try std.testing.expectEqual(Choice.lash, classify(stand, LASH_SWEEP - 1.0, 0, 1.0, true, false));
+    try std.testing.expectEqual(Choice.close, classify(stand, LASH_SWEEP + 1.0, 0, 1.0, true, false));
+    try std.testing.expectEqual(Choice.rest, classify(stand, -LASH_SWEEP - 1.0, 0, 1.0, true, true));
+
+    const dt: f32 = 1.0 / 60.0;
+    var thrown: usize = 0;
+    var slowest: f32 = 0;
+    var deg: f32 = 0;
+    while (deg <= 180.0) : (deg += 15.0) {
+        var s = probe(1.0);
+        s.lashCd = 0;
+        const a = mathx.radians(deg);
+        const hero = mathx.ground(mathx.sinf(a) * stand, mathx.cosf(a) * stand);
+        var t: f32 = 0;
+        var swung = false;
+        var hit = false;
+        while (t < 4.0 and !(swung and s.state != .lash)) : (t += dt) {
+            _ = s.update(dt, hero, 400.0, .{});
+            const apart = foe.closestApproach(s.bodyR());
+            if (mathx.distXZ(s.pos, hero) < apart) {
+                const back = mathx.dirXZ(hero, s.pos);
+                s.pos = v3(hero.x + back.x * apart, s.pos.y, hero.z + back.z * apart);
+            }
+            if (s.state == .lash) swung = true;
+            if (s.heroHit != null) hit = true;
+        }
+        if (!hit) {
+            std.debug.print("\n  slime: stood {d:.0} deg off, the first lash billed nothing\n", .{deg});
+            return error.TestUnexpectedResult;
+        }
+        slowest = @max(slowest, t);
+        thrown += 1;
+    }
+    std.debug.print("\n  slime gate: the lash is refused past {d:.1} deg off; the first one lands from all {d} bearings, the slowest by {d:.2} s\n", .{ LASH_SWEEP, thrown, slowest });
+}
+
+test "THE SHAFT DRAWN IS THE SHAFT BILLED — the lean tips the mass, never the protrusion" {
+    const dt: f32 = 1.0 / 120.0;
+    for ([_]f32{ wf.FOE_SCALE_LO, 1.0, wf.FOE_SCALE_HI }) |scale| {
+        var s = probe(scale);
+        s.lashCd = 0;
+        const hero = mathx.ground(0, lashBand(scale) - 0.2);
+        var worst: f32 = 0;
+        var lean: f32 = 0;
+        var t: f32 = 0;
+        while (t < 2.0) : (t += dt) {
+            _ = s.update(dt, hero, 400.0, .{});
+            if (s.ext <= 0.02) continue;
+            const seg = s.protSeg();
+            const tip = foe.markOn(s.xf[PROT], v3(0, 0, PROT_LEN));
+            const base = foe.markOn(s.xf[PROT], mathx.zero3);
+            worst = @max(worst, @max(mathx.lenV(mathx.subV(tip, seg[1])), mathx.lenV(mathx.subV(base, seg[0]))));
+            lean = @max(lean, s.posed[1]);
+        }
+        std.debug.print("\n  slime x{d:.2}: drawn shaft within {d:.4} m of the billed one through a {d:.1} deg lean", .{ scale, worst, lean });
+        try std.testing.expect(lean > 5.0);
+        try std.testing.expect(worst < 0.005);
+    }
+    std.debug.print("\n", .{});
+}
+
+test "A BODY THAT HAS GONE STILL FLIES ITS MOTES OUT — and the split's own ooze survives the slot it was thrown from" {
+    const dt: f32 = 1.0 / 60.0;
+    const far = mathx.ground(0, 40);
+    var s = probe(1.0);
+    smack(&s, HP_MAX * 2.0);
+    try std.testing.expectEqual(State.dead, s.state);
+    var guard: usize = 0;
+    while (!s.gone and guard < 600) : (guard += 1) _ = s.update(dt, far, 400.0, .{});
+    try std.testing.expect(s.gone);
+    const inFlight = liveMotes(&s.parts);
+    try std.testing.expect(inFlight > 0);
+    var t: f32 = 0;
+    while (t < 2.0) : (t += dt) _ = s.update(dt, far, 400.0, .{});
+    try std.testing.expectEqual(@as(usize, 0), liveMotes(&s.parts));
+
+    var mire = Mire{ .model = undefined };
+    mire.n = 1;
+    mire.slimes[0] = probe(1.0);
+    mire.slimes[0].debugSplit();
+    guard = 0;
+    while (mire.n == 1 and guard < 400) : (guard += 1) _ = mire.update(dt, far, 400.0, .{});
+    var motes: usize = 0;
+    for (mire.liveConst()) |*c| motes += liveMotes(&c.parts);
+    try std.testing.expect(motes >= SPLIT_OOZE);
+    std.debug.print("\n  slime: {d} dissolve motes still flying when the body went, all spent 2 s later; {d} ooze motes in flight the frame it divides\n", .{ inFlight, motes });
+}
+
+fn liveMotes(pool: []const foe.Particle) usize {
+    var n: usize = 0;
+    for (pool) |*q| {
+        if (q.life > 0) n += 1;
+    }
+    return n;
 }

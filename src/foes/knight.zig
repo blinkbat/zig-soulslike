@@ -4545,6 +4545,20 @@ test "THE DOOR COVERS HIS FRONT AND NOTHING ELSE — and the fall answers exactl
     try std.testing.expect(!k.shielded(at(0, 4.0)));
 }
 
+test "A BOMB IS ON THE DOOR ONLY FROM HIS FRONT — thrown behind him it lands, and he turns to it" {
+    for ([_]f32{ 0, 180 }) |deg| {
+        var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
+        k.state = .idle;
+        k.covered = true;
+        const a = mathx.radians(deg);
+        const bomb = v3(mathx.sinf(a) * 3.0, 0, mathx.cosf(a) * 3.0);
+        k.tryHit(foe.shaftFrom(bomb, k.centerWorld(), k.hurtRadius(), k.facing, .{ .dmg = 30 }));
+        try std.testing.expectEqual(@as(u32, if (deg == 0) 1 else 0), k.blocks);
+        try std.testing.expectEqual(@as(u32, 1), k.hits + k.blocks);
+        try std.testing.expect(@abs(mathx.wrapPi(k.facing - mathx.headingXZ(mathx.dirXZ(k.pos, bomb)))) < 1e-3);
+    }
+}
+
 test "A BLOW ON THE DOOR TAKES NO POISE, BUT THE FOOTING BEHIND IT CAN BE WORN THROUGH" {
     var k = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     k.state = .idle;

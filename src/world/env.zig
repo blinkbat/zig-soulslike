@@ -562,6 +562,12 @@ pub const Env = struct {
     /// station, a rebuild of the shipped map walked the whole prop list twice at each of ~4,700 stations over 729 tiles.
     faceSkip: [MAX_PROPS]u32 = undefined,
     nfaceSkip: usize = 0,
+    /// What the tiles were last built against besides height and caves; false until the first full build.
+    tilesKept: bool = false,
+    faceSig: u64 = 0,
+    tileWater: [wf.WATER_CELLS]u8 = undefined,
+    tileWaterEdge: [wf.WATER_CELLS]u8 = undefined,
+    tileWaterBase: [wf.WATER_CELLS]wf.Hgt = undefined,
     scene: ?*gfx.Scene = null,
     props: [MAX_PROPS]Prop = undefined,
     nprops: usize = 0,
@@ -615,6 +621,8 @@ pub const Env = struct {
     waterEdgeSrc: [wf.WATER_CELLS]u8 = [_]u8{0} ** wf.WATER_CELLS,
     waterKindSrc: [wf.WATER_CELLS]u8 = [_]u8{0} ** wf.WATER_CELLS,
     waterHgtSrc: [wf.HEIGHT_CELLS]wf.Hgt = [_]wf.Hgt{wf.HEIGHT_ZERO} ** wf.HEIGHT_CELLS,
+    /// The bake reads `heightAt`, which steps at a flagged cell.
+    waterCliffSrc: [wf.HEIGHT_CELLS]u8 = [_]u8{wf.CLIFF_NONE} ** wf.HEIGHT_CELLS,
     waterBaseSrc: [wf.WATER_CELLS]wf.Hgt = [_]wf.Hgt{wf.HEIGHT_ZERO} ** wf.WATER_CELLS,
     /// Every cell's level base, dry cells taking the nearest wet cell's, so a foot on the bank and the shore fade read the pool's own sheet.
     waterBaseField: [wf.WATER_CELLS]wf.Hgt = [_]wf.Hgt{wf.HEIGHT_ZERO} ** wf.WATER_CELLS,
@@ -685,6 +693,7 @@ pub const Env = struct {
         self.npickups = 0;
         self.nrests = 0;
         self.nfaceSkip = 0;
+        self.tilesKept = false;
         self.stx = .{};
         self.flx = .{};
         self.stat_draws = 0;
@@ -735,8 +744,68 @@ pub const Env = struct {
         self.adoptHeight(m);
         self.adoptCave(m);
         self.materialize(m);
-        if (fresh) self.rebuildTerrain();
+        if (fresh or (self.tilesKept and self.faceSignature() != self.faceSig)) {
+            self.rebuildTerrain();
+        } else if (self.tilesKept) self.rewetTiles();
         self.checkModels("replay");
+    }
+
+    fn faceSignature(self: *const Env) u64 {
+        var h = std.hash.Wyhash.init(0);
+        for (self.faceSkip[0..self.nfaceSkip]) |i| {
+            const pr = &self.props[i];
+            h.update(std.mem.asBytes(&pr.kind));
+            h.update(std.mem.asBytes(&pr.pos));
+            h.update(std.mem.asBytes(&pr.yaw));
+            h.update(std.mem.asBytes(&pr.scale));
+            h.update(std.mem.asBytes(&pr.rise));
+        }
+        return h.final();
+    }
+
+    fn keepTileInputs(self: *Env) void {
+        self.faceSig = self.faceSignature();
+        self.tileWater = self.waterField;
+        self.tileWaterEdge = self.waterEdgeField;
+        self.tileWaterBase = self.waterBaseField;
+        self.tilesKept = true;
+    }
+
+    /// The water cells whose painted field moved since the tiles were built, as `[x0, z0, x1, z1]`.
+    fn wetBox(self: *const Env) ?[4]usize {
+        const N = wf.WATER_N;
+        var box = [4]usize{ N, N, 0, 0 };
+        for (0..N * N) |i| {
+            if (self.waterField[i] == self.tileWater[i] and self.waterEdgeField[i] == self.tileWaterEdge[i] and
+                self.waterBaseField[i] == self.tileWaterBase[i]) continue;
+            box = .{ @min(box[0], i % N), @min(box[1], i / N), @max(box[2], i % N), @max(box[3], i / N) };
+        }
+        return if (box[0] > box[2]) null else box;
+    }
+
+    fn rewetTiles(self: *Env) void {
+        const box = self.wetBox() orelse return;
+        self.keepTileInputs();
+        if (!self.tiled()) return;
+        const cw = 2 * self.waterHalf / @as(f32, @floatFromInt(wf.WATER_N));
+        const step = self.lattice();
+        const last: f32 = @floatFromInt(wf.HEIGHT_N - 1);
+        const tile = struct {
+            fn of(cell: usize, sign: f32, wcw: f32, whalf: f32, hhalf: f32, hstep: f32, hlast: f32) usize {
+                const at = -whalf + (@as(f32, @floatFromInt(cell)) + 0.5 + sign) * wcw;
+                return tileOf(@intFromFloat(mathx.clampF((at + hhalf) / hstep, 0, hlast)));
+            }
+        }.of;
+        const tx0 = tile(box[0], -1, cw, self.waterHalf, self.heightHalf, step, last);
+        const tz0 = tile(box[1], -1, cw, self.waterHalf, self.heightHalf, step, last);
+        const tx1 = tile(box[2], 1, cw, self.waterHalf, self.heightHalf, step, last);
+        const tz1 = tile(box[3], 1, cw, self.waterHalf, self.heightHalf, step, last);
+        var tz = tz0;
+        while (tz <= tz1) : (tz += 1) {
+            var tx = tx0;
+            while (tx <= tx1) : (tx += 1) self.buildTile(tz * TILES + tx);
+        }
+        buildSolids(self);
     }
 
     pub fn uploadSoil(self: *Env, m: *const wf.Map) void {
@@ -906,6 +975,7 @@ pub const Env = struct {
             self.skirtBuilt = false;
         }
         buildSolids(self);
+        self.keepTileInputs();
     }
 
     fn dropTile(self: *Env, i: usize) void {
@@ -1381,7 +1451,8 @@ pub const Env = struct {
             std.mem.eql(u8, &self.waterEdgeSrc, &m.waterEdge) and
             std.mem.eql(u8, &self.waterKindSrc, &m.waterKind) and
             std.mem.eql(wf.Hgt, &self.waterBaseSrc, &m.waterBase) and
-            std.mem.eql(wf.Hgt, &self.waterHgtSrc, &m.height);
+            std.mem.eql(wf.Hgt, &self.waterHgtSrc, &m.height) and
+            std.mem.eql(u8, &self.waterCliffSrc, &m.cliff);
         if (same) return;
         waterBuilds += 1;
         self.waterSrc = m.water;
@@ -1389,6 +1460,7 @@ pub const Env = struct {
         self.waterKindSrc = m.waterKind;
         self.waterBaseSrc = m.waterBase;
         self.waterHgtSrc = m.height;
+        self.waterCliffSrc = m.cliff;
         self.waterReady = true;
         self.waterAny = m.anyWater();
         self.waterHalf = m.half;
@@ -2286,8 +2358,9 @@ pub const Env = struct {
 
     pub fn walkStepPast(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32, wade: f32) rl.Vector3 {
         const to = v3(from.x + dir.x * dist, from.y, from.z + dir.z * dist);
-        if (!self.heightAny or dist <= 0) return to;
-        if (self.deepRefusedPast(from.x, from.z, to.x, to.z, wade)) return v3(from.x, from.y, from.z);
+        // `tiled`, not `heightAny`: a flat map with a cave has the rock's walls.
+        if (!self.tiled() or dist <= 0) return to;
+        if (self.deepRefusedPast(from.x, from.z, to.x, to.z, wade, from.y)) return v3(from.x, from.y, from.z);
         if (self.stepOk(from, dir, dist)) return to;
         const g = self.blockGrad(from);
         const gl = @sqrt(g[0] * g[0] + g[1] * g[1]);
@@ -2316,16 +2389,17 @@ pub const Env = struct {
 
     /// Only a cliff cell can make one — a ramp's descent over a frame's travel is bounded by `MAX_SLOPE`. Measured where a body STANDS (`standAt` off `from.y`), so the head of a flight is not a lip.
     pub fn brink(self: *const Env, from: rl.Vector3, to: rl.Vector3) bool {
-        if (!self.heightAny) return false;
+        if (!self.tiled()) return false;
         return self.standAt(to.x, to.z, from.y) < self.standAt(from.x, from.z, from.y) - STEP_UP;
     }
 
+    /// The floor under his feet on his own level (`standAt`): in a chamber `groundAt` is the hill.
     pub fn flyStep(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32, footY: f32) rl.Vector3 {
         const to = v3(from.x + dir.x * dist, from.y, from.z + dir.z * dist);
-        if (!self.heightAny or dist <= 0) return to;
-        if (self.groundAt(to.x, to.z) <= footY + STEP_UP) return to;
+        if (!self.tiled() or dist <= 0) return to;
+        if (self.standAt(to.x, to.z, footY) <= footY + STEP_UP) return to;
         // Refused, so slide along the wall the way the walk does: the step's share up the gradient is removed.
-        const g = self.gradAt(from.x, from.z);
+        const g = self.blockGrad(from);
         const gl = @sqrt(g[0] * g[0] + g[1] * g[1]);
         if (gl < 1e-5) return v3(from.x, from.y, from.z);
         const ux = g[0] / gl;
@@ -2337,7 +2411,7 @@ pub const Env = struct {
         const tl = @sqrt(tx * tx + tz * tz);
         if (tl < 1e-5) return v3(from.x, from.y, from.z);
         const slide = v3(from.x + tx / tl * dist, from.y, from.z + tz / tl * dist);
-        if (self.groundAt(slide.x, slide.z) <= footY + STEP_UP) return slide;
+        if (self.standAt(slide.x, slide.z, footY) <= footY + STEP_UP) return slide;
         return v3(from.x, from.y, from.z);
     }
 
@@ -2527,13 +2601,21 @@ pub const Env = struct {
         return self.wadeDepth(x, z);
     }
 
-    pub fn deepRefused(self: *const Env, fromX: f32, fromZ: f32, toX: f32, toZ: f32) bool {
-        return self.deepRefusedPast(fromX, fromZ, toX, toZ, WADE_MAX);
+    pub fn deepRefused(self: *const Env, fromX: f32, fromZ: f32, toX: f32, toZ: f32, footY: f32) bool {
+        return self.deepRefusedPast(fromX, fromZ, toX, toZ, WADE_MAX, footY);
     }
 
-    pub fn deepRefusedPast(self: *const Env, fromX: f32, fromZ: f32, toX: f32, toZ: f32, limit: f32) bool {
-        const deep = self.wadeDepth(toX, toZ);
-        return deep > limit and deep > self.wadeDepth(fromX, fromZ);
+    /// Off `wadeDepthUnder`: the air in a chamber is dry under a painted pool.
+    pub fn deepRefusedPast(self: *const Env, fromX: f32, fromZ: f32, toX: f32, toZ: f32, limit: f32, footY: f32) bool {
+        const deep = self.wadeDepthUnder(toX, toZ, footY);
+        return deep > limit and deep > self.wadeDepthUnder(fromX, fromZ, footY);
+    }
+
+    /// The liquid a body at `p` stands IN — none in a chamber, whatever is painted on the hill over it.
+    pub fn liquidUnder(self: *const Env, p: rl.Vector3) ?wf.Liquid {
+        if (self.caveAny and self.underground(p.x, p.z, p.y)) return null;
+        if (!self.inWater(p.x, p.z, 1.0)) return null;
+        return self.liquidAt(p.x, p.z);
     }
 
     /// Squared perpendicular distance off the ray; measured from the ORIGIN for anything behind it.
@@ -5926,6 +6008,126 @@ test "flyStep: a jump crosses what it is OVER, and a cliff is a wall at any alti
     defer std.testing.allocator.destroy(low);
     const g0 = low.groundAt(0, 0);
     try std.testing.expect(low.flyStep(v3(0, 0, 0), east, 0.5, g0).x > 0.4);
+}
+
+fn envOfMap(m: *const wf.Map) !*Env {
+    const e = try std.testing.allocator.create(Env);
+    blankForTest(e);
+    e.adoptHeight(m);
+    e.adoptCave(m);
+    return e;
+}
+
+test "A JUMP IN A CHAMBER TRAVELS, AND A FLAT MAP'S CHAMBER HAS WALLS — both are asked of the level he is on, not of the land" {
+    const alloc = std.testing.allocator;
+    const east = v3(1, 0, 0);
+    {
+        const m = try alloc.create(wf.Map);
+        defer alloc.destroy(m);
+        m.* = .{};
+        m.blank("hill chamber");
+        var span: [4]usize = undefined;
+        _ = m.sculpt(0, 0, 40, .raise, 8, &span);
+        _ = caves.carve(caves.gridsOf(m), .{ .px = 0, .pz = 0, .r = 6, .floor = -2, .roof = 1 }, &span);
+        const e = try envOfMap(m);
+        defer alloc.destroy(e);
+        const floor = e.standAt(0, 0, -2);
+        const flown = e.flyStep(v3(0, floor, 0), east, 0.5, floor + 1.0);
+        try std.testing.expectApproxEqAbs(@as(f32, 0.5), flown.x, 1e-4);
+    }
+    {
+        const m = try alloc.create(wf.Map);
+        defer alloc.destroy(m);
+        m.* = .{};
+        m.blank("flat chamber");
+        var span: [4]usize = undefined;
+        _ = caves.carve(caves.gridsOf(m), .{ .px = 0, .pz = 0, .r = 6, .floor = -4, .roof = -1 }, &span);
+        const e = try envOfMap(m);
+        defer alloc.destroy(e);
+        try std.testing.expect(!e.heightAny and e.tiled());
+        var p = v3(0, e.standAt(0, 0, -4), 0);
+        for (0..60) |_| {
+            p = e.walkStep(p, east, 0.25);
+            p.y = e.standAt(p.x, p.z, p.y);
+        }
+        try std.testing.expect(p.x < 7.0);
+        try std.testing.expect(e.underground(p.x, p.z, p.y));
+    }
+}
+
+test "THE AIR IN A CHAMBER IS DRY UNDER A DEEP POOL — it neither walls the floor off nor soaks the man on it" {
+    const alloc = std.testing.allocator;
+    const m = try alloc.create(wf.Map);
+    defer alloc.destroy(m);
+    m.* = .{};
+    m.blank("pond chamber");
+    var span: [4]usize = undefined;
+    _ = m.sculpt(0, 0, 40, .raise, 8, &span);
+    _ = caves.carve(caves.gridsOf(m), .{ .px = 0, .pz = 0, .r = 6, .floor = -2, .roof = 1 }, &span);
+    const e = try envOfMap(m);
+    defer alloc.destroy(e);
+    e.waterAny = true;
+    e.waterHalf = m.half;
+    const cell = 2 * m.half / @as(f32, @floatFromInt(wf.WATER_N));
+    for (0..wf.WATER_N) |iz| {
+        for (0..wf.WATER_N) |ix| {
+            const cx = -m.half + (@as(f32, @floatFromInt(ix)) + 0.5) * cell;
+            e.waterField[iz * wf.WATER_N + ix] = if (cx > 0) 255 else 0;
+        }
+    }
+    @memset(&e.waterBaseField, wf.heightByte(e.groundAt(0, 0) + WADE_MAX + 1.0));
+    try std.testing.expect(e.wadeDepth(-4, 0) == 0 and e.wadeDepth(3, 0) > WADE_MAX);
+    var p = v3(-4, e.standAt(-4, 0, -2), 0);
+    for (0..40) |_| {
+        p = e.walkStep(p, v3(1, 0, 0), 0.2);
+        p.y = e.standAt(p.x, p.z, p.y);
+    }
+    try std.testing.expect(p.x > 3.5);
+    try std.testing.expect(e.liquidUnder(p) == null);
+    try std.testing.expect(e.liquidUnder(v3(3, e.groundAt(3, 0), 0)) != null);
+}
+
+test "A FLAG STROKE RE-BAKES THE COAST — the bake steps at a flagged cell, and no height moved" {
+    const alloc = std.testing.allocator;
+    const m = try alloc.create(wf.Map);
+    defer alloc.destroy(m);
+    m.* = .{};
+    m.blank("stair coast");
+    _ = m.paintWater(0, 0, 6, true, null, .water);
+    const e = try alloc.create(Env);
+    defer alloc.destroy(e);
+    blankForTest(e);
+    e.uploadWater(m);
+    const was = waterBuilds;
+    e.uploadWater(m);
+    try std.testing.expectEqual(was, waterBuilds);
+    m.cliff[(wf.HEIGHT_N / 2) * wf.HEIGHT_N + wf.HEIGHT_N / 2] = wf.CLIFF_STAIR;
+    e.uploadWater(m);
+    try std.testing.expectEqual(was + 1, waterBuilds);
+}
+
+test "THE TILES KNOW WHAT THEY WERE BUILT AGAINST — a ladder moved or a pool painted is a change, a tree placed is not" {
+    const alloc = std.testing.allocator;
+    const e = try alloc.create(Env);
+    defer alloc.destroy(e);
+    blankForTest(e);
+    e.props[0] = .{ .kind = .ladder, .pos = v3(4, 0, 2), .yaw = 90, .scale = 1 };
+    e.props[1] = .{ .kind = .pillar, .pos = v3(9, 0, 9), .yaw = 0, .scale = 1 };
+    e.nprops = 2;
+    e.faceSkip[0] = 0;
+    e.nfaceSkip = 1;
+    e.keepTileInputs();
+    try std.testing.expectEqual(e.faceSig, e.faceSignature());
+    try std.testing.expect(e.wetBox() == null);
+    e.props[1].pos.x += 3;
+    try std.testing.expectEqual(e.faceSig, e.faceSignature());
+    e.props[0].pos.x += 0.5;
+    try std.testing.expect(e.faceSignature() != e.faceSig);
+
+    const N = wf.WATER_N;
+    e.waterField[(N / 2) * N + N / 2 + 7] = 255;
+    const box = e.wetBox().?;
+    try std.testing.expectEqual([4]usize{ N / 2 + 7, N / 2, N / 2 + 7, N / 2 }, box);
 }
 
 test "A JUMP CLEARS A LOW COLLIDER AND A WALL IS STILL A WALL — the push-out reads `Solid.h`" {

@@ -89,6 +89,11 @@ pub const View = struct {
     pub fn offInHand(self: *const View) bool {
         return heromod.offInHandOf(self.arm, self.off);
     }
+
+    /// The L Hand shows what its cell HOLDS: the rest of the off hand, or a bow in it, which the fight draws off that cell.
+    pub fn offShown(self: *const View) bool {
+        return self.offInHand() or heromod.armTwoHanded(self.off);
+    }
 };
 
 pub const Portrait = struct { hero: *const heromod.Hero, scene: *gfx.Scene };
@@ -187,10 +192,6 @@ fn sheetOf(l: Loadout, perk: ptree.Bonus) stats.Sheet {
     return s;
 }
 
-fn castFp(s: combat.Spell, perk: ptree.Bonus) f32 {
-    return combat.spellFp(s) * perk.spellCost;
-}
-
 fn resOf(l: Loadout, perk: ptree.Bonus) combat.Resists {
     var r = perk.res;
     const worn = combat.resistsOf(heromod.suitOf(l.worn).plate.res);
@@ -230,13 +231,12 @@ fn derive(l: Loadout, v: View) [ND]f32 {
     // THE BOARD'S OWN NEGATION PLUS THE TREE'S, capped where the fight caps it (`combat.GUARD_NEGATE_CAP`).
     d[@intFromEnum(Der.guard)] = if (guards) combat.guardNegation(board.negate, perk.guard) * 100.0 else 0;
     d[@intFromEnum(Der.arc)] = if (guards) combat.GUARD_ARC * board.arc else 0;
-    const armour = armourOf(l.worn);
+    const armour = armourOf(l.worn) + perk.armour;
     d[@intFromEnum(Der.armour)] = armour;
     d[@intFromEnum(Der.negate)] = 100.0 * (1.0 - combat.armourTaken(armour, heromod.ATK_HEAVY_HIT.dmg) / heromod.ATK_HEAVY_HIT.dmg);
     const casts = heromod.handsHold(l.arm, l.off, .wand);
-    const spellK: f32 = if (combat.spellBlow(l.spell) != null) perk.spellDmg * sheet.scale(.intelligence) else 1.0;
-    d[@intFromEnum(Der.spell)] = if (casts) combat.spellDamage(l.spell) * spellK else 0;
-    d[@intFromEnum(Der.spell_fp)] = if (casts) castFp(l.spell, perk) else 0;
+    d[@intFromEnum(Der.spell)] = if (casts) perk.spellDamage(l.spell, sheet) else 0;
+    d[@intFromEnum(Der.spell_fp)] = if (casts) perk.castFp(l.spell) else 0;
     d[@intFromEnum(Der.quick)] = quickWorth(l.quick, l.worn, sheet, perk);
     d[@intFromEnum(Der.ammo)] = @floatFromInt(v.quiver.count(l.ammo));
     return d;
@@ -440,7 +440,7 @@ fn slotFilled(s: SlotId, v: View) [:0]const u8 {
     if (wearOf(s)) |w| return if (v.worn.at(w)) |k| item.displayName(k) else EMPTY;
     return switch (s) {
         .right => handName(v.arm, v.worn),
-        .left => if (!v.offInHand()) EMPTY else handName(v.off, v.worn),
+        .left => if (!v.offShown()) EMPTY else handName(v.off, v.worn),
         .left2 => handName(v.offAlt, v.worn),
         .right2 => handName(v.armAlt, v.worn),
         .sorcery => if (slotHas(.sorcery, v)) combat.spellName(v.spell) else EMPTY,
@@ -469,7 +469,7 @@ fn quickWorth(kind: ?item.Kind, worn: heromod.Worn, sheet: stats.Sheet, perk: pt
     return switch (item.use(k)) {
         .none => 0,
         .regen => |r| hpMax * r.frac,
-        .lob => |b| b.dmg + b.fire + b.lightning,
+        .lob => |b| (b.dmg + b.fire + b.lightning) * perk.thrownDmg * perk.dmg,
         .bomb => |b| b.dmg + b.fire,
         .ward, .wind, .grease, .souls, .brew, .purge, .steady, .arrows, .dose, .coat, .toll => 0,
     };
@@ -485,7 +485,7 @@ fn quickTally(k: item.Kind, v: View) u8 {
 }
 
 fn castsLeft(fp: f32, s: combat.Spell, v: View) u8 {
-    const cost = castFp(s, v.tree.bonus());
+    const cost = v.tree.bonus().castFp(s);
     if (cost <= 0) return 0;
     return @intFromFloat(mathx.clampF(@floor(fp / cost), 0, 255));
 }
@@ -1385,7 +1385,7 @@ fn drawEquipment(self: *const Book, body: Box, v: View) void {
     }
     if (self.picking == null) {
         if (browsing(on, v)) |f| {
-            const says = saysHeld(pieceSays(f.now, f.socket));
+            const says = saysHeld(pieceSays(f.now, f.nowSocket));
             const parts = box.cutDown(cardBoxIn(box, v, f, says).h);
             drawGearCard(parts[0], v, f, says);
             return drawDerived(parts[1], v, cand);
@@ -1430,10 +1430,10 @@ fn drawSlotArt(s: SlotId, v: View, cx: f32, cy: f32, px: f32) void {
     if (wearOf(s)) |w| return if (v.worn.at(w)) |k| itemart.drawHeld(k, cx, cy, px, true);
     switch (s) {
         .right => handArt(v.arm, v.worn, cx, cy, px),
-        .left => if (v.offInHand()) handArt(v.off, v.worn, cx, cy, px),
+        .left => if (v.offShown()) handArt(v.off, v.worn, cx, cy, px),
         .right2 => handArt(v.armAlt, v.worn, cx, cy, px),
         .left2 => handArt(v.offAlt, v.worn, cx, cy, px),
-        .sorcery => if (slotHas(.sorcery, v)) itemart.spellArt(v.spell, cx, cy, px, v.fp >= castFp(v.spell, v.tree.bonus())),
+        .sorcery => if (slotHas(.sorcery, v)) itemart.spellArt(v.spell, cx, cy, px, v.fp >= v.tree.bonus().castFp(v.spell)),
         // A shaft is drawn 0.3 of the box it is handed where a blade is 1.4, so it is given a bigger one.
         .arrows => itemart.arrow(cx, cy, px * 1.5, v.quiver.count(v.quiver.sel) > 0, v.quiver.sel == .fire),
         else => if (quickAt(s, v)) |k| itemart.drawHeld(k, cx, cy, px, quickTally(k, v) > 0),
@@ -1805,8 +1805,8 @@ fn dialsOf(k: ?item.Kind, socket: ?item.Wear, v: View) Dials {
     return d;
 }
 
-/// `socket` is the CANDIDATE's class — the dials are read within it — while `nowName` is what is actually in the hand or on the body, which is not the same thing when a sword is being swapped for a dirk.
-const Facing = struct { now: ?item.Kind, then: ?item.Kind, socket: ?item.Wear, nowName: [:0]const u8 };
+/// Each side's socket is ITS OWN armament's: a bare sword swapped for a dirk prices the bare sword, not the bare dirk, and a wand prices no swing.
+const Facing = struct { now: ?item.Kind, then: ?item.Kind, nowSocket: ?item.Wear, thenSocket: ?item.Wear, nowName: [:0]const u8 };
 
 fn wornName(v: View, w: item.Wear) [:0]const u8 {
     if (v.worn.at(w)) |k| return item.displayName(k);
@@ -1825,7 +1825,8 @@ fn facing(v: View, c: Cand) ?Facing {
             return .{
                 .now = heromod.heldGear(live, w),
                 .then = h.kind,
-                .socket = heromod.wearFor(h.a) orelse heromod.wearFor(live),
+                .nowSocket = heromod.wearFor(live),
+                .thenSocket = heromod.wearFor(h.a),
                 .nowName = liveName(live, w),
             };
         }
@@ -1835,7 +1836,7 @@ fn facing(v: View, c: Cand) ?Facing {
         .off => |h| held(v.off, h, v.worn),
         .armAlt => |h| held(v.armAlt, h, v.worn),
         .offAlt => |h| held(v.offAlt, h, v.worn),
-        .wear => |wr| .{ .now = v.worn.at(wr.slot), .then = wr.kind, .socket = wr.slot, .nowName = wornName(v, wr.slot) },
+        .wear => |wr| .{ .now = v.worn.at(wr.slot), .then = wr.kind, .nowSocket = wr.slot, .thenSocket = wr.slot, .nowName = wornName(v, wr.slot) },
         else => null,
     };
 }
@@ -1856,8 +1857,8 @@ const SHEET_ROWS_MAX: usize = 6;
 /// THE COMPARE, ER's way: the two names across the top, the candidate's tags under its own name, the piece's dials in sections with NOW, a chevron, THEN and the difference, then ON THE SHEET — every derived figure the swap moves, so a boon's +3 Strength is read as the damage it buys.
 fn drawGearCompare(box: Box, v: View, c: Cand, f: Facing) void {
     const inner = panel(box, "");
-    const a = dialsOf(f.now, f.socket, v);
-    const b = dialsOf(f.then, f.socket, v);
+    const a = dialsOf(f.now, f.nowSocket, v);
+    const b = dialsOf(f.then, f.thenSocket, v);
     const base = inForce(v);
     const now = derive(base, v);
     const then = derive(withCand(base, c, v), v);
@@ -1898,7 +1899,7 @@ fn drawGearCompare(box: Box, v: View, c: Cand, f: Facing) void {
     var sheetShown: usize = @min(sheetRows, SHEET_ROWS_MAX);
 
     // FITTED TO THE PANEL, in this order of sacrifice: the prose goes first, then the sheet's tail. Rows never run under the footer.
-    const says = saysOwn(if (armIn(f.then, f.socket) != null) armWords(f.then, f.socket) else candSays(c, v));
+    const says = saysOwn(if (armIn(f.then, f.thenSocket) != null) armWords(f.then, f.thenSocket) else candSays(c, v));
     const nameH = hud.lineH(hud.SMALL) + 4;
     var foot: i32 = if (says.len > 0) hud.proseH(says, inner.w, hud.HINT) + 14 else 0;
     const heads: i32 = @intCast(sections + @intFromBool(sheetShown > 0));
@@ -1923,7 +1924,7 @@ fn drawGearCompare(box: Box, v: View, c: Cand, f: Facing) void {
     hud.text(thenTag, inner.right() - thenW - hud.textW(thenTag, hud.TINY) - 8, y + 3, hud.TINY, mathx.withAlpha(uiart.GILT, 220));
     y += nameH;
     var tb: [5][:0]const u8 = undefined;
-    const tags = tagsOf(f.then, f.socket, &tb);
+    const tags = tagsOf(f.then, f.thenSocket, &tb);
     if (tags.len > 0) _ = drawTags(inner.right() - tagsW(tags), y, tags);
     y += tagRowH();
 
@@ -1988,22 +1989,22 @@ fn derColumn(inner: Box, x: i32, right: i32, cap: [:0]const u8, now: [ND]f32, th
 }
 
 fn browsing(s: SlotId, v: View) ?Facing {
-    if (wearOf(s)) |w| return .{ .now = v.worn.at(w), .then = null, .socket = w, .nowName = wornName(v, w) };
+    if (wearOf(s)) |w| return .{ .now = v.worn.at(w), .then = null, .nowSocket = w, .thenSocket = w, .nowName = wornName(v, w) };
     const live: heromod.Armament = switch (s) {
         .right => v.arm,
-        .left => if (v.offInHand()) v.off else return null,
+        .left => if (v.offShown()) v.off else return null,
         .right2 => v.armAlt,
         .left2 => v.offAlt,
         else => return null,
     };
     const w = heromod.wearFor(live) orelse return null;
-    return .{ .now = heromod.heldGear(live, v.worn), .then = null, .socket = w, .nowName = liveName(live, v.worn) };
+    return .{ .now = heromod.heldGear(live, v.worn), .then = null, .nowSocket = w, .thenSocket = w, .nowName = liveName(live, v.worn) };
 }
 
 const CardShape = struct { rows: usize, sections: usize };
 
 fn cardShape(v: View, f: Facing) CardShape {
-    const d = dialsOf(f.now, f.socket, v);
+    const d = dialsOf(f.now, f.nowSocket, v);
     var out = CardShape{ .rows = 0, .sections = 0 };
     var last: ?GSection = null;
     for (0..NGD) |i| {
@@ -2029,7 +2030,7 @@ fn cardBoxIn(col: Box, v: View, f: Facing, says: [:0]const u8) Box {
 
 fn drawGearCard(box: Box, v: View, f: Facing, says: [:0]const u8) void {
     const inner = panel(box, "");
-    const d = dialsOf(f.now, f.socket, v);
+    const d = dialsOf(f.now, f.nowSocket, v);
     const shape = cardShape(v, f);
 
     const capH = hud.lineH(hud.BODY) + 4;
@@ -2041,7 +2042,7 @@ fn drawGearCard(box: Box, v: View, f: Facing, says: [:0]const u8) void {
     hud.text(nowNameOf(f), inner.x, y, hud.BODY, uiart.HOT);
     y += capH;
     var tb: [5][:0]const u8 = undefined;
-    _ = drawTags(inner.x, y, tagsOf(f.now, f.socket, &tb));
+    _ = drawTags(inner.x, y, tagsOf(f.now, f.nowSocket, &tb));
     y += tagRowH();
     var last: ?GSection = null;
     for (GROW, 0..) |row, i| {
@@ -2109,7 +2110,8 @@ pub fn armPic(a: heromod.Armament) itemart.Arm {
 }
 
 fn armSays(a: heromod.Armament, o: heromod.Armament) []const u8 {
-    if (heromod.armTwoHanded(a)) return "Both hands. No off-hand, no block.";
+    // Either cell: a bow in the left takes both hands exactly as one in the right does (`handsHold`).
+    if (heromod.armTwoHanded(a) or heromod.armTwoHanded(o)) return "Both hands. No off-hand, no block.";
     if (o == .shield or a == .shield) return "Can guard.";
     if (o == .wand or a == .wand) return "Casts on L1. Costs Focus, not stamina.";
     if (o == .torch or a == .torch) return "Lights what you walk into. No block.";
@@ -2245,8 +2247,8 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
     var after = y + hud.lineH(hud.SMALL);
     switch (item.use(k)) {
         .none => hud.text("Nothing to use here.", inner.x, y, hud.HINT, uiart.TEXT_HINT),
-        .regen => |r| hud.text(fmt("+{d:.0} HP over {d:.0}s", .{ v.sheet.hp() * r.frac, r.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .wind => |w| hud.text(fmt("+{d:.0} stamina, clears the lockout", .{v.sheet.stamina() * w.share}), inner.x, y, hud.SMALL, uiart.GOOD),
+        .regen => |r| hud.text(fmt("+{d:.0} HP over {d:.0}s", .{ heromod.hpMaxOf(v.sheet.*, v.worn, v.tree.bonus()) * r.frac, r.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
+        .wind => |w| hud.text(fmt("+{d:.0} stamina, clears the lockout", .{v.sheet.stamina() * v.tree.bonus().stamMax * w.share}), inner.x, y, hud.SMALL, uiart.GOOD),
         else => after = hud.prose(rowSays(k), inner.x, y, inner.w, hud.SMALL, uiart.GOOD),
     }
     if (item.usable(k)) {
@@ -2288,7 +2290,7 @@ fn drawKnown(self: *const Book, col: Box, v: View) void {
             const mark = fmt("SLOT {s}", .{uiart.numeral(slot)});
             hud.text(mark, inner.right() - hud.textW(mark, hud.TINY), y + 4, hud.TINY, mathx.withAlpha(uiart.GILT, 220));
         } else {
-            const cost = fmt("{d:.0} FP", .{row.fp});
+            const cost = fmt("{d:.0} FP", .{v.tree.bonus().castFp(row.spell)});
             hud.text(cost, inner.right() - hud.textW(cost, hud.SMALL), y + 2, hud.SMALL, if (carried) uiart.TEXT_DIM else mathx.withAlpha(uiart.TEXT_DIM, 130));
         }
         y += spellStep();
@@ -2313,7 +2315,7 @@ fn drawRack(box: Box, v: View) void {
     for (0..combat.MEM_SLOTS) |i| {
         const held = v.mem.at(i);
         uiart.slot(x, inner.y, RACK_CELL, RACK_CELL, held != null);
-        if (held) |sp| itemart.spellArt(sp, fi(x + @divTrunc(RACK_CELL, 2)), fi(inner.y + @divTrunc(RACK_CELL, 2)), fi(RACK_CELL) * 0.78, v.fp >= castFp(sp, v.tree.bonus()));
+        if (held) |sp| itemart.spellArt(sp, fi(x + @divTrunc(RACK_CELL, 2)), fi(inner.y + @divTrunc(RACK_CELL, 2)), fi(RACK_CELL) * 0.78, v.fp >= v.tree.bonus().castFp(sp));
         const lab = uiart.numeral(i);
         hud.text(lab, x + @divTrunc(RACK_CELL - hud.textW(lab, hud.TINY), 2), inner.y + RACK_CELL + 4, hud.TINY, mathx.withAlpha(uiart.TEXT_DIM, 200));
         x += RACK_CELL + gap;
@@ -2333,10 +2335,9 @@ fn drawSpellRead(self: *const Book, box: Box, v: View) void {
     hud.engraved(row.name, tx, y, hud.BODY, uiart.TEXT_TITLE);
     y += hud.lineH(hud.BODY) + 6;
     const perk = v.tree.bonus();
-    const scaled: f32 = if (row.blow != null) perk.spellDmg * v.sheet.scale(.intelligence) else 1.0;
-    hud.text(fmt("{d:.0} focus a cast", .{castFp(row.spell, perk)}), tx, y, hud.SMALL, uiart.GILT);
+    hud.text(fmt("{d:.0} focus a cast", .{perk.castFp(row.spell)}), tx, y, hud.SMALL, uiart.GILT);
     y += hud.lineH(hud.SMALL) + 2;
-    hud.text(fmt("{d:.0} damage", .{combat.spellDamage(row.spell) * scaled}), tx, y, hud.SMALL, uiart.TEXT_VALUE);
+    hud.text(fmt("{d:.0} damage", .{perk.spellDamage(row.spell, v.sheet.*)}), tx, y, hud.SMALL, uiart.TEXT_VALUE);
     y += hud.lineH(hud.SMALL) + 2;
     hud.text(fmt("{d} casts off a full pool", .{castsLeft(heromod.fpMaxOf(v.sheet.*, v.worn, perk), row.spell, v)}), tx, y, hud.SMALL, uiart.TEXT_DIM);
 
@@ -3306,8 +3307,8 @@ test "BOTH PAGES SPEAK IN NUMBERS, and the three classes are told apart by them"
             try std.testing.expect(wearOf(s) == null);
             continue;
         };
-        try std.testing.expect(f.socket != null);
-        if (f.socket.?.held()) {
+        try std.testing.expect(f.nowSocket != null);
+        if (f.nowSocket.?.held()) {
             held += 1;
             try std.testing.expect(cardShape(v, f).rows > 0);
         }
@@ -3317,10 +3318,29 @@ test "BOTH PAGES SPEAK IN NUMBERS, and the three classes are told apart by them"
     v.worn.put(.chest, .rimeward_mantle);
     const coat = browsing(.chest, v).?;
     try std.testing.expectEqual(item.Kind.rimeward_mantle, coat.now.?);
-    const cd = dialsOf(coat.now, coat.socket, v);
+    const cd = dialsOf(coat.now, coat.nowSocket, v);
     try std.testing.expectApproxEqAbs(item.equip(.rimeward_mantle).plate.a, cd.v[@intFromEnum(GDial.armour)].?, 1e-4);
     try std.testing.expectApproxEqAbs(item.equip(.rimeward_mantle).plate.res.cold, cd.v[@intFromEnum(GDial.res_cold)].?, 1e-4);
     try std.testing.expect(cd.v[@intFromEnum(GDial.walk)] == null);
+}
+
+test "EACH SIDE OF THE COMPARE IS PRICED IN ITS OWN SOCKET" {
+    const bag = item.Bag{};
+    const sheet = stats.Sheet{};
+    const res = combat.Resists{};
+    const flasks = combat.Flasks{};
+    const quiver = combat.Quiver{};
+    const v = testView(&bag, &sheet, &res, &flasks, &quiver, .sword);
+    const heavy = @intFromEnum(GDial.dmg_heavy);
+
+    const dirk = facing(v, .{ .name = "dirk", .act = .{ .arm = .{ .a = .dagger, .kind = .fang_dirk } } }).?;
+    const now = dialsOf(dirk.now, dirk.nowSocket, v).v[heavy].?;
+    try std.testing.expectApproxEqAbs(dialsOf(null, .hand_sword, v).v[heavy].?, now, 1e-4);
+    try std.testing.expect(@abs(dialsOf(null, .hand_dagger, v).v[heavy].? - now) > 0.5);
+
+    const rod = facing(v, .{ .name = "rod", .act = .{ .arm = .{ .a = .wand } } }).?;
+    try std.testing.expect(rod.thenSocket == null);
+    try std.testing.expect(dialsOf(rod.then, rod.thenSocket, v).v[heavy] == null);
 }
 
 test "THE SHEET CARRIES THE FOUR COLUMNS AND THE POOLS, and a swap moves them" {

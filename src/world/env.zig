@@ -169,6 +169,12 @@ pub const STEP_PROBE: f32 = 0.5;
 const STEP_TAPS: usize = 4;
 /// Metres a riser's landing is judged level across.
 const TREAD_READ: f32 = 0.25;
+/// How far under the lowest ground its box covers a collider still stands. A `Solid.y0` left at 0 was a floor at the DATUM, and every body and look on land under -0.55 m passed through it.
+const SOLID_FOOT: f32 = 1.0;
+comptime {
+    // A body on a chamber floor stands at least a roof and a head under the land, and a surface collider over it may not reach down to him.
+    if (SOLID_FOOT + STEP_UP >= caves.ROOF_MIN + caves.HEAD_MIN) @compileError("env: SOLID_FOOT reaches a chamber floor");
+}
 
 /// Metres anything on foot may wade — chest height, the thorax at 0.760·H on the 1.8 m rig. Written out rather than read off `hero.H` because env sits BELOW hero in the import graph.
 pub const WADE_MAX: f32 = 1.37;
@@ -2358,9 +2364,10 @@ pub const Env = struct {
 
     pub fn walkStepPast(self: *const Env, from: rl.Vector3, dir: rl.Vector3, dist: f32, wade: f32) rl.Vector3 {
         const to = v3(from.x + dir.x * dist, from.y, from.z + dir.z * dist);
-        // `tiled`, not `heightAny`: a flat map with a cave has the rock's walls.
-        if (!self.tiled() or dist <= 0) return to;
+        if (dist <= 0) return to;
         if (self.deepRefusedPast(from.x, from.z, to.x, to.z, wade, from.y)) return v3(from.x, from.y, from.z);
+        // `tiled`, not `heightAny`: a flat map with a cave has the rock's walls.
+        if (!self.tiled()) return to;
         if (self.stepOk(from, dir, dist)) return to;
         const g = self.blockGrad(from);
         const gl = @sqrt(g[0] * g[0] + g[1] * g[1]);
@@ -2389,7 +2396,7 @@ pub const Env = struct {
 
     /// Only a cliff cell can make one — a ramp's descent over a frame's travel is bounded by `MAX_SLOPE`. Measured where a body STANDS (`standAt` off `from.y`), so the head of a flight is not a lip.
     pub fn brink(self: *const Env, from: rl.Vector3, to: rl.Vector3) bool {
-        if (!self.tiled()) return false;
+        if (!self.tiled() and self.ndecks == 0) return false;
         return self.standAt(to.x, to.z, from.y) < self.standAt(from.x, from.z, from.y) - STEP_UP;
     }
 
@@ -2435,10 +2442,16 @@ pub const Env = struct {
     /// A deck, a stair cell, or terrain under `MAX_SLOPE` read over `TREAD_READ` either way.
     fn treadAt(self: *const Env, x: f32, z: f32, footY: f32) bool {
         if (self.deckAt(x, z, footY) != null) return true;
-        if (self.caseAtWorld(x, z) == wf.CLIFF_STAIR) return true;
-        const gx = (self.groundAt(x + TREAD_READ, z) - self.groundAt(x - TREAD_READ, z)) / (2 * TREAD_READ);
-        const gz = (self.groundAt(x, z + TREAD_READ) - self.groundAt(x, z - TREAD_READ)) / (2 * TREAD_READ);
+        // In a chamber the hill overhead says nothing about the floor, and a stair case is painted on the land.
+        const under = self.caveAny and self.underground(x, z, footY);
+        if (!under and self.caseAtWorld(x, z) == wf.CLIFF_STAIR) return true;
+        const gx = (self.treadFloor(under, x + TREAD_READ, z, footY) - self.treadFloor(under, x - TREAD_READ, z, footY)) / (2 * TREAD_READ);
+        const gz = (self.treadFloor(under, x, z + TREAD_READ, footY) - self.treadFloor(under, x, z - TREAD_READ, footY)) / (2 * TREAD_READ);
         return gx * gx + gz * gz <= MAX_SLOPE * MAX_SLOPE;
+    }
+
+    fn treadFloor(self: *const Env, under: bool, x: f32, z: f32, footY: f32) f32 {
+        return if (under) self.standAt(x, z, footY) else self.groundAt(x, z);
     }
 
     /// Where a ray leaves the `±out` slab on one axis, `cap` for an axis it never crosses. NEGATIVE when the ray starts outside and is already leaving, which is what makes the march refuse to run.
@@ -2595,10 +2608,15 @@ pub const Env = struct {
         return mathx.maxF(0, self.waterLevelAt(x, z) - self.groundAt(x, z));
     }
 
-    /// THE AIR IN A CHAMBER IS DRY even where a pool is painted over the hill above it: the sheet is the LAND's, and a body under a roof is not in it.
+    /// THE AIR IN A CHAMBER IS DRY even where a pool is painted over the hill above it: the sheet is the LAND's, and a body under a roof is not in it. So is a deck stood clear of the sheet.
     pub fn wadeDepthUnder(self: *const Env, x: f32, z: f32, footY: f32) f32 {
         if (self.caveAny and self.underground(x, z, footY)) return 0;
-        return self.wadeDepth(x, z);
+        const deep = self.wadeDepth(x, z);
+        if (deep <= 0) return 0;
+        if (self.deckAt(x, z, footY)) |d| {
+            if (d >= self.waterLevelAt(x, z)) return 0;
+        }
+        return deep;
     }
 
     pub fn deepRefused(self: *const Env, fromX: f32, fromZ: f32, toX: f32, toZ: f32, footY: f32) bool {
@@ -2611,10 +2629,11 @@ pub const Env = struct {
         return deep > limit and deep > self.wadeDepthUnder(fromX, fromZ, footY);
     }
 
-    /// The liquid a body at `p` stands IN — none in a chamber, whatever is painted on the hill over it.
+    /// The liquid a body whose FEET are at `p` stands IN — none in a chamber, whatever is painted on the hill over it, and none over the sheet: in the air, on a deck, or on a bank the level does not reach.
     pub fn liquidUnder(self: *const Env, p: rl.Vector3) ?wf.Liquid {
         if (self.caveAny and self.underground(p.x, p.z, p.y)) return null;
         if (!self.inWater(p.x, p.z, 1.0)) return null;
+        if (p.y > self.waterLevelAt(p.x, p.z)) return null;
         return self.liquidAt(p.x, p.z);
     }
 
@@ -2757,6 +2776,10 @@ pub const Env = struct {
             if (m.*) |*s| s.materials[0].shader = sh;
         }
         for (self.tiles[0..], self.tileBuilt[0..]) |*t, built| {
+            if (built) t.materials[0].shader = sh;
+        }
+        // `drawGroundCasters` draws the cutaway in the tile's place.
+        for (self.cutaways[0..], self.cutawayBuilt[0..]) |*t, built| {
             if (built) t.materials[0].shader = sh;
         }
         for (self.faces[0..], self.faceBuilt[0..]) |*f, built| {
@@ -3819,6 +3842,7 @@ fn stampSolids(sl: *StampSolids, ms: *const proprock.Masses, ox: f32, oz: f32, t
         const mz = at.pz + at.alongZ * tm + at.nz * rr;
         var sol = collision.capsule(mx - at.alongX * half, mz - at.alongZ * half, mx + at.alongX * half, mz + at.alongZ * half, rr);
         sol.h = floor + p.h * sc;
+        sol.y0 = @min(floor, at.lo) - SOLID_FOOT;
         if (sl.n >= MAX_TILE_STAMPS) @panic("env: MAX_TILE_STAMPS exceeded — raise the cap");
         sl.buf[sl.n] = sol;
         sl.n += 1;
@@ -4918,6 +4942,16 @@ pub fn coverField(x: f32, z: f32) f32 {
     return t * t * (3.0 - 2.0 * t) * 1.25;
 }
 
+fn solidFoot(e: *const Env, pr: *const Prop, sol: collision.Solid) f32 {
+    if (pr.under) return pr.pos.y - SOLID_FOOT;
+    const pad = collision.padXZ(sol);
+    var lo = pr.pos.y;
+    for ([_]f32{ @min(sol.a.x, sol.b.x) - pad, @max(sol.a.x, sol.b.x) + pad }) |x| {
+        for ([_]f32{ @min(sol.a.z, sol.b.z) - pad, @max(sol.a.z, sol.b.z) + pad }) |z| lo = @min(lo, e.groundAt(x, z));
+    }
+    return lo - SOLID_FOOT;
+}
+
 fn buildSolids(e: *Env) void {
     e.nsolids = 0;
     e.nwards = 0;
@@ -4956,7 +4990,7 @@ fn buildSolids(e: *Env) void {
             sol.flat = part.flat;
             sol.h = pr.pos.y + part.h * s;
             if (cut) |ct| sol.h = @min(sol.h, ct.lip);
-            if (part.y0 > 0) sol.y0 = pr.pos.y + part.y0 * s;
+            sol.y0 = if (part.y0 > 0) pr.pos.y + part.y0 * s else solidFoot(e, pr, sol);
             sol.surf = nfo.surf;
             sol.arch = masonry(nfo);
             sol.ward = ward;
@@ -5769,6 +5803,23 @@ test "A FOG GATE IS A DOOR TO HIM AND A WALL TO A FOE, ENTERING AND LEAVING ALIK
     try std.testing.expectEqual(@as(f32, 0.25), e.resolveActor(v3(0, 0, 0.25), R, ward.h + 0.1).z);
 }
 
+test "A COLLIDER STANDS ON ITS OWN GROUND, NOT ON THE DATUM — a boulder in a basin stops a body and a look" {
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    blankForTest(e);
+    const floor: f32 = -6.0;
+    e.props[0] = .{ .kind = .boulder, .pos = v3(0, floor, 0), .yaw = 0, .scale = 1, .op = 0 };
+    e.nprops = 1;
+    buildSolids(e);
+    try std.testing.expect(e.nsolids > 0);
+    try std.testing.expect(e.solid_buf[0].y0 < floor);
+    const R: f32 = 0.42;
+    const at = v3(0.2, floor, 0);
+    try std.testing.expect(mathx.distXZ(e.resolveActor(at, R, floor), at) > 0.1);
+    const eye = floor + 1.25;
+    try std.testing.expect(!e.sees(v3(0, eye, -9), v3(0, eye, 9)));
+}
+
 test "A FOG GATE STOPS A LOOK, AND STOPS HIS TOO" {
     const e = try envWithFogGate();
     defer std.testing.allocator.destroy(e);
@@ -6085,6 +6136,7 @@ test "THE AIR IN A CHAMBER IS DRY UNDER A DEEP POOL — it neither walls the flo
     try std.testing.expect(p.x > 3.5);
     try std.testing.expect(e.liquidUnder(p) == null);
     try std.testing.expect(e.liquidUnder(v3(3, e.groundAt(3, 0), 0)) != null);
+    try std.testing.expect(e.liquidUnder(v3(3, e.waterLevelAt(3, 0) + 0.5, 0)) == null);
 }
 
 test "A FLAG STROKE RE-BAKES THE COAST — the bake steps at a flagged cell, and no height moved" {

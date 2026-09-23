@@ -414,7 +414,7 @@ pub const Frog = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.lungeCd = mathx.maxF(0, self.lungeCd - dt);
@@ -442,11 +442,11 @@ pub const Frog = struct {
             .chomp => self.updateChomp(dt, hero),
             .stunlight => {
                 self.resolveStunLight();
-                if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enterIdle(0.02);
+                if (foe.stunOver(self, false)) self.enterIdle(0.02);
             },
             .stunheavy => {
                 self.resolveStunHeavy();
-                if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enterIdle(0.06);
+                if (foe.stunOver(self, true)) self.enterIdle(0.06);
             },
             .dead => {
                 self.resolveDeath();
@@ -480,7 +480,7 @@ pub const Frog = struct {
 
     fn decide(self: *Frog, hero: rl.Vector3, bounds: f32) void {
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
-        switch (classify(d, self.scale, self.lungeCd <= 0, self.chompCd <= 0, !foe.canLeap(&self.root), self.sense.pressed(HP_MAX, PANIC_AT))) {
+        switch (classify(d, self.scale, self.lungeCd <= 0, self.chompCd <= 0, !foe.canLeap(&self.root), self.sense.pressed(self.vit.hpMax, PANIC_AT))) {
             .chomp => {
                 self.chompCd = CHOMP_CD;
                 self.startChomp();
@@ -505,7 +505,7 @@ pub const Frog = struct {
             .wait => self.enterIdle(0.12),
             .rest => {
                 if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) {
-                    const dir = self.nav.along(mathx.dirXZ(self.pos, self.home));
+                    const dir = self.nav.along(mathx.dirXZ(self.pos, foe.tetherFor(self)));
                     self.startHop(v3(self.pos.x + dir.x * HOP_REACH, 0, self.pos.z + dir.z * HOP_REACH), bounds, false);
                 } else self.enterIdle(1.4 + self.seed * 2.2);
             },

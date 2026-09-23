@@ -286,7 +286,9 @@ pub const Golem = struct {
             self.smashCd = SMASH_CD;
             return self.enter(.smash_wind);
         }
-        if (dist >= SLAM_MIN and dist <= SLAM_MAX and self.slamCd <= 0 and foe.canLeap(&self.root)) {
+        // The landing is `SLAM_REACH` out and bills its disc at the body's scale: past that the band chose a slam that falls short (x0.5: 6.99 m against 7.20).
+        const slamFar = @min(SLAM_MAX, SLAM_REACH + SLAM_R * self.scale + foe.HERO_R);
+        if (dist >= SLAM_MIN and dist <= slamFar and self.slamCd <= 0 and foe.canLeap(&self.root)) {
             self.slamCd = SLAM_CD;
             return self.enter(.slam_wind);
         }

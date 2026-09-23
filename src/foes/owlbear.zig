@@ -411,7 +411,7 @@ pub const Owlbear = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
@@ -452,7 +452,7 @@ pub const Owlbear = struct {
             },
             .stunlight, .stunheavy => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
-                if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.idle);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enter(.idle);
             },
             .rake, .slam => {
                 const mv = self.row();
@@ -551,7 +551,8 @@ pub const Owlbear = struct {
             return self.enter(.idle);
         }
         const u = self.leapU();
-        self.hop = BURST_RISE * mathx.sinf(u * std.math.pi);
+        // World metres, scaled HERE: the pose multiplied it by `scale` while the hurt sphere, the crown and `airborne()` read it raw.
+        self.hop = BURST_RISE * mathx.sinf(u * std.math.pi) * self.scale;
         const uWas = mathx.clampF((self.t - dt - BURST_GATHER) / BURST_FLIGHT, 0, 1);
         if (self.t > BURST_GATHER and uWas < 1.0) {
             const way = mathx.headingDir(self.burstYaw);
@@ -583,6 +584,7 @@ pub const Owlbear = struct {
     }
 
     pub fn tryHit(self: *Owlbear, blade: foe.Blade) void {
+        foe.idleLatch(self, blade);
         if (self.state == .dead or self.hidden()) return;
         const s = foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, SHOVE);
@@ -737,10 +739,10 @@ pub const Owlbear = struct {
             .prot = pel.prot,
             .sway = pel.sway,
             .pelvY = pelvY,
-            .lift = sink + self.hop * self.scale,
+            .lift = sink + self.hop,
         }, facingDeg, self.pos);
         if (!dead) {
-            heromod.legPair(&wx, &self.rest, self.pos.y + self.hop * self.scale, self.phase, m, 0, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, solePatches);
+            heromod.legPair(&wx, &self.rest, self.pos.y + self.hop, self.phase, m, 0, self.fwdB, self.latB, HIPL, KNEEL, HIPR, KNEER, solePatches);
         } else {
             heromod.deadLegs(&wx, self.rest, dk);
         }

@@ -319,7 +319,7 @@ pub const Wight = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
@@ -338,7 +338,7 @@ pub const Wight = struct {
             },
             .stunlight, .stunheavy => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
-                if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.idle);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enter(.idle);
             },
             .bough => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);

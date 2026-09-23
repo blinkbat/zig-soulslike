@@ -1426,7 +1426,8 @@ fn classify(sit: Sit) Decision {
         return weigh(if (shieldSide) &RANGE_SHIELD else &RANGE_SWORD, sit);
     }
     if (dist <= thrustBandR(scale)) {
-        if (b <= THRUST.bearing and ready[THRUST_I]) return .{ .what = .strike, .mv = THRUST_I };
+        // Its dead zone too, as `weigh` asks it: at `FOE_SCALE_HI` the sweep's trigger falls inside the thrust's `nearR`, and the point passed over him.
+        if (b <= THRUST.bearing and ready[THRUST_I] and dist >= nearR(THRUST, scale)) return .{ .what = .strike, .mv = THRUST_I };
         if (hopReady) return .{ .what = .hop };
         if (stepReady and b >= STEPTURN.least) return .{ .what = .stepturn };
         return .{ .what = .wait };
@@ -1534,6 +1535,7 @@ pub const Knight = struct {
     awoken: bool = false,
     stepThen: ?usize = null,
     air: f32 = 0,
+    cutFall: foe.Fall = .{},
     leapDir: rl.Vector3 = mathx.zero3,
     leapChained: bool = false,
     farT: f32 = 0,
@@ -1934,7 +1936,7 @@ pub const Knight = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
@@ -2030,7 +2032,10 @@ pub const Knight = struct {
             .leapwind => {
                 foe.faceToward(self.pos, &self.facing, hero, TURN_RATE, dt);
                 self.setLeap(self.t);
-                if (self.t >= self.leapWind()) {
+                // Re-asked at the launch: a root closed in the wind keeps him on the earth.
+                if (self.t >= self.leapWind() and !foe.canLeap(&self.root)) {
+                    self.enterIdle();
+                } else if (self.t >= self.leapWind()) {
                     self.leapDir = mathx.dirXZ(hero, self.pos);
                     if (mathx.lenXZ(self.leapDir) < 1e-4) self.leapDir = mathx.scaleV(self.fdir(), -1);
                     self.enter(.leap);
@@ -2253,11 +2258,11 @@ pub const Knight = struct {
             },
             .stunlight => {
                 self.easeNeutral(dt);
-                if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enterIdle();
+                if (foe.stunOver(self, false)) self.enterIdle();
             },
             .stunheavy => {
                 self.easeNeutral(dt);
-                if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enterIdle();
+                if (foe.stunOver(self, true)) self.enterIdle();
             },
             .dead => {
                 self.easeNeutral(dt);
@@ -2289,6 +2294,7 @@ pub const Knight = struct {
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, moveSpeed, moveYaw, self.facing);
         self.footfalls();
         self.tickDoor(dt);
+        if (self.state != .leap and self.cutFall.lift > 0) self.air = self.cutFall.step(dt);
         self.pose();
         self.takeParry();
         if (self.live) self.tryReach(hero);
@@ -2446,7 +2452,8 @@ pub const Knight = struct {
         const lower = switch (self.state) {
             .sweepwind, .chainwind, .overwind, .thrustwind, .swatwind => mathx.smoothstep(0, self.windDur() * 0.65, self.t),
             .sweep, .sweep2, .over, .thrust, .swat => @as(f32, 1),
-            .recover => 1 - mathx.smoothstep(0, self.move().recoverDur * 0.55, self.t),
+            // Only out of a stroke that lowered: after a slam or a charge's brake it dipped a giant's arm and pelvis that never went down.
+            .recover => if (self.swipesNow(self.blow)) 1 - mathx.smoothstep(0, self.recoverDur() * 0.55, self.t) else 0,
             else => 0,
         };
         _ = self.heightAim.step(lower * @max(0, self.scale / SCALE - 1) * (if (self.atk == OVER_I) @as(f32, 0) else foe.HERO_HIGH), 4000, 0.8, dt);
@@ -2557,6 +2564,7 @@ pub const Knight = struct {
     }
 
     fn enterStun(self: *Knight, s: State) void {
+        if (self.state == .leap) self.cutFall.carry(self.air, self.t / LEAP.flightDur, LEAP.rise * self.scale, LEAP.flightDur);
         self.leaveAwaken();
         self.billString();
         self.state = s;
@@ -2565,7 +2573,7 @@ pub const Knight = struct {
         self.live = false;
         self.strokeDone = 0;
         self.homing = false;
-        self.air = 0;
+        self.air = self.cutFall.lift;
         self.stepThen = null;
     }
     fn enterDeath(self: *Knight) void {
@@ -2580,11 +2588,11 @@ pub const Knight = struct {
     }
 
     fn pressed(self: *const Knight) bool {
-        return self.sense.pressed(HP_MAX, REPOSITION_AT);
+        return self.sense.pressed(self.vit.hpMax, REPOSITION_AT);
     }
 
     fn harried(self: *const Knight) bool {
-        return self.sense.pressed(HP_MAX, RETREAT_AT);
+        return self.sense.pressed(self.vit.hpMax, RETREAT_AT);
     }
 
     fn decide(self: *Knight, dist: f32, bearingDeg: f32) void {
@@ -2775,7 +2783,7 @@ pub const Knight = struct {
     }
 
     fn shielded(self: *const Knight, blade: foe.Blade) bool {
-        if (!self.covered) return false;
+        if (!self.covered or blade.bearingless()) return false;
         const at = mathx.lerpV(blade.a, blade.b, 0.5);
         const d = mathx.dirXZ(self.pos, at);
         if (mathx.lenXZ(d) < 1e-4) return true;
@@ -2791,7 +2799,10 @@ pub const Knight = struct {
             b.hit.stance = blade.hit.stance * TOWER_STANCE_PASS;
         }
         const poiseWas = self.vit.poise;
+        const faceWas = self.facing;
         var s = foe.reached(self, b) orelse return;
+        // `reached`'s snap down a shaft turns him to the shooter, and may not steer a committed charge or turn a fall or a body on the ground.
+        if (self.floored() or self.state == .charge or self.state == .brake or self.state == .fallwind) self.facing = faceWas;
         if (blocked) {
             if (s.reaction == .light) {
                 self.vit.refuseFlinch(poiseWas);
@@ -2946,7 +2957,9 @@ pub const Knight = struct {
         self.enter(.fallwind);
         self.seatDoor();
     }
+    /// `tryHit`'s own refusals: a stun proc may not stand a floored body up, nor cut the awakening short.
     pub fn stagger(self: *Knight, heavy: bool) void {
+        if (self.state == .dead or self.floored() or self.transforming()) return;
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
     pub fn debugKill(self: *Knight) void {

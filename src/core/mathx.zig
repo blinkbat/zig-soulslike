@@ -242,7 +242,8 @@ pub fn turnToward(from: rl.Vector3, want: rl.Vector3, maxRad: f32) rl.Vector3 {
     const ang = std.math.acos(clampF(dotV(a, b), -1, 1));
     if (ang <= maxRad or ang < 1e-5) return b;
     const sn = @sin(ang);
-    if (sn < 1e-3) {
+    // DEAD OPPOSITE only: a tiny angle also has a tiny sine, and routed here it turned off to an arbitrary side instead of toward `want`.
+    if (sn < 1e-3 and ang > std.math.pi * 0.5) {
         var axis = crossV(a, v3(0, 1, 0));
         if (lenV(axis) < 1e-4) axis = crossV(a, v3(0, 0, 1));
         const side = normV(crossV(axis, a));

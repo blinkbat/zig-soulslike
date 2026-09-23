@@ -278,7 +278,7 @@ pub const Shroom = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
@@ -338,7 +338,7 @@ pub const Shroom = struct {
                 self.pitch = -38 * recoil;
                 self.armUp = 1.1 * recoil;
                 self.kick = 0;
-                if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enterIdle(0.1);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enterIdle(0.1);
             },
             .dead => {
                 self.pitch = mathx.approach(self.pitch, 84.0, dt * 140.0);
@@ -401,7 +401,7 @@ pub const Shroom = struct {
             .rest => {
                 if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) {
                     self.homing = true;
-                    self.beginHop(self.home, bounds);
+                    self.beginHop(foe.tetherFor(self), bounds);
                 } else self.enterIdle(0.5 + self.seed * 0.4);
             },
             .wait => self.enterIdle(0.25),
@@ -476,7 +476,7 @@ pub const Shroom = struct {
         if (self.t >= total) {
             if (fling) {
                 self.enter(.recover);
-            } else if (self.homing and mathx.distXZ(self.pos, self.home) <= HOME_R) {
+            } else if (self.homing and mathx.distXZ(self.pos, foe.tetherFor(self)) <= HOME_R) {
                 self.homing = false;
                 self.enterIdle(0.4);
             } else {

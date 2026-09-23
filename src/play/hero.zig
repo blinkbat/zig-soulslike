@@ -2546,7 +2546,7 @@ pub const Hero = struct {
     }
 
     pub fn castCost(self: *const Hero) f32 {
-        return combat.spellFp(self.spell) * self.perk.spellCost;
+        return self.perk.castFp(self.spell);
     }
 
     pub fn cycleSpell(self: *Hero) bool {
@@ -2736,6 +2736,16 @@ pub const Hero = struct {
             .attack => {},
         };
     }
+    /// What `fireQueued` would START: a buffer it would only refuse may not take the chain exit, or the refusal cuts the stroke short.
+    fn queuedFires(self: *const Hero) bool {
+        const q = self.queued orelse return false;
+        if (!self.stam.canAct()) return false;
+        return switch (q) {
+            .attack => self.meleeArm() != null,
+            .roll => !self.snared(),
+        };
+    }
+
     fn fireQueued(self: *Hero) void {
         const q = self.queued orelse return;
         self.queued = null;
@@ -2783,7 +2793,7 @@ pub const Hero = struct {
         const chain: f32 = tm.chain;
         const wasLight = !self.atkHeavy;
         const wasAlt = self.atkAlt;
-        if (self.atkT / dur >= chain and self.queued != null) {
+        if (self.atkT / dur >= chain and self.queuedFires()) {
             self.attacking = false;
             self.startXfade();
             self.fireQueued();
@@ -5311,6 +5321,20 @@ fn testHero() Hero {
     };
     h.pose();
     return h;
+}
+
+test "A BUFFERED PRESS THE BAR WILL REFUSE DOES NOT TAKE THE CHAIN EXIT" {
+    var h = testHero();
+    h.startAttack(.light);
+    try std.testing.expect(h.attacking);
+    h.stam.cur = 0;
+    h.requestAttack(.light);
+    try std.testing.expect(h.queued != null);
+    const dur = h.atkDur(false);
+    var guard: u32 = 0;
+    while (h.attacking and guard < 1000) : (guard += 1) h.updateAttack(0.004, 1000, null);
+    try std.testing.expect(!h.attacking);
+    try std.testing.expect(h.atkT >= dur - 1e-4);
 }
 
 test "the DRAUGHT is committed like the other two: inputs buffer, they do not fire through it" {

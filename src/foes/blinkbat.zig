@@ -409,7 +409,7 @@ pub const Bat = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.warp) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
@@ -425,7 +425,7 @@ pub const Bat = struct {
             .stunlight, .stunheavy => {
                 self.hoverTo = HOVER_BITE * 0.72;
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
-                if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.hang);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enter(.hang);
             },
             .repelled => {
                 self.hoverTo = HOVER_IDLE;
@@ -437,13 +437,17 @@ pub const Bat = struct {
                 self.thin = mathx.clampF(self.t / BLINK_OUT, 0, 1);
                 self.hoverTo = HOVER_IDLE;
                 if (self.t >= BLINK_OUT) {
-                    self.pos.x = self.blinkTo.x;
-                    self.pos.z = self.blinkTo.z;
-                    self.warp = true;
-                    mathx.holdXZ(&self.pos, bounds);
+                    // A TELEPORT IS A JUMP: a root closed in the fade keeps it where it stood, and it comes back in there.
+                    const free = foe.canLeap(&self.root);
+                    if (free) {
+                        self.pos.x = self.blinkTo.x;
+                        self.pos.z = self.blinkTo.z;
+                        self.warp = true;
+                        mathx.holdXZ(&self.pos, bounds);
+                    }
                     self.faceNow(quarry);
                     self.enter(.blinkin);
-                    self.rift();
+                    if (free) self.rift();
                 }
             },
             .blinkin => {
@@ -641,6 +645,7 @@ pub const Bat = struct {
     }
 
     pub fn tryHit(self: *Bat, blade: foe.Blade) void {
+        foe.idleLatch(self, blade);
         if (self.state == .dead or self.hidden()) return;
         const hung = self.roosting();
         const s = foe.reached(self, blade) orelse return;
@@ -693,7 +698,8 @@ pub const Bat = struct {
 
     fn enterBlink(self: *Bat, quarry: rl.Vector3) void {
         const near = self.aiRng.float() < 0.72;
-        const outR = if (near) BLINK_NEAR + foe.HERO_R else BLINK_FAR;
+        // The pass lands inside the bite it throws next, and that bite is billed at `hurtReach(BITE_R, scale)`: a flat 1.98 m fell outside it under x0.70.
+        const outR = if (near) BLINK_NEAR * self.scale + foe.HERO_R else BLINK_FAR;
         const bear = mathx.headingXZ(mathx.dirXZ(quarry, self.pos));
         const swing = mathx.radians(lerpF(BLINK_ARC_MIN, BLINK_ARC_MAX, self.aiRng.float())) * self.arcSign;
         const dir = mathx.headingDir(bear + swing);
@@ -1152,6 +1158,21 @@ test "IT ARRIVES INSIDE ITS OWN REACH AND WITHDRAWS OUT OF IT — hit and run is
     try std.testing.expect(BLINK_NEAR + foe.HERO_R < BITE_R);
     try std.testing.expect(BLINK_FAR > BITE_R + 2.0);
     std.debug.print("\n  blinkbat: pass lands {d:.2} m out (bite reaches {d:.2}), withdraws to {d:.2} m\n", .{ BLINK_NEAR + foe.HERO_R, BITE_R, BLINK_FAR });
+}
+
+test "THE CLOSE PASS LANDS INSIDE THE BITE AT EVERY SIZE THE EDITOR POSTS" {
+    for ([_]f32{ wf.FOE_SCALE_LO, 1.0, wf.FOE_SCALE_HI }) |s| {
+        var b = Bat.spawn(mathx.ground(0, 0), 0, s, 0.31);
+        const quarry = mathx.ground(6, 0);
+        var near: usize = 0;
+        for (0..64) |_| {
+            b.enterBlink(quarry);
+            if (!b.blinkNear) continue;
+            near += 1;
+            try std.testing.expect(mathx.distXZ(b.blinkTo, quarry) < foe.hurtReach(BITE_R, s));
+        }
+        try std.testing.expect(near > 0);
+    }
 }
 
 test "THE ARRIVAL IS THE TELL, and it clears the floor every attack in the game has to" {

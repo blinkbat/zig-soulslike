@@ -471,7 +471,7 @@ pub const Delver = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
@@ -513,7 +513,7 @@ pub const Delver = struct {
                 self.crouch = mathx.approach(self.crouch, 0.16, dt * 5.0);
                 self.swing = mathx.approach(self.swing, 0, dt * 4.0);
                 self.depth = mathx.approach(self.depth, 0, dt * 5.0);
-                if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enterIdle(0.14);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enterIdle(0.14);
             },
             .dead => {
                 self.rear = mathx.approach(self.rear, 0, dt * 3.0);

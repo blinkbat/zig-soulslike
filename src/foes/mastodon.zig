@@ -402,7 +402,7 @@ pub const Mastodon = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
@@ -426,7 +426,7 @@ pub const Mastodon = struct {
             .stunlight, .stunheavy => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 self.lift = approach(self.lift, 0, dt * 6.0);
-                if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.idle);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enter(.idle);
             },
             .butt => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
@@ -637,7 +637,7 @@ pub const Mastodon = struct {
 
     /// The horns meet him: a strip `CHARGE_HALF_W` either side of the line, from the body out to the nose.
     fn tryCharge(self: *Mastodon, hero: rl.Vector3) void {
-        if (self.heroLatch) return;
+        if (self.heroLatch or foe.acrossDrop(self.pos, hero)) return;
         const f = mathx.headingDir(self.facing);
         const nose = v3(self.pos.x + f.x * CHARGE_NOSE * self.scale, self.pos.y, self.pos.z + f.z * CHARGE_NOSE * self.scale);
         const q = mathx.closestOnSegV(v3(hero.x, self.pos.y, hero.z), self.pos, nose);
@@ -646,7 +646,7 @@ pub const Mastodon = struct {
     }
 
     fn tryTail(self: *Mastodon, hero: rl.Vector3) void {
-        if (self.heroLatch) return;
+        if (self.heroLatch or foe.acrossDrop(self.pos, hero)) return;
         if (mathx.distXZ(self.pos, hero) > foe.hurtReach(TAIL_R, self.scale)) return;
         // Behind him, as he was pointed when the tail went — the sweep is a rear arc about THAT facing.
         const back = mathx.wrapPi(self.turnFrom + std.math.pi);

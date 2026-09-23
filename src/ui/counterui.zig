@@ -27,7 +27,7 @@ const PORT_GAP = dialogmod.PORT_GAP;
 const CARD_PAD: i32 = 10;
 const CARD_NAME_Y: i32 = CARD_PAD;
 const CARD_LINE_Y: i32 = CARD_NAME_Y + hud.lineH(hud.BODY);
-const CARD_PROSE_Y: i32 = CARD_LINE_Y + hud.lineH(hud.MONO);
+const CARD_PROSE_Y: i32 = CARD_LINE_Y + hud.lineH(hud.HINT);
 const CARD_PROSE_LINES: usize = 2;
 const CARD_H: i32 = CARD_PROSE_Y + hud.lineH(hud.HINT) * @as(i32, CARD_PROSE_LINES) + CARD_PAD;
 const VIS_ROWS: usize = 9;
@@ -69,9 +69,8 @@ fn tierGain(a: heromod.Armament, h: *const heromod.Hero) f32 {
     const w = heromod.wearFor(a) orelse return 0;
     const row = heromod.armRow(h.worn, w);
     const t = h.tierOf(a);
-    const now = heromod.weigh(heromod.ATK_LIGHT_HIT, row, h.sheet, t).dmg;
-    const next = heromod.weigh(heromod.ATK_LIGHT_HIT, row, h.sheet, t + 1).dmg;
-    return next - now;
+    if (a == .bow) return heromod.bowBlow(.plain, false, h.perk, row, h.sheet, t + 1).dmg - heromod.bowBlow(.plain, false, h.perk, row, h.sheet, t).dmg;
+    return heromod.swingBlow(false, h.perk, row, h.sheet, t + 1).dmg - heromod.swingBlow(false, h.perk, row, h.sheet, t).dmg;
 }
 
 fn tierPips(x: i32, cy: i32, tier: u8, r: f32) void {
@@ -166,7 +165,7 @@ pub fn draw(c: *const counter.Counter, h: *const heromod.Hero, bag: *const item.
             if (n > 0) {
                 var nb: [24]u8 = undefined;
                 const have = std.fmt.bufPrintZ(&nb, "x{d}", .{n}) catch "";
-                hud.mono(have, rx + 34 + hud.textW(nm, hud.BODY), ry + 8, hud.MONO, uiart.GILT_DIM);
+                hud.text(have, rx + 34 + hud.textW(nm, hud.BODY), ry + 8, hud.HINT, uiart.GILT_DIM);
             }
         } else if (r.arm) |a| {
             itemart.heldArt(book.armPic(a), heromod.heldGear(a, h.worn), fi(rx + 12), fi(cyMid), ROW_ART);
@@ -232,7 +231,7 @@ fn drawCard(r: counter.Row, h: *const heromod.Hero, cx: i32, cy: i32) void {
         itemart.draw(k, fi(cx + 12 + @divTrunc(cell, 2)), fi(cy + 12 + @divTrunc(cell, 2)), CARD_ART);
         hud.text(item.displayName(k), tx, cy + CARD_NAME_Y, hud.BODY, NAME);
         var eb: [item.EFFECT_BUF]u8 = undefined;
-        hud.mono(item.effect(k, &eb), tx, cy + CARD_LINE_Y, hud.MONO, uiart.TEXT_VALUE);
+        hud.text(item.effect(k, &eb), tx, cy + CARD_LINE_Y, hud.HINT, uiart.TEXT_VALUE);
         proseClipped(item.describe(k), tx, cy + CARD_PROSE_Y, tw, CARD_PROSE_LINES);
     } else if (r.arm) |a| {
         itemart.heldArt(book.armPic(a), heromod.heldGear(a, h.worn), fi(cx + 12 + @divTrunc(cell, 2)), fi(cy + 12 + @divTrunc(cell, 2)), CARD_ART);
@@ -240,13 +239,13 @@ fn drawCard(r: counter.Row, h: *const heromod.Hero, cx: i32, cy: i32) void {
         var nb: [48]u8 = undefined;
         const nm = std.fmt.bufPrintZ(&nb, "{s}  +{d}", .{ book.armName(a), t }) catch "?";
         hud.text(nm, tx, cy + CARD_NAME_Y, hud.BODY, NAME);
-        tierPips(tx, cy + CARD_LINE_Y + @divTrunc(hud.lineH(hud.MONO), 2), t, 3.2);
+        tierPips(tx, cy + CARD_LINE_Y + @divTrunc(hud.lineH(hud.HINT), 2), t, 3.2);
         if (r.done) {
             hud.text(MASTERED_LINE, tx, cy + CARD_PROSE_Y, hud.HINT, NAME_OFF);
         } else {
             var gb: [64]u8 = undefined;
             const gain = std.fmt.bufPrintZ(&gb, "damage +{d:.1} a stroke", .{tierGain(a, h)}) catch "";
-            hud.mono(gain, tx + pipsW(3.2) + 18, cy + CARD_LINE_Y, hud.MONO, uiart.GOOD);
+            hud.text(gain, tx + pipsW(3.2) + 18, cy + CARD_LINE_Y, hud.HINT, uiart.GOOD);
             proseClipped("Stone is the gate and coin is the tax; the edge keeps what the fire teaches it.", tx, cy + CARD_PROSE_Y, tw, 1);
         }
     }
@@ -273,7 +272,7 @@ test "NOTHING ON THE COUNTER IS DRAWN OVER ANYTHING ELSE — every band solved o
 
     const bands = [_]struct { top: i32, h: i32 }{
         .{ .top = CARD_NAME_Y, .h = hud.lineH(hud.BODY) },
-        .{ .top = CARD_LINE_Y, .h = hud.lineH(hud.MONO) },
+        .{ .top = CARD_LINE_Y, .h = hud.lineH(hud.HINT) },
         .{ .top = CARD_PROSE_Y, .h = hud.lineH(hud.HINT) * @as(i32, CARD_PROSE_LINES) },
     };
     for (bands[0 .. bands.len - 1], bands[1..]) |a, b| try std.testing.expect(a.top + a.h <= b.top);

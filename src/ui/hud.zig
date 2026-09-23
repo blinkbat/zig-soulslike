@@ -83,27 +83,37 @@ fn veilFor(w: i32, h: i32) ?rl.RenderTexture2D {
     return veil;
 }
 
+/// THE VEIL HOLDS THE CHROME PREMULTIPLIED: colour by the source's alpha, coverage by ONE. Under plain alpha blending a pixel drawn at
+/// alpha `a` landed as colour `C*a` and coverage `a*a`, and the blit multiplied it by `a` again, so every translucent plate, backing and
+/// text shadow jumped darker on the first frame of the fade.
 pub fn beginChrome(k: f32) bool {
     if (k >= 0.999) return false;
     const rt = veilFor(rl.getScreenWidth(), rl.getScreenHeight()) orelse return false;
     rl.beginTextureMode(rt);
     rl.clearBackground(rgba(0, 0, 0, 0));
+    rl.gl.rlSetBlendFactorsSeparate(gfx.GL_SRC_ALPHA, gfx.GL_ONE_MINUS_SRC_ALPHA, gfx.GL_ONE, gfx.GL_ONE_MINUS_SRC_ALPHA, gfx.GL_FUNC_ADD, gfx.GL_FUNC_ADD);
+    rl.beginBlendMode(.custom_separate);
     return true;
 }
 
 pub fn endChrome(k: f32) void {
+    rl.endBlendMode();
     rl.endTextureMode();
     const rt = veil orelse return;
     const w: f32 = @floatFromInt(rt.texture.width);
     const h: f32 = @floatFromInt(rt.texture.height);
+    const v = mathx.u8f(255.0 * mathx.clampF(k, 0, 1));
+    // Premultiplied out, so the tint scales colour AND coverage: on screen that is the chrome drawn direct, times `k`.
+    rl.beginBlendMode(.alpha_premultiply);
     rl.drawTexturePro(
         rt.texture,
         .{ .x = 0, .y = 0, .width = w, .height = -h },
         .{ .x = 0, .y = 0, .width = w, .height = h },
         .{ .x = 0, .y = 0 },
         0,
-        mathx.withAlpha(rl.Color.white, mathx.u8f(255.0 * mathx.clampF(k, 0, 1))),
+        rgba(v, v, v, v),
     );
+    rl.endBlendMode();
 }
 
 pub fn textW(s: [:0]const u8, size: i32) i32 {

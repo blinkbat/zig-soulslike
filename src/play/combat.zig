@@ -769,7 +769,8 @@ pub const Root = struct {
         if (self.left <= 0) return null;
         const step = minF(dt, self.left);
         self.left -= step;
-        return .{ .elem = elems(.{ .chaos = ROOT_DPS * step }) };
+        // The live row's `drip`, which is ROOT_DPS over the hold in the bank — the bench prices the spell off the same number it bills.
+        return .{ .elem = elems(.{ .chaos = rowFor(.roots).drip / ROOT_HOLD * step }) };
     }
 };
 
@@ -797,7 +798,7 @@ pub const Chill = struct {
     }
     pub fn breathe(self: *Chill, dt: f32) void {
         self.left = CHILL_HOLD;
-        self.owed += RIME_DPS * dt;
+        self.owed += rowFor(.rime).drip / RIME_DUR * dt;
     }
     pub fn touch(self: *Chill) void {
         self.left = CHILL_HOLD;

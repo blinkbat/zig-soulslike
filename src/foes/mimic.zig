@@ -407,7 +407,7 @@ pub const Mimic = struct {
             .stunlight, .stunheavy => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                 self.lid = approach(self.lid, 0.25, dt * 4.0);
-                if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.idle);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enter(.idle);
             },
             .bite => {
                 if (self.t < BITE_WIND) self.faceToward(hero, dt);
@@ -508,7 +508,7 @@ pub const Mimic = struct {
 
     /// The head goes ROUND: one full turn of the sweep over `SWING_DUR`, and it bills the man once as it passes his bearing.
     fn trySweep(self: *Mimic, hero: rl.Vector3) void {
-        if (self.heroLatch) return;
+        if (self.heroLatch or foe.acrossDrop(self.pos, hero)) return;
         if (mathx.distXZ(self.pos, hero) > foe.hurtReach(SWING_R, self.scale)) return;
         const sweep = self.sweepBearing();
         const bearing = self.bearingTo(hero);

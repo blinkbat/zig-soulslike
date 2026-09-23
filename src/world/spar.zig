@@ -46,7 +46,11 @@ pub fn author(m: *wf.Map, kind: wf.FoeKind) void {
     var span: [4]usize = undefined;
     _ = m.paintCliff(0, 0, R + 4, wf.CLIFF_FACE, &span);
     _ = m.paintCliff(0, 0, R - 2, wf.CLIFF_NONE, &span);
-    if (pool) _ = m.paintWater(0, 0, POOL_R, true, .speckle, .water);
+    if (pool) {
+        _ = m.paintWater(0, 0, POOL_R, true, .speckle, .water);
+        // The brush's rim is the dug floor by now; the pool stands at the ROOM's floor.
+        _ = m.levelBody(0, 0, wf.HEIGHT_ZERO);
+    }
 
     for (0..RIM_LIGHTS) |i| {
         const a = 2.0 * std.math.pi * @as(f32, @floatFromInt(i)) / @as(f32, @floatFromInt(RIM_LIGHTS));
@@ -124,7 +128,7 @@ test "the sparring room is walled, lit, and holds exactly the one creature asked
     try std.testing.expect(m.anyWater());
     const wet = m.foes[0];
     const cell = wf.gridIndex(m.half, wf.WATER_N, wet.x, wet.z) orelse return error.PostOffTheMap;
-    const deep = env.dwellerDepth();
+    const deep = wf.heightOf(m.waterBase[cell]) + env.WATER_SKIM - m.heightAt(wet.x, wet.z);
     std.debug.print("lurker posted at {d:.1},{d:.1} in {d:.2} m of water (wants {d:.2}-{d:.2})\n", .{
         wet.x, wet.z, deep, foemod.poolBand(.fen_lurker).?[0], foemod.poolBand(.fen_lurker).?[1],
     });

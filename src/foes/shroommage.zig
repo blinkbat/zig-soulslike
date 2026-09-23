@@ -356,10 +356,10 @@ pub const Mage = struct {
     }
 
     pub fn centerWorld(self: *const Mage) rl.Vector3 {
-        return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, 0);
+        return foe.bodyPoint(self.pos, CENTER_F * H, self.scale, self.hop);
     }
     pub fn topWorld(self: *const Mage) rl.Vector3 {
-        return foe.bodyPoint(self.pos, TOP_F * H, self.scale, 0);
+        return foe.bodyPoint(self.pos, TOP_F * H, self.scale, self.hop);
     }
     pub fn lockPoint(self: *const Mage) rl.Vector3 {
         return foe.markOn(self.xf[CAP], v3(0, 0.03 * H, 0));
@@ -470,7 +470,7 @@ pub const Mage = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
 
         self.elapsed += dt;
         self.t += dt;
@@ -571,7 +571,7 @@ pub const Mage = struct {
             },
             .stunlight, .stunheavy => {
                 self.chanSet(CARRY);
-                if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.idle);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enter(.idle);
             },
             .dead => {
                 foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE);
@@ -736,7 +736,8 @@ pub const Mage = struct {
             .prot = pel.prot,
             .sway = pel.sway,
             .pelvY = pelvY,
-            .lift = sink,
+            // The hop is world metres (it carries `scale` already), the channel `airborne()` and the terrain gate read.
+            .lift = sink + self.hop,
         }, facingDeg, self.pos);
 
         if (!dead) {

@@ -83,7 +83,8 @@ const HP_MAX: f32 = 46.0;
 const POISE_MAX: f32 = 11.0;
 const STANCE_MAX: f32 = 26.0;
 const RESISTS = combat.resists(.{ .fire = 30, .cold = 65, .chaos = -45 });
-pub var SOULS: u32 = 110;
+pub var SOULS: u32 = spec(.shade).souls;
+pub var MOURN_SOULS: u32 = spec(.mourner).souls;
 
 const DEATH_DUR: f32 = 0.55;
 const DISS_DUR: f32 = 0.75;
@@ -429,7 +430,10 @@ pub const Shade = struct {
         return kindOf(self.role);
     }
     pub fn soulValue(self: *const Shade) u32 {
-        return spec(self.role).souls;
+        return switch (self.role) {
+            .shade => SOULS,
+            .mourner => MOURN_SOULS,
+        };
     }
 
     /// What it is holding itself off the ground by — the `lift` every other creature passes a hop or a leap as, which for this one is simply always there. EVERY WORLD POINT IS MEASURED OFF `pos.y` PLUS THIS, so a shade over a bank keeps its own head.
@@ -478,7 +482,8 @@ pub const Shade = struct {
 
     fn move(self: *const Shade) Attack {
         var a = MOVES[@min(self.atk, MOVES.len - 1)];
-        if (self.atk == GRASP) a.hit = spec(self.role).grasp;
+        // The shade's grasp is the bench's row; the mourner's is its own.
+        if (self.atk == GRASP and self.role != .shade) a.hit = spec(self.role).grasp;
         return a;
     }
 
@@ -493,7 +498,7 @@ pub const Shade = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.elapsed += dt;
         self.t += dt / spec(self.role).slow;
         self.vit.tick(dt);
@@ -548,11 +553,14 @@ pub const Shade = struct {
             .blinkout => {
                 self.thin = mathx.clampF(self.t / BLINK_OUT, 0, 1);
                 if (self.t >= BLINK_OUT) {
-                    self.pos.x = self.blinkTo.x;
-                    self.pos.z = self.blinkTo.z;
-                    self.warp = true;
-                    mathx.holdXZ(&self.pos, bounds);
-                    self.rift();
+                    // A TELEPORT IS A JUMP: a root closed in the fade keeps it where it stood, and it comes back in there.
+                    if (foe.canLeap(&self.root)) {
+                        self.pos.x = self.blinkTo.x;
+                        self.pos.z = self.blinkTo.z;
+                        self.warp = true;
+                        mathx.holdXZ(&self.pos, bounds);
+                        self.rift();
+                    }
                     self.enter(.blinkin);
                 }
             },
@@ -565,10 +573,10 @@ pub const Shade = struct {
                 }
             },
             .stunlight => {
-                if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enter(.idle);
+                if (foe.stunOver(self, false)) self.enter(.idle);
             },
             .stunheavy => {
-                if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enter(.idle);
+                if (foe.stunOver(self, true)) self.enter(.idle);
             },
             .dead => {
                 self.thin = mathx.smoothstep(0, DEATH_DUR + DISS_DUR, self.t);

@@ -674,7 +674,7 @@ pub const Druidess = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
@@ -852,8 +852,7 @@ pub const Druidess = struct {
             .stunlight, .stunheavy => {
                 self.easeNeutral(dt);
                 self.hop = mathx.approach(self.hop, 0, dt * 6.0);
-                const dur = combat.foeStunDur(self.state == .stunheavy);
-                if (self.t >= dur) self.enter(.idle);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enter(.idle);
             },
             .dead => {
                 self.easeNeutral(dt);
@@ -888,7 +887,8 @@ pub const Druidess = struct {
 
     fn takeParry(self: *Druidess) void {
         const reach = self.parryable() orelse self.parry.reach() orelse return;
-        if (!foe.caught(self, reach, self.toImpact(), null)) return;
+        // `catchAimed`'s rule: a slash `trySlash` has already billed this update is past catching, or a parry live the frame after ate a blow that landed.
+        if (!foe.caught(self, reach, if (self.heroLatch) null else self.toImpact(), null)) return;
         self.slashCd = SLASH_CD;
         self.heroLatch = true;
         self.chips(self.clawWorld(), mathx.dirXZ(self.pos, self.parry.at), 9, 2.8);

@@ -908,9 +908,12 @@ pub const sceneFS =
     \\  float dist = length(toCam);
     \\  vec3 V = toCam/max(dist, 1e-5);
     \\  float nv = clamp(dot(n, V), 0.0, 1.0);
-    \\  // Detail-LOD footprints, both taken HERE: `fwidth` needs uniform control flow, and `mi == 9` (water) is NOT uniform — it rides a vertex attribute.
-    \\  float pxP = uvFoot(p);
+    \\  // Detail-LOD footprints, all taken HERE: `fwidth` needs uniform control flow, and `mi == 9` (water) is NOT uniform — it rides a vertex attribute.
+    \\  // `fwidth` is per component, so the world footprint's xz IS `uvFoot(p)`, and the triplanar rock's whole-vector one comes free.
+    \\  vec3 pxW = fwidth(fragPosition);
+    \\  float pxP = length(pxW.xz);
     \\  float pxQ = uvFoot(fragUV);
+    \\  float pxR = length(pxW);
     \\  int mi = -1;
     \\  if (groundMode==1){
     \\    base *= terrainAlbedo(p, pxP);
@@ -925,7 +928,6 @@ pub const sceneFS =
     \\    if (mi == 17){
     \\      vec3 w = pow(abs(n), vec3(4.0));
     \\      w /= max(w.x + w.y + w.z, 1e-5);
-    \\      float pxR = length(fwidth(fragPosition));
     \\      base = matAlbedo(1, fragPosition.zy, base, n, pxR)*w.x
     \\           + matAlbedo(1, fragPosition.xz, base, n, pxR)*w.y
     \\           + matAlbedo(1, fragPosition.xy, base, n, pxR)*w.z;

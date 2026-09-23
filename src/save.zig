@@ -65,6 +65,10 @@ pub fn useDevShelf(on: bool) void {
     devShelf = on;
 }
 
+pub fn onDevShelf() bool {
+    return devShelf;
+}
+
 pub fn path(i: usize) [:0]const u8 {
     return if (devShelf) DEV_PATHS[i] else PATHS[i];
 }
@@ -269,7 +273,12 @@ pub const Shelf = struct {
 
 pub fn survey() Shelf {
     drain();
-    return surveyRaw();
+    const sh = surveyRaw();
+    // A result not yet taken carries a shelf from before whatever this survey follows (a delete), and `pumpSave` would lay it back over this one.
+    bg.mtx.lock();
+    if (bg.ready) bg.shelf = sh;
+    bg.mtx.unlock();
+    return sh;
 }
 
 fn surveyRaw() Shelf {

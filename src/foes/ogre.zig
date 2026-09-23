@@ -537,7 +537,7 @@ pub const Ogre = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.slamCd = mathx.maxF(0, self.slamCd - dt);
@@ -692,11 +692,11 @@ pub const Ogre = struct {
             },
             .stunlight => {
                 self.easeChannelsNeutral(dt);
-                if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enterIdle();
+                if (foe.stunOver(self, false)) self.enterIdle();
             },
             .stunheavy => {
                 self.easeChannelsNeutral(dt);
-                if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enterIdle();
+                if (foe.stunOver(self, true)) self.enterIdle();
             },
             .dead => {
                 self.easeChannelsNeutral(dt);

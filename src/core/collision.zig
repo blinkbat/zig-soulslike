@@ -12,7 +12,7 @@ pub const Solid = struct {
     b: rl.Vector3,
     r: f32,
     h: f32 = 1e9,
-    /// **AND WHERE IT STARTS** — 0 for every wall in the world, positive only for a LINTEL.
+    /// **AND WHERE IT STARTS**, in world metres — `env` stands every prop's collider from under the lowest ground its box covers, and a LINTEL from its own foot.
     y0: f32 = 0,
     surf: Surface = .stone,
     /// The gate's slot in `env.wardProps` PLUS ONE, so 0 is an ordinary solid. A wall to every BODY but the hero's

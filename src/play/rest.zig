@@ -9,6 +9,7 @@ const ptree = @import("passivetree.zig");
 const daynight = @import("../world/daynight.zig");
 const combat = @import("combat.zig");
 const item = @import("item.zig");
+const stats = @import("stats.zig");
 const itemart = @import("../ui/itemart.zig");
 
 const v3 = mathx.v3;
@@ -211,6 +212,7 @@ pub fn siteFromProp(pos: rl.Vector3, yaw: f32) Site {
 
 pub const View = struct {
     tree: *const Tree,
+    sheet: *const stats.Sheet,
     souls: u32,
     mem: *const combat.Memory,
     bag: *const item.Bag,
@@ -584,7 +586,7 @@ fn drawRack(self: *const Rest, v: View, x: i32, y: i32, w: i32, a: f32) void {
         hud.text(name, tx, ry + hud.lineH(hud.TINY) + 4, hud.BODY, ink(if (on) uiart.HOT else if (held == null) uiart.TEXT_DIM else uiart.TEXT_VALUE, a));
         if (held) |sp| {
             hud.text(
-                fmt("{d:.0} focus", .{combat.spellFp(sp)}),
+                fmt("{d:.0} focus", .{v.tree.bonus().castFp(sp)}),
                 tx,
                 ry + hud.lineH(hud.TINY) + hud.lineH(hud.BODY) + 6,
                 hud.SMALL,
@@ -613,7 +615,7 @@ fn drawRead(self: *const Rest, v: View, x: i32, y: i32, w: i32, a: f32) void {
                     const mark = fmt("SLOT {s}", .{uiart.numeral(had)});
                     hud.text(mark, x + w - hud.textW(mark, hud.TINY), ry + 3, hud.TINY, ink(uiart.GILT, a));
                 } else {
-                    const cost = fmt("{d:.0} FP", .{combat.spellFp(sp)});
+                    const cost = fmt("{d:.0} FP", .{v.tree.bonus().castFp(sp)});
                     hud.text(cost, x + w - hud.textW(cost, hud.SMALL), ry + 1, hud.SMALL, ink(uiart.TEXT_DIM, a));
                 }
             }
@@ -631,7 +633,8 @@ fn drawRead(self: *const Rest, v: View, x: i32, y: i32, w: i32, a: f32) void {
     };
     hud.engraved(combat.spellName(sp), x, ry, hud.BODY, ink(uiart.TEXT_TITLE, a));
     ry += hud.lineH(hud.BODY) + 6;
-    hud.text(fmt("{d:.0} focus a cast, {d:.0} damage", .{ combat.spellFp(sp), combat.spellDamage(sp) }), x, ry, hud.SMALL, ink(uiart.GILT, a));
+    const perk = v.tree.bonus();
+    hud.text(fmt("{d:.0} focus a cast, {d:.0} damage", .{ perk.castFp(sp), perk.spellDamage(sp, v.sheet.*) }), x, ry, hud.SMALL, ink(uiart.GILT, a));
     ry += hud.lineH(hud.SMALL) + 8;
     ry = hud.prose(combat.spellSays(sp), x, ry, w, hud.SMALL, ink(uiart.TEXT_VALUE, a)) + 10;
     uiart.divider(x + @divTrunc(w, 2), ry, @divTrunc(w, 2) - 10, alpha(120.0, a));
@@ -652,6 +655,8 @@ pub fn isRestKind(k: props.Kind) bool {
     return k == .bonfire or k == .campfire_lit;
 }
 
+const TEST_SHEET = stats.Sheet{};
+
 test "THE FIRE OFFERS ONLY THE SCROLLS HE CARRIES, and a slot is filled in two presses" {
     var mem = combat.Memory{};
     var bag = item.Bag{};
@@ -659,7 +664,7 @@ test "THE FIRE OFFERS ONLY THE SCROLLS HE CARRIES, and a slot is filled in two p
     bag.add(combat.spellScroll(.bolt), 1);
     bag.add(combat.spellScroll(.sunder), 1);
     var flasks = combat.Flasks{};
-    const v = View{ .tree = &tree, .souls = 0, .mem = &mem, .bag = &bag, .flasks = &flasks };
+    const v = View{ .tree = &tree, .sheet = &TEST_SHEET, .souls = 0, .mem = &mem, .bag = &bag, .flasks = &flasks };
 
     var buf: [MEM_CANDS]?combat.Spell = undefined;
     const cs = memCands(v, &buf);
@@ -680,7 +685,7 @@ test "THE FIRE OFFERS ONLY THE SCROLLS HE CARRIES, and a slot is filled in two p
 
     var none = combat.Memory{ .slots = [_]?combat.Spell{null} ** combat.MEM_SLOTS };
     var empty = item.Bag{};
-    const bare = View{ .tree = &tree, .souls = 0, .mem = &none, .bag = &empty, .flasks = &flasks };
+    const bare = View{ .tree = &tree, .sheet = &TEST_SHEET, .souls = 0, .mem = &none, .bag = &empty, .flasks = &flasks };
     var r2 = Rest{ .phase = .sit, .screen = .spells };
     try std.testing.expectEqual(Pick.none, confirm(&r2, bare));
     try std.testing.expect(r2.memPick == null);

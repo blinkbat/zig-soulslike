@@ -82,6 +82,11 @@ const CHASE_SPEED: f32 = heromod.WALK_SPEED_BANK * 0.66;
 const ACCEL: f32 = 1.6;
 const TURN_RATE: f32 = 1.3;
 
+comptime {
+    // The slowest roamer, from rest: a `Post` that saw less than `STALL_GO` in its first window would give up a mark it was walking to.
+    std.debug.assert(WALK_SPEED * foe.STALL_BAIL - WALK_SPEED * WALK_SPEED / (2 * ACCEL) > foe.STALL_GO);
+}
+
 const BODY_R: f32 = 0.95;
 /// SIZED AGAINST THE CYCLOPS: what makes a tall body hittable is his chest's stand-off at `closestApproach` AS A MULTIPLE of the radius — 1.33 for the cyclops, and the test holds this one at or under it.
 const HURT_R: f32 = 1.55;
@@ -368,7 +373,7 @@ pub const Ent = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
@@ -387,7 +392,7 @@ pub const Ent = struct {
             },
             .stunlight, .stunheavy => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.5 * dt);
-                if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.idle);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enter(.idle);
             },
             .swipe, .ret, .shake => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.5 * dt);
@@ -475,7 +480,7 @@ pub const Ent = struct {
     /// The one sector both the bill and the catch ask.
     fn inSweep(self: *const Ent, at: rl.Vector3) bool {
         const d = mathx.distXZ(self.pos, at);
-        if (d > self.swipeReach()) return false;
+        if (d > self.swipeReach() or foe.acrossDrop(self.pos, at)) return false;
         const mid = self.hand * SWIPE_ARC_MID;
         const slack = combat.subtendedArc(foe.HERO_REACH, mathx.maxF(d, 0.6));
         return @abs(mathx.wrapDeg(foe.bearingDeg(self.pos, self.facing, at) - mid)) <= SWIPE_ARC * 0.5 + slack;

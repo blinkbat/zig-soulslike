@@ -351,7 +351,7 @@ pub const Leechfly = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
@@ -451,12 +451,12 @@ pub const Leechfly = struct {
             .stunlight => {
                 self.hoverTo = HOVER_LOW * 0.55;
                 self.easeRest(dt);
-                if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enter(.idle);
+                if (foe.stunOver(self, false)) self.enter(.idle);
             },
             .stunheavy => {
                 self.hoverTo = HOVER_LOW * 0.35;
                 self.easeRest(dt);
-                if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enter(.idle);
+                if (foe.stunOver(self, true)) self.enter(.idle);
             },
             .dead => {
                 self.hoverTo = 0;

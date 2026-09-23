@@ -68,6 +68,7 @@ const NNPC_KIND = @typeInfo(wf.NpcKind).@"enum".fields.len;
 const MAX_MARKED: usize = 512;
 
 const FULL_MSG = "map is full - worldfmt.MAX_OPS reached";
+const SCATS_FULL_MSG = "map is full - worldfmt.MAX_SCATTERS reached";
 const FOES_FULL_MSG = "foe cap reached";
 const FOLK_FULL_MSG = "folk cap reached";
 
@@ -869,6 +870,16 @@ const MIX_GROUPS = blk: {
 const MIX_TAB_ROWS: i32 = (@as(i32, @intCast(MIX_GROUPS.len)) + MIX_COLS - 1) / MIX_COLS;
 const FIRST_MIX_GROUP: props.Group = MIX_GROUPS[0];
 
+/// THE OP SELECTION ANSWERS ONLY ON THE LAYER THAT OWNS IT — the panel says "selection is on another layer", so Delete, R and the menu there
+/// may not act on what that layer cannot show.
+const UNTITLED = "untitled";
+
+fn selOnLayer(ed: *const Editor, m: *const wf.Map) ?usize {
+    const s = ed.sel orelse return null;
+    if (s >= m.nops or layerOf(&m.ops[s]) != ed.layer) return null;
+    return s;
+}
+
 fn layerOf(o: *const wf.Op) Layer {
     return switch (o.op) {
         .ivy => .props,
@@ -1208,6 +1219,8 @@ pub const Editor = struct {
     scheduleSel: ?usize = null,
     scheduleSlot: usize = 0,
     scheduleRouting: bool = false,
+    /// The Enter that finished a route reopened Events on this frame; the modal may not read it again as its own Done.
+    modalKeyTaken: bool = false,
     scheduleScroll: i32 = 0,
     scheduleDetailScroll: i32 = 0,
     scheduleDetailHeld: i32 = 0,
@@ -1318,18 +1331,10 @@ pub const Editor = struct {
     pub fn reopen(self: *Editor) void {
         self.on = true;
         self.selecting = false;
-        self.panning = false;
-        self.dragging = false;
-        self.painting = false;
-        self.wetStroke = false;
-        self.heightStroke = false;
+        self.dropStroke();
         self.hover = .none;
         self.hoverLive = false;
-        self.wipe = .{};
-        self.clear = .{};
         self.menuOpen = false;
-        self.marquee = false;
-        self.moving = false;
         self.showWeather = false;
         self.dropSelection();
         self.dropPendingRoom();
@@ -1343,6 +1348,14 @@ pub const Editor = struct {
         // THE BOOTED MAP, NEVER THE SHIPPED CONSTANT: `--map` loads another world, and seeding `START_MAP` here points Save and Revert at a file this map did not come from.
         if (self.pathLen == 0) self.setPath(wf.startMap());
         self.touchFolk();
+    }
+
+    /// THE GAME SWAPPED THE WORLD UNDER IT (a load, a new game, a map trigger): Save and Revert follow the map now standing, and
+    /// edits to the one it left went with it. Seeded only once, the path went on naming the old file and Save wrote over it.
+    pub fn adoptPath(self: *Editor, p: []const u8) void {
+        self.setPath(p);
+        self.dirty = false;
+        undoReset();
     }
 
     fn setPath(self: *Editor, p: []const u8) void {
@@ -1777,6 +1790,7 @@ pub const Editor = struct {
         undoAt += 1;
         m.* = undoSlot(undoN - undoAt).*;
         self.dropSelection();
+        self.reloadNames(m);
         self.dropPendingRoom();
         self.touchFolk();
         return true;
@@ -1787,9 +1801,22 @@ pub const Editor = struct {
         undoAt -= 1;
         m.* = undoSlot(undoN - undoAt).*;
         self.dropSelection();
+        self.reloadNames(m);
         self.dropPendingRoom();
         self.touchFolk();
         return true;
+    }
+
+    /// THE MODALS' SELECTIONS OUTLIVE `dropSelection`, and their name field is the first one drawn, so it takes the keyboard unclicked and
+    /// renames the row to whatever its buffer held. After anything that moves the records under them, the row is kept only if it still
+    /// exists and its name is read back off the record.
+    fn reloadNames(self: *Editor, m: *const wf.Map) void {
+        if (self.trigSel) |i| {
+            if (i < m.ntrigs) self.loadName(&self.trigNameBuf, &self.trigNameLen, m.trigs[i].label()) else self.trigSel = null;
+        }
+        if (self.scheduleSel) |i| {
+            if (i < m.nschedules) self.loadName(&self.scheduleNameBuf, &self.scheduleNameLen, m.schedules[i].label()) else self.scheduleSel = null;
+        }
     }
 
     fn touchFolk(self: *Editor) void {
@@ -1823,6 +1850,15 @@ pub const Editor = struct {
         self.grab = null;
         self.grabLive = false;
         self.routing = false;
+    }
+
+    /// A reorder of two neighbours swaps them, so the marked set swaps with them or it names the op that moved into the slot.
+    fn swapMarked(self: *Editor, a: usize, b: usize) void {
+        for (self.marked[0..self.nMarked]) |*k| {
+            if (k.* == a) {
+                k.* = b;
+            } else if (k.* == b) k.* = a;
+        }
     }
 
     fn dropPendingRoom(self: *Editor) void {
@@ -2114,6 +2150,7 @@ pub const Editor = struct {
             if (rl.isKeyPressed(.enter) or rl.isKeyPressed(.escape)) {
                 self.scheduleRouting = false;
                 self.modal = .events;
+                self.modalKeyTaken = true;
                 return .none;
             }
             if (rl.isKeyPressed(.backspace)) {
@@ -2561,6 +2598,11 @@ pub const Editor = struct {
 
         if (rl.isMouseButtonPressed(.left)) {
             if (blocked) return;
+            // Ahead of select mode: the panel that arms it is the SELECTED unit's, so select mode is the mode it is armed in.
+            if (self.routing) {
+                if (ground) |g| self.layLeg(m, g);
+                return;
+            }
             if (shift and self.layer != .ground) {
                 if (ground) |g| {
                     self.marquee = true;
@@ -2596,10 +2638,6 @@ pub const Editor = struct {
             }
             if (self.layer == .locations and self.brushIdx() == @intFromEnum(LocationBrush.arena)) {
                 if (ground) |g| self.arenaCorner(m, g);
-                return;
-            }
-            if (self.routing) {
-                if (ground) |g| self.layLeg(m, g);
                 return;
             }
             switch (self.layer) {
@@ -2825,6 +2863,22 @@ pub const Editor = struct {
         };
         self.entranceFrom = null;
         self.endPaint(m, env);
+    }
+
+    /// A GESTURE BELONGS TO THE MAP IT BEGAN ON: left armed across an open or a new map, the next frame's release cut the old ramp into the new one.
+    fn dropStroke(self: *Editor) void {
+        self.painting = false;
+        self.wetStroke = false;
+        self.heightStroke = false;
+        self.caveStroke = false;
+        self.strokeLast = null;
+        self.entranceFrom = null;
+        self.dragging = false;
+        self.marquee = false;
+        self.moving = false;
+        self.panning = false;
+        self.wipe = .{};
+        self.clear = .{};
     }
 
     fn endPaint(self: *Editor, m: *const wf.Map, env: *envmod.Env) void {
@@ -3075,7 +3129,8 @@ pub const Editor = struct {
                     std.mem.copyBackwards(wf.Location, m.locations[1 .. m.nlocations + 1], m.locations[0..m.nlocations]);
                     m.locations[0] = l;
                     m.nlocations += 1;
-                    self.locSel = 0;
+                    // Through `selectLocation`, or the name field still holds the last one picked and renames the new one to it.
+                    self.selectLocation(m, 0);
                     self.sayFmt("+{s}", .{m.locations[0].label()});
                 },
                 .clearing => {
@@ -3184,10 +3239,7 @@ pub const Editor = struct {
         // After the switch: every generator branch builds a fresh `o`.
         o.under = self.underAt(m, a.x, a.z);
 
-        if (m.nops >= wf.MAX_OPS) {
-            self.say(FULL_MSG);
-            return;
-        }
+        if (!self.roomFor(m, o.op != .at)) return;
         self.bank(m);
         const idx = (if (o.op == .at) m.add(o) else m.addScat(o, sc)) catch {
             self.say(FULL_MSG);
@@ -3741,8 +3793,8 @@ pub const Editor = struct {
     }
 
     fn rerollSel(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
-        const s = self.sel orelse return;
-        if (s >= m.nops or m.ops[s].op == .at) return;
+        const s = selOnLayer(self, m) orelse return;
+        if (m.ops[s].op == .at) return;
         self.bank(m);
         m.ops[s].seed = self.freshSeed(m);
         self.rebuild(m, env);
@@ -3750,8 +3802,8 @@ pub const Editor = struct {
     }
 
     fn explodeSel(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
-        const s = self.sel orelse return;
-        if (s >= m.nops or m.ops[s].op == .at) return;
+        const s = selOnLayer(self, m) orelse return;
+        if (m.ops[s].op == .at) return;
         if (self.rebuildDue) self.rebuild(m, env);
         self.bank(m);
         const n = env.explodeOp(m, s) catch {
@@ -3800,8 +3852,7 @@ pub const Editor = struct {
             self.say("-unit");
             return;
         }
-        const s = self.sel orelse return;
-        if (s >= m.nops) return;
+        const s = selOnLayer(self, m) orelse return;
         self.bank(m);
         self.removeOp(m, env, s);
     }
@@ -3814,12 +3865,8 @@ pub const Editor = struct {
     }
 
     fn duplicateSel(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
-        const s = self.sel orelse return;
-        if (s >= m.nops) return;
-        if (m.nops >= wf.MAX_OPS) {
-            self.say(FULL_MSG);
-            return;
-        }
+        const s = selOnLayer(self, m) orelse return;
+        if (!self.roomFor(m, m.ops[s].scat != 0)) return;
         self.bank(m);
         var o = m.ops[s];
         var sc = m.scatAt(s).*;
@@ -3827,10 +3874,26 @@ pub const Editor = struct {
         translatePair(&o, &sc, DUPE_OFFSET, 0);
         // The LEVEL AT THE DESTINATION decides, never the source's flag: carried over, a surface prop duplicated across a chamber lands on the hill and is not drawn.
         o.under = self.underAt(m, o.x, o.z);
-        const idx = (if (o.scat == 0) m.add(o) else m.addScat(o, sc)) catch return;
+        const idx = (if (o.scat == 0) m.add(o) else m.addScat(o, sc)) catch {
+            self.say(FULL_MSG);
+            return;
+        };
         self.sel = idx;
         self.rebuild(m, env);
         self.sayFmt("duplicated #{d} -> #{d}", .{ s, idx });
+    }
+
+    /// BOTH CAPS BEFORE THE BANK: an op `addScat` then refused left an empty undo step behind and blamed `MAX_OPS`.
+    fn roomFor(self: *Editor, m: *const wf.Map, scat: bool) bool {
+        if (m.nops >= wf.MAX_OPS) {
+            self.say(FULL_MSG);
+            return false;
+        }
+        if (scat and m.nscats >= wf.MAX_SCATTERS) {
+            self.say(SCATS_FULL_MSG);
+            return false;
+        }
+        return true;
     }
 
     fn markedAt(self: *const Editor, m: *const wf.Map, i: usize) ?rl.Vector3 {
@@ -3981,10 +4044,9 @@ pub const Editor = struct {
             if (onUnits) self.say("clipboard holds ops - paste them on an object layer") else self.say("clipboard holds spawns - paste them on Units");
             return;
         }
-        if (nOps > 0 and m.nops >= wf.MAX_OPS) {
-            self.say(FULL_MSG);
-            return;
-        }
+        var anyScat = false;
+        for (clipOps[0..nOps]) |o| anyScat = anyScat or o.scat != 0;
+        if (nOps > 0 and !self.roomFor(m, anyScat)) return;
         if (nFoes > 0 and m.nfoes >= wf.MAX_FOES) {
             self.say(FOES_FULL_MSG);
             return;
@@ -4143,7 +4205,9 @@ pub const Editor = struct {
     }
 
     fn adopt(self: *Editor, m: *const wf.Map, env: *envmod.Env, isDirty: bool) void {
+        self.dropStroke();
         self.dropSelection();
+        self.reloadNames(m);
         self.dirty = isDirty;
         undoReset();
         self.touchFolk();
@@ -4169,7 +4233,7 @@ pub const Editor = struct {
     }
 
     fn doNew(self: *Editor, m: *wf.Map, env: *envmod.Env) void {
-        const name = if (self.nameLen > 0) self.nameBuf[0..self.nameLen] else "untitled";
+        const name = self.fileNameFor(m, true);
         m.blank(name);
         var buf: [wf.PATH_CAP]u8 = undefined;
         self.setPath(wf.pathFor(&buf, name));
@@ -4177,10 +4241,16 @@ pub const Editor = struct {
         self.sayFmt("new map \"{s}\" - save it to keep it", .{name});
     }
 
+    /// The name Create and Save As write under, and the one their dialog previews: an empty field is a NEW map's "untitled" and a SAVE AS's own label.
+    fn fileNameFor(self: *const Editor, m: *const wf.Map, isNew: bool) []const u8 {
+        if (self.nameLen > 0) return self.nameBuf[0..self.nameLen];
+        return if (isNew) UNTITLED else m.label();
+    }
+
     fn doSaveAs(self: *Editor, m: *wf.Map) void {
         const typed: ?[]const u8 = if (self.nameLen > 0) self.nameBuf[0..self.nameLen] else null;
         var buf: [wf.PATH_CAP]u8 = undefined;
-        const p = wf.pathFor(&buf, typed orelse m.label());
+        const p = wf.pathFor(&buf, self.fileNameFor(m, false));
         // The file carries `name:` (`worldfmt.write`), so the rename lands BEFORE the write or the new path holds the old map's name.
         const was = m.name;
         if (typed) |t| m.setName(t);
@@ -5803,6 +5873,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 y += ROW_H;
                 changed = ui.stepperF(ctx, x, y, w, "z", &fo.z, 0.5, -COORD_LIM, COORD_LIM, "Where it stands, north-south. Its patrol route moves with it") or changed;
                 fo.moveRoute(fo.x - before.x, fo.z - before.z);
+                if (fo.x != before.x or fo.z != before.z) fo.under = ed.underAt(m, fo.x, fo.z);
                 y += ROW_H;
                 changed = ui.angleF(ctx, x, y, w, "yaw", &fo.yaw, 15, "Which way it faces when the level starts, in degrees") or changed;
                 y += ROW_H;
@@ -5865,6 +5936,8 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 }
                 if (changed) {
                     ed.bankGesture(wf.Foe, m, fo, before);
+                    // The bank bumps it once a gesture; a dragged x or z moves the red dot every frame of it.
+                    ed.miniGen +%= 1;
                 } else if (ctx.buttonUp) ed.endGesture();
             },
             .npc => |i| {
@@ -5879,6 +5952,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 changed = ui.stepperF(ctx, x, y, w, "x", &np.x, 0.5, -COORD_LIM, COORD_LIM, "Where the body stands, east-west") or changed;
                 y += ROW_H;
                 changed = ui.stepperF(ctx, x, y, w, "z", &np.z, 0.5, -COORD_LIM, COORD_LIM, "Where the body stands, north-south") or changed;
+                if (np.x != before.x or np.z != before.z) np.under = ed.underAt(m, np.x, np.z);
                 y += ROW_H;
                 changed = ui.angleF(ctx, x, y, w, "yaw", &np.yaw, 15, "Which way it faces, in degrees") or changed;
                 y += ROW_H;
@@ -6064,9 +6138,10 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 ed.clearSel = null;
                 ed.requestRebuild();
                 ed.dirty = true;
+                // The loop's slice was taken before the removal.
+                break;
             }
             y += ROW_H;
-            break;
         }
         if (changed) {
             if (!ed.editing) {
@@ -6240,6 +6315,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         if (s > 0) {
             ed.bank(m);
             m.reorder(s, s - 1);
+            ed.swapMarked(s, s - 1);
             ed.sel = s - 1;
             ed.rebuild(m, env);
         }
@@ -6249,6 +6325,7 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
         if (s + 1 < m.nops) {
             ed.bank(m);
             m.reorder(s, s + 1);
+            ed.swapMarked(s, s + 1);
             ed.sel = s + 1;
             ed.rebuild(m, env);
         }
@@ -6260,6 +6337,8 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
     }
 
     if (changed) {
+        // A typed coordinate is a MOVE, and the level at the destination decides `under` (`moveMarked`'s rule).
+        if (o.x != before.x or o.z != before.z) o.under = ed.underAt(m, o.x, o.z);
         ed.bankOpGesture(m, s, before, beforeScat);
         ed.requestRebuild();
     } else if (ctx.buttonUp) {
@@ -6563,7 +6642,8 @@ var caveCribW = [_]i32{-1} ** CAVE_CRIBS.len;
 
 fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: *daynight.Clock, ctx: *ui.Ctx) void {
     const alt = rl.isKeyDown(.left_alt) or rl.isKeyDown(.right_alt);
-    const confirm = rl.isKeyPressed(.enter) and !alt;
+    const confirm = rl.isKeyPressed(.enter) and !alt and !ed.modalKeyTaken;
+    ed.modalKeyTaken = false;
     switch (ed.modal) {
         .none => {},
         .confirm => {
@@ -6832,9 +6912,11 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             y += ROW_H;
             hud.mono("where the player stands up in a new game", x, y, hud.MONO, ui.alpha(ui.LABEL, 170));
             y += hud.monoLineH(hud.MONO) + 4;
+            const startWas = m.start;
             changed = ui.stepperF(ctx, x, y, w, "start x", &m.start.x, 0.5, -COORD_LIM, COORD_LIM, "Where he stands up, east-west") or changed;
             y += ROW_H;
             changed = ui.stepperF(ctx, x, y, w, "start z", &m.start.z, 0.5, -COORD_LIM, COORD_LIM, "Where he stands up, north-south") or changed;
+            if (m.start.x != startWas.x or m.start.z != startWas.z) m.start.under = ed.underAt(m, m.start.x, m.start.z);
             y += ROW_H;
             changed = ui.angleF(ctx, x, y, w, "start yaw", &m.start.yaw, 15, "Which way he faces, in degrees. 180 is south, which is what every map used to get") or changed;
             y += ROW_H;
@@ -6950,7 +7032,7 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             hud.mono("name", box.x + DLG_PAD, box.y + 58, hud.MONO, ui.LABEL);
             _ = ui.textField(ctx, ui.rect(box.x + DLG_PAD, box.y + 82, 412, 30), &ed.nameBuf, &ed.nameLen, KB_FILE_NAME, true, "The file name. It lands in " ++ wf.DIR ++ "/ with " ++ wf.EXT ++ " on the end");
             var buf: [wf.PATH_CAP]u8 = undefined;
-            const p = wf.pathFor(&buf, ed.nameBuf[0..ed.nameLen]);
+            const p = wf.pathFor(&buf, ed.fileNameFor(m, isNew));
             var pz: [wf.PATH_CAP + 4]u8 = undefined;
             const ps = std.fmt.bufPrintZ(&pz, "{s}", .{p}) catch "";
             hud.mono(ps, box.x + DLG_PAD, box.y + 118, hud.MONO, ui.alpha(ui.LABEL, 190));
@@ -7023,8 +7105,7 @@ const MENU_W: i32 = 150;
 const MENU_EDGE: i32 = 4;
 
 fn lootOp(ed: *const Editor, m: *const wf.Map) ?usize {
-    const s = ed.sel orelse return null;
-    if (s >= m.nops) return null;
+    const s = selOnLayer(ed, m) orelse return null;
     return if (isContainer(&m.ops[s])) s else null;
 }
 
@@ -7133,14 +7214,12 @@ fn sealToggle(o: anytype, k: wf.FoeKind) void {
 }
 
 fn bossOp(ed: *const Editor, m: *const wf.Map) ?usize {
-    const s = ed.sel orelse return null;
-    if (s >= m.nops) return null;
+    const s = selOnLayer(ed, m) orelse return null;
     return if (m.ops[s].op == .at and props.info(m.ops[s].kind).ward) s else null;
 }
 
 fn groupOp(ed: *const Editor, m: *const wf.Map) ?usize {
-    const s = ed.sel orelse return null;
-    if (s >= m.nops) return null;
+    const s = selOnLayer(ed, m) orelse return null;
     return if (m.ops[s].op == .at) null else s;
 }
 
@@ -8377,7 +8456,7 @@ fn rackPanel(ed: *Editor, ctx: *ui.Ctx, x: i32, y0: i32, voice: ?sfx.Id) void {
 const RACK_ROW: i32 = ui.ROW_H;
 
 fn menuEnabled(ed: *const Editor, m: *const wf.Map, act: MenuItem) bool {
-    const op: ?usize = if (ed.sel) |s| (if (s < m.nops) s else null) else null;
+    const op = selOnLayer(ed, m);
     return switch (act) {
         .close => true,
         .focus => op != null,

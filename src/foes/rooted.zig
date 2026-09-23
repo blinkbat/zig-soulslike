@@ -330,7 +330,7 @@ pub const Rooted = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
@@ -395,11 +395,11 @@ pub const Rooted = struct {
             },
             .stunlight => {
                 self.swing = mathx.approach(self.swing, 0, dt * 3.0);
-                if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enter(.idle);
+                if (foe.stunOver(self, false)) self.enter(.idle);
             },
             .stunheavy => {
                 self.swing = mathx.approach(self.swing, -0.25, dt * 2.0);
-                if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enter(.idle);
+                if (foe.stunOver(self, true)) self.enter(.idle);
             },
             .dead => {
                 self.open = mathx.approach(self.open, 0.35, dt * 0.7);

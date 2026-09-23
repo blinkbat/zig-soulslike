@@ -25,8 +25,8 @@ pub const Want = struct {
 const ARRIVE: f32 = 0.45;
 const SHIFT_BAIL: f32 = 2.2;
 const BAND_SLOP: f32 = 0.35;
-const STALL_BAIL: f32 = 1.2;
-const STALL_GO: f32 = 0.35;
+const STALL_BAIL = foe.STALL_BAIL;
+const STALL_GO = foe.STALL_GO;
 
 pub const Step = union(enum) {
     close: struct { to: f32 },

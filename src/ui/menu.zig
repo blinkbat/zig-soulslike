@@ -347,7 +347,7 @@ pub const Menu = struct {
         if (stickPush(dt, self.book.wheelUp())) |d| self.book.move(d.x, d.y, v);
         self.book.spinBy(adjHeldDir(), dt);
         self.book.panBy(stickPan(), dt);
-        self.book.zoomBy(dpadZoom(), dt);
+        self.book.zoomBy(dpadZoom(dt), dt);
         var act: Action = .none;
         if (confirmPressed()) {
             const a = self.book.confirm(v);
@@ -981,12 +981,17 @@ pub fn stickPan() rl.Vector2 {
     return .{ .x = x, .y = y };
 }
 
-pub fn dpadZoom() f32 {
+/// One wheel notch is this much of a held cross, whatever the frame rate.
+const WHEEL_NOTCH_SECS: f32 = 0.12;
+
+/// A LEVEL the callers integrate as `v * rate * dt`: the cross is a level already, and a notch arrives on ONE frame, so it is handed back
+/// divided by that frame's `dt`. Folded in as a level it was a sixtieth of a second's worth at 60 Hz and less at 144.
+pub fn dpadZoom(dt: f32) f32 {
     var v: f32 = 0;
     if (padDown(padNav(.up))) v += 1;
     if (padDown(padNav(.down))) v -= 1;
     const notch = rl.getMouseWheelMove();
-    if (notch != 0) v = mathx.clampF(v + notch * 0.6, -1, 1);
+    if (notch != 0) v += notch * WHEEL_NOTCH_SECS / @max(dt, 1e-4);
     return v;
 }
 

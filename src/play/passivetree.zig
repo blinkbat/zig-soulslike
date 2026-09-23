@@ -493,6 +493,16 @@ pub const Bonus = struct {
         }
         return s;
     }
+
+    pub fn castFp(self: Bonus, s: combat.Spell) f32 {
+        return combat.spellFp(s) * self.spellCost;
+    }
+
+    /// As `Hero.castBlow` scales it; a spell billed over time is printed at its authored rate.
+    pub fn spellDamage(self: Bonus, s: combat.Spell, sh: stats.Sheet) f32 {
+        const k: f32 = if (combat.spellBlow(s) != null) self.spellDmg * sh.scale(.intelligence) else 1.0;
+        return combat.spellDamage(s) * k;
+    }
 };
 
 /// Off the level you are standing on. Quadratic, ER's shape, and MEASURED against what a body is worth: a toad is 60, an archer 130, a brood mother 240. THE FIRST NODE COSTS `costAt(1)`, WHICH IS 758 — never `costAt(0)`.

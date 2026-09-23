@@ -297,7 +297,7 @@ pub const Husk = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterBurst();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
@@ -320,7 +320,7 @@ pub const Husk = struct {
             },
             .stunlight, .stunheavy => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
-                if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.idle);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enter(.idle);
             },
             .clout => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
@@ -588,6 +588,7 @@ pub const Pan = struct {
     pub fn update(self: *Pan, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?foe.Blow {
         self.burstsThisFrame = 0;
         var worst: ?foe.Blow = null;
+        var shattered = [_]bool{false} ** CAP_N;
         var i: usize = 0;
         while (i < self.n) : (i += 1) {
             const h = &self.husks[i];
@@ -596,13 +597,17 @@ pub const Pan = struct {
                 self.burstsThisFrame += 1;
                 const r = foe.hurtReach(SHATTER_R, h.scale);
                 if (mathx.distXZ(at, hero) <= r) foe.worseBlow(&worst, SHATTER_HIT, at, &h.threat);
-                self.splash(i, at, r);
+                self.splash(i, at, r, &shattered);
             }
+        }
+        // A husk the shatter killed LATER in the walk ran its own update after the kill, and that cleared the one-frame flag it set.
+        for (self.husks[0..self.n], shattered[0..self.n]) |*h, s| {
+            if (s) h.justDied = true;
         }
         return worst;
     }
 
-    fn splash(self: *Pan, from: usize, at: rl.Vector3, r: f32) void {
+    fn splash(self: *Pan, from: usize, at: rl.Vector3, r: f32, shattered: *[CAP_N]bool) void {
         var j: usize = 0;
         while (j < self.n) : (j += 1) {
             if (j == from) continue;
@@ -611,7 +616,10 @@ pub const Pan = struct {
             if (mathx.distXZ(at, o.centerWorld()) > r + o.hurtRadius()) continue;
             // `Vitals` latches the stun on a flinch, so the husk staggers on it too.
             switch (o.vit.hit(SHATTER_HIT)) {
-                .death => o.enterBurst(),
+                .death => {
+                    o.enterBurst();
+                    shattered[j] = true;
+                },
                 .heavy => o.stagger(true),
                 .light => o.stagger(false),
                 .none => {},

@@ -125,7 +125,7 @@ fn snap(name: [:0]const u8) void {
 }
 
 fn shoot(g: *Game, name: [:0]const u8) void {
-    if (!stageOn(name)) return;
+    if (!frameOn(name)) return;
     drawScene(g);
     hud(g, SHOT_DT);
     snap(name);
@@ -747,6 +747,21 @@ pub var onlyStage: []const u8 = "";
 fn stageOn(tag: []const u8) bool {
     if (onlyStage.len == 0) return true;
     return std.mem.indexOf(u8, tag, onlyStage) != null;
+}
+
+/// Set while a stage the filter chose is running: its frames are ITS whatever they are named. Filtered again by filename, `--shot-only folk`
+/// entered the stage and wrote none of its `108_*_npc_*` portraits.
+var inStage = false;
+
+fn runStage(g: *Game, comptime tag: []const u8, comptime shots: fn (*Game) void) void {
+    if (!stageOn(tag)) return;
+    inStage = onlyStage.len > 0;
+    defer inStage = false;
+    shots(g);
+}
+
+fn frameOn(name: []const u8) bool {
+    return inStage or stageOn(name);
 }
 
 /// The two stages that REPLACE the run rather than sit inside it (`runShots` returns on either), named by whole
@@ -1429,7 +1444,9 @@ pub fn runShots(g: *Game) void {
         shootPortrait(g, DIR ++ "/20zv_guard_right.png", g.hero.shoulderPoint(), LIT_YAW, 0.10, 3.4);
         g.hero.setGuard(false);
         must(g.hero.requestParry(), "the parry was refused in the right hand");
-        while (!g.hero.parryLive()) g.hero.updateParry(dt, null);
+        // Bounded by the parry itself: a window retuned under one frame would end it unlived and spin here forever.
+        while (g.hero.parrying and !g.hero.parryLive()) g.hero.updateParry(dt, null);
+        must(g.hero.parryLive(), "the right-hand parry never went live");
         g.hero.noteParry();
         k = 0;
         while (k < 3) : (k += 1) g.hero.updateParry(dt, null);
@@ -2273,29 +2290,29 @@ pub fn runShots(g: *Game) void {
     g.retro.allOff();
 
     _ = runUnitStudies(g, false);
-    if (stageOn("brood")) broodShots(g);
-    if (stageOn("warrior")) warriorShots(g);
-    if (stageOn("shade")) shadeShots(g);
-    if (stageOn("leech")) leechShots(g);
-    if (stageOn("rooted")) rootedShots(g);
-    if (stageOn("shroom")) shroomShots(g);
-    if (stageOn("duo")) duoShots(g);
-    if (stageOn("roots")) rootShots(g);
-    if (stageOn("delver")) delverShots(g);
-    if (stageOn("necro")) necroShots(g);
-    if (stageOn("pickup")) pickupShots(g);
-    if (stageOn("knight")) knightShots(g);
-    if (stageOn("souls")) soulsShots(g);
-    if (stageOn("campfire")) campfireShots(g);
-    if (stageOn("chest")) chestShots(g);
-    if (stageOn("folk")) folkShots(g);
-    if (stageOn("counter")) counterShots(g);
-    if (stageOn("sound")) soundFilterShots(g);
-    if (stageOn("stats")) statsShots(g);
-    if (stageOn("wolf")) wolfShots(g);
-    if (stageOn("day")) dayShots(g);
-    if (stageOn("editor")) editorShots(g);
-    if (stageOn("editorgap")) editorGapShots(g);
+    runStage(g, "brood", broodShots);
+    runStage(g, "warrior", warriorShots);
+    runStage(g, "shade", shadeShots);
+    runStage(g, "leech", leechShots);
+    runStage(g, "rooted", rootedShots);
+    runStage(g, "shroom", shroomShots);
+    runStage(g, "duo", duoShots);
+    runStage(g, "roots", rootShots);
+    runStage(g, "delver", delverShots);
+    runStage(g, "necro", necroShots);
+    runStage(g, "pickup", pickupShots);
+    runStage(g, "knight", knightShots);
+    runStage(g, "souls", soulsShots);
+    runStage(g, "campfire", campfireShots);
+    runStage(g, "chest", chestShots);
+    runStage(g, "folk", folkShots);
+    runStage(g, "counter", counterShots);
+    runStage(g, "sound", soundFilterShots);
+    runStage(g, "stats", statsShots);
+    runStage(g, "wolf", wolfShots);
+    runStage(g, "day", dayShots);
+    runStage(g, "editor", editorShots);
+    runStage(g, "editorgap", editorGapShots);
 }
 
 fn particleStudyShots(g: *Game) void {
@@ -2662,7 +2679,7 @@ fn parryStudyPair(g: *Game, rt: rl.RenderTexture2D, initial: anytype, model: any
 fn parryStudyFrame(g: *Game, rt: rl.RenderTexture2D, body: anytype, model: anytype, name: []const u8, side: usize, frame: usize, clock: f32, boom: f32) void {
     var path: [160]u8 = undefined;
     const file = std.fmt.bufPrintZ(&path, DIR ++ "/parry_study_{s}_{d}_{d}.png", .{ name, side, frame }) catch unreachable;
-    if (!stageOn(file)) return;
+    if (!frameOn(file)) return;
     const Plate = struct {
         body: @TypeOf(body),
         model: @TypeOf(model),
@@ -2696,7 +2713,7 @@ fn unitStudyFrame(g: *Game, rt: rl.RenderTexture2D, body: anytype, model: anytyp
 fn unitStudyViewFrame(g: *Game, rt: rl.RenderTexture2D, body: anytype, model: anytype, tag: []const u8, view: StudyView) void {
     var name: [128]u8 = undefined;
     const path = std.fmt.bufPrintZ(&name, DIR ++ "/{s}.png", .{tag}) catch unreachable;
-    if (!stageOn(path)) return;
+    if (!frameOn(path)) return;
     const Plate = struct {
         body: @TypeOf(body),
         model: @TypeOf(model),
@@ -3576,7 +3593,7 @@ fn frogStudyShots(g: *Game) void {
         fn shot(p: *const @This(), gg: *Game, target: rl.RenderTexture2D, tag: []const u8, tall: bool) void {
             var name: [128]u8 = undefined;
             const path = std.fmt.bufPrintZ(&name, DIR ++ "/frog_study_{s}.png", .{tag}) catch unreachable;
-            if (!stageOn(path)) return;
+            if (!frameOn(path)) return;
             const height: f32 = if (tall) 2.65 else 1.30;
             const dist = height / (2 * @tan(mathx.radians(camera.FOVY) * 0.5) * 0.78) + 0.50;
             hudmod.renderIntoTarget(target, .{
@@ -5891,7 +5908,7 @@ fn slimeStudyShots(g: *Game) void {
 fn slimePlate(g: *Game, rt: rl.RenderTexture2D, mire: *slimemod.Mire, tag: []const u8) void {
     var name: [128]u8 = undefined;
     const path = std.fmt.bufPrintZ(&name, DIR ++ "/{s}.png", .{tag}) catch unreachable;
-    if (!stageOn(path)) return;
+    if (!frameOn(path)) return;
     const Plate = struct {
         mire: *slimemod.Mire,
         scene: *gfx.Scene,

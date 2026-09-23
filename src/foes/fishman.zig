@@ -470,7 +470,7 @@ pub const Fishman = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
@@ -492,7 +492,7 @@ pub const Fishman = struct {
             },
             .stunlight, .stunheavy => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
-                if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.idle);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enter(.idle);
             },
             .roll => {
                 // A ROLL IS A DISTANCE, SO IT IS BILLED OFF THE PROFILE'S OWN INTEGRAL AND NOT PER FRAME: written as a rate the arc came out at 2.33 m of an advertised 3.30.
@@ -557,7 +557,7 @@ pub const Fishman = struct {
                     },
                     .hold, .close, .back => |ch| {
                         const want = spec(self.role).speed * WALK_BASE;
-                        const to = if (ch == .hold) self.home else quarry;
+                        const to = if (ch == .hold) foe.tetherFor(self) else quarry;
                         self.faceToward(self.nav.aim(self.pos, to), dt);
                         self.speed = approach(self.speed, want, ACCEL * dt);
                         moveSpeed = self.speed;
@@ -618,6 +618,7 @@ pub const Fishman = struct {
 
     pub fn tryHit(self: *Fishman, blade: foe.Blade) void {
         if (self.state == .dead) return;
+        foe.idleLatch(self, blade);
         if (self.invulnerable()) return;
         const s = foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, .{ .light = 0.75, .heavy = 1.45 });
@@ -892,7 +893,8 @@ pub const Shoal = struct {
             const f = &self.band[i];
             if (f.update(dt, f.threat.aim(hero), bounds, blade, bandHurt)) |h| foe.worseBlow(&worst, h, f.pos, &f.threat);
             if (f.snared > 0) {
-                snare = @max(snare, f.snared);
+                // The net flew at `threat.aim`: one that landed on the spirit or a turned foe holds nobody's feet but theirs.
+                if (f.threat.on == .hero) snare = @max(snare, f.snared);
                 foe.worseBlow(&worst, NET_HIT, f.pos, &f.threat);
             }
             if (f.rang) self.mend(f.pos);

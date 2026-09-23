@@ -647,6 +647,7 @@ test "SCHEDULE malformed and impossible authored orders fail loudly" {
         .{ .text = "schedule: a\nschedule: a\n", .err = ParseError.DuplicateSchedule },
         .{ .text = "shift: 0 4 patrol\n", .err = ParseError.NoOwner },
         .{ .text = "schedule: a\nshift: 24 4 patrol\n", .err = ParseError.BadNumber },
+        .{ .text = "schedule: a\nshift: 23.999 4 patrol\n", .err = ParseError.BadNumber },
         .{ .text = "schedule: a\nshift: 0 nan patrol\n", .err = ParseError.BadNumber },
         .{ .text = "schedule: a\nshift: 0 4 patrol bad=1\n", .err = ParseError.UnknownKey },
         .{ .text = "schedule: a\nshift: 0 4 patrol wp=0,0 wp=0,0 wp=0,0 wp=0,0 wp=0,0 wp=0,0 wp=0,0 wp=0,0 wp=0,0\n", .err = ParseError.TooManyWaypoints },
@@ -1292,6 +1293,19 @@ pub fn removeDialog(m: *Map, dlg: u16) bool {
     @memcpy(m.dacts[0..na], acts[0..na]);
     m.nnodes = nn;
     m.ndacts = na;
+    // The gone dialog's choice gates go with it, or an orphaned `talked` still counts as a user of the dialog it names.
+    var gates: [MAX_GATES]Cond = undefined;
+    var ng: usize = 0;
+    for (m.nodes[0..nn]) |*nd| {
+        for (nd.choices[0..nd.nchoices]) |*c| {
+            if (c.gate < 0) continue;
+            gates[ng] = m.gates[@intCast(c.gate)];
+            c.gate = @intCast(ng);
+            ng += 1;
+        }
+    }
+    @memcpy(m.gates[0..ng], gates[0..ng]);
+    m.ngates = ng;
 
     std.mem.copyForwards(Dialog, m.dialogs[dlg .. m.ndialogs - 1], m.dialogs[dlg + 1 .. m.ndialogs]);
     m.ndialogs -= 1;
@@ -1917,28 +1931,26 @@ pub const Map = struct {
         if (self.findSchedule(text)) |other| {
             if (other != i) return false;
         }
-        const old = self.schedules[i].id;
-        for (self.foes[0..self.nfoes]) |*f| {
-            if (std.mem.eql(u8, idText(&f.schedule), idText(&old))) f.schedule = id;
-        }
-        for (self.npcs[0..self.nnpcs]) |*p| {
-            if (std.mem.eql(u8, idText(&p.schedule), idText(&old))) p.schedule = id;
-        }
+        self.repointSchedule(self.schedules[i].id, id);
         self.schedules[i].id = id;
         return true;
     }
 
     pub fn removeSchedule(self: *Map, i: usize) void {
         if (i >= self.nschedules) return;
-        const old = self.schedules[i].id;
-        for (self.foes[0..self.nfoes]) |*f| {
-            if (std.mem.eql(u8, idText(&f.schedule), idText(&old))) f.schedule = [_]u8{0} ** ID_CAP;
-        }
-        for (self.npcs[0..self.nnpcs]) |*p| {
-            if (std.mem.eql(u8, idText(&p.schedule), idText(&old))) p.schedule = [_]u8{0} ** ID_CAP;
-        }
+        self.repointSchedule(self.schedules[i].id, [_]u8{0} ** ID_CAP);
         std.mem.copyForwards(Schedule, self.schedules[i .. self.nschedules - 1], self.schedules[i + 1 .. self.nschedules]);
         self.nschedules -= 1;
+    }
+
+    /// Every unit that names `old`, creature and folk alike, is moved onto `to` (an empty id detaches it).
+    fn repointSchedule(self: *Map, old: Id, to: Id) void {
+        for (self.foes[0..self.nfoes]) |*f| {
+            if (std.mem.eql(u8, idText(&f.schedule), idText(&old))) f.schedule = to;
+        }
+        for (self.npcs[0..self.nnpcs]) |*p| {
+            if (std.mem.eql(u8, idText(&p.schedule), idText(&old))) p.schedule = to;
+        }
     }
 
     pub fn setName(self: *Map, s: []const u8) void {
@@ -3284,11 +3296,10 @@ fn parseScript(m: *Map, rec: []const u8, rest: []const u8, it: *Toks, cur: *Curs
         const s = &m.schedules[si];
         if (s.nslots >= MAX_SCHEDULE_SLOTS) return ParseError.TooManyScheduleSlots;
         var slot = ScheduleSlot{
-            .start = try nextFloat(it),
-            .end = try nextFloat(it),
+            .start = try nextHour(it),
+            .end = try nextHour(it),
             .order = try enumFromName(ScheduleOrder, it.next() orelse return ParseError.MissingField),
         };
-        if (slot.start < 0 or slot.start >= 24 or slot.end < 0 or slot.end >= 24) return ParseError.BadNumber;
         while (it.next()) |tok| {
             const eq = std.mem.indexOfScalar(u8, tok, '=') orelse return ParseError.UnknownKey;
             const key = tok[0..eq];
@@ -4197,6 +4208,14 @@ pub fn finiteFloat(comptime T: type, tok: []const u8) !T {
     const v = std.fmt.parseFloat(T, tok) catch return ParseError.BadNumber;
     if (!std.math.isFinite(v)) return ParseError.BadNumber;
     return v;
+}
+
+
+/// Rounded to the two places the writer prints BEFORE the range check, or 23.999 loads and is written back as a 24.00 that will not.
+fn nextHour(it: anytype) !f32 {
+    const h = @round(try nextFloat(it) * 100) / 100;
+    if (h < 0 or h >= 24) return ParseError.BadNumber;
+    return h;
 }
 
 fn nextFloat(it: *std.mem.TokenIterator(u8, .any)) !f32 {
@@ -5843,6 +5862,31 @@ test "DELETING A BODY KEEPS EVERY `near` POINTING AT THE BODY IT MEANT — and t
     var bl: usize = 0;
     try parse(fbs.getWritten(), &back, &bl);
     try std.testing.expectEqual(@as(usize, 1), back.nnpcs);
+}
+
+test "A RECLAIMED CONVERSATION TAKES ITS GATES WITH IT" {
+    const alloc = std.testing.allocator;
+    const m = try testMap(alloc, TEST_HEAD ++
+        \\npc: merchant 0.00 0.00 0.0 1.00 0.20 dlg=gated
+        \\dlg: gated
+        \\  node: root
+        \\  say: Salt and iron.
+        \\  ask: Go on. -> end
+        \\  need: talked spare
+        \\dlg: spare
+        \\  node: root
+        \\  say: Nothing here.
+        \\  then: end
+        \\
+    );
+    defer alloc.destroy(m);
+    try std.testing.expectEqual(@as(usize, 1), m.ngates);
+    try std.testing.expectEqual(@as(usize, 1), dialogUsers(m, 1));
+    _ = removeNpc(m, 0);
+    try std.testing.expect(removeDialog(m, 0));
+    try std.testing.expectEqual(@as(usize, 0), m.ngates);
+    try std.testing.expectEqual(@as(usize, 0), dialogUsers(m, 0));
+    try std.testing.expect(removeDialog(m, 0));
 }
 
 test "A CONVERSATION NOBODY OPENS IS RECLAIMED, and one anything still names is left standing" {

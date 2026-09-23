@@ -660,7 +660,9 @@ pub fn dropdown(ctx: *Ctx, r: rl.Rectangle, id: u32, labels: []const [:0]const u
     );
     if (h and ctx.pressed) {
         openId = if (isOpen) null else id;
-        openScroll = if (isOpen) 0 else @max(0, @as(i32, @intCast(sel)) - DD_MAX_SHOWN + 1);
+        // `sel` may be `labels.len` ("(none)"), and unclamped the list opened one row past its own end.
+        const most = @max(0, @as(i32, @intCast(@min(labels.len, DD_ROWS_CAP))) - DD_MAX_SHOWN);
+        openScroll = if (isOpen) 0 else @min(most, @max(0, @as(i32, @intCast(sel)) - DD_MAX_SHOWN + 1));
         ctx.consume();
         return null;
     }

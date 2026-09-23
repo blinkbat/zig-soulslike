@@ -8,6 +8,7 @@ const item = @import("item.zig");
 const chestmod = @import("chest.zig");
 const envmod = @import("../world/env.zig");
 const soulsmod = @import("souls.zig");
+const props = @import("../props/props.zig");
 
 const v3 = mathx.v3;
 
@@ -101,7 +102,8 @@ pub const Pickups = struct {
     }
 
     /// Refuses an empty list, so `nloot > 0` stays the honest test for "this one is a drop".
-    /// A FULL LIST RECYCLES A SPENT SLOT BEFORE IT REFUSES. With none spendable the drop is DROPPED rather than overwriting a glow standing in front of you.
+    /// A FULL LIST RECYCLES A SPENT SLOT, ELSE THE UNTAKEN DROP FARTHEST PAST ITS KIND'S OWN `view` — body drops outlive a rest, so a list that only
+    /// ever refused filled with purses he walked away from and then refused a boss's hoard. A glow he could still see is never overwritten.
     pub fn spawn(self: *Pickups, at: rl.Vector3, kinds: []const item.Kind, gold: u32) void {
         if (kinds.len == 0 and gold == 0) return;
         const n = @min(kinds.len, DROP_MAX);
@@ -111,10 +113,19 @@ pub const Pickups = struct {
             self.n += 1;
         } else {
             p = blk: {
+                const seen = props.info(.pickup).view;
+                var far: ?*Pickup = null;
+                var farD: f32 = seen * seen;
                 for (self.list[self.mapped..self.n]) |*q| {
                     if (q.spent()) break :blk q;
+                    if (q.taken) continue;
+                    const d = mathx.dist2XZ(q.pos, at);
+                    if (d > farD) {
+                        farD = d;
+                        far = q;
+                    }
                 }
-                return;
+                break :blk far orelse return;
             };
         }
         p.* = .{ .pos = at, .yaw = 0, .scale = 1, .op = 0, .nloot = @intCast(n), .gold = gold };
@@ -277,6 +288,18 @@ test "A FULL LIST RECYCLES A SPENT SLOT AND NEVER OVERWRITES ONE YOU CAN STILL S
     try std.testing.expectEqual(item.Kind.kobold_fang, ps.list[7].loot[0]);
     try std.testing.expect(!ps.list[7].taken);
     try std.testing.expectEqual(CAP, ps.n);
+}
+
+test "A FULL LIST TAKES BACK A DROP HE CANNOT SEE BEFORE IT REFUSES A NEW ONE" {
+    var ps = Pickups{};
+    ps.reset(&.{});
+    const far = props.info(.pickup).view + 40;
+    for (0..CAP) |i| ps.spawn(v3(if (i == 11) far else 0, 0, 0), &.{.bloodgrass}, 0);
+    ps.spawn(v3(0, 0, 1), &.{.soul_binding_ring}, 0);
+    try std.testing.expectEqual(item.Kind.soul_binding_ring, ps.list[11].loot[0]);
+    try std.testing.expectEqual(CAP, ps.n);
+    ps.spawn(v3(0, 0, 1), &.{.kobold_fang}, 0);
+    for (ps.liveConst()) |p| try std.testing.expect(p.loot[0] != .kobold_fang);
 }
 
 test "A PURSE ALONE IS A DROP — coin lands on the ground and is carried by the glow, not credited on the kill" {

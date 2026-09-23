@@ -678,6 +678,7 @@ pub const Swordsman = struct {
 
     hop: f32 = 0,
     hopDone: f32 = 0,
+    cutFall: foe.Fall = .{},
     hopDir: rl.Vector3 = mathx.zero3,
 
     heroHit: ?combat.Hit = null,
@@ -817,13 +818,18 @@ pub const Swordsman = struct {
     }
 
     fn enter(self: *Swordsman, s: SwState) void {
+        if (s != .lunge and s != .back) {
+            switch (self.state) {
+                .lunge => self.cutFall.carry(self.hop, self.t / SW_LUNGE_DUR, SW_LUNGE_UP * self.scale, SW_LUNGE_DUR),
+                .back => self.cutFall.carry(self.hop, self.t / SW_BACK_DUR, SW_BACK_UP * self.scale, SW_BACK_DUR),
+                else => {},
+            }
+            self.hop = self.cutFall.lift;
+            self.hopDone = 0;
+        }
         self.state = s;
         self.t = 0;
         self.dealt = false;
-        if (s != .lunge and s != .back) {
-            self.hop = 0;
-            self.hopDone = 0;
-        }
     }
 
     fn recoverAfter(self: *Swordsman, r: Recover) void {
@@ -851,7 +857,7 @@ pub const Swordsman = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
 
         self.elapsed += dt;
         self.t += dt;
@@ -985,7 +991,7 @@ pub const Swordsman = struct {
             },
             .stunlight, .stunheavy => {
                 self.chanSet(SW_CARRY.chan());
-                if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.idle);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enter(.idle);
             },
             .dead => {
                 foe.dissipate(self, dt, SW_DEATH_DUR, SW_DISS_DUR, SW_DISSOLVE);
@@ -995,6 +1001,7 @@ pub const Swordsman = struct {
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, moveSpeed, moveYaw, self.facing);
         self.settlePose(dt);
         self.wpnWas = self.bladeSeg();
+        if (self.state != .lunge and self.state != .back and self.cutFall.lift > 0) self.hop = self.cutFall.step(dt);
         self.pose();
     }
 
@@ -1372,7 +1379,7 @@ pub const Magus = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
 
         self.elapsed += dt;
         self.t += dt;
@@ -1528,7 +1535,7 @@ pub const Magus = struct {
             },
             .stunlight, .stunheavy => {
                 self.chanSet(MG_CARRY.chan());
-                if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.idle);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enter(.idle);
             },
             .dead => {
                 foe.dissipate(self, dt, MG_DEATH_DUR, MG_DISS_DUR, MG_DISSOLVE);
@@ -1549,7 +1556,8 @@ pub const Magus = struct {
         }
         self.homing = false;
         const off = mathx.wrapPi(mathx.headingXZ(mathx.dirXZ(self.pos, toward)) - self.facing);
-        switch (mgClassify(dist, self.scale, off, self.orbCd <= 0, self.sproutCd <= 0, self.fadeCd <= 0, self.puffCd <= 0, self.press >= MG_PRESS_HOLD)) {
+        // A TELEPORT IS A JUMP, and the roots refuse it where it is chosen.
+        switch (mgClassify(dist, self.scale, off, self.orbCd <= 0, self.sproutCd <= 0, self.fadeCd <= 0 and foe.canLeap(&self.root), self.puffCd <= 0, self.press >= MG_PRESS_HOLD)) {
             .orb => self.enter(.orb_wind),
             .sprout => self.enter(.sprout_wind),
             .puff => self.enter(.puff_wind),
@@ -1588,6 +1596,7 @@ pub const Magus = struct {
     }
 
     pub fn tryHit(self: *Magus, blade_: foe.Blade) void {
+        foe.idleLatch(self, blade_);
         if (self.state == .dead or self.absent()) return;
         const s = foe.reached(self, blade_) orelse return;
         const heavy = foe.wounded(self, s, blade_, MG_SHOVE);

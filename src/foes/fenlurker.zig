@@ -453,7 +453,7 @@ pub const Lurker = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
 
         self.elapsed += dt;
         self.t += dt;
@@ -477,7 +477,7 @@ pub const Lurker = struct {
                 self.up = mathx.approach(self.up, 1.0, dt * 2.2);
                                 // A flinch swallows the tongue, or the shaft goes on billing off a body that stopped throwing it.
                 self.ext = mathx.approach(self.ext, 0, dt * 8.0);
-                if (self.t >= combat.foeStunDur(self.heavyStun)) self.enter(.recover);
+                if (foe.stunOver(self, self.heavyStun)) self.enter(.recover);
             },
             .sunk => {
                 self.ext = 0;
@@ -663,6 +663,7 @@ pub const Lurker = struct {
     }
 
     pub fn tryHit(self: *Lurker, blade_: foe.Blade) void {
+        foe.idleLatch(self, blade_);
         if (self.state == .dead or self.hidden()) return;
         const s = foe.reached(self, blade_) orelse return;
         const heavy = foe.wounded(self, s, blade_, SHOVE);

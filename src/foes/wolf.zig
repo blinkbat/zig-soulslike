@@ -598,7 +598,7 @@ pub const Wolf = struct {
             return;
         }
         if (self.state == .hurt) {
-            if (self.t >= combat.foeStunDur(self.heavyStun)) self.state = .idle;
+            if (foe.stunOver(self, self.heavyStun)) self.state = .idle;
             self.speed = 0;
             self.settle(dt, bounds);
             self.pose();
@@ -873,9 +873,15 @@ pub const Pack = struct {
         }
     }
 
-    pub fn draw(self: *const Pack) void {
+    /// See-through as a spirit, and a dead one goes out on its own `fade` (`foe.dissipate`) instead of holding 0.86 and popping. VIEW PASS ONLY:
+    /// the depth pass has no fade uniform, so it is handed no scene.
+    pub fn draw(self: *const Pack, scene: ?*gfx.Scene) void {
         if (!self.ready) return;
-        for (self.liveConst()) |*w| w.draw(&self.mesh, self.mat);
+        for (self.liveConst()) |*w| {
+            if (scene) |sc| sc.setFade(SPIRIT_FADE * (1.0 - w.fade));
+            w.draw(&self.mesh, self.mat);
+        }
+        if (scene) |sc| sc.setFade(1);
     }
 
     pub fn drawFirst(self: *const Pack) void {

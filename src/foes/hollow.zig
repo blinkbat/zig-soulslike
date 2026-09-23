@@ -515,7 +515,7 @@ pub const Hollow = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
 
         self.t += dt;
         self.elapsed += dt;
@@ -536,8 +536,7 @@ pub const Hollow = struct {
             },
             .stunlight, .stunheavy => {
                 self.speed = 0;
-                const dur = combat.foeStunDur(self.state == .stunheavy);
-                if (self.t >= dur) self.enter(.idle);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enter(.idle);
             },
             .bite => {
                 if (self.t < BITE_WIND) self.faceToward(hero, dt);
@@ -620,7 +619,7 @@ pub const Hollow = struct {
                             self.facing = mathx.approachAngle(self.facing, w, TURN_RATE * dt);
                             self.state = .walk;
                         } else if (mathx.distXZ(self.pos, foe.homeFor(self)) > HOME_R) {
-                            self.faceToward(self.nav.aim(self.pos, self.home), dt);
+                            self.faceToward(self.nav.aim(self.pos, foe.tetherFor(self)), dt);
                             self.speed = approach(self.speed, WALK_SPEED, ACCEL * dt);
                             foe.stride(self, dt, bounds, &movedDist, &moveSpeed, &moveYaw);
                             self.state = .walk;

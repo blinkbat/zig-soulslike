@@ -531,7 +531,7 @@ pub const Deer = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
 
         self.t += dt;
         self.elapsed += dt;
@@ -564,7 +564,7 @@ pub const Deer = struct {
         self.look = mathx.approach(self.look, wantLook, dt * LOOK_RATE);
 
         if (self.state == .hurt) {
-            if (self.t >= combat.foeStunDur(self.heavyStun)) self.state = .idle;
+            if (foe.stunOver(self, self.heavyStun)) self.state = .idle;
             self.speed = 0;
             self.settle(dt);
             return self.pose();

@@ -893,8 +893,9 @@ pub fn retired(s: []const u8) bool {
 }
 
 /// What the editor may put in a chest or on a plinth: a full flask is never found, only an empty one.
+/// The purse is the hero's `u32` drawn as a bag cell, never a stack in the bag.
 pub fn placeable(k: Kind) bool {
-    return !isFlask(k);
+    return !isFlask(k) and k != .gold_purse;
 }
 
 pub const CAP: u16 = 999;

@@ -302,6 +302,7 @@ pub const Kobold = struct {
     dashDone: f32 = 0,
     dashPhase: f32 = 0,
     hop: f32 = 0,
+    cutFall: foe.Fall = .{},
     healWanted: bool = false,
     whirlPh: f32 = 0,
     moveDir: rl.Vector3 = mathx.zero3,
@@ -490,7 +491,7 @@ pub const Kobold = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.elapsed += dt;
         self.t += dt * self.vit.hasteMult();
         self.vit.tick(dt);
@@ -544,7 +545,8 @@ pub const Kobold = struct {
             },
             .dash => {
                 self.faceToward(hero, dt * 0.5);
-                if (foe.launchRefused(self, DASH_GATHER, dt)) {
+                // Hasted, as `t` is: on the plain `dt` a berserk's crossing frame slipped past the re-ask one time in five.
+                if (foe.launchRefused(self, DASH_GATHER, dt * self.vit.hasteMult())) {
                     self.hop = 0;
                     self.decide(d);
                 } else {
@@ -584,18 +586,21 @@ pub const Kobold = struct {
                 }
             },
             // `t` runs hasted under a berserk: the reel can end before `Vitals`'s does.
-            .stunlight => if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.standUp(),
-            .stunheavy => if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.standUp(),
+            .stunlight => if (foe.stunOver(self, false)) self.standUp(),
+            .stunheavy => if (foe.stunOver(self, true)) self.standUp(),
             .dead => foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE),
         }
 
         const gaitSpeed: f32 = if (movedDist > 0) moveSpeed else 0;
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, gaitSpeed, moveYaw, self.facing);
+        if (self.state != .dash and self.cutFall.lift > 0) self.hop = self.cutFall.step(dt);
         self.poseStep = dt;
         self.pose();
         if (self.state == .whirl) self.emitWhirlEmbers(dt);
         self.takeParry();
         self.tryHit(blade);
+        // The sling's rule: the release is billed after the blade, so a stroke on that frame cancels the rite.
+        if (act == .healed and (self.staggered() or !foe.corporeal(self))) act = .none;
         if (releaseSling and self.state == .whirl) {
             act = .{ .sling = self.slingPoint() };
             self.slingCd = SLING_CD;
@@ -675,7 +680,7 @@ pub const Kobold = struct {
         if (d > AGGRO_R) {
             const back = mathx.distXZ(self.pos, foe.homeFor(self));
             if (back > HOME_R) {
-                self.moveDir = mathx.dirXZ(self.pos, self.home);
+                self.moveDir = mathx.dirXZ(self.pos, foe.tetherFor(self));
                 return self.enter(.reposition);
             }
             return self.enter(.idle);
@@ -883,13 +888,18 @@ pub const Kobold = struct {
         }
     }
 
+    fn catchFall(self: *Kobold) void {
+        if (self.state == .dash) self.cutFall.carry(self.hop, dashU(self.t), DASH_RISE, DASH_FLIGHT);
+        self.hop = self.cutFall.lift;
+    }
+
     fn enterStun(self: *Kobold, s: State) void {
+        self.catchFall();
         if (self.state == .cast) self.castCd = CAST_CD;
         self.state = s;
         self.t = 0;
         self.dealt = true;
         self.chopsLeft = 0;
-        self.hop = 0;
     }
 
     pub fn stagger(self: *Kobold, heavy: bool) void {
@@ -900,11 +910,11 @@ pub const Kobold = struct {
     }
 
     fn enterDeath(self: *Kobold) void {
+        self.catchFall();
         self.state = .dead;
         self.t = 0;
         self.dealt = true;
         self.chopsLeft = 0;
-        self.hop = 0;
         self.justDied = true;
     }
 

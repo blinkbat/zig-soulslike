@@ -398,7 +398,7 @@ pub const Slime = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
@@ -420,7 +420,7 @@ pub const Slime = struct {
             },
             .stunlight, .stunheavy => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
-                if (self.t >= combat.foeStunDur(self.state == .stunheavy)) self.enter(.idle);
+                if (foe.stunOver(self, self.state == .stunheavy)) self.enter(.idle);
             },
             .lash => {
                 self.speed = approach(self.speed, 0, ACCEL * 2.2 * dt);
@@ -530,18 +530,21 @@ pub const Slime = struct {
     pub fn tryHit(self: *Slime, blade: foe.Blade) void {
         if (self.dying()) return;
         if (blade.active and !self.hullTouches(blade.a, blade.b, blade.r) and !self.hullTouches(blade.a0, blade.b0, blade.r)) return;
+        const poiseWas = self.vit.poise;
         const s = foe.reached(self, blade) orelse return;
         const heavy = foe.wounded(self, s, blade, .{ .light = 0.8, .heavy = 1.3 });
         self.ooze(s.contact, s.dir, foe.hitParts(if (heavy) HIT_OOZE_HEAVY else HIT_OOZE_LIGHT));
         sfx.world(.shroom_hurt, self.pos);
+        // A flinch may not replace the divide it lands in: the body would stand at half its bar, whole, until another blow.
+        const dividing = self.state == .splitting;
         switch (s.reaction) {
             .death => {
                 sfx.world(.shroom_die, self.pos);
                 self.enterDeath();
                 return;
             },
-            .heavy => self.enterStun(.stunheavy),
-            .light => self.enterStun(.stunlight),
+            .heavy => if (dividing) self.vit.refuseFlinch(poiseWas) else self.enterStun(.stunheavy),
+            .light => if (dividing) self.vit.refuseFlinch(poiseWas) else self.enterStun(.stunlight),
             .none => {},
         }
         // One blow is one split however far under the line it drove the bar; `splitting` is what refuses a second.
@@ -696,6 +699,8 @@ pub const Mire = struct {
                     // Kept across `seatInto`, which reuses the parent's slot: the ooze `divide` threw is in this pool.
                     const motes = self.slimes[i].parts;
                     const head = self.slimes[i].fxHead;
+                    // And its hit count: reset to 0 by the child that takes the slot, `game`'s tally fell on the divide frame and that blow's beat was lost.
+                    const hits = self.slimes[i].hits;
                     const across = mathx.perpXZNeg(mathx.headingDir(s.facing));
                     for ([_]f32{ -1, 1 }, 0..) |side, k| {
                         const off = SPLIT_SET * s.scale * side;
@@ -708,6 +713,7 @@ pub const Mire = struct {
                     if (!self.slimes[i].gone) {
                         self.slimes[i].parts = motes;
                         self.slimes[i].fxHead = head;
+                        self.slimes[i].hits = hits;
                     }
                 },
             }

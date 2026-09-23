@@ -359,6 +359,8 @@ pub const Game = struct {
     probe: LookProbe = .{},
     shelf: savemod.Shelf = .{},
     slot: usize = 0,
+    /// A New Game or a Load chose `slot`. The title's own fresh world, played through the editor's F5, chose nothing, and wrote `save1.dat` over.
+    ownsSlot: bool = false,
     shotOwed: bool = false,
     enterOut: f32 = 0,
     enterIn: f32 = 0,
@@ -488,6 +490,7 @@ pub const Game = struct {
         g.searT = 0;
         g.shelf = savemod.survey();
         g.slot = 0;
+        g.ownsSlot = false;
         g.shotOwed = false;
         g.enterOut = 0;
         g.enterIn = 0;
@@ -587,6 +590,8 @@ fn beginGame(g: *Game) void {
     seedChart(g);
     g.bossBits = NO_BOSSES;
     rehomeFoes(g, .blind);
+    // A run on the map already standing is not re-materialized, so a wall the last run opened would stay open; no save carries one.
+    g.env.restoreBreaches();
     g.rest = .{};
     rehomeChests(g);
     armScript(g);
@@ -617,11 +622,13 @@ fn enterNow(g: *Game, act: Enter) void {
             if (!g.mapAt.is(worldfmt.startMap()) and !swapMap(g, worldfmt.startMap())) @panic("game: the start map will not load");
             beginGame(g);
             g.slot = i;
+            g.ownsSlot = true;
             g.menu.started();
         },
         .load => |i| {
             if (loadGame(g, i)) {
                 g.slot = i;
+                g.ownsSlot = true;
                 g.menu.started();
             } else {
                 g.shelf.refused(i);
@@ -649,6 +656,7 @@ fn swapMap(g: *Game, path: []const u8) bool {
         return false;
     };
     g.mapAt = savemod.MapName.of(path);
+    g.editor.adoptPath(path);
     // `mapAt` no longer came from the editor's path, so its door solves again the next frame it is open.
     g.mapFrom = .{};
     PLAY_HALF = playHalfOf(g.map.half);
@@ -769,7 +777,9 @@ fn snapBosses(g: *Game) void {
     inline for (BOSS_RAILS, 0..) |row, i| snapRail(&g.bossBits, i, @field(g, row.field).liveConst());
 }
 
+/// `snapBosses`' own guard: the room's one creature is index 0 of its group, and the run's rail would lay it down before the retry.
 fn applyBosses(g: *Game) void {
+    if (editormod.Editor.sparring()) return;
     inline for (BOSS_RAILS, 0..) |row, i| applyRail(&g.bossBits, i, @field(g, row.field).live());
 }
 
@@ -1455,7 +1465,10 @@ pub fn inCombat(g: *const Game) bool {
 
 fn foeFights(f: anytype, hero: rl.Vector3, aggro: f32) bool {
     if (!foemod.corporeal(f)) return false;
-    return f.leash.roused() or mathx.distXZ(hero, f.pos) <= aggro;
+    if (f.leash.roused()) return true;
+    // A body in disguise, out of its hour, or on a peaceful slot has not noticed him, and the book's refusal would say it had.
+    if (disguised(f) or f.leash.passive) return false;
+    return mathx.distXZ(hero, f.pos) <= aggro;
 }
 
 test "WHAT THE FRAME COSTS — the group slabs, the biggest bodies, and one Game" {
@@ -1802,6 +1815,7 @@ const SparKept = struct {
     /// Souls and the tree go back TOGETHER, or a node bought at the room's fire is refunded.
     souls: combat.Souls,
     tree: ptree.Tree,
+    gold: combat.Gold,
     flasks: combat.Flasks,
     quiver: combat.Quiver,
 };
@@ -1823,6 +1837,7 @@ fn sparKit(g: *Game) void {
         .spawnFacing = g.hero.spawnFacing,
         .souls = g.hero.souls,
         .tree = g.tree,
+        .gold = g.hero.gold,
         .flasks = g.hero.flasks,
         .quiver = g.hero.quiver,
     };
@@ -1861,6 +1876,7 @@ fn leaveSpar(g: *Game) bool {
             const w: item.Wear = @enumFromInt(f.value);
             _ = g.hero.wear(w, k.worn.at(w));
         }
+        g.hero.gold = k.gold;
         g.hero.flasks = k.flasks;
         g.hero.quiver = k.quiver;
     }
@@ -1881,7 +1897,7 @@ test "THE KIT COMES OFF AT THE SAME DOOR THE MAP DOES — nothing reaches `endSp
     }
     try std.testing.expectEqual(@as(usize, 1), doors);
     try std.testing.expect(std.mem.indexOf(u8, src, "fn leaveSpar(") != null);
-    inline for (.{ "bag", "worn", "arm", "armAlt", "off", "offAlt", "mem", "spell", "at", "spawnAt", "souls", "tree", "flasks", "quiver" }) |f| {
+    inline for (.{ "bag", "worn", "arm", "armAlt", "off", "offAlt", "mem", "spell", "at", "spawnAt", "souls", "tree", "gold", "flasks", "quiver" }) |f| {
         try std.testing.expect(@hasField(SparKept, f));
     }
 }
@@ -2059,7 +2075,8 @@ fn bossBars(g: *Game, dt: f32) void {
         const ring = aggroOfRail(i);
         for (if (gated) @field(g, row.field).liveConst() else &.{}) |*k| {
             if (!k.alive()) continue;
-            if (!(sealed or k.leash.roused() or mathx.distXZ(k.pos, g.hero.pos) <= ring)) continue;
+            const near = !k.leash.passive and mathx.distXZ(k.pos, g.hero.pos) <= ring;
+            if (!(sealed or k.leash.roused() or near)) continue;
             frac = k.vit.hpFrac();
             stag = k.staggered();
             up = true;
@@ -2872,13 +2889,7 @@ fn drawCasters(g: *Game, cull: envmod.Cull) void {
     const flashPass: ?*gfx.Scene = if (cull == .view) &g.scene else null;
     inline for (FOE_GROUPS) |f| @field(g, f.field).draw(flashPass);
     g.folk.draw(cull, drawFar(g));
-    if (cull == .view) {
-        g.scene.setFade(wolfmod.SPIRIT_FADE);
-        g.pack.draw();
-        g.scene.setFade(1);
-    } else {
-        g.pack.draw();
-    }
+    g.pack.draw(if (cull == .view) &g.scene else null);
 }
 
 fn setCasterShaders(g: *Game, sh: rl.Shader) void {
@@ -3017,7 +3028,7 @@ fn spawnSpark(g: *Game, from: rl.Vector3) void {
 }
 
 pub fn spawnWisp(g: *Game, from: rl.Vector3) void {
-    poolPut(g, archermod.launchShaft(from, heroAimPoint(g), shademod.WISP_SPEED, shademod.WISP_HIT, true, .wisp));
+    poolPut(g, archermod.launchShaft(from, heroAimPoint(g), shademod.WISP_SPEED, shademod.MOVES[shademod.WISP].hit, true, .wisp));
 }
 
 fn spawnEmber(g: *Game, from: rl.Vector3) void {
@@ -3425,18 +3436,22 @@ const Reach = enum {
     }
 };
 
-const REACH_RISE: f32 = 2.0 * envmod.STEP_UP;
+const FLOOR_RISE: f32 = 2.0 * envmod.STEP_UP;
 comptime {
-    std.debug.assert(REACH_RISE < propsmod.WATCH_FLOORS[0]);
+    std.debug.assert(FLOOR_RISE < propsmod.WATCH_FLOORS[0]);
 }
 
 fn onSameFloor(deck: ?f32, thingY: f32) bool {
     const d = deck orelse return true;
-    return @abs(thingY - d) <= REACH_RISE;
+    return @abs(thingY - d) <= FLOOR_RISE;
 }
 
-fn atHisLevel(g: *const Game, y: f32) bool {
-    return onSameFloor(g.heroDeck, y);
+/// A deck asks the storey; a chamber asks the ROCK — the ring is XZ, and a hill over a chamber is not a floor you reach through.
+fn atHisLevel(g: *const Game, at: rl.Vector3) bool {
+    if (!onSameFloor(g.heroDeck, at.y)) return false;
+    if (!g.env.caveAny) return true;
+    const him = g.hero.footPos();
+    return g.env.underground(at.x, at.z, at.y) == g.env.underground(him.x, him.z, him.y);
 }
 
 test "A REACH IS REFUSED THROUGH A FLOOR, AND NEVER REFUSED ACROSS THE LAND" {
@@ -3467,7 +3482,7 @@ test "A REACH IS REFUSED THROUGH A FLOOR, AND NEVER REFUSED ACROSS THE LAND" {
     const nb = e.chestSites(&boxes);
     const nf = e.restSites(&fires);
     const ng = e.pickupSites(&glows);
-    std.debug.print("\n  reach band +/-{d:.2} m, asked only on a deck; a storey is {d:.2} m\n", .{ REACH_RISE, floor });
+    std.debug.print("\n  reach band +/-{d:.2} m, asked only on a deck; a storey is {d:.2} m\n", .{ FLOOR_RISE, floor });
     inline for (.{
         .{ "chest ", chestmod.REACH, boxes[0..nb] },
         .{ "rest  ", restmod.REACH, fires[0..nf] },
@@ -3492,12 +3507,12 @@ test "A REACH IS REFUSED THROUGH A FLOOR, AND NEVER REFUSED ACROSS THE LAND" {
 
 fn inReach(g: *const Game, r: Reach) bool {
     return switch (r) {
-        .souls => g.souls.near and atHisLevel(g, g.souls.drop.at.y),
-        .rest => if (g.rest.near) |i| atHisLevel(g, g.rest.list[i].pos.y) else false,
-        .pickup => if (g.pickups.near) |i| atHisLevel(g, g.pickups.list[i].pos.y) else false,
+        .souls => g.souls.near and atHisLevel(g, g.souls.drop.at),
+        .rest => if (g.rest.near) |i| atHisLevel(g, g.rest.list[i].pos) else false,
+        .pickup => if (g.pickups.near) |i| atHisLevel(g, g.pickups.list[i].pos) else false,
         .talk => talkable(g),
-        .mimic => if (g.hoard.near) |i| atHisLevel(g, g.hoard.band[i].pos.y) else false,
-        .chest => if (g.chests.near) |i| atHisLevel(g, g.chests.list[i].pos.y) else false,
+        .mimic => if (g.hoard.near) |i| atHisLevel(g, g.hoard.band[i].pos) else false,
+        .chest => if (g.chests.near) |i| atHisLevel(g, g.chests.list[i].pos) else false,
         .ladder => ladderAt(g) != null,
         .gate => gateAt(g) != null,
     };
@@ -3515,6 +3530,8 @@ fn gateAt(g: *const Game) ?u8 {
 }
 
 fn reachable(g: *const Game) ?Reach {
+    // The rest ring is XZ: pressed falling past a fire, the sit took the fall and the stagger off him.
+    if (g.hero.airborne() or g.hero.staggered()) return null;
     inline for (@typeInfo(Reach).@"enum".fields) |f| {
         const r: Reach = @enumFromInt(f.value);
         if (inReach(g, r)) return r;
@@ -3973,6 +3990,7 @@ fn awardLoot(g: *Game, loot: []const item.Kind, at: rl.Vector3) void {
             g.award.gain(.empty_flask);
             continue;
         }
+        if (!item.placeable(it)) continue;
         g.bag.add(it, 1);
         g.award.gain(it);
     }
@@ -4075,7 +4093,7 @@ fn startTalk(g: *Game) bool {
 fn talkable(g: *const Game) bool {
     const i = g.folk.near orelse return false;
     const p = g.folk.atConst(i) orelse return false;
-    if (!atHisLevel(g, p.pos.y)) return false;
+    if (!atHisLevel(g, p.pos)) return false;
     return p.rec < g.map.nnpcs and g.map.npcs[p.rec].dlg != worldfmt.NO_DIALOG;
 }
 
@@ -4264,13 +4282,13 @@ fn bonfireInput(g: *Game, dt: f32) void {
         if (menumod.stickPush(dt, onWheel)) |d| restmod.navigate(&g.rest, d.x, d.y);
     }
     restmod.pan(&g.rest, menumod.stickPan(), dt);
-    restmod.zoom(&g.rest, menumod.dpadZoom(), dt);
+    restmod.zoom(&g.rest, menumod.dpadZoom(dt), dt);
     if (menumod.confirmPressed()) bonfirePick(g, restmod.confirm(&g.rest, v));
     if (menumod.backPressed() or rl.isKeyPressed(.escape)) restmod.back(&g.rest);
 }
 
 pub fn restView(g: *Game) restmod.View {
-    return .{ .tree = &g.tree, .souls = g.hero.souls.total, .mem = &g.hero.mem, .bag = &g.bag, .flasks = &g.hero.flasks };
+    return .{ .tree = &g.tree, .sheet = &g.hero.sheet, .souls = g.hero.souls.total, .mem = &g.hero.mem, .bag = &g.bag, .flasks = &g.hero.flasks };
 }
 
 fn bonfirePick(g: *Game, pick: restmod.Pick) void {
@@ -4303,6 +4321,7 @@ const SaveShot = enum { withShot, noShot };
 
 fn saveNow(g: *Game, shot: SaveShot) void {
     if (editormod.Editor.sparring()) return;
+    if (!g.ownsSlot and !savemod.onDevShelf()) return;
     snapBosses(g);
     savemod.writeAsync(g.slot, slotOf(g));
     if (shot == .withShot) g.shotOwed = true;
@@ -4632,7 +4651,7 @@ fn strikeVictim(g: *const Game, reach: f32) ?RootPick {
             if (disguised(a)) continue;
             const d = mathx.distXZ(a.pos, g.hero.pos) - a.bodyR();
             if (d > reach) continue;
-            if (@abs(a.pos.y - g.hero.pos.y) > foemod.REACH_RISE) continue;
+            if (foemod.acrossDrop(a.pos, g.hero.pos)) continue;
             if (!g.env.sees(eye, a.lockPoint())) continue;
             if (locked) |l| {
                 if (l.is(memberKind(a, f.kind), i)) return .{ .group = gi, .idx = i };
@@ -6076,6 +6095,9 @@ pub fn run(mode: Mode) void {
                     g.menu.screen = g.menu.home;
                     rl.hideCursor();
                     armScript(g);
+                    clearOrdnance(g);
+                    // The editor re-homed every body, bosses the run has already killed included.
+                    applyBosses(g);
                 },
                 .quit => break,
                 .spar => {
@@ -6087,6 +6109,7 @@ pub fn run(mode: Mode) void {
                     g.menu.started();
                     rl.hideCursor();
                     armScript(g);
+                    clearOrdnance(g);
                     g.hero.pos = g.map.start.at();
                     plantActor(g, &g.hero.pos);
                     g.hero.setSpawn(g.hero.pos, g.map.start.facing());
@@ -6100,6 +6123,7 @@ pub fn run(mode: Mode) void {
                     g.menu.started();
                     rl.hideCursor();
                     armScript(g);
+                    clearOrdnance(g);
                     g.hero.pos = mathx.ground(g.editor.cam.target.x, g.editor.cam.target.z);
                     if (g.editor.under) {
                         if (g.env.caveStandAt(g.hero.pos.x, g.hero.pos.z)) |y| g.hero.pos.y = y;
@@ -6146,6 +6170,7 @@ pub fn run(mode: Mode) void {
                 .toTitle => {
                     // THE STASH MAY NOT OUTLIVE THE WORLD IT BELONGS TO: a stash still held from the title lands his old map over the one he is playing.
                     _ = leaveSpar(g);
+                    g.ownsSlot = false;
                     g.menu.toTitle();
                 },
                 .newGame => |i| beginEnter(g, .{ .fresh = i }),
@@ -6170,7 +6195,7 @@ pub fn run(mode: Mode) void {
             if (booting) {
                 g.bootT += rawDt;
                 bootCam(g, g.bootT);
-            } else g.rig.follow(g.hero.shoulderPoint());
+            } else g.rig.followRoofed(g.hero.shoulderPoint(), camFloor(g), rawDt);
             g.rumble.update(rawDt, false);
             sfx.ambience(rawDt);
             drawScene(g);
@@ -6875,7 +6900,7 @@ fn heldFrame(g: *Game, rawDt: f32, bWasDown: *bool, bHeldT: *f32, wasInside: *bo
     wasInside.* = false;
     g.hero.update(rawDt, 0, 0, null);
     g.hero.pose();
-    g.rig.follow(g.hero.shoulderPoint());
+    g.rig.followRoofed(g.hero.shoulderPoint(), camFloor(g), rawDt);
     g.rumble.update(rawDt, false);
     sfx.ambience(rawDt);
     drawScene(g);
@@ -6982,7 +7007,7 @@ fn tickLiquid(g: *Game, dt: f32) void {
         if (seen[k] > 0) sfx.world(voice, pick[k]);
     }
 
-    const bill = liquidmod.tick(&g.liquidSoak, g.env.liquidUnder(g.hero.pos), dt) orelse {
+    const bill = liquidmod.tick(&g.liquidSoak, g.env.liquidUnder(g.hero.footPos()), dt) orelse {
         g.searT = 0;
         return;
     };
@@ -7709,13 +7734,15 @@ fn openBreach(g: *Game, i: u8, at: rl.Vector3) void {
         .cracked => RUBBLE_PUFF,
         .vines => LEAF_PUFF,
     };
+    // A breach in a cave mouth stands on the chamber floor; `groundAt` there is the hill over it.
+    const pr = &g.env.props[g.env.breachProps[i]];
     for (g.env.breachSolids(i)) |s| {
         var k: usize = 0;
         while (k < BREACH_PUFF_COLS) : (k += 1) {
             const t = (@as(f32, @floatFromInt(k)) + 0.5) / @as(f32, @floatFromInt(BREACH_PUFF_COLS));
             const x = mathx.lerpF(s.a.x, s.b.x, t);
             const z = mathx.lerpF(s.a.z, s.b.z, t);
-            const base = g.env.groundAt(x, z);
+            const base = if (pr.under) pr.pos.y else g.env.groundAt(x, z);
             const top = @min(s.h, base + 6.5);
             var j: usize = 0;
             while (j < BREACH_PUFF_ROWS) : (j += 1) {

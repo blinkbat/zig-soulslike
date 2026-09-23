@@ -67,6 +67,30 @@ pub fn triggerBand(worldR: f32, shipped: f32, scale: f32) f32 {
 
 pub const AIRBORNE_LIFT: f32 = 0.04;
 
+/// A STAGGER IN FLIGHT KEEPS HEIGHT AND VERTICAL VELOCITY: a body cut out of its arc falls out of it on the arc's own gravity instead of
+/// snapping to the turf. The arc is taken as the parabola with the authored apex and flight, which a `sin` hop rises and falls within a hair of.
+pub const Fall = struct {
+    lift: f32 = 0,
+    vel: f32 = 0,
+    g: f32 = 0,
+
+    /// Cut `u` of the way through an arc `apex` high and `flight` seconds long, standing `lift` off the ground.
+    pub fn carry(self: *Fall, lift: f32, u: f32, apex: f32, flight: f32) void {
+        if (lift <= 0 or flight <= 0) return;
+        self.lift = lift;
+        self.vel = 4 * apex * (1 - 2 * mathx.clampF(u, 0, 1)) / flight;
+        self.g = 8 * apex / (flight * flight);
+    }
+
+    pub fn step(self: *Fall, dt: f32) f32 {
+        if (self.lift <= 0) return 0;
+        self.lift = @max(0, self.lift + self.vel * dt - 0.5 * self.g * dt * dt);
+        self.vel -= self.g * dt;
+        if (self.lift <= 0) self.* = .{};
+        return self.lift;
+    }
+};
+
 pub const Nature = enum {
     beast,
     demon,
@@ -614,9 +638,14 @@ pub fn senseHero(l: *const Leash, at: rl.Vector3, hero: rl.Vector3, aggroR: f32)
 /// Metres of GROUND between two bodies over which a melee reach is refused, both ways. Under the shipped lattice's `wf.cliffMinDrop` (2.1 m), so nothing at the foot of a painted face reaches the lip; over any bank a walk climbs.
 pub const REACH_RISE: f32 = 2.0;
 
+/// The gate every melee bill owes, cone or not: a stroke tested on XZ alone reached a man on the lip over its head.
+pub fn acrossDrop(pos: rl.Vector3, at: rl.Vector3) bool {
+    return @abs(pos.y - at.y) > REACH_RISE;
+}
+
 pub fn inFront(pos: rl.Vector3, facing: f32, at: rl.Vector3, reach: f32, dot: f32) bool {
     const d = mathx.distXZ(pos, at);
-    if (d > reach or @abs(pos.y - at.y) > REACH_RISE) return false;
+    if (d > reach or acrossDrop(pos, at)) return false;
     if (d <= POINT_BLANK) return true;
     const to = mathx.dirXZ(pos, at);
     const fwd = mathx.headingDir(facing);
@@ -624,7 +653,7 @@ pub fn inFront(pos: rl.Vector3, facing: f32, at: rl.Vector3, reach: f32, dot: f3
 }
 
 pub fn inArc(pos: rl.Vector3, facing: f32, at: rl.Vector3, reach: f32, arcDeg: f32) bool {
-    if (mathx.distXZ(pos, at) > reach or @abs(pos.y - at.y) > REACH_RISE) return false;
+    if (mathx.distXZ(pos, at) > reach or acrossDrop(pos, at)) return false;
     const to = mathx.dirXZ(pos, at);
     if (mathx.lenXZ(to) < 1e-4) return true;
     return combat.withinArc(mathx.headingXZ(to), facing, arcDeg);
@@ -653,6 +682,9 @@ pub const Wp = wf.Wp;
 
 pub const ROAM_R: f32 = 9.0;
 const ROAM_STEP_LO: f32 = 3.0;
+/// Measured on the body's OWN travel: under `STALL_GO` metres in `STALL_BAIL` seconds and the way is not being made.
+pub const STALL_BAIL: f32 = 1.2;
+pub const STALL_GO: f32 = 0.35;
 const DWELL_LO: f32 = 1.4;
 const DWELL_HI: f32 = 5.0;
 pub const ARRIVE: f32 = 1.1;
@@ -679,6 +711,8 @@ pub const Post = struct {
     back: bool = false,
     mark: rl.Vector3 = mathx.zero3,
     marked: bool = false,
+    stall: f32 = 0,
+    stallAt: rl.Vector3 = mathx.zero3,
     dwell: f32 = 0,
     rng: mathx.Rng = mathx.Rng.init(0x9051_11AA),
 
@@ -721,10 +755,11 @@ pub const Post = struct {
             .roam => .roam,
             .roam_free => .roam_free,
         };
-        self.once = slot.order == .travel or slot.order == .hold;
         self.home = if (slot.nwp > 0) v3(slot.wp[0].x, at.y, slot.wp[0].z) else at;
         self.nwp = if (slot.nwp > 0 and slot.order != .hold) slot.nwp - 1 else 0;
         for (0..self.nwp) |i| self.wp[i] = slot.wp[i + 1];
+        // A patrol with one leg or none is a hold on its first point: left a patrol, `walkRoute` never set off and the tether fell back to the spawn pin.
+        self.once = slot.order == .travel or slot.order == .hold or self.nwp == 0;
     }
 
     pub fn idles(self: *const Post) bool {
@@ -740,7 +775,15 @@ pub const Post = struct {
                     self.dwell -= dt;
                     return null;
                 }
-                if (self.marked and mathx.distXZ(at, self.mark) > ARRIVE) return self.mark;
+                if (self.marked and mathx.distXZ(at, self.mark) > ARRIVE) {
+                    // A random mark can land past a cliff, in deep water or off the edge; one the body has stopped closing on is given up.
+                    self.stall += dt;
+                    if (self.stall < STALL_BAIL) return self.mark;
+                    const went = mathx.distXZ(self.stallAt, at);
+                    self.stall = 0;
+                    self.stallAt = at;
+                    if (went >= STALL_GO) return self.mark;
+                }
                 if (self.marked) {
                     self.marked = false;
                     self.dwell = self.rng.range(DWELL_LO, DWELL_HI);
@@ -758,6 +801,9 @@ pub const Post = struct {
         const from = if (self.ai == .roam) self.home else at;
         self.mark = v3(from.x + mathx.cosf(a) * d, from.y, from.z + mathx.sinf(a) * d);
         self.marked = true;
+        // One window of grace: the folk turn before they walk (`npc.TURN_GATE`), and a half-turn leaves 0.21 m of a first window's walk.
+        self.stall = -STALL_BAIL;
+        self.stallAt = at;
     }
 
     pub fn legHere(self: *const Post, fallback: rl.Vector3) rl.Vector3 {
@@ -863,6 +909,26 @@ test "SCHEDULE a single destination holds there, an empty route stays put, and p
     try std.testing.expect(sensedDist(&l, 1, 10) > 10);
     l.provoke();
     try std.testing.expect(sensedDist(&l, 1, 10) <= 10);
+}
+
+test "SCHEDULE a patrol short of two points holds on the one it has, and tethers there" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++
+        \\schedule: lone
+        \\shift: 0 12 patrol wp=-6,2
+        \\shift: 12 0 patrol
+    );
+    defer std.testing.allocator.destroy(m);
+    var p = Post{};
+    p.arm(.hold, mathx.zero3, &.{}, 0);
+    p.schedule = 0;
+    p.setHour(m, 1, mathx.zero3, false);
+    try std.testing.expectEqualDeep(v3(-6, 0, 2), p.want(0.1, mathx.zero3).?);
+    try std.testing.expectEqualDeep(v3(-6, 0, 2), p.legHere(mathx.zero3));
+    try std.testing.expect(p.want(0.1, v3(-6, 0, 2)) == null);
+    const at = v3(-6, 0, 2);
+    p.setHour(m, 13, at, false);
+    try std.testing.expect(p.want(0.1, at) == null);
+    try std.testing.expectEqualDeep(at, p.legHere(mathx.zero3));
 }
 
 test "SCHEDULE real walkers use their normal gait, follow bends and stop at the authored destination" {
@@ -1193,8 +1259,25 @@ pub fn parryOpen(self: anytype, until: ?f32) ?f32 {
 
 /// WHAT A CAUGHT BLOW COSTS: whether the catch BROKE THE STANCE. `combat.PARRY_HIT` is stance and nothing else — `raw()` and `poise` are both
 /// pinned at 0 in `combat` — so a catch can never resolve as a death.
+/// Every caller reels the body either way, so a catch that left the stance standing starts the LIGHT clock `Vitals.hit` did not: left
+/// unstarted, the punish swings poured poise into a body already reeling and flinched it again.
 pub fn parryBroke(self: anytype) bool {
-    return self.vit.hit(combat.PARRY_HIT) == .heavy;
+    const broke = self.vit.hit(combat.PARRY_HIT) == .heavy;
+    if (!broke) self.vit.beginStun(.light);
+    return broke;
+}
+
+/// A STAGGER THAT DID NOT COME THROUGH `Vitals.hit` (a stun or sleep proc) starts its clock here, and only if the body TOOK it — a floored or
+/// disguised body refuses the state, and a clock without the state would refuse every blow's poise while it lay there.
+pub fn staggerFrom(self: anytype, heavy: bool) void {
+    self.stagger(heavy);
+    if (self.staggered()) self.vit.beginStun(if (heavy) .heavy else .light);
+}
+
+/// A stun ends on the creature's own clock and never while it SLEEPS: the sleep row holds a body down until it is struck (`Vitals.tick`
+/// keeps it reeling that long), and one stood up at 2.4 s fought on with no blow able to flinch it.
+pub fn stunOver(self: anytype, heavy: bool) bool {
+    return self.t >= combat.foeStunDur(heavy) and !self.vit.asleep();
 }
 
 pub fn catchMelee(self: anytype, reach: f32, frontDot: f32, until: ?f32) bool {
@@ -1246,6 +1329,12 @@ pub fn hullsTop(center: rl.Vector3, xf: []const rl.Matrix, hulls: []const Hull) 
     return top;
 }
 
+/// THE SWING LATCH DROPS ON ANY FRAME THE BLADE IS NOT LIVE, so it is asked before a `tryHit` returns early: one that skipped `reached` while
+/// rolling, sunk or blinked out kept the last swing's latch, and the next swing passed through the body and landed nothing.
+pub fn idleLatch(self: anytype, blade: Blade) void {
+    if (!blade.pierce and !blade.active) self.hitLatch = false;
+}
+
 pub fn reached(self: anytype, blade: Blade) ?Strike {
     return reachedPart(self, &self.vit, blade, .{ .center = self.centerWorld(), .r = self.hurtRadius() });
 }
@@ -1261,7 +1350,7 @@ pub fn reachedPart(self: anytype, vit: *combat.Vitals, blade: Blade, part: Part)
 pub fn noteStruck(self: anytype, blade: Blade, s: Strike) void {
     self.leash.provoke();
     self.threat.hurtBy(blade.by, blade.hit.raw());
-    if (blade.pierce) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
+    if (blade.pierce and !blade.bearingless()) self.facing = mathx.headingXZ(mathx.scaleV(s.dir, -1));
 }
 
 pub fn wounded(self: anytype, s: Strike, blade: Blade, push: Push) bool {
@@ -2358,7 +2447,11 @@ fn stayed(self: anytype) bool {
 
 pub fn dissipate(self: anytype, dt: f32, still: f32, diss: f32, d: Dissolve) void {
     if (self.t < still) return;
-    if (stayed(self)) return;
+    // Held, the clock is pinned where the fade would begin: left running, a long hold was past the whole fade on release and the body went in one frame.
+    if (stayed(self)) {
+        self.t = still;
+        return;
+    }
     self.fade = mathx.smoothstep(still, still + diss, self.t);
     dissolveMotes(self, dt, d);
     if (self.t >= still + diss) self.gone = true;
@@ -2759,18 +2852,22 @@ pub fn postStep(self: anytype, dt: f32, bounds: f32, speed: f32, sensed: f32, ag
     if (comptime !@hasField(T, "post")) return .{};
     if (sensed <= aggroR or speed <= 0) return .{};
     const go = self.post.want(dt, self.pos) orelse return .{};
-    const target = if (self.post.shift != null and @hasField(T, "nav")) self.nav.aim(self.pos, go) else go;
-    const dir = mathx.dirXZ(self.pos, target);
+    const dir = mathx.dirXZ(self.pos, postSteer(self, go));
     if (mathx.lenXZ(dir) < 1e-4) return .{};
     const moved = @min(speed * dt, mathx.distXZ(self.pos, go));
     mathx.stepXZ(&self.pos, mathx.normV(dir), moved, bounds);
     return .{ .moved = moved, .speed = speed, .yaw = mathx.headingXZ(dir) };
 }
 
+/// A scheduled route is steered round what stands in the way (`Nav`); a post's own round walks straight at its mark.
+fn postSteer(self: anytype, go: rl.Vector3) rl.Vector3 {
+    return if (self.post.shift != null and @hasField(@TypeOf(self.*), "nav")) self.nav.aim(self.pos, go) else go;
+}
+
 pub fn homeFor(self: anytype) rl.Vector3 {
     const T = @TypeOf(self.*);
     if (comptime !@hasField(T, "post")) return self.home;
-    return if (self.post.ai == .hold) (if (self.post.shift != null) self.post.home else self.home) else self.pos;
+    return if (self.post.ai == .hold) tetherFor(self) else self.pos;
 }
 
 /// A ROUTINE'S `.hold` ARM, THE SAME ON EVERY CREATURE: too far from home it walks back, otherwise it stands. Answers
@@ -2853,8 +2950,7 @@ pub fn postAmble(
         self.speed = mathx.approach(self.speed, 0, accel * dt);
         return false;
     };
-    const target = if (self.post.shift != null and @hasField(@TypeOf(self.*), "nav")) self.nav.aim(self.pos, go) else go;
-    const dir = mathx.dirXZ(self.pos, target);
+    const dir = mathx.dirXZ(self.pos, postSteer(self, go));
     if (mathx.lenXZ(dir) < 1e-4) {
         self.speed = mathx.approach(self.speed, 0, accel * dt);
         return false;
@@ -3149,6 +3245,12 @@ pub const Blade = struct {
     cullAt: f32 = 0,
     through: bool = false,
     by: Victim = .hero,
+
+    /// A CLOUD DOSES WITH A ZERO-LENGTH `through` BLADE (the Chaos Bloom): it has no bearing, so it turns no body toward it and meets no
+    /// board. A zero-length blade WITHOUT `through` is a point strike, which has a place and so a bearing.
+    pub fn bearingless(self: Blade) bool {
+        return self.through and mathx.lenXZ(mathx.subV(self.b, self.a)) < 1e-3;
+    }
 };
 
 /// THE BENCH'S ARROW: an 8 m pierce line through `at` along X. Every creature's "a shaft to the X" test throws this one.
@@ -4007,6 +4109,33 @@ test "A SLEEP PROC PUTS A CREATURE DOWN — through `grip.downed`, which is the 
     try std.testing.expect(!vit.asleep());
 }
 
+test "A STAGGER CUT AT THE APEX FALLS THE HALF OF THE ARC IT HAD LEFT, AT EVERY FRAME RATE" {
+    const apex: f32 = 0.34;
+    const flight: f32 = 0.44;
+    for ([_]f32{ 30, 60, 144 }) |hz| {
+        var f = Fall{};
+        f.carry(apex, 0.5, apex, flight);
+        var t: f32 = 0;
+        while (f.lift > 0) : (t += 1.0 / hz) _ = f.step(1.0 / hz);
+        try std.testing.expectApproxEqAbs(flight * 0.5, t, 1.5 / hz);
+    }
+}
+
+test "A SLEEPING BODY STAYS DOWN PAST ITS STUN CLOCK, AND A PARRY THAT LEFT THE STANCE STILL REELS IT" {
+    const Hollow = @import("hollow.zig").Hollow;
+    const dt: f32 = 1.0 / 60.0;
+    var h = Hollow.spawn(mathx.zero3, 0, 1.0, 0.3);
+    h.vit.build(.sleep, combat.ailRow(.sleep).max * 4);
+    var t: f32 = 0;
+    while (t < combat.FOE_HEAVY_STUN_DUR + 0.5) : (t += dt) _ = h.update(dt, v3(0, 0, 250), 300, .{});
+    try std.testing.expect(h.vit.asleep());
+    try std.testing.expect(h.staggered());
+
+    var p = Hollow.spawn(mathx.zero3, 0, 1.0, 0.3);
+    _ = parryBroke(&p);
+    try std.testing.expect(p.vit.stunned());
+}
+
 test "DEATH WINS THE FRAME — a corpse is never also DOWNED, or the stagger stands it back up" {
     var vit = combat.Vitals.initFoe(400, 999, 999);
     var root = combat.Root{};
@@ -4050,6 +4179,28 @@ test "AN IDLE AI IS OFF UNTIL A MAP SAYS OTHERWISE — every unit holds its post
     try std.testing.expect(!p.idles());
     var t: f32 = 0;
     while (t < 30.0) : (t += 1.0 / 60.0) try std.testing.expect(p.want(1.0 / 60.0, mathx.zero3) == null);
+}
+
+test "A ROAM MARK THE BODY CANNOT CLOSE ON IS GIVEN UP, AND ONE IT IS WALKING TO IS NOT" {
+    const dt: f32 = 1.0 / 60.0;
+    var p = Post{};
+    p.arm(.roam, mathx.zero3, &.{}, 0.3);
+    _ = p.want(dt, mathx.zero3).?;
+    var t: f32 = 0;
+    while (p.want(dt, mathx.zero3) != null) : (t += dt) {
+        if (t > 10) return error.TestUnexpectedResult;
+    }
+    try std.testing.expect(t <= 2 * STALL_BAIL + 2 * dt);
+
+    var q = Post{};
+    q.arm(.roam, mathx.zero3, &.{}, 0.3);
+    var at = mathx.zero3;
+    const mark = q.want(dt, at).?;
+    while (true) {
+        at = mathx.addV(at, mathx.scaleV(mathx.dirXZ(at, mark), 0.7 * dt));
+        if (mathx.distXZ(at, mark) <= ARRIVE) break;
+        try std.testing.expectEqualDeep(mark, q.want(dt, at).?);
+    }
 }
 
 test "THE JUNKYARD DOG IS LEASHED OR IT IS NOT — one never leaves its post, the other never comes back" {

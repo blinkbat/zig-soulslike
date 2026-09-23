@@ -469,6 +469,7 @@ pub const Warrior = struct {
     homing: bool = false,
     leapDone: f32 = 0,
     hop: f32 = 0,
+    cutFall: foe.Fall = .{},
     leapt: bool = false,
     parried: bool = false,
     deflect: foe.Deflect = .{},
@@ -641,7 +642,7 @@ pub const Warrior = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.leapt = false;
         self.parried = false;
         self.deflect.tick(dt);
@@ -734,15 +735,15 @@ pub const Warrior = struct {
             },
             .stunlight => {
                 self.easeNeutral(dt);
-                if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enter(.idle);
+                if (foe.stunOver(self, false)) self.enter(.idle);
             },
             .stunheavy => {
                 self.easeNeutral(dt);
-                if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enter(.idle);
+                if (foe.stunOver(self, true)) self.enter(.idle);
             },
             .guardbreak => {
                 self.easeNeutral(dt);
-                if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enter(.idle);
+                if (foe.stunOver(self, true)) self.enter(.idle);
             },
             .dead => {
                 self.easeNeutral(dt);
@@ -757,6 +758,7 @@ pub const Warrior = struct {
         var target = self.poseChannels();
         self.poseSprings.chase(&target, if (self.state == .swing) 14000 else 6500, 0.76, 0.96, dt);
         self.applyPoseChannels(target);
+        if (self.state != .swing and self.cutFall.lift > 0) self.hop = self.cutFall.step(dt);
         self.pose();
         self.takeParry();
         if (self.live) self.tryReach(hero);
@@ -802,6 +804,11 @@ pub const Warrior = struct {
         self.leapDone = want;
         if (!offEarth) return;
         const wasUp = self.hop > foe.AIRBORNE_LIFT;
+        // Re-asked at the launch: a root closed in the 0.52 s wind keeps him on the earth, and the grip takes the travel back.
+        if (!wasUp and !foe.canLeap(&self.root)) {
+            self.hop = 0;
+            return;
+        }
         self.hop = a.hop * self.scale * mathx.sinf(k * std.math.pi);
         if (!wasUp and self.hop > foe.AIRBORNE_LIFT) {
             self.kickBurst(-1.0, 34, 6.2);
@@ -880,6 +887,9 @@ pub const Warrior = struct {
         }
     }
     fn enterStun(self: *Warrior, s: State) void {
+        const a = self.move();
+        if (self.state == .swing and self.stroke == 0 and a.lunge > 0) self.cutFall.carry(self.hop, self.t / a.swingDur, a.hop * self.scale, a.swingDur);
+        self.hop = self.cutFall.lift;
         self.state = s;
         self.t = 0;
         self.dealt = false;
@@ -887,7 +897,6 @@ pub const Warrior = struct {
         self.live = false;
         self.stroke = 0;
         self.leapDone = 0;
-        self.hop = 0;
         self.homing = false;
     }
     fn enterDeath(self: *Warrior) void {
@@ -981,7 +990,7 @@ pub const Warrior = struct {
     }
 
     fn shielded(self: *const Warrior, blade: foe.Blade) bool {
-        if (!self.covered) return false;
+        if (!self.covered or blade.bearingless()) return false;
         const at = mathx.lerpV(blade.a, blade.b, 0.5);
         const d = mathx.dirXZ(self.pos, at);
         if (mathx.lenXZ(d) < 1e-4) return true;
@@ -1040,6 +1049,13 @@ pub const Warrior = struct {
             self.flash = FLASH_DUR;
             sfx.world(.bone_die, self.pos);
             return self.enterDeath();
+        }
+        // The stance broke through the boards (`knight.caught`'s arm): `Vitals` has already started the heavy clock, and a guard that shrugged it stood immune for its length.
+        if (s.reaction == .heavy) {
+            self.hits += 1;
+            self.flash = FLASH_DUR;
+            sfx.world(.bone_hurt, self.pos);
+            return self.enterStun(.stunheavy);
         }
         if (self.stam.cur > 0) {
             sfx.world(.guard_block, self.pos);
@@ -2065,6 +2081,8 @@ test "A CAUGHT STROKE NEVER LANDS, and HYPER ARMOUR is no defence against the bo
     try std.testing.expect(!w.live);
     try std.testing.expect(w.cds[0] > 0);
     try std.testing.expectEqual(@as(f32, 0), w.hop);
+    // He swings again only once the first catch's reel is over, and a reel refuses stance.
+    w.vit.endStun();
     w.state = .swing;
     w.t = a.swingDur * a.impactK - PARRY_LEAD * 0.5;
     w.parried = false;

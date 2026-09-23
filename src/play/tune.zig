@@ -362,7 +362,8 @@ comptime {
 const ARM_COLS = [_]Col{
     .{ .name = "dmg", .hi = 4, .step = 0.02, .tip = "Multiplier on the bare stroke's damage - the straight sword is 1 on every dial" },
     .{ .name = "poise", .hi = 4, .step = 0.02, .tip = "Multiplier on what the stroke takes off a body's flinch pool" },
-    .{ .name = "dur", .hi = 3, .step = 0.02, .tip = "Multiplier on how long the swing takes" },
+    // A DIVISOR: at 0 the swing billed its stamina and ended on its first frame, and the bow never loosed.
+    .{ .name = "dur", .lo = 0.1, .hi = 3, .step = 0.02, .tip = "Multiplier on how long the swing takes" },
     .{ .name = "stam", .hi = 3, .step = 0.02, .tip = "Multiplier on what the swing bills in stamina" },
     .{ .name = "negate", .hi = 2, .step = 0.02, .tip = "Shields only: multiplier on how much a block turns aside" },
     .{ .name = "arc", .hi = 2, .step = 0.02, .tip = "Shields only: multiplier on the compass the guard covers" },
@@ -783,8 +784,9 @@ fn useHas(r: usize, c: usize) bool {
         .arrows, .souls => col == .n,
         .regen, .grease => col == .secs or col == .frac,
         .lob => |q| switch (col) {
-            .dmg, .poise, .fire, .lightning, .radius => true,
-            .dose => q.dose != null,
+            .dmg, .poise, .fire, .lightning => true,
+            // Only the powder's burst reads the radius; a shaft lands on one body.
+            .dose, .radius => q.dose != null,
             else => false,
         },
         .ward => col == .ward or col == .secs,
@@ -854,15 +856,22 @@ fn nodeHas(r: usize, c: usize) bool {
 /// AN ATTRIBUTE GRANT IS POINTS, AND POINTS ARE WHOLE — `Grant.attr.n` is a `u8`, so the column's 0.05 step moved nothing at all on those rows.
 fn nodeLimit(r: usize, c: usize) Col {
     const grant = NODE_COLS[@intFromEnum(NodeCol.grant)];
-    if (@as(NodeCol, @enumFromInt(c)) == .grant and std.meta.activeTag(passivetree.NODES[r].grant) == .attr) {
-        return .{
+    if (@as(NodeCol, @enumFromInt(c)) == .grant) switch (std.meta.activeTag(passivetree.NODES[r].grant)) {
+        .attr => return .{
             .name = grant.name,
             .hi = NODE_COLS[@intFromEnum(NodeCol.rider)].hi,
             .step = 1,
             .int = true,
             .tip = grant.tip,
-        };
-    }
+        },
+        // The cast's CLOCK is multiplied by it: at 0 a cast never ends and he stands committed until something staggers him.
+        .castSpeed => {
+            var col = grant;
+            col.lo = grant.step;
+            return col;
+        },
+        else => {},
+    };
     return NODE_COLS[c];
 }
 
@@ -1075,7 +1084,8 @@ fn foeSouls(k: wf.FoeKind) ?*u32 {
         .toad => &frogmod.SOULS,
         .archer => &archermod.SOULS,
         .ogre => &ogremod.SOULS,
-        .shade, .mourner => &shademod.SOULS,
+        .shade => &shademod.SOULS,
+        .mourner => &shademod.MOURN_SOULS,
         .leechfly => &leechflymod.SOULS,
         .rooted => &rootedmod.SOULS,
         .shroom => &shroommod.SOULS,
@@ -1774,12 +1784,15 @@ pub fn load() void {
     }
 }
 
-/// A hand-edited `hp 1e9` is the one door in with no bound on it at all, and `load` runs before any body exists, so the code value is usually 0 and there is no absolute to clamp through. Bounded by the column's own span in that case.
+/// A ratio read with no absolute to clamp through. NOT the column's `hi`: that is an absolute, and read as a ratio it put the flinch dial (hi 1) back to x1 on every load.
+const RATIO_MAX: f32 = 1000;
+
+/// A hand-edited `hp 1e9` is the one door in with no bound on it at all, and `load` runs before any body exists, so the code value is usually 0 and there is no absolute to clamp through. Bounded by `RATIO_MAX` in that case.
 fn ratioIn(t: usize, r: usize, c: usize, v: f32) f32 {
     const col = colSpec(t, r, c);
     const code = baseValue(t, r, c);
     if (code > 0) return mathx.clampF(v * code, col.lo, col.hi) / code;
-    return if (std.math.isNan(v)) 0 else mathx.clampF(v, 0, col.hi);
+    return if (std.math.isNan(v)) 0 else mathx.clampF(v, 0, RATIO_MAX);
 }
 
 fn find(tkey: []const u8, rkey: []const u8, ckey: []const u8) ?[3]usize {
@@ -1817,7 +1830,10 @@ fn applyText(tkey: []const u8, rkey: []const u8, ckey: []const u8, tok: []const 
         land(at[0], at[1], at[2], @floatFromInt(i));
         return;
     }
-    land(at[0], at[1], at[2], std.fmt.parseFloat(f32, tok) catch return);
+    const v = std.fmt.parseFloat(f32, tok) catch return;
+    // `parseFloat` takes "nan": through `clampF` that lands the column's `lo`, and a toad came up with 0 HP.
+    if (!std.math.isFinite(v)) return;
+    land(at[0], at[1], at[2], v);
 }
 
 test "the bench reads every cell back off the code, and a revert is exact" {

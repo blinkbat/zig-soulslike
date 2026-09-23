@@ -1041,7 +1041,7 @@ armour is the blow itself. A new game is bare-handed.
 - **THE AIM IS HELD, THE LOOSE IS THE ONLY COMMITTED PART.** **AIMING SUSPENDS THE LOCK OUTRIGHT**
   (`game.activeLock`) — suspended, not dropped; R3 is dead while the bow is up, and it slows the look.
 - **A BOW CHIPS; IT DOES NOT WIN** — both shots come in under the melee they compare to, poise slighter still.
-  **ARROWS ARE FINITE** (ten plain, five fire), refilled at a bonfire, checked BEFORE stamina is charged, and the
+  **ARROWS ARE FINITE** (ten plain, five fire), restocked only by a sheaf (`Use.arrows`) and never at a fire, checked BEFORE stamina is charged, and the
   SELECTED kind is what flies, empty or not, LATCHED at `startShot`. **THE FIRE ARROW** hangs fire worth
   `FIRE_ARROW_FRAC` of the shaft's physical ON TOP of it — PoE2's "adds X fire damage", physical untouched.
 - **THE SHOT CONVERGES ON THE RETICLE, it does not run parallel to it** — thrown at a point ON the camera's centre
@@ -1087,8 +1087,8 @@ armour is the blow itself. A new game is bare-handed.
   facing snap off the segment's XZ bearing, and a plumb line has none.
 - **THE SIPHON FEEDS OFF WHAT THE BODY ACTUALLY LOST**, never off what was thrown at it — so resisted damage is
   resisted healing and a skeleton is a bad meal. **IT IS A DRAIN, NOT A BLOW**: no poise, no stance.
-- **THE MEMORY RACK IS THE ONLY LIMIT, AND IT IS ONE NUMBER** (`MEM_SLOTS`, three) — a new character has the bolt
-  and two holes. **CARRYING THE SCROLL IS THE WHOLE GATE, AND MEMORIZING DOES NOT SPEND IT.** **THE RING IS THE
+- **THE MEMORY RACK IS THE ONLY LIMIT, AND IT IS ONE NUMBER** (`MEM_SLOTS`, three) — `beginGame` empties it, so a new
+  character casts nothing until a scroll is memorized at a fire. **CARRYING THE SCROLL IS THE WHOLE GATE, AND MEMORIZING DOES NOT SPEND IT.** **THE RING IS THE
   RACK, NOT THE TABLE** (`Memory.next`) — D-pad Up walks what is memorized IN SLOT ORDER, and a spell already in
   another slot MOVES rather than doubling. **THE SELECTION IS A FINGER ON THE RACK AND FOLLOWS IT** (`hero.armed`,
   `tidySpells`; `memorize` is the ONE door that moves either). **THE FIRE IS WHERE IT IS COMMITTED AND THE BOOK IS

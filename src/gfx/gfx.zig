@@ -39,9 +39,11 @@ pub const WATER_SHORE: u8 = glsl.WATER_SHORE;
 pub const WATER_DEEP_AT: f32 = 11.0;
 pub const WATER_WET_OUT: f32 = 3.4;
 
-/// THE RAW GL BLEND ENUMS, NAMED ONCE: `rl.gl.rlSetBlendFactors` takes them as bare ints, and four call sites want them.
+/// THE RAW GL BLEND ENUMS, NAMED ONCE: `rl.gl.rlSetBlendFactors` takes them as bare ints.
 pub const GL_ZERO: i32 = 0;
 pub const GL_ONE: i32 = 1;
+pub const GL_SRC_ALPHA: i32 = 0x0302;
+pub const GL_ONE_MINUS_SRC_ALPHA: i32 = 0x0303;
 pub const GL_FUNC_ADD: i32 = 0x8006;
 
 pub const SUN_DIR = daynight.ANCHOR_DIR;

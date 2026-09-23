@@ -1072,8 +1072,7 @@ pub const Spider = struct {
     clawWas: [2][5]rl.Vector3 = undefined,
     clawIs: ?[2][5]rl.Vector3 = null,
     lift: f32 = 0,
-    fallLift: f32 = 0,
-    fallVelocity: f32 = 0,
+    cutFall: foe.Fall = .{},
     bodyWas: [2]rl.Vector3 = undefined,
     bodyIs: ?[2]rl.Vector3 = null,
     crouch: f32 = 0,
@@ -1205,11 +1204,7 @@ pub const Spider = struct {
     }
 
     fn enter(self: *Spider, s: State) void {
-        if (self.state == .leap and s != .leap and self.lift > 0) {
-            const u = mathx.clampF((self.t - B_LEAP_COIL) / B_LEAP_FLIGHT, 0, 1);
-            self.fallLift = self.lift;
-            self.fallVelocity = B_LEAP_APEX * self.scale * 4 * (1 - 2 * u) / B_LEAP_FLIGHT;
-        }
+        if (self.state == .leap and s != .leap) self.cutFall.carry(self.lift, (self.t - B_LEAP_COIL) / B_LEAP_FLIGHT, B_LEAP_APEX * self.scale, B_LEAP_FLIGHT);
         self.state = s;
         self.t = 0;
         self.fired = false;
@@ -1249,7 +1244,7 @@ pub const Spider = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.vit.tick(dt);
         self.elapsed += dt;
         self.t += dt;
@@ -1264,12 +1259,7 @@ pub const Spider = struct {
             .mother => act = self.updateMother(dt, hero, bounds, d),
             .broodling => self.updateBroodling(dt, hero, bounds, d),
         }
-        if (self.state != .leap and self.fallLift > 0) {
-            const gravity = 8 * B_LEAP_APEX * self.scale / (B_LEAP_FLIGHT * B_LEAP_FLIGHT);
-            self.fallLift = @max(0, self.fallLift + self.fallVelocity * dt - 0.5 * gravity * dt * dt);
-            self.fallVelocity -= gravity * dt;
-            self.lift = self.fallLift;
-        }
+        if (self.state != .leap and self.cutFall.lift > 0) self.lift = self.cutFall.step(dt);
         self.gaitMoving = self.gait != gaitWas;
         self.poseStep = dt;
         self.pose();
@@ -1306,7 +1296,7 @@ pub const Spider = struct {
                 if (self.t >= wait) self.decideMother(d, bounds);
             },
             .walk => {
-                self.faceToward(hero, dt);
+                self.faceToward(if (self.homing) foe.tetherFor(self) else hero, dt);
                 const moved = M_SPEED * (if (self.shirking) foe.SHY_SHARE else 1.0) * dt;
                 mathx.stepXZ(&self.pos, self.nav.along(self.moveDir), moved, bounds);
                 self.gait += moved / (skinOf(self.role).stride * self.scale);
@@ -1358,11 +1348,11 @@ pub const Spider = struct {
             },
             .stunlight => {
                 self.resolveStun(false);
-                if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enterIdle(0.02);
+                if (foe.stunOver(self, false)) self.enterIdle(0.02);
             },
             .stunheavy => {
                 self.resolveStun(true);
-                if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enterIdle(0.05);
+                if (foe.stunOver(self, true)) self.enterIdle(0.05);
             },
             .leap => self.enterIdle(0.05),
             .dead => self.resolveDeath(dt),
@@ -1384,8 +1374,10 @@ pub const Spider = struct {
     fn decideMother(self: *Spider, d: f32, bounds: f32) void {
         _ = bounds;
         self.shirking = false;
+        self.homing = false;
         switch (classifyMother(d, self.scale, self.tetherOut(), self.spitCd <= 0, self.biteCd <= 0, self.layWanted and self.layCd <= 0, foe.shyOfFlame(self))) {
-            .hold => self.enterIdle(0.16 + self.seed * 0.5),
+            // Out past her ring she walks home (`foe.headHome`), or the leash that sent her there never clears and she stands blind.
+            .hold => if (d > M_AGGRO and foe.headHome(self)) self.enter(.walk) else self.enterIdle(0.16 + self.seed * 0.5),
             .close => {
                 self.moveDir = self.fdir();
                 self.enter(.walk);
@@ -1462,11 +1454,11 @@ pub const Spider = struct {
             .leap => self.updateLeap(dt, hero, bounds),
             .stunlight => {
                 self.resolveStun(false);
-                if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enterIdle(0.02);
+                if (foe.stunOver(self, false)) self.enterIdle(0.02);
             },
             .stunheavy => {
                 self.resolveStun(true);
-                if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enterIdle(0.02);
+                if (foe.stunOver(self, true)) self.enterIdle(0.02);
             },
             .lay => self.enterIdle(0.05),
             .dead => self.resolveDeath(dt),

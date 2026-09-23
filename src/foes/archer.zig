@@ -616,6 +616,7 @@ pub const Archer = struct {
     backstepCd: f32 = 0,
     leapDone: f32 = 0,
     hop: f32 = 0,
+    cutFall: foe.Fall = .{},
     buttCd: f32 = 0,
     /// -1 fully cocked, +1 fully driven out. ONE signed channel, so the cock and the jab cannot disagree about where the stave is.
     buttK: f32 = 0,
@@ -732,7 +733,7 @@ pub const Archer = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.elapsed += dt;
         self.aimAt = hero;
         self.vit.tick(dt);
@@ -815,15 +816,20 @@ pub const Archer = struct {
                 self.faceToward(hero, dt);
                 self.armT = mathx.approach(self.armT, 0.15, dt * 5.0);
                 self.drawAmt = mathx.approach(self.drawAmt, 0, dt * 12.0);
-                const want = leapTravel(self.t);
-                const step = want - self.leapDone;
-                self.leapDone = want;
-                mathx.stepXZ(&self.pos, self.kiteDir, step, bounds);
-                self.hop = BACKSTEP_RISE * mathx.sinf(leapU(self.t) * std.math.pi);
-                if (self.t >= BACKSTEP_GATHER + BACKSTEP_FLIGHT + BACKSTEP_LAND) {
+                if (foe.launchRefused(self, BACKSTEP_GATHER, dt)) {
                     self.hop = 0;
-                    // RE-MEASURED (it leapt), BUT STILL THROUGH THE LEASH — see the kobold's dash.
-                    self.decide(foe.senseHero(&self.leash, self.pos, hero, AGGRO_R));
+                    self.decide(d);
+                } else {
+                    const want = leapTravel(self.t);
+                    const step = want - self.leapDone;
+                    self.leapDone = want;
+                    mathx.stepXZ(&self.pos, self.kiteDir, step, bounds);
+                    self.hop = BACKSTEP_RISE * mathx.sinf(leapU(self.t) * std.math.pi);
+                    if (self.t >= BACKSTEP_GATHER + BACKSTEP_FLIGHT + BACKSTEP_LAND) {
+                        self.hop = 0;
+                        // RE-MEASURED (it leapt), BUT STILL THROUGH THE LEASH — see the kobold's dash.
+                        self.decide(foe.senseHero(&self.leash, self.pos, hero, AGGRO_R));
+                    }
                 }
             },
             .buttwind => {
@@ -857,11 +863,11 @@ pub const Archer = struct {
             },
             .stunlight => {
                 self.armT = mathx.approach(self.armT, 0, dt * 8.0);
-                if (self.t >= combat.FOE_LIGHT_STUN_DUR) self.enter(.idle);
+                if (foe.stunOver(self, false)) self.enter(.idle);
             },
             .stunheavy => {
                 self.armT = mathx.approach(self.armT, 0, dt * 8.0);
-                if (self.t >= combat.FOE_HEAVY_STUN_DUR) self.enter(.idle);
+                if (foe.stunOver(self, true)) self.enter(.idle);
             },
             .dead => {
                 self.armT = mathx.approach(self.armT, 0, dt * 3.0);
@@ -884,6 +890,7 @@ pub const Archer = struct {
         // `legChain`'s geometry is RIG-LOCAL (it divides the measured hip height by the root matrix's own scale), so the stride phase must be fed a SCALE-CORRECTED distance or a scale≠1 archer skates.
         const gaitSpeed: f32 = if (movedDist > 0) WALK_SPEED else 0;
         heromod.advanceGait(&self.phase, &self.moving, &self.fwdB, &self.latB, &self.speedS, dt, movedDist / self.scale, gaitSpeed, moveYaw, self.facing);
+        if (self.state != .backstep and self.cutFall.lift > 0) self.hop = self.cutFall.step(dt);
         self.pose();
         self.takeParry(wasBow);
         self.tryHit(blade);
@@ -992,18 +999,23 @@ pub const Archer = struct {
         sfx.world(.bone_hurt, self.pos);
     }
 
+    fn catchFall(self: *Archer) void {
+        if (self.state == .backstep) self.cutFall.carry(self.hop, leapU(self.t), BACKSTEP_RISE, BACKSTEP_FLIGHT);
+        self.hop = self.cutFall.lift;
+    }
+
     fn enterStun(self: *Archer, s: State) void {
+        self.catchFall();
         self.state = s;
         self.t = 0;
         self.drawAmt = 0;
         self.looseFired = false;
-        self.hop = 0;
         self.jabRecover = false;
     }
     fn enterDeath(self: *Archer) void {
+        self.catchFall();
         self.state = .dead;
         self.t = 0;
-        self.hop = 0;
         self.justDied = true;
     }
 

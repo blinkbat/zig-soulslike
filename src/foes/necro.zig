@@ -597,7 +597,7 @@ pub const Necro = struct {
                 // A rooted body still finishes the arc it is already in — held mid-air it would hang there.
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
@@ -700,7 +700,7 @@ pub const Necro = struct {
                 const amp: f32 = if (heavy) 1.0 else 0.62;
                 want = blend(CARRY_CH, Poser.sample(&STUN_KEYS, u), amp);
                 wantCrouch = (if (heavy) STUN_BRACE_HEAVY else STUN_BRACE_LIGHT) * anim.keyAt(&BRACE_KEYS, u);
-                if (self.t >= dur) self.enter(.idle);
+                if (foe.stunOver(self, heavy)) self.enter(.idle);
             },
             .dead => {
                 want = Poser.sample(&DEAD_KEYS, mathx.clampF(self.t / DEATH_DUR, 0, 1));

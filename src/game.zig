@@ -380,7 +380,7 @@ pub const Game = struct {
     searT: f32 = 0,
     drawDt: f32 = 1.0 / 60.0,
 
-    fn init(g: *Game) void {
+    fn init(g: *Game, audioBoot: ?std.Thread, mapBoot: ?std.Thread) void {
         var initTimer = std.time.Timer.start() catch unreachable;
         const phase = struct {
             fn ms(t: *std.time.Timer, name: []const u8) void {
@@ -393,7 +393,13 @@ pub const Game = struct {
         g.retro = gfx.Retro.init(rl.getScreenWidth(), rl.getScreenHeight());
         g.menu = .{};
         phase(&initTimer, "gfx");
-        worldfmt.loadOrPanic(worldfmt.startMap(), &g.map);
+        // Nothing on `bake` reads the map or the Env, so the workers build it through the replay.
+        var bake = gfx.Batch.begin();
+        g.env.spawnProtos(&bake, g.scene.shader);
+        inline for (FOE_GROUPS) |gr| bake.spawn(initGroup(gr.field), .{ g, g.scene.shader });
+        inline for (.{ bakeHero, bakeFolk, bakeSky, bakeShots }) |job| bake.spawn(job, .{ g, g.scene.shader });
+        bake.spawn(foemod.paintParticleAtlas, .{});
+        if (mapBoot) |t| t.join() else worldfmt.loadOrPanic(worldfmt.startMap(), &g.map);
         if (!nameable(worldfmt.startMap())) @panic("game: the boot map's path cannot label a save");
         g.mapAt = savemod.MapName.of(worldfmt.startMap());
         g.mapFrom = g.mapAt;
@@ -401,12 +407,13 @@ pub const Game = struct {
         phase(&initTimer, "map");
         g.env.build(&g.scene);
         g.env.replay(&g.map);
+        g.env.adoptProtos();
         phase(&initTimer, "world");
-        g.hero = heromod.Hero.init(g.scene.shader);
+        gfx.uploadAll(&g.hero);
         phase(&initTimer, "hero");
-        inline for (FOE_GROUPS) |gr| @field(g, gr.field) = @FieldType(Game, gr.field).init(g.scene.shader);
-        g.chests = chestmod.Chests.init(g.scene.shader);
-        g.folk = npcmod.Folk.init(g.scene.shader);
+        inline for (FOE_GROUPS) |gr| gfx.uploadAll(&@field(g, gr.field));
+        gfx.uploadAll(&g.chests);
+        gfx.uploadAll(&g.folk);
         g.pack = .{};
         g.pack.load(g.scene.shader);
         g.pickups = .{};
@@ -436,29 +443,12 @@ pub const Game = struct {
         g.sporeLit = std.math.nan(f32);
         g.emberLit = std.math.nan(f32);
         g.soupLit = std.math.nan(f32);
-        g.souls = soulsmod.Souls.init(g.scene.shader);
+        gfx.uploadAll(&g.souls);
         g.weather = weathermod.Weather.init(0x5701_A17E);
-        g.rainfall = weathermod.Rain.build(g.scene.shader);
-        g.mist = weathermod.Mist.build(g.scene.shader);
-        g.skein = weathermod.Skein.build(g.scene.shader);
-        g.sporefall = weathermod.Spore.build(g.scene.shader);
-        g.emberfall = weathermod.Ember.build(g.scene.shader);
+        inline for (.{ "rainfall", "mist", "skein", "sporefall", "emberfall" }) |f| gfx.uploadAll(&@field(g, f));
         phase(&initTimer, "foes");
         foemod.buildParticleAtlas();
-        g.arrowModel = archermod.arrowMesh(g.scene.shader);
-        g.clumpModel = koboldmod.clumpMesh(g.scene.shader);
-        g.crockModel = archermod.crockMesh(g.scene.shader);
-        g.powderModel = archermod.powderMesh(g.scene.shader);
-        g.venomModel = broodmod.venomMesh(g.scene.shader);
-        g.fireArrowModel = archermod.fireArrowMesh(g.scene.shader);
-        g.boltModel = heromod.boltMesh(g.scene.shader);
-        g.emberModel = magemod.emberMesh(g.scene.shader);
-        g.sacModel = golemmod.sacMesh(g.scene.shader);
-        g.rockModel = delvermod.rockModel(g.scene.shader);
-        g.wispModel = shademod.wispMesh(g.scene.shader);
-        g.sparkModel = hollowmod.sparkMesh(g.scene.shader);
-        g.acornModel = entmod.acornModel(g.scene.shader);
-        g.bombModel = heromod.bombMesh(g.scene.shader);
+        inline for (SHOT_MODELS) |f| gfx.uploadAll(&@field(g, f));
         g.arrows = [_]archermod.Arrow{.{}} ** MAX_ARROWS;
         g.shafts = [_]archermod.Arrow{.{}} ** MAX_SHAFTS;
         phase(&initTimer, "pools");
@@ -495,7 +485,66 @@ pub const Game = struct {
         g.enterOut = 0;
         g.enterIn = 0;
         g.enterAct = null;
+        if (audioBoot) |t| t.join();
+        phase(&initTimer, "audio wait");
         beginGame(g);
+    }
+
+    fn initGroup(comptime field: []const u8) fn (*Game, rl.Shader) void {
+        return struct {
+            fn go(g: *Game, sh: rl.Shader) void {
+                @field(g, field) = @FieldType(Game, field).init(sh);
+            }
+        }.go;
+    }
+
+    fn bakeHero(g: *Game, sh: rl.Shader) void {
+        g.hero = heromod.Hero.init(sh);
+    }
+
+    fn bakeFolk(g: *Game, sh: rl.Shader) void {
+        g.chests = chestmod.Chests.init(sh);
+        g.folk = npcmod.Folk.init(sh);
+        g.souls = soulsmod.Souls.init(sh);
+    }
+
+    fn bakeSky(g: *Game, sh: rl.Shader) void {
+        g.rainfall = weathermod.Rain.build(sh);
+        g.mist = weathermod.Mist.build(sh);
+        g.skein = weathermod.Skein.build(sh);
+        g.sporefall = weathermod.Spore.build(sh);
+        g.emberfall = weathermod.Ember.build(sh);
+    }
+
+    /// `SHOT_MODELS` is what `init` uploads, so a model added here is added there.
+    fn bakeShots(g: *Game, sh: rl.Shader) void {
+        g.arrowModel = archermod.arrowMesh(sh);
+        g.clumpModel = koboldmod.clumpMesh(sh);
+        g.crockModel = archermod.crockMesh(sh);
+        g.powderModel = archermod.powderMesh(sh);
+        g.venomModel = broodmod.venomMesh(sh);
+        g.fireArrowModel = archermod.fireArrowMesh(sh);
+        g.boltModel = heromod.boltMesh(sh);
+        g.emberModel = magemod.emberMesh(sh);
+        g.sacModel = golemmod.sacMesh(sh);
+        g.rockModel = delvermod.rockModel(sh);
+        g.wispModel = shademod.wispMesh(sh);
+        g.sparkModel = hollowmod.sparkMesh(sh);
+        g.acornModel = entmod.acornModel(sh);
+        g.bombModel = heromod.bombMesh(sh);
+    }
+
+    const SHOT_MODELS = .{
+        "arrowModel", "clumpModel", "crockModel", "powderModel", "venomModel", "fireArrowModel", "boltModel",
+        "emberModel", "sacModel",   "rockModel",  "wispModel",   "sparkModel", "acornModel",     "bombModel",
+    };
+
+    comptime {
+        var n: usize = 0;
+        for (@typeInfo(Game).@"struct".fields) |f| {
+            if (f.type == rl.Model) n += 1;
+        }
+        if (n != SHOT_MODELS.len) @compileError("game: a bare rl.Model on Game is not in SHOT_MODELS, so init never uploads it");
     }
 };
 
@@ -1093,7 +1142,7 @@ test "EVERY GROUP IS DRIVEN — placement, draw, gate and settle come free off t
 const SEATED_BY = [_]struct { field: []const u8, by: []const u8 }{
     .{ .field = "trig", .by = "armScript -> trigger.Runtime.arm, which opens with `self.* = .{}`" },
     .{ .field = "map", .by = "worldfmt.loadOrPanic(startMap(), &g.map), which fills the whole record" },
-    .{ .field = "env", .by = "g.env.build(&g.scene), then g.env.replay(&g.map)" },
+    .{ .field = "env", .by = "g.env.build(&g.scene), g.env.replay(&g.map), then g.env.adoptProtos()" },
 };
 
 comptime {
@@ -5971,6 +6020,22 @@ pub fn run(mode: Mode) void {
             std.debug.print("INIT: {s: <10} {d:.1} ms\n", .{ name, @as(f64, @floatFromInt(t.lap())) / 1e6 });
         }
     }.ms;
+    // One INFO line per uploaded mesh, ~1860 of them, each a console write.
+    rl.setTraceLogLevel(.warning);
+    tune.init();
+    // The device open is a quarter second or more and needs no window; `Game.init` joins it before `beginGame` asks for a voice.
+    var audioBoot: ?std.Thread = null;
+    if (!shot) {
+        tune.load();
+        audioBoot = std.Thread.spawn(.{}, sfx.init, .{}) catch blk: {
+            sfx.init();
+            break :blk null;
+        };
+    }
+    const alloc = std.heap.c_allocator;
+    const g = alloc.create(Game) catch @panic("game: could not allocate Game");
+    defer alloc.destroy(g);
+    const mapBoot: ?std.Thread = std.Thread.spawn(.{}, worldfmt.loadOrPanic, .{ worldfmt.startMap(), &g.map }) catch null;
     // VSYNC, not `setTargetFPS`: that is a CPU-side frame LIMITER and never tells the driver to swap during vblank, so fullscreen tears.
     rl.setConfigFlags(.{ .msaa_4x_hint = true, .vsync_hint = true, .window_hidden = shot, .window_resizable = true });
     rl.initWindow(SCREEN_W, SCREEN_H, menumod.TITLE_WINDOW);
@@ -5983,12 +6048,6 @@ pub fn run(mode: Mode) void {
     defer hud_.deinit();
     stamp(&runTimer, "fonts");
 
-    tune.init();
-    if (!shot) {
-        tune.load();
-        sfx.init();
-        stamp(&runTimer, "audio bake");
-    }
     defer if (!shot) sfx.deinit();
     defer objviewmod.unload();
     defer bookmod.unload();
@@ -5998,10 +6057,7 @@ pub fn run(mode: Mode) void {
 
     savemod.useDevShelf(shot or !std.mem.eql(u8, worldfmt.startMap(), worldfmt.START_MAP));
 
-    const alloc = std.heap.c_allocator;
-    const g = alloc.create(Game) catch @panic("game: could not allocate Game");
-    defer alloc.destroy(g);
-    g.init();
+    g.init(audioBoot, mapBoot);
 
     rl.gl.rlSetClipPlanes(CLIP_NEAR, CLIP_FAR);
 

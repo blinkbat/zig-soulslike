@@ -80,10 +80,12 @@ fn variantPixel(style: Style, x: f32, y: f32, variant: u32) rl.Color {
     return .{ .r = c, .g = c, .b = c, .a = mathx.u8f(a * 255) };
 }
 
-pub fn texture() rl.Texture2D {
-    if (atlas) |t| return t;
+var painted: ?rl.Image = null;
+
+/// The pixels without the upload, so a `gfx.Batch` worker can do them.
+pub fn paint() void {
+    if (atlas != null or painted != null) return;
     const img = rl.genImageColor(CELL * COLS, CELL * ROWS, rl.Color.blank);
-    defer rl.unloadImage(img);
     const pixels: [*]rl.Color = @ptrCast(@alignCast(img.data));
     for (std.enums.values(Style)) |style| {
         const row: usize = @intFromEnum(style);
@@ -96,6 +98,17 @@ pub fn texture() rl.Texture2D {
                 }
             }
         }
+    }
+    painted = img;
+}
+
+pub fn texture() rl.Texture2D {
+    if (atlas) |t| return t;
+    paint();
+    const img = painted.?;
+    defer {
+        rl.unloadImage(img);
+        painted = null;
     }
     atlas = rl.loadTextureFromImage(img) catch @panic("particle atlas");
     rl.setTextureFilter(atlas.?, .bilinear);

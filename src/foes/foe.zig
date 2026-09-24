@@ -1822,6 +1822,10 @@ pub fn buildParticleAtlas() void {
     _ = particleart.texture();
 }
 
+pub fn paintParticleAtlas() void {
+    particleart.paint();
+}
+
 pub const Particle = struct {
     p: rl.Vector3 = mathx.zero3,
     v: rl.Vector3 = mathx.zero3,

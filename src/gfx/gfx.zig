@@ -843,6 +843,81 @@ pub fn material(shader: rl.Shader, comptime what: []const u8) rl.Material {
     return mat;
 }
 
+/// GL IS THE CALLING THREAD'S ALONE — a mesh built on a worker keeps its CPU arrays and is uploaded by `uploadAll`.
+threadlocal var offMain = false;
+
+var pool: std.Thread.Pool = undefined;
+var poolUp = false;
+
+/// Every worker's stack RESERVE is the exe header's (`build.zig` `STACK_SIZE`); this is only the first commit.
+const POOL_STACK_COMMIT: usize = 4 * 1024 * 1024;
+
+/// Mesh building on a worker pool. Jobs may not write shared state; `wait` leaves every mesh they built un-uploaded.
+pub const Batch = struct {
+    wg: std.Thread.WaitGroup = .{},
+    caller: std.Thread.Id,
+
+    pub fn begin() Batch {
+        if (!poolUp) {
+            // Half the logical CPUs: at all of them the main thread's own boot work ran 3.7x slow (26 ms of soil and water took 97).
+            const jobs = @max(1, (std.Thread.getCpuCount() catch 2) / 2);
+            pool.init(.{ .allocator = alloc, .stack_size = POOL_STACK_COMMIT, .n_jobs = jobs }) catch @panic("gfx: mesh pool");
+            poolUp = true;
+        }
+        return .{ .caller = std.Thread.getCurrentId() };
+    }
+
+    pub fn spawn(self: *Batch, comptime func: anytype, args: std.meta.ArgsTuple(@TypeOf(func))) void {
+        pool.spawnWg(&self.wg, struct {
+            fn go(caller: std.Thread.Id, a: std.meta.ArgsTuple(@TypeOf(func))) void {
+                offMain = std.Thread.getCurrentId() != caller;
+                defer offMain = false;
+                @call(.auto, func, a);
+            }
+        }.go, .{ self.caller, args });
+    }
+
+    pub fn wait(self: *Batch) void {
+        pool.waitAndWork(&self.wg);
+    }
+};
+
+fn holdsMesh(comptime T: type) bool {
+    if (T == rl.Mesh or T == rl.Model) return true;
+    return switch (@typeInfo(T)) {
+        .@"struct" => |s| inline for (s.fields) |f| {
+            if (holdsMesh(f.type)) break true;
+        } else false,
+        .array => |a| holdsMesh(a.child),
+        .optional => |o| holdsMesh(o.child),
+        .@"union" => |u| inline for (u.fields) |f| {
+            if (holdsMesh(f.type)) @compileError("gfx.uploadAll cannot tell which arm of " ++ @typeName(T) ++ " holds a mesh");
+        } else false,
+        else => false,
+    };
+}
+
+/// Uploads every mesh reachable BY VALUE from `p` that a `Batch` left on the CPU. Pointers are not followed.
+pub fn uploadAll(p: anytype) void {
+    const T = @TypeOf(p.*);
+    if (comptime !holdsMesh(T)) return;
+    if (T == rl.Mesh) {
+        if (p.vboId == null) rl.uploadMesh(p, false);
+        return;
+    }
+    if (T == rl.Model) {
+        for (p.meshes[0..@intCast(p.meshCount)]) |*m| uploadAll(m);
+        if (!rl.isModelValid(p.*)) @panic("gfx: a model came back from its upload without its buffers");
+        return;
+    }
+    switch (@typeInfo(T)) {
+        .@"struct" => |s| inline for (s.fields) |f| uploadAll(&@field(p, f.name)),
+        .array => for (p) |*e| uploadAll(e),
+        .optional => if (p.*) |*v| uploadAll(v),
+        else => unreachable,
+    }
+}
+
 pub const Builder = struct {
     pos: std.ArrayList(f32),
     nrm: std.ArrayList(f32),
@@ -1160,7 +1235,7 @@ pub const Builder = struct {
         mesh.texcoords = emptyNull(f32, uv);
         mesh.texcoords2 = emptyNull(f32, uv2);
         mesh.colors = emptyNull(u8, col);
-        rl.uploadMesh(&mesh, false);
+        if (!offMain) rl.uploadMesh(&mesh, false);
         return mesh;
     }
 
@@ -1256,7 +1331,7 @@ pub const Builder = struct {
 
     pub fn toModel(self: *Builder, shader: rl.Shader) rl.Model {
         const mesh = self.toMesh();
-        var model = rl.loadModelFromMesh(mesh) catch @panic("model");
+        var model = if (offMain) rl.cdef.LoadModelFromMesh(mesh) else rl.loadModelFromMesh(mesh) catch @panic("model");
         model.materials[0].shader = shader;
         return model;
     }

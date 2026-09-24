@@ -575,6 +575,8 @@ pub const Env = struct {
     tileWaterEdge: [wf.WATER_CELLS]u8 = undefined,
     tileWaterBase: [wf.WATER_CELLS]wf.Hgt = undefined,
     scene: ?*gfx.Scene = null,
+    /// `spawnProtos`' batch until `adoptProtos` uploads it — which the first tile build does while its own jobs run.
+    protoBake: ?*gfx.Batch = null,
     props: [MAX_PROPS]Prop = undefined,
     nprops: usize = 0,
     /// How many props each op placed, by op slot; `MAX_PROPS` fits a `u16` with room and the add saturates.
@@ -681,14 +683,27 @@ pub const Env = struct {
     stat_draws: u32 = 0,
     stat_cells: u32 = 0,
 
+    /// Every kind's meshes onto `bake`; `adoptProtos` waits and uploads. `build` and `replay` may run between, and read no prototype.
+    pub fn spawnProtos(self: *Env, bake: *gfx.Batch, shader: rl.Shader) void {
+        self.protoBake = bake;
+        for (0..props.NK) |k| bake.spawn(buildKind, .{ self, shader, k });
+    }
+
+    pub fn adoptProtos(self: *Env) void {
+        const bake = self.protoBake orelse return;
+        self.protoBake = null;
+        bake.wait();
+        gfx.uploadAll(&self.models);
+        gfx.uploadAll(&self.veils);
+        gfx.uploadAll(&self.stows);
+        self.watchModels();
+    }
+
     pub fn build(self: *Env, scene: *gfx.Scene) void {
         if (envBuilt) @panic("env: build ran twice — every prototype, tile and sheet the first run made is stranded");
         envBuilt = true;
         self.scene = scene;
         const shader = scene.shader;
-        for (&self.models, props.INFO) |*m, row| m.* = row.build(shader);
-        for (&self.veils, props.INFO) |*m, row| m.* = if (row.veil) |mesh| mesh(shader) else null;
-        for (&self.stows, props.INFO) |*m, row| m.* = if (row.stow) |mesh| mesh(shader) else null;
         self.ground = terrain(shader, GROUND_HALF);
         self.waterSheet = waterQuad(shader, GROUND_HALF);
         self.waterSheetBuilt = true;
@@ -738,7 +753,13 @@ pub const Env = struct {
         self.cliffField = [_]u8{wf.CLIFF_NONE} ** wf.HEIGHT_CELLS;
         self.heightHalf = wf.DEFAULT_HALF;
         self.heightAny = false;
-        self.watchModels();
+    }
+
+    fn buildKind(self: *Env, shader: rl.Shader, k: usize) void {
+        const row = props.INFO[k];
+        self.models[k] = row.build(shader);
+        self.veils[k] = if (row.veil) |mesh| mesh(shader) else null;
+        self.stows[k] = if (row.stow) |mesh| mesh(shader) else null;
     }
 
     /// Fields first, then the props, then the tiles: `faceStamp` asks where the ladders and flights stand.
@@ -806,11 +827,7 @@ pub const Env = struct {
         const tz0 = tile(box[1], -1, cw, self.waterHalf, self.heightHalf, step, last);
         const tx1 = tile(box[2], 1, cw, self.waterHalf, self.heightHalf, step, last);
         const tz1 = tile(box[3], 1, cw, self.waterHalf, self.heightHalf, step, last);
-        var tz = tz0;
-        while (tz <= tz1) : (tz += 1) {
-            var tx = tx0;
-            while (tx <= tx1) : (tx += 1) self.buildTile(tz * TILES + tx);
-        }
+        self.buildTileRect(tx0, tz0, tx1, tz1);
         buildSolids(self);
     }
 
@@ -874,10 +891,22 @@ pub const Env = struct {
             @memset(&self.caveRoofShade, wf.CAVE_H_ZERO);
             return;
         }
-        var iz = span[1];
-        while (iz <= @min(span[3], caves.N - 1)) : (iz += 1) {
-            var ix = span[0];
-            while (ix <= @min(span[2], caves.N - 1)) : (ix += 1) self.cutShelterAt(ix, iz);
+        const x1 = @min(span[2], caves.N - 1);
+        const z1 = @min(span[3], caves.N - 1);
+        if (span[1] > z1) return;
+        if (z1 - span[1] < 2 * SHELTER_BAND) return self.cutShelterRows(span[0], x1, span[1], z1);
+        var batch = gfx.Batch.begin();
+        var z = span[1];
+        while (z <= z1) : (z += SHELTER_BAND) batch.spawn(cutShelterRows, .{ self, span[0], x1, z, @min(z + SHELTER_BAND - 1, z1) });
+        batch.wait();
+    }
+
+    /// Each point writes only its own shelter and shade, off fields nothing here writes.
+    fn cutShelterRows(self: *Env, x0: usize, x1: usize, z0: usize, z1: usize) void {
+        var iz = z0;
+        while (iz <= z1) : (iz += 1) {
+            var ix = x0;
+            while (ix <= x1) : (ix += 1) self.cutShelterAt(ix, iz);
         }
     }
 
@@ -919,11 +948,7 @@ pub const Env = struct {
         const hi = tileOf(@min((span[2] + 1) / 2, wf.HEIGHT_N - 1));
         const zlo = tileOf((span[1] -| 1) / 2);
         const zhi = tileOf(@min((span[3] + 1) / 2, wf.HEIGHT_N - 1));
-        var tz = zlo;
-        while (tz <= zhi) : (tz += 1) {
-            var tx = lo;
-            while (tx <= hi) : (tx += 1) self.buildTile(tz * TILES + tx);
-        }
+        self.buildTileRect(lo, zlo, hi, zhi);
         buildSolids(self);
     }
 
@@ -954,11 +979,7 @@ pub const Env = struct {
         const hi = tileOf(@min(span[2] + 1, wf.HEIGHT_N - 1));
         const zlo = tileOf(if (span[1] > 0) span[1] - 1 else 0);
         const zhi = tileOf(@min(span[3] + 1, wf.HEIGHT_N - 1));
-        var tz = zlo;
-        while (tz <= zhi) : (tz += 1) {
-            var tx = lo;
-            while (tx <= hi) : (tx += 1) self.buildTile(tz * TILES + tx);
-        }
+        self.buildTileRect(lo, zlo, hi, zhi);
         if (span[0] == 0 or span[1] == 0 or span[2] >= wf.HEIGHT_N - 1 or span[3] >= wf.HEIGHT_N - 1) self.buildSkirt();
         buildSolids(self);
         self.checkModels("a ground stroke");
@@ -967,13 +988,9 @@ pub const Env = struct {
     fn rebuildTerrain(self: *Env) void {
         terrainBuilds += 1;
         faceTally = .{};
-        for (0..NTILES) |i| {
-            if (!self.tiled()) {
-                self.dropTile(i);
-                continue;
-            }
-            self.buildTile(i);
-        }
+        if (self.tiled()) {
+            self.buildTileRect(0, 0, TILES - 1, TILES - 1);
+        } else for (0..NTILES) |i| self.dropTile(i);
         if (self.tiled()) {
             self.buildSkirt();
         } else if (self.skirtBuilt) {
@@ -1172,8 +1189,58 @@ pub const Env = struct {
         );
     }
 
-    fn buildTile(self: *Env, i: usize) void {
-        self.dropTile(i);
+    fn buildTileRect(self: *Env, tx0: usize, tz0: usize, tx1: usize, tz1: usize) void {
+        var list: [NTILES]u16 = undefined;
+        var n: usize = 0;
+        var tz = tz0;
+        while (tz <= tz1) : (tz += 1) {
+            var tx = tx0;
+            while (tx <= tx1) : (tx += 1) {
+                list[n] = @intCast(tz * TILES + tx);
+                n += 1;
+            }
+        }
+        self.buildTiles(list[0..n]);
+    }
+
+    /// Dropped and committed here, generated on the pool. Stamps are appended in LIST order, so the collider list is the one a serial build lays down.
+    fn buildTiles(self: *Env, list: []const u16) void {
+        if (list.len == 0) return;
+        for (list) |i| self.dropTile(i);
+        warmTileCaches();
+        const outs = std.heap.page_allocator.alloc(TileOut, list.len) catch @panic("env: tile scratch");
+        defer std.heap.page_allocator.free(outs);
+        var batch = gfx.Batch.begin();
+        for (list, outs) |i, *o| batch.spawn(genTile, .{ self, i, o });
+        self.adoptProtos();
+        batch.wait();
+        for (list, outs) |i, *o| self.commitTile(i, o);
+    }
+
+    fn commitTile(self: *Env, i: usize, out: *const TileOut) void {
+        inline for (.{
+            .{ "tileBuilt", "tiles" },         .{ "waterfallBuilt", "waterfalls" }, .{ "cutawayBuilt", "cutaways" },
+            .{ "shellBuilt", "shells" },       .{ "roofBuilt", "roofs" },           .{ "faceBuilt", "faces" },
+            .{ "cutFaceBuilt", "cutFaces" },   .{ "casterBuilt", "casters" },
+        }) |slot| {
+            if (@field(self, slot[0])[i]) gfx.uploadAll(&@field(self, slot[1])[i]);
+        }
+        inline for (std.meta.fields(FaceTally)) |f| @field(faceTally, f.name) += @field(out.tally, f.name);
+        for (out.stamps.buf[0..out.stamps.n]) |s| {
+            if (self.ncliffSolids >= MAX_CLIFF_SOLIDS) @panic("env: MAX_CLIFF_SOLIDS exceeded — raise the cap");
+            var stamp = s;
+            stamp.arch = true;
+            self.cliffSolids[self.ncliffSolids] = stamp;
+            self.cliffSolidTile[self.ncliffSolids] = @intCast(i);
+            self.ncliffSolids += 1;
+        }
+    }
+
+    /// Reads the Env and writes only tile `i`'s own slots; `buildTiles` has already dropped it.
+    fn genTile(self: *Env, i: usize, out: *TileOut) void {
+        out.stamps.n = 0;
+        tileTally = .{};
+        defer out.tally = tileTally;
         const tx = i % TILES;
         const tz = i / TILES;
         const x0 = tx * (TCHUNK - 1);
@@ -1194,8 +1261,7 @@ pub const Env = struct {
         var sb = gfx.Builder.init();
         var fallb = gfx.Builder.init();
         fallb.setMat(.waterfall);
-        var stamps = StampSolids{};
-        const face = Face{ .b = &fb, .sb = &sb, .env = self, .solids = &stamps };
+        const face = Face{ .b = &fb, .sb = &sb, .env = self, .solids = &out.stamps };
         var yLo: f32 = std.math.floatMax(f32);
         var yHi: f32 = -std.math.floatMax(f32);
         const minDrop = wf.cliffMinDrop(step);
@@ -1320,14 +1386,6 @@ pub const Env = struct {
         self.tileMid[i] = v3(cx, (yLo + yHi) * 0.5, cz);
         self.tileRad[i] = 0.5 * @sqrt(spanX * spanX + spanZ * spanZ + (yHi - yLo) * (yHi - yLo));
         self.tileH[i] = yHi - yLo;
-        for (stamps.buf[0..stamps.n]) |s| {
-            if (self.ncliffSolids >= MAX_CLIFF_SOLIDS) @panic("env: MAX_CLIFF_SOLIDS exceeded — raise the cap");
-            var stamp = s;
-            stamp.arch = true;
-            self.cliffSolids[self.ncliffSolids] = stamp;
-            self.cliffSolidTile[self.ncliffSolids] = @intCast(i);
-            self.ncliffSolids += 1;
-        }
     }
 
     fn buildSkirt(self: *Env) void {
@@ -3597,6 +3655,10 @@ pub const StampSolids = struct {
 };
 const MAX_TILE_STAMPS = 640;
 
+const SHELTER_BAND: usize = 32;
+
+const TileOut = struct { stamps: StampSolids, tally: FaceTally };
+
 /// A chord of the cut: the two lattice crossings its ends sit on.
 pub const Chord = struct {
     u: [2]f32,
@@ -3691,6 +3753,26 @@ fn rockProtoOf(i: usize) *const gfx.Builder {
     return &rockProto[i].?;
 }
 
+var tileCachesWarm = false;
+
+/// The tile jobs READ `rockProtoOf` and `cliffseat.pieceOf` (and the `proprock` shape under it); both fill on first ask, so they are filled here first.
+fn warmTileCaches() void {
+    if (tileCachesWarm) return;
+    tileCachesWarm = true;
+    var batch = gfx.Batch.begin();
+    for (0..proprock.FACE_ROCK_SEEDS.len) |i| batch.spawn(warmRock, .{i});
+    for (0..proprock.CLIFF_PROPS.len) |row| batch.spawn(warmPiece, .{row});
+    batch.wait();
+}
+
+fn warmRock(i: usize) void {
+    _ = rockProtoOf(i);
+}
+
+fn warmPiece(row: usize) void {
+    _ = cliffseat.pieceOf(row);
+}
+
 /// Nothing here reads the drop, so the same stone dresses a 2 m face and a 12 m one.
 const RockFit = struct { sc: f32, proud: f32 };
 
@@ -3710,14 +3792,17 @@ fn faceStep(f: Face, px: f32, pz: f32, nx: f32, nz: f32, out: f32) struct { drop
 }
 
 /// Why a station along a run stood no stone, counted since the last whole-terrain rebuild; `--shot-land` prints it.
-pub var faceTally = struct { chords: u32 = 0, flat: u32 = 0, oblique: u32 = 0, tried: u32 = 0, shallow: u32 = 0, climb: u32 = 0, piece: u32 = 0, crest: u32 = 0, stood: u32 = 0 }{};
+pub const FaceTally = struct { chords: u32 = 0, flat: u32 = 0, oblique: u32 = 0, tried: u32 = 0, shallow: u32 = 0, climb: u32 = 0, piece: u32 = 0, crest: u32 = 0, stood: u32 = 0 };
+pub var faceTally: FaceTally = .{};
+/// Tiles build on the pool; each counts here and `commitTile` adds it into `faceTally`.
+threadlocal var tileTally: FaceTally = .{};
 
 /// `sill` is the lowest bed a column may take — `-inf` for a cut off the ground, a mouth's lintel for the brow over it, where the rows start ON the sill.
 fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi: f32, len: f32, cell: f32, sill: f32) void {
-    faceTally.chords += 1;
+    tileTally.chords += 1;
     const drop = hi - lo;
     if (drop < FACE_ROCK_MIN_DROP) {
-        faceTally.flat += 1;
+        tileTally.flat += 1;
         return;
     }
     const alongX = -nz;
@@ -3725,7 +3810,7 @@ fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi
     const sU = u[0] * alongX + u[1] * alongZ;
     const dot = ax * alongX + az * alongZ;
     if (@abs(dot) < 0.5) {
-        faceTally.oblique += 1;
+        tileTally.oblique += 1;
         return;
     }
     const s0 = @min(sU, sU + len * dot);
@@ -3741,18 +3826,18 @@ fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi
         const land = faceStep(f, px, pz, nx, nz, cell * 0.8);
         const useDrop = mathx.minF(drop, land.drop);
         const bed0 = mathx.maxF(land.lo, sill);
-        faceTally.tried += 1;
+        tileTally.tried += 1;
         if (land.lo + useDrop - bed0 < FACE_ROCK_MIN_DROP) {
-            faceTally.shallow += 1;
+            tileTally.shallow += 1;
             continue;
         }
         if (f.env) |e| {
             if (climbsNear(e, px, pz, FACE_ROCK_CLEAR)) {
-                faceTally.climb += 1;
+                tileTally.climb += 1;
                 continue;
             }
             if (pieceCovers(e, px, pz)) {
-                faceTally.piece += 1;
+                tileTally.piece += 1;
                 continue;
             }
         }
@@ -3765,7 +3850,7 @@ fn faceStamp(f: Face, u: [2]f32, ax: f32, az: f32, nx: f32, nz: f32, lo: f32, hi
             const rk = rockStand(ck ^ (row *% 0x9E3779B9), yaw) orelse break;
             const bed = if (row == 0 and !lifted) y - rk.tall * FACE_ROCK_FOOT else y;
             if (bed + rk.tall > lip + FACE_ROCK_CREST) {
-                faceTally.crest += 1;
+                tileTally.crest += 1;
                 break;
             }
             standRock(f, rk, at, bed);
@@ -3804,7 +3889,7 @@ fn rockStand(kk: u32, yaw: f32) ?RockStand {
 fn standRock(f: Face, rk: RockStand, at: Station, bed: f32) void {
     const ox = at.px - at.nx * rk.sink + at.alongX * rk.drift;
     const oz = at.pz - at.nz * rk.sink + at.alongZ * rk.drift;
-    faceTally.stood += 1;
+    tileTally.stood += 1;
     const mark = f.b.vertCount();
     f.b.stamp(rk.proto, v3(ox, bed, oz), rk.turn, v3(rk.sc, rk.sc, rk.sc));
     f.cast(mark);

@@ -1995,6 +1995,10 @@ biome whose FLOOR is authored (`wf.Soil.sand`). Bench: `worlds/test_palace.world
 
 ### Performance — how a 1000 m world stays cheap (`env.zig`)
 
+- **A MESH BUILDER MAY RUN ON A WORKER** (`gfx.Batch`) — every prop kind, `FOE_GROUPS` init, the hero, folk, sky and
+  shot models at boot, and terrain tiles on every rebuild. Off the main thread `toMesh` skips the upload and
+  `gfx.uploadAll` does it after the wait, so a builder makes no other GL call and fills no global or lazy cache: one a
+  tile reads is warmed first (`warmTileCaches`). A race here is silent.
 - **UNIFORM GRID (CSR)** — props bucketed by 16 m cell into two indexes (structures, flora), built by counting
   sort into one flat array. Each cell carries the MAXIMA its pass needs, so a whole cell can be rejected first.
 - **THE LIT PASS culls per cell then per prop** — four frustum side planes plus each kind's `view` distance.

@@ -666,7 +666,7 @@ pub const Wanderer = struct {
         const swing = 15.0 * heromod.armSwing(self.phase) * m;
         const atWork: f32 = if (smith) 1.0 - m else 0;
         var sh: f32 = lerpF(FREE_SH, HOLD_SH, atWork) - swing;
-        var el: f32 = lerpF(FREE_EL, HOLD_EL, atWork) - mathx.maxF(0, -swing) * 0.8;
+        var el: f32 = lerpF(FREE_EL, HOLD_EL, atWork) + mathx.maxF(0, -swing) * 0.8;
         var abd: f32 = lerpF(FREE_ABD, HOLD_ABD, atWork);
         var wrist: f32 = 4.0;
         switch (self.gesture) {

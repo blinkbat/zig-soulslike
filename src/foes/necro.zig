@@ -94,7 +94,7 @@ const HP_MAX: f32 = 84.0;
 const POISE_MAX: f32 = 5.0;
 const STANCE_MAX: f32 = 34.0;
 
-const RESISTS = combat.resists(.{ .fire = -35, .cold = 75, .chaos = 45 });
+const RESISTS = combat.resists(.{ .fire = -35, .cold = combat.RES_CAP, .chaos = 45 });
 
 const DEATH_DUR = archermod.DEATH_DUR;
 const DISS_DUR = archermod.DISS_DUR;
@@ -126,7 +126,7 @@ const FROST_R_MAX: f32 = 18.0;
 
 comptime {
         // MEASURED AT THE SCALE IT IS DRAWN AT — asserting the bare `FROST_R` would pass on a ring a third wider.
-    std.debug.assert(FROST_FUSE * 1.7 > FROST_R * SCALE + foe.HERO_R);
+    std.debug.assert(FROST_FUSE * heromod.WALK_SPEED_BANK > FROST_R * SCALE + foe.HERO_R);
     std.debug.assert(FROST_WIND >= foe.TELL_MIN);
     std.debug.assert(RAISE_WIND > FROST_WIND + FROST_CAST_DUR);
     std.debug.assert(RAISE_CD > RAISE_WIND + RAISE_DUR + RAISE_RECOVER);

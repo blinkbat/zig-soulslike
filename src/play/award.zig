@@ -46,6 +46,11 @@ const Card = struct {
     n: u16 = 1,
 };
 
+fn dropAt(list: anytype, n: *usize, i: usize) void {
+    std.mem.copyForwards(@TypeOf(list[0]), list[i .. n.* - 1], list[i + 1 .. n.*]);
+    n.* -= 1;
+}
+
 pub const Award = struct {
     seen: [item.NK]bool = [_]bool{false} ** item.NK,
 
@@ -79,11 +84,7 @@ pub const Award = struct {
     }
 
     fn push(self: *Award, t: Toast) void {
-        if (self.ntoasts >= TOAST_CAP) {
-            var i: usize = 1;
-            while (i < self.ntoasts) : (i += 1) self.toasts[i - 1] = self.toasts[i];
-            self.ntoasts -= 1;
-        }
+        if (self.ntoasts >= TOAST_CAP) dropAt(&self.toasts, &self.ntoasts, 0);
         self.toasts[self.ntoasts] = t;
         self.ntoasts += 1;
     }
@@ -116,9 +117,7 @@ pub const Award = struct {
 
     pub fn dismiss(self: *Award) void {
         if (self.ncards == 0) return;
-        var i: usize = 1;
-        while (i < self.ncards) : (i += 1) self.cards[i - 1] = self.cards[i];
-        self.ncards -= 1;
+        dropAt(&self.cards, &self.ncards, 0);
     }
 
     pub fn update(self: *Award, dt: f32) void {
@@ -126,9 +125,7 @@ pub const Award = struct {
         while (i < self.ntoasts) {
             self.toasts[i].t += dt;
             if (self.toasts[i].t >= TOAST_LIFE + TOAST_OUT) {
-                var j = i + 1;
-                while (j < self.ntoasts) : (j += 1) self.toasts[j - 1] = self.toasts[j];
-                self.ntoasts -= 1;
+                dropAt(&self.toasts, &self.ntoasts, i);
                 continue;
             }
             i += 1;

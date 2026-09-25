@@ -1915,6 +1915,14 @@ pub const Map = struct {
         return nameText(&self.name);
     }
 
+    pub fn lootOf(self: *const Map, op: usize) []const item.Kind {
+        return if (op < self.nops) self.ops[op].loot[0..self.ops[op].nloot] else &.{};
+    }
+
+    pub fn goldOf(self: *const Map, op: usize) u32 {
+        return if (op < self.nops) self.ops[op].gold else 0;
+    }
+
     pub fn findSchedule(self: *const Map, name: []const u8) ?u8 {
         if (name.len == 0) return null;
         for (self.schedules[0..self.nschedules], 0..) |*s, i| {
@@ -2573,7 +2581,8 @@ fn intern(table: []Id, n: *usize, name: []const u8, full: ParseError) !u16 {
 pub fn write(m: *const Map, w: anytype) !void {
     try w.print("version: {d}\n", .{VERSION});
     try w.print("name: {s}\n", .{m.label()});
-    try w.print("half: {d:.1}\n", .{m.half});
+    // Shortest exact: a grown legacy half (`grownHalf`) rounded to 0.1 moves every lattice sample against the ops.
+    try w.print("half: {d}\n", .{m.half});
     try w.print("runway: {d:.2} {d:.2} {d:.2} {d:.2}\n", .{ m.runway.x, m.runway.z, m.runway.x1, m.runway.z1 });
     try w.print("start: {d:.2} {d:.2} {d:.1}", .{ m.start.x, m.start.z, m.start.yaw });
     if (m.start.under) try w.writeAll(" under=1");

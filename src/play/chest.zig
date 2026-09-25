@@ -112,10 +112,7 @@ pub const Chests = struct {
         c.opened = true;
         self.near = null;
         sfx.world(.chest_open, c.pos);
-        const op = c.op;
-        const loot: []const item.Kind = if (op < m.nops) m.ops[op].loot[0..m.ops[op].nloot] else &.{};
-        const coin: u32 = if (op < m.nops) m.ops[op].gold else 0;
-        return .{ .at = c.topWorld(), .loot = loot, .gold = coin };
+        return .{ .at = c.topWorld(), .loot = m.lootOf(c.op), .gold = m.goldOf(c.op) };
     }
 
     /// The lid stands the height of the box again when it is open, so the cull sphere is twice the closed top.

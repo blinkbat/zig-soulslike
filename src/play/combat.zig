@@ -39,7 +39,7 @@ pub fn elemName(e: Elem) [:0]const u8 {
 }
 
 /// A number per element, WRITTEN BY NAME. Field names are matched against the enum at comptime, so a rename is a compile error and an omitted element is a 0; an array literal would silently shift on a fifth.
-pub const Spread = struct { fire: f32 = 0, cold: f32 = 0, lightning: f32 = 0, chaos: f32 = 0 };
+pub const Spread = item.Res;
 
 comptime {
     const mine = @typeInfo(Elem).@"enum".fields;
@@ -53,10 +53,6 @@ comptime {
 
 pub fn elemOf(n: item.ElemName) Elem {
     return @enumFromInt(@intFromEnum(n));
-}
-
-pub fn resistsOf(r: item.Res) Resists {
-    return resists(.{ .fire = r.fire, .cold = r.cold, .lightning = r.lightning, .chaos = r.chaos });
 }
 
 fn pack(s: Spread) [NELEM]f32 {
@@ -110,6 +106,11 @@ pub const Resists = struct {
     }
     pub fn taken(self: Resists, e: Elem, amt: f32) f32 {
         return amt * (1.0 - self.at(e) / 100.0);
+    }
+    pub fn plus(self: Resists, other: Resists) Resists {
+        var out = self;
+        for (&out.v, other.v) |*x, y| x.* += y;
+        return out;
     }
     pub fn takenAll(self: Resists, es: Elems) f32 {
         var n: f32 = 0;
@@ -686,9 +687,10 @@ pub fn guardChipSplit(h: Hit, negate: f32, negateElem: f32) Hit {
 
 
 pub var STAM_PARRY: f32 = 9.0;
-/// Sized so the ogre's 90 stance takes two catches and lighter takes one. Here rather than in `hero.zig` so a creature can say its blow throws him without importing the man it throws.
+/// Here rather than in `hero.zig` so a creature can say its blow throws him without importing the man it throws.
 pub const SLAM_LAUNCH: f32 = 0.85;
 
+/// Sized so the ogre's 90 stance takes two catches and lighter takes one.
 pub const PARRY_HIT = Hit{ .stance = 46 };
 
 pub const FP_MAX = stats.fpFor(stats.START);
@@ -822,7 +824,7 @@ pub const Chill = struct {
 /// THE TWO THAT DO NOT CROSS THE GROUND — they arrive on ONE named body on the frame they are cast, so they need a REACH and an ARC rather than a speed. Narrower than the rime cone's 30: that is a wash, these are aimed.
 pub const STRIKE_ARC: f32 = 22.0;
 
-/// Poise past every creature's `POISE_MAX` bar the bone knight's 78 (the ogre's 30 is next). STANCE deliberately UNDER the heavy swing's 14: a spell thrown from across the room may not be the better guard-breaker.
+/// STANCE deliberately UNDER the heavy swing's 14: a spell thrown from across the room may not be the better guard-breaker. A creature's poise pool never reads `poise` — it takes `FOE_POISE_PER_DMG` of the damage (`Vitals.strike`).
 pub const LEVIN_HIT = Hit{ .poise = 34, .stance = 10, .elem = elems(.{ .lightning = 22 }) };
 pub const LEVIN_REACH: f32 = 16.0;
 
@@ -915,14 +917,20 @@ fn bankFp(s: Spell) f32 {
     return bankRow(s).fp;
 }
 
-fn bankDoses(s: Spell) bool {
-    const row = bankRow(s);
+fn rowDamage(row: SpellRow) f32 {
+    return if (row.blow) |b| b.raw() else row.drip;
+}
+
+fn rowDoses(row: SpellRow) bool {
     return if (row.blow) |b| b.dose.any() else false;
 }
 
+fn bankDoses(s: Spell) bool {
+    return rowDoses(bankRow(s));
+}
+
 fn bankDamage(s: Spell) f32 {
-    const row = bankRow(s);
-    return if (row.blow) |b| b.raw() else row.drip;
+    return rowDamage(bankRow(s));
 }
 
 pub fn spellName(s: Spell) [:0]const u8 {
@@ -954,13 +962,11 @@ pub fn spellReach(s: Spell) ?f32 {
 }
 
 pub fn spellDamage(s: Spell) f32 {
-    const row = rowFor(s);
-    return if (row.blow) |b| b.raw() else row.drip;
+    return rowDamage(rowFor(s));
 }
 
 pub fn spellDoses(s: Spell) bool {
-    const row = rowFor(s);
-    return if (row.blow) |b| b.dose.any() else false;
+    return rowDoses(rowFor(s));
 }
 
 pub fn spellDose(s: Spell) ?Ail {
@@ -1035,7 +1041,7 @@ pub const Memory = struct {
 pub const BOLT_FP: f32 = bankFp(.bolt);
 
 comptime {
-// The ladder is MONOTONE and that is the whole price list: 8→25, 11→22, 12→19.6, 13→18, 14→16.5, 15→15.3, 16→14 — and every rung clears a free light swing (`hero.ATK_LIGHT_HIT`, 13).
+// The ladder is MONOTONE and that is the whole price list: 8→25, 11→22, 12→20, 13→18, 14→16.5, 15→15.3, 16→14 — and every rung clears a free light swing (`hero.ATK_LIGHT_HIT`, 13).
     @setEvalBranchQuota(8000);
     for (std.enums.values(Spell)) |a| {
         for (std.enums.values(Spell)) |b| {
@@ -1107,6 +1113,13 @@ pub const FLASK_CERULEAN: u8 = FLASK_TOTAL - FLASK_CRIMSON;
 pub const FLASK_CAP: u8 = 14;
 pub const FLASK_HP_FRAC: f32 = 0.45;
 pub const FLASK_FP_FRAC: f32 = 0.50;
+
+pub fn flaskPour(k: FlaskKind, hpMax: f32, fpMax: f32, heal: f32) f32 {
+    return switch (k) {
+        .crimson => hpMax * FLASK_HP_FRAC * heal,
+        .cerulean => fpMax * FLASK_FP_FRAC,
+    };
+}
 pub const FLASK_DRINK_DUR: f32 = 1.05;
 pub const FLASK_POUR_AT: f32 = 0.42;
 
@@ -1562,19 +1575,12 @@ pub const Status = struct {
         if (self.sinceDose >= row.decayDelay) self.meter = maxF(0, self.meter - row.decay * dt);
         return 0;
     }
-    pub fn reset(self: *Status) void {
-        self.* = .{};
-    }
 };
 
 pub fn ailPulse(row: AilRow, amt: f32) Hit {
     var out = Hit{};
     if (row.pulse) |e| out.elem.v[@intFromEnum(e)] = amt else out.gore = amt;
     return out;
-}
-
-pub fn poisonPulse(amt: f32) Hit {
-    return ailPulse(ailRow(.poison), amt);
 }
 
 test "ELEMENTAL DAMAGE BUILDS ITS OWN METER, AFTER RESISTANCES — and a DRIP builds nothing" {
@@ -1754,7 +1760,7 @@ test "BLEED BURSTS FLAT AND RE-ARMS, AND ARMOUR BARELY ANSWERS IT" {
 }
 
 test "POISON IS CHAOS — the ward and the node that name it actually answer it" {
-    const pulse = poisonPulse(10);
+    const pulse = ailPulse(ailRow(.poison), 10);
     try std.testing.expectEqual(@as(f32, 0), pulse.dmg);
     try std.testing.expectApproxEqAbs(@as(f32, 10), pulse.elem.at(.chaos), 1e-5);
     try std.testing.expectEqual(@as(f32, 0), pulse.poise);
@@ -1841,6 +1847,13 @@ pub const Souls = struct {
 
     pub fn gain(self: *Souls, n: u32) void {
         self.total +|= n;
+    }
+
+    pub fn spend(self: *Souls, n: u32) bool {
+        if (self.total < n) return false;
+        self.total -= n;
+        self.shown = minF(self.shown, @floatFromInt(self.total));
+        return true;
     }
 
     pub fn dropAll(self: *Souls) u32 {
@@ -2776,7 +2789,7 @@ test "…and shedding the row it was TURNED TO lands the selection on something 
 }
 
 test "A SHEAF NEVER CARRIES MORE THAN THE QUIVER HOLDS" {
-    // `item.zig` imports nothing but std, so the two halves of this contract are checked from THIS side — a sheaf worth more than the bank it fills silently bins the surplus the moment it is picked up.
+    // `item.zig` cannot import `combat`, so the two halves of this contract are checked from THIS side — a sheaf worth more than the bank it fills silently bins the surplus the moment it is picked up.
     inline for (@typeInfo(item.Kind).@"enum".fields) |f| {
         const k: item.Kind = @enumFromInt(f.value);
         switch (item.use(k)) {

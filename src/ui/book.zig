@@ -67,6 +67,9 @@ pub const View = struct {
     tree: *const ptree.Tree,
     mem: combat.Memory = .{},
     inCombat: bool = false,
+    /// `game.takeHand` refuses a hand swap and `hero.cycleArrow` an ammo pick while these hold, and the menu opens mid-action.
+    busy: bool = false,
+    shooting: bool = false,
     arm: heromod.Armament,
     off: heromod.Armament,
     armAlt: heromod.Armament = .bow,
@@ -102,8 +105,8 @@ pub const World = mapart.World;
 
 
 const Loadout = struct {
-    arm: heromod.Arm,
-    off: heromod.Off,
+    arm: heromod.Armament,
+    off: heromod.Armament,
     ammo: combat.ArrowKind,
     quick: ?item.Kind,
     spell: combat.Spell,
@@ -193,10 +196,7 @@ fn sheetOf(l: Loadout, perk: ptree.Bonus) stats.Sheet {
 }
 
 fn resOf(l: Loadout, perk: ptree.Bonus) combat.Resists {
-    var r = perk.res;
-    const worn = combat.resistsOf(heromod.suitOf(l.worn).plate.res);
-    for (&r.v, worn.v) |*x, w| x.* += w;
-    return r;
+    return perk.res.plus(combat.resists(heromod.suitOf(l.worn).plate.res));
 }
 
 fn derive(l: Loadout, v: View) [ND]f32 {
@@ -371,16 +371,21 @@ fn emptyHanded(w: item.Wear) [:0]const u8 {
     };
 }
 
+const MID_ACTION: [:0]const u8 = "Not mid-action.";
+
 fn locked(s: SlotId, v: View) ?[:0]const u8 {
     if (wearOf(s)) |w| return if (!carriesFor(w, v)) emptyHanded(w) else null;
     return switch (s) {
-        .left => if (v.offInHand())
+        .left => if (v.busy)
+            MID_ACTION
+        else if (v.offInHand())
             null
         else if (heromod.armTwoHanded(v.arm) or heromod.armTwoHanded(v.off))
             "The bow takes both hands."
         else
             "One weapon hand. The right takes it.",
-        .left2, .right2 => null,
+        .right, .left2, .right2 => if (v.busy) MID_ACTION else null,
+        .arrows => if (v.shooting) MID_ACTION else null,
         .sorcery => if (v.holds(.bow))
             "The bow takes both hands."
         else if (!v.holds(.wand))
@@ -462,10 +467,7 @@ fn slotTally(s: SlotId, v: View) ?u8 {
 fn quickWorth(kind: ?item.Kind, worn: heromod.Worn, sheet: stats.Sheet, perk: ptree.Bonus) f32 {
     const k = kind orelse return 0;
     const hpMax = heromod.hpMaxOf(sheet, worn, perk);
-    if (combat.flaskOf(k)) |f| return switch (f) {
-        .crimson => hpMax * combat.FLASK_HP_FRAC * perk.flaskHeal,
-        .cerulean => heromod.fpMaxOf(sheet, worn, perk) * combat.FLASK_FP_FRAC,
-    };
+    if (combat.flaskOf(k)) |f| return combat.flaskPour(f, hpMax, heromod.fpMaxOf(sheet, worn, perk), perk.flaskHeal);
     return switch (item.use(k)) {
         .none => 0,
         .regen => |r| hpMax * r.frac,
@@ -494,7 +496,7 @@ const Cand = struct { name: [:0]const u8, tally: ?u8 = null, act: Action };
 
 const CAND_MAX = blk: {
     var n: usize = item.NK + 1;
-    for ([_]type{ heromod.Arm, heromod.Off, combat.ArrowKind }) |T| {
+    for ([_]type{ heromod.Armament, combat.ArrowKind }) |T| {
         n = @max(n, @typeInfo(T).@"enum".fields.len);
     }
     n = @max(n, @typeInfo(heromod.Armament).@"enum".fields.len + item.NK);
@@ -754,7 +756,7 @@ pub const Book = struct {
             return;
         }
         if (self.page == .map) {
-            self.lens.panStep(@floatFromInt(sx), @floatFromInt(sy));
+            self.lens.panStep(dx, dy);
             return;
         }
         const i = idx(self.page);
@@ -2248,7 +2250,7 @@ fn drawItemDetail(box: Box, kind: ?item.Kind, v: View) void {
     switch (item.use(k)) {
         .none => hud.text("Nothing to use here.", inner.x, y, hud.HINT, uiart.TEXT_HINT),
         .regen => |r| hud.text(fmt("+{d:.0} HP over {d:.0}s", .{ heromod.hpMaxOf(v.sheet.*, v.worn, v.tree.bonus()) * r.frac, r.secs }), inner.x, y, hud.SMALL, uiart.GOOD),
-        .wind => |w| hud.text(fmt("+{d:.0} stamina, clears the lockout", .{v.sheet.stamina() * v.tree.bonus().stamMax * w.share}), inner.x, y, hud.SMALL, uiart.GOOD),
+        .wind => |w| hud.text(fmt("+{d:.0} stamina, clears the lockout", .{heromod.stamMaxOf(v.sheet.*, v.tree.bonus()) * w.share}), inner.x, y, hud.SMALL, uiart.GOOD),
         else => after = hud.prose(rowSays(k), inner.x, y, inner.w, hud.SMALL, uiart.GOOD),
     }
     if (item.usable(k)) {
@@ -2476,7 +2478,7 @@ fn drawBody(col: Box, v: View) void {
     L.section("VITALS");
     L.put("HP", "{d:.0}", .{worth(d, .hp)}, uiart.TEXT_VALUE);
     L.put("Focus", "{d:.0}", .{worth(d, .fp)}, uiart.TEXT_VALUE);
-    L.put("Stamina", "{d:.0}", .{v.sheet.stamina() * perk.stamMax}, uiart.TEXT_VALUE);
+    L.put("Stamina", "{d:.0}", .{heromod.stamMaxOf(v.sheet.*, perk)}, uiart.TEXT_VALUE);
     L.put("Poise", "{d:.0}", .{heromod.POISE_MAX * perk.poiseMax}, uiart.TEXT_VALUE);
     L.put("Stance", "{d:.0}", .{heromod.STANCE_MAX}, uiart.TEXT_VALUE);
     if (perk.hpRegen > 0) L.put("HP regen", "{d:.1}/s", .{perk.hpRegen}, uiart.GOOD);
@@ -2725,11 +2727,11 @@ fn drawPortrait(self: *const Book, col: Box, portrait: ?Portrait, caption: [:0]c
 const TEST_QUICK = combat.Quick{};
 const TEST_TREE = ptree.Tree{};
 
-fn testView(bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.Resists, flasks: *const combat.Flasks, quiver: *const combat.Quiver, arm: heromod.Arm) View {
+fn testView(bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.Resists, flasks: *const combat.Flasks, quiver: *const combat.Quiver, arm: heromod.Armament) View {
     return testViewOff(bag, sheet, res, flasks, quiver, arm, .shield);
 }
 
-fn testViewOff(bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.Resists, flasks: *const combat.Flasks, quiver: *const combat.Quiver, arm: heromod.Arm, off: heromod.Off) View {
+fn testViewOff(bag: *const item.Bag, sheet: *const stats.Sheet, res: *const combat.Resists, flasks: *const combat.Flasks, quiver: *const combat.Quiver, arm: heromod.Armament, off: heromod.Armament) View {
     return .{ .bag = bag, .sheet = sheet, .res = res, .flasks = flasks, .quick = &TEST_QUICK, .quiver = quiver, .tree = &TEST_TREE, .arm = arm, .off = off, .spell = .bolt, .fp = combat.FP_MAX, .souls = 0 };
 }
 
@@ -2966,8 +2968,8 @@ test "every slot either offers a choice or says why it cannot" {
     const flasks = combat.Flasks{};
     const quiver = combat.Quiver{};
     var buf: [CAND_MAX]Cand = undefined;
-    for ([_]heromod.Arm{ .sword, .bow }) |arm| {
-        for ([_]heromod.Off{ .shield, .wand }) |off| {
+    for ([_]heromod.Armament{ .sword, .bow }) |arm| {
+        for ([_]heromod.Armament{ .shield, .wand }) |off| {
             const v = testViewOff(&bag, &sheet, &res, &flasks, &quiver, arm, off);
             for (0..NSLOT) |i| {
                 const s: SlotId = @enumFromInt(i);

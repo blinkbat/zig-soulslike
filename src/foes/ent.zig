@@ -410,7 +410,9 @@ pub const Ent = struct {
                 const sensed = foe.senseHero(&self.leash, self.pos, quarry, AGGRO_R);
                 const homeGap = mathx.distXZ(self.pos, foe.homeFor(self));
                 const bearing = foe.bearingDeg(self.pos, self.facing, quarry);
-                switch (classify(sensed, bearing, homeGap, self.scale, self.swipeCd <= 0, self.shakeCd <= 0, self.root.held())) {
+                // `inSweep` refuses a man across a drop, so the choose may not pick a swipe it cannot land.
+                const swipeReady = self.swipeCd <= 0 and !foe.acrossDrop(self.pos, quarry);
+                switch (classify(sensed, bearing, homeGap, self.scale, swipeReady, self.shakeCd <= 0, self.root.held())) {
                     .rest => {
                         if (sensed <= AGGRO_R) self.faceToward(quarry, dt);
                         self.state = if (foe.postAmble(self, dt, bounds, WALK_SPEED, ACCEL, sensed, AGGRO_R, TURN_RATE, &movedDist, &moveSpeed, &moveYaw)) .walk else .idle;
@@ -746,7 +748,8 @@ pub const Copse = struct {
 };
 
 fn buildBones() [N]rl.Mesh {
-    var mesh: [N]rl.Mesh = undefined;
+    // A slot nothing draws still holds a mesh: `gfx.uploadAll` walks every one.
+    var mesh = [_]rl.Mesh{std.mem.zeroes(rl.Mesh)} ** N;
     mesh[ROOT] = boleMesh(0.130, 0.118, 0.086, 0xE100);
     mesh[SPINE] = boleMesh(0.118, 0.108, -0.126, 0xE101);
     mesh[CHEST] = trunkMesh();

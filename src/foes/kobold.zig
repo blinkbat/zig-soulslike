@@ -387,9 +387,9 @@ pub const Kobold = struct {
     pub fn staggered(self: *const Kobold) bool {
         return foe.inStun(self) or self.state == .dead;
     }
-    /// OFF THE GROUND only during the berserker's dash, and only for the FLIGHT of it — measured off the same `hop` the pelvis rides, against the threshold the toad and the archer share.
+    /// OFF THE GROUND for the FLIGHT of the berserker's dash, and for the fall a stagger cuts out of it — measured off the same `hop` the pelvis rides, against the threshold the toad and the archer share.
     pub fn airborne(self: *const Kobold) bool {
-        return self.state == .dash and self.hop > foe.AIRBORNE_LIFT;
+        return self.hop > foe.AIRBORNE_LIFT;
     }
     pub fn bodyR(self: *const Kobold) f32 {
         return spec(self.role).bodyR * self.scale;
@@ -496,7 +496,7 @@ pub const Kobold = struct {
         self.t += dt * self.vit.hasteMult();
         self.vit.tick(dt);
         // `dying`, not `gone`: a corpse's meters still run out, and staggered it stands back up at 0 HP.
-        if (self.vit.ailEnded(.berserk) and !self.dying()) self.stagger(true);
+        if (self.vit.ailEnded(.berserk) and !self.dying()) foe.staggerFrom(self, true);
         foe.tickBody(self, dt, hero, bounds, AGGRO_R, SHOVE_DECAY);
         self.castCd = mathx.maxF(0, self.castCd - dt);
         self.slingCd = mathx.maxF(0, self.slingCd - dt);
@@ -1135,8 +1135,7 @@ pub const Kobold = struct {
         return mathx.pulse(self.t, a - DASH_FLIGHT * 0.18, a + DASH_LAND * 0.25, a + DASH_LAND * 0.45, a + DASH_LAND);
     }
     fn dashLeadIsLeft(self: *const Kobold) bool {
-        return heromod.sampleCurve(heromod.HIP_FLEX, self.dashPhase) >
-            heromod.sampleCurve(heromod.HIP_FLEX, self.dashPhase + 0.5);
+        return heromod.leftLeads(self.dashPhase);
     }
 
     fn biteCoil(self: *const Kobold) f32 {

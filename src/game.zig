@@ -1867,6 +1867,9 @@ const SparKept = struct {
     gold: combat.Gold,
     flasks: combat.Flasks,
     quiver: combat.Quiver,
+    /// The room walks the RUN's chart at its own 96 m half, and its fire's "Rest until…" moves the run's hour.
+    seen: mapart.Seen,
+    day: daynight.Clock,
 };
 var sparKept: ?SparKept = null;
 
@@ -1889,6 +1892,8 @@ fn sparKit(g: *Game) void {
         .gold = g.hero.gold,
         .flasks = g.hero.flasks,
         .quiver = g.hero.quiver,
+        .seen = g.seenMap,
+        .day = g.day,
     };
     for (0..item.NK) |i| {
         const k: item.Kind = @enumFromInt(i);
@@ -1928,6 +1933,11 @@ fn leaveSpar(g: *Game) bool {
         g.hero.gold = k.gold;
         g.hero.flasks = k.flasks;
         g.hero.quiver = k.quiver;
+        const gen = g.seenMap.gen;
+        g.seenMap = k.seen;
+        g.seenMap.gen = gen +% 1;
+        g.seenMap.at = -1;
+        g.day = k.day;
     }
     clearOrdnance(g);
     return true;
@@ -2120,7 +2130,8 @@ fn bossBars(g: *Game, dt: f32) void {
         var stag = false;
         var up = false;
         const sealed = sealedInWith(g, row.kind);
-        const gated = gateEntered(&g.env, &g.map, row.kind) orelse true;
+        // Sealed in with it IS the fight: the spar starts him inside the room, where no step of his crossed the gate.
+        const gated = sealed or (gateEntered(&g.env, &g.map, row.kind) orelse true);
         const ring = aggroOfRail(i);
         for (if (gated) @field(g, row.field).liveConst() else &.{}) |*k| {
             if (!k.alive()) continue;
@@ -4075,7 +4086,7 @@ fn billDeaths(g: *Game) void {
                 self.g.gorge.noteCorpse(f.pos);
                 var buf: [pickupmod.DROP_MAX]item.Kind = undefined;
                 const loot = dropsmod.roll(k, self.g.hero.sheet.at(.luck), &self.g.dropRng, &buf);
-                self.g.pickups.spawn(f.pos, loot, dropsmod.rollGold(k, &self.g.dropRng));
+                self.g.pickups.spawn(f.pos, self.g.hero.pos, loot, dropsmod.rollGold(k, &self.g.dropRng));
                 if (self.g.hero.perk.onKill > 0 and !self.g.hero.dead) {
                     _ = self.g.hero.vit.heal(self.g.hero.perk.onKill);
                 }
@@ -4346,7 +4357,7 @@ fn bonfirePick(g: *Game, pick: restmod.Pick) void {
         .leave => g.rest.leave(),
         .take => |i| {
             const paid = g.tree.take(i, g.hero.souls.total) orelse return;
-            g.hero.souls.total -= paid;
+            _ = g.hero.souls.spend(paid);
             g.hero.souls.shown = @floatFromInt(g.hero.souls.total);
             applyTree(g);
             sfx.play(.souls_take);
@@ -5274,9 +5285,9 @@ fn applyRaises(g: *Game) void {
     }
 }
 
-fn envDepthAt(ctx: *const anyopaque, x: f32, z: f32) f32 {
+fn envDepthAt(ctx: *const anyopaque, x: f32, z: f32, footY: f32) f32 {
     const e: *const envmod.Env = @ptrCast(@alignCast(ctx));
-    return e.wadeDepth(x, z);
+    return e.wadeDepthUnder(x, z, footY);
 }
 
 /// THE ROOM A BODY FIGHTS IN IS STAMPED, NOT ASKED FOR: any creature with a `room` field gets the arena it stands in each frame (null on open ground), and one with a `ground` field gets the world's water to ask.
@@ -6126,7 +6137,7 @@ pub fn run(mode: Mode) void {
         sfx.tickStreams();
         pumpSave(g);
 
-        if (!g.editor.on and !g.rest.active() and !g.talk.active()) {
+        if (!g.editor.on and !g.rest.active() and !g.talk.active() and !g.counter.open) {
             if (rl.isKeyPressed(.escape)) g.menu.onEscape();
             if (rl.isKeyPressed(.tab)) g.menu.onStartButton();
             if (padPressed(.middle_left)) g.menu.onSelectButton();
@@ -6227,6 +6238,7 @@ pub fn run(mode: Mode) void {
                     // THE STASH MAY NOT OUTLIVE THE WORLD IT BELONGS TO: a stash still held from the title lands his old map over the one he is playing.
                     _ = leaveSpar(g);
                     g.ownsSlot = false;
+                    g.shotOwed = false;
                     g.menu.toTitle();
                 },
                 .newGame => |i| beginEnter(g, .{ .fresh = i }),
@@ -6758,6 +6770,7 @@ pub fn run(mode: Mode) void {
         _ = billGroup(g, "hoard", dt, bladeNow);
         for (g.hoard.live()) |*m| {
             if (m.justWoke) {
+                m.justWoke = false;
                 sfx.world(.chest_open, m.pos);
                 sfx.world(.skitter_clack, m.pos);
                 g.rumble.play(rumblemod.hit_heavy);
@@ -7096,6 +7109,8 @@ pub fn bookView(g: *Game) bookmod.View {
         .quiver = &g.hero.quiver,
         .tree = &g.tree,
         .inCombat = inCombat(g),
+        .busy = !g.hero.bodyFree(),
+        .shooting = g.hero.shooting or g.hero.dead,
         .arm = g.hero.arm,
         .off = g.hero.off,
         .armAlt = g.hero.armAlt,

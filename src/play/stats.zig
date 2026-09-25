@@ -147,12 +147,6 @@ pub const Sheet = struct {
         return findFor(self.at(.luck));
     }
 
-    pub fn level(self: *const Sheet) u32 {
-        var n: u32 = 1;
-        for (self.pts) |p| n += @as(u32, p) -| START;
-        return n;
-    }
-
     pub fn barFor(self: *const Sheet, a: Attr) ?f32 {
         return switch (a) {
             .vitality => self.hp(),
@@ -169,17 +163,6 @@ test "the STARTING sheet reproduces the tuned bars exactly, so nothing moved" {
     try std.testing.expectApproxEqAbs(@as(f32, 60), s.fp(), 1e-3);
     try std.testing.expectApproxEqAbs(@as(f32, 105), s.stamina(), 1e-3);
     for (0..NA) |i| try std.testing.expectEqual(START, s.at(@enumFromInt(i)));
-}
-
-test "level is COUNTED off the points, and a fresh sheet is level 1" {
-    var s = Sheet{};
-    try std.testing.expectEqual(@as(u32, 1), s.level());
-    s.set(.vitality, START + 5);
-    s.set(.luck, START + 2);
-    try std.testing.expectEqual(@as(u32, 8), s.level());
-    s.set(.vitality, 1);
-    s.set(.luck, 1);
-    try std.testing.expectEqual(@as(u32, 1), s.level());
 }
 
 test "the stamina curve IS ER's table, softcaps and all" {

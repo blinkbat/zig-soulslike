@@ -905,7 +905,7 @@ pub const Druidess = struct {
     /// Inside her reach rings she leaves before she casts. The leap is a jump and the roots refuse it (`foe.canLeap`); the sidestep is a step and needs no leave.
     fn dodgeNow(self: *Druidess, d: f32, hero: rl.Vector3) bool {
                 // The cooldown is spent at the COMMIT, so a stagger through the wind still spends it.
-        if (d <= foe.triggerBand(SLASH_R, SCALE, self.scale) and self.slashCd <= 0) {
+        if (d <= foe.triggerBand(SLASH_R, SCALE, self.scale) and self.slashCd <= 0 and !foe.acrossDrop(self.pos, hero)) {
             self.slashCd = SLASH_CD;
             self.enter(.slash_wind);
             return true;
@@ -938,7 +938,7 @@ pub const Druidess = struct {
 
     /// Ground she may stand on: dry, and inside the room with her own footprint to spare. Open ground is all room; an unstamped bench is all dry.
     fn inRoom(self: *const Druidess, at: rl.Vector3) bool {
-        if (self.ground.depth(at.x, at.z) > DRY_MAX) return false;
+        if (self.ground.depth(at.x, at.z, at.y) > DRY_MAX) return false;
         const r = self.room orelse return true;
         if (!r.contains(at.x, at.z)) return false;
         return r.nearestWall(at).d >= self.bodyR();
@@ -2654,7 +2654,7 @@ test "SHE NEVER LEAVES THE ROOM — cornered against the wall she leaps OVER HIS
     try std.testing.expect(!backed.overHead and backed.moveDir.z < 0);
 
     const Bench = struct {
-        fn depth(_: *const anyopaque, _: f32, z: f32) f32 {
+        fn depth(_: *const anyopaque, _: f32, z: f32, _: f32) f32 {
             return if (z > 5.0) 2.0 else 0.0;
         }
     };
@@ -2664,7 +2664,7 @@ test "SHE NEVER LEAVES THE ROOM — cornered against the wall she leaps OVER HIS
     _ = dry.update(dt, mathx.ground(0, 3.0), 400.0, .{});
     try std.testing.expectEqual(State.leap, dry.state);
     try std.testing.expect(!dry.overHead and dry.moveDir.z < 0);
-    try std.testing.expect(dry.ground.depth(dry.landing(dry.moveDir, dry.arc.dist).x, dry.landing(dry.moveDir, dry.arc.dist).z) <= DRY_MAX);
+    try std.testing.expect(dry.ground.depth(dry.landing(dry.moveDir, dry.arc.dist).x, dry.landing(dry.moveDir, dry.arc.dist).z, dry.pos.y) <= DRY_MAX);
     var shore = Druidess.spawn(mathx.ground(0, 3.0), 0, 1.0, 0.3);
     shore.ground = .{ .ctx = @ptrCast(&shore), .depthAt = Bench.depth };
     shore.leash.noteSeen();

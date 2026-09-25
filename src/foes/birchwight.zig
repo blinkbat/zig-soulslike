@@ -192,6 +192,7 @@ pub const Wight = struct {
     lit: f32 = 0,
     caught: bool = false,
     justCaught: bool = false,
+    boughHaste: f32 = 1,
 
     vit: combat.Vitals = combat.Vitals.initFoe(HP_MAX, POISE_MAX, STANCE_MAX).withRes(RESISTS),
     hits: u32 = 0,
@@ -268,14 +269,18 @@ pub const Wight = struct {
         if (self.caught) h.elem = combat.elems(.{ .fire = LIT_FIRE });
         return h;
     }
+    /// Latched at the choose: kindled mid-stroke, the live haste would move the bill window past `t` and the bough would whiff.
+    fn strokeHaste(self: *const Wight) f32 {
+        return if (self.state == .bough) self.boughHaste else self.haste();
+    }
     fn windDur(self: *const Wight) f32 {
-        return BOUGH_WIND / self.haste();
+        return BOUGH_WIND / self.strokeHaste();
     }
     fn strikeDur(self: *const Wight) f32 {
-        return BOUGH_STRIKE / self.haste();
+        return BOUGH_STRIKE / self.strokeHaste();
     }
     fn recoverDur(self: *const Wight) f32 {
-        return BOUGH_RECOVER / self.haste();
+        return BOUGH_RECOVER / self.strokeHaste();
     }
 
     pub fn kindle(self: *Wight, raw: f32) void {
@@ -362,6 +367,7 @@ pub const Wight = struct {
                     .bough => {
                         self.speed = approach(self.speed, 0, ACCEL * 2.0 * dt);
                         self.boughCd = BOUGH_CD / self.haste() * self.aiRng.range(0.85, 1.2);
+                        self.boughHaste = self.haste();
                         self.heroLatch = false;
                         self.enter(.bough);
                     },
@@ -437,6 +443,7 @@ pub const Wight = struct {
     }
     pub fn debugBough(self: *Wight) void {
         self.heroLatch = false;
+        self.boughHaste = self.haste();
         self.enter(.bough);
     }
     pub fn debugLight(self: *Wight) void {
@@ -657,7 +664,8 @@ pub const Stand = struct {
 };
 
 fn buildBones() [N]rl.Mesh {
-    var mesh: [N]rl.Mesh = undefined;
+    // A slot nothing draws still holds a mesh: `gfx.uploadAll` walks every one.
+    var mesh = [_]rl.Mesh{std.mem.zeroes(rl.Mesh)} ** N;
     mesh[ROOT] = boleMesh(0.086, 0.078, 0.090, 0x8100);
     mesh[SPINE] = boleMesh(0.078, 0.070, -0.128, 0x8101);
     mesh[CHEST] = trunkMesh();

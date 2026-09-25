@@ -203,8 +203,23 @@ const SWEEP = Attack{
     .step = SWEEP_STEP,
 };
 
-const MOVES_SHIELDMAN_BANK = [_]Attack{MACE};
-const MOVES_GREATSWORD_BANK = [_]Attack{ SLAM, LUNGE, SWEEP };
+pub const SH_MACE: usize = 0;
+pub const GS_SLAM: usize = 0;
+pub const GS_LUNGE: usize = 1;
+pub const GS_SWEEP: usize = 2;
+
+const MOVES_SHIELDMAN_BANK = blk: {
+    var m: [1]Attack = undefined;
+    m[SH_MACE] = MACE;
+    break :blk m;
+};
+const MOVES_GREATSWORD_BANK = blk: {
+    var m: [3]Attack = undefined;
+    m[GS_SLAM] = SLAM;
+    m[GS_LUNGE] = LUNGE;
+    m[GS_SWEEP] = SWEEP;
+    break :blk m;
+};
 
 /// HOW LONG BEFORE A BLOW LANDS IT CAN STILL BE CAUGHT — the game's own number (`foe.PARRY_LEAD`), the SAME one for all three moves. In SECONDS BEFORE THE HIT, since the impact frames differ wildly (mace 0.078 s into its stroke, slam 0.072, lunge 0.120).
 const PARRY_LEAD = foe.PARRY_LEAD;
@@ -981,7 +996,7 @@ pub const Warrior = struct {
     }
 
     fn tryReach(self: *Warrior, hero: rl.Vector3) void {
-        if (self.dealt) return;
+        if (self.dealt or foe.acrossDrop(self.pos, hero)) return;
         const r = foe.hurtReach(kitOf(self.role).r, self.scale);
         if (!foe.weaponReaches(self.wpnWas, self.wpnHere(), hero, r)) return;
         self.heroHit = self.move().hit;
@@ -1081,6 +1096,7 @@ pub const Warrior = struct {
     pub fn reraise(self: *Warrior, frac: f32) void {
         foe.rekindle(self, frac);
         self.enterStun(.stunlight);
+        self.vit.beginStun(.light);
         self.pose();
     }
 

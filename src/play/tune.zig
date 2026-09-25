@@ -44,7 +44,7 @@ const wolfmod = @import("../foes/wolf.zig");
 const mathx = @import("../core/mathx.zig");
 const wf = @import("../world/worldfmt.zig");
 
-/// A CHOICE, NOT A DIAL — one `f32` through the table's own `get`/`set`, but an ORDINAL into a named list, and the FILE carries the NAME: an ordinal written against 59 item kinds lands on a different item the day one is added.
+/// A CHOICE, NOT A DIAL — one `f32` through the table's own `get`/`set`, but an ORDINAL into a named list, and the FILE carries the NAME: an ordinal into the item kinds lands on a different item the day one is added.
 pub const Pick = struct {
     n: usize,
     label: *const fn (usize) [:0]const u8,
@@ -116,24 +116,29 @@ pub const Knob = struct {
     tip: [:0]const u8 = "",
 };
 
+fn wholeU32(v: f32) u32 {
+    return @intFromFloat(@max(0, @round(v)));
+}
+
+fn wholeU8(v: f32) u8 {
+    return @intFromFloat(mathx.clampF(@round(v), 0, 255));
+}
+
 pub const Ptr = union(enum) {
     f: *f32,
     u: *u32,
-    b: *u8,
 
     fn read(self: Ptr) f32 {
         return switch (self) {
             .f => |q| q.*,
             .u => |q| @floatFromInt(q.*),
-            .b => |q| @floatFromInt(q.*),
         };
     }
 
     fn write(self: Ptr, v: f32) void {
         switch (self) {
             .f => |q| q.* = v,
-            .u => |q| q.* = @intFromFloat(@max(0, @round(v))),
-            .b => |q| q.* = @intFromFloat(mathx.clampF(@round(v), 0, 255)),
+            .u => |q| q.* = wholeU32(v),
         }
     }
 };
@@ -176,6 +181,7 @@ const SPELL_COLS = [_]Col{
 
 const SpellCol = enum { fp, reach, dmg, poise, stance, fire, cold, lightning, chaos, drip };
 const SPELL_ELEM0 = @intFromEnum(SpellCol.fire);
+const SPELL_HIT0 = @intFromEnum(SpellCol.dmg);
 comptime {
     ColsAre(SpellCol, &SPELL_COLS);
 }
@@ -194,10 +200,7 @@ fn spellGet(r: usize, c: usize) f32 {
     return switch (@as(SpellCol, @enumFromInt(c))) {
         .fp => row.fp,
         .reach => row.reach orelse 0,
-        .dmg => blow.dmg,
-        .poise => blow.poise,
-        .stance => blow.stance,
-        .fire, .cold, .lightning, .chaos => blow.elem.v[c - SPELL_ELEM0],
+        .dmg, .poise, .stance, .fire, .cold, .lightning, .chaos => hitGet(blow, c - SPELL_HIT0),
         .drip => row.drip,
     };
 }
@@ -220,16 +223,7 @@ fn spellSet(r: usize, c: usize, v: f32) void {
             row.reach = v;
         },
         .drip => row.drip = v,
-        .dmg, .poise, .stance, .fire, .cold, .lightning, .chaos => {
-            if (row.blow == null) return;
-            switch (@as(SpellCol, @enumFromInt(c))) {
-                .dmg => row.blow.?.dmg = v,
-                .poise => row.blow.?.poise = v,
-                .stance => row.blow.?.stance = v,
-                .fire, .cold, .lightning, .chaos => row.blow.?.elem.v[c - SPELL_ELEM0] = v,
-                else => unreachable,
-            }
-        },
+        .dmg, .poise, .stance, .fire, .cold, .lightning, .chaos => if (row.blow) |*b| hitSet(b, c - SPELL_HIT0, v),
     }
 }
 
@@ -305,10 +299,10 @@ fn isPlate(k: item.Kind) bool {
     return std.meta.activeTag(item.equipBank(k)) == .plate;
 }
 
-fn isTrinket(k: item.Kind) bool {
+fn isCharmBoonOrBind(k: item.Kind) bool {
     return switch (item.equipBank(k)) {
         .charm, .boon, .bind => true,
-        else => false,
+        .none, .arm, .plate => false,
     };
 }
 
@@ -318,31 +312,37 @@ fn isUsed(k: item.Kind) bool {
 
 const ARM_ROWS = kindsWhere(isArm);
 const PLATE_ROWS = kindsWhere(isPlate);
-const TRINKET_ROWS = kindsWhere(isTrinket);
+const TRINKET_ROWS = kindsWhere(isCharmBoonOrBind);
 const USE_ROWS = kindsWhere(isUsed);
 
+fn ItemRows(comptime rows: []const item.Kind) type {
+    return struct {
+        fn name(i: usize) [:0]const u8 {
+            return item.displayName(rows[i]);
+        }
+        fn key(i: usize) []const u8 {
+            return @tagName(rows[i]);
+        }
+        fn face(i: usize) u32 {
+            return @intFromEnum(rows[i]);
+        }
+    };
+}
+
 fn priceGet(k: item.Kind) f32 {
-    return @floatFromInt(item.PRICE[@intFromEnum(k)]);
+    return @floatFromInt(item.price(k));
 }
 
 fn priceSet(k: item.Kind, v: f32) void {
-    item.PRICE[@intFromEnum(k)] = @intFromFloat(@max(0, @round(v)));
+    item.PRICE[@intFromEnum(k)] = wholeU32(v);
 }
 
 const PRICE_COL = Col{ .name = "price", .hi = 4000, .step = 10, .int = true, .tip = "What a counter charges. 0 is untradeable" };
 
-fn priceAt(comptime cols: []const Col) usize {
-    comptime {
-        if (!std.mem.eql(u8, cols[cols.len - 1].name, PRICE_COL.name))
-            @compileError("tune: an item sheet does not end in its price column");
-        return cols.len - 1;
-    }
-}
-
-const ARM_PRICE = priceAt(&ARM_COLS);
-const PLATE_PRICE = priceAt(&PLATE_COLS);
-const TRINKET_PRICE = priceAt(&TRINKET_COLS);
-const USE_PRICE = priceAt(&USE_COLS);
+const ARM_PRICE = @intFromEnum(ArmCol.price);
+const PLATE_PRICE = @intFromEnum(PlateCol.price);
+const TRINKET_PRICE = @intFromEnum(TrinketCol.price);
+const USE_PRICE = @intFromEnum(UseCol.price);
 
 fn elemBlockAt(comptime cols: []const Col, comptime at: usize) void {
     comptime {
@@ -357,6 +357,39 @@ fn elemBlockAt(comptime cols: []const Col, comptime at: usize) void {
 comptime {
     elemBlockAt(&SPELL_COLS, SPELL_ELEM0);
     elemBlockAt(&BLOW_COLS, BLOW_ELEM0);
+    hitBlockAt(&SPELL_COLS, SPELL_HIT0);
+    hitBlockAt(&BLOW_COLS, BLOW_HIT0);
+}
+
+/// The columns a spell's blow and a creature's blow share, in this order on both sheets.
+const HitCol = enum { dmg, poise, stance, fire, cold, lightning, chaos };
+const HIT_ELEM0 = @intFromEnum(HitCol.fire);
+
+fn hitBlockAt(comptime cols: []const Col, comptime at: usize) void {
+    comptime {
+        for (@typeInfo(HitCol).@"enum".fields, 0..) |f, i| {
+            if (!std.mem.eql(u8, cols[at + i].name, f.name))
+                @compileError("tune: the blow block is not at " ++ std.fmt.comptimePrint("{d}", .{at}) ++ " in `HitCol` order");
+        }
+    }
+}
+
+fn hitGet(h: combat.Hit, i: usize) f32 {
+    return switch (@as(HitCol, @enumFromInt(i))) {
+        .dmg => h.dmg,
+        .poise => h.poise,
+        .stance => h.stance,
+        .fire, .cold, .lightning, .chaos => h.elem.v[i - HIT_ELEM0],
+    };
+}
+
+fn hitSet(h: *combat.Hit, i: usize, v: f32) void {
+    switch (@as(HitCol, @enumFromInt(i))) {
+        .dmg => h.dmg = v,
+        .poise => h.poise = v,
+        .stance => h.stance = v,
+        .fire, .cold, .lightning, .chaos => h.elem.v[i - HIT_ELEM0] = v,
+    }
 }
 
 const ARM_COLS = [_]Col{
@@ -377,20 +410,8 @@ comptime {
     ColsAre(ArmCol, &ARM_COLS);
 }
 
-fn armRowName(i: usize) [:0]const u8 {
-    return item.displayName(ARM_ROWS[i]);
-}
-
-fn armRowKey(i: usize) []const u8 {
-    return @tagName(ARM_ROWS[i]);
-}
-
-fn armFace(i: usize) u32 {
-    return @intFromEnum(ARM_ROWS[i]);
-}
-
 fn armOf(k: item.Kind) item.Arm {
-    return switch (item.LIVE[@intFromEnum(k)].equip) {
+    return switch (item.equip(k)) {
         .arm => |a| a,
         else => item.Arm{ .slot = .hand_sword },
     };
@@ -458,20 +479,8 @@ comptime {
     ColsAre(PlateCol, &PLATE_COLS);
 }
 
-fn plateRowName(i: usize) [:0]const u8 {
-    return item.displayName(PLATE_ROWS[i]);
-}
-
-fn plateRowKey(i: usize) []const u8 {
-    return @tagName(PLATE_ROWS[i]);
-}
-
-fn plateFace(i: usize) u32 {
-    return @intFromEnum(PLATE_ROWS[i]);
-}
-
 fn plateOf(k: item.Kind) item.Plate {
-    return switch (item.LIVE[@intFromEnum(k)].equip) {
+    return switch (item.equip(k)) {
         .plate => |q| q,
         else => item.Plate{ .slot = .chest },
     };
@@ -532,22 +541,10 @@ comptime {
     ColsAre(TrinketCol, &TRINKET_COLS);
 }
 
-fn trinketRowName(i: usize) [:0]const u8 {
-    return item.displayName(TRINKET_ROWS[i]);
-}
-
-fn trinketRowKey(i: usize) []const u8 {
-    return @tagName(TRINKET_ROWS[i]);
-}
-
-fn trinketFace(i: usize) u32 {
-    return @intFromEnum(TRINKET_ROWS[i]);
-}
-
 fn trinketGet(r: usize, c: usize) f32 {
     const k = TRINKET_ROWS[r];
     if (c == TRINKET_PRICE) return priceGet(k);
-    return switch (item.LIVE[@intFromEnum(k)].equip) {
+    return switch (item.equip(k)) {
         .charm => |q| switch (@as(TrinketCol, @enumFromInt(c))) {
             .leech => q.leech,
             .hpFrac => q.hpFrac,
@@ -576,7 +573,7 @@ fn trinketSet(r: usize, c: usize, v: f32) void {
             else => {},
         },
         .boon => if (@as(TrinketCol, @enumFromInt(c)) == .boon) {
-            g.equip.boon.n = @intFromFloat(mathx.clampF(@round(v), 0, 255));
+            g.equip.boon.n = wholeU8(v);
         },
         else => {},
     }
@@ -585,7 +582,7 @@ fn trinketSet(r: usize, c: usize, v: f32) void {
 fn trinketHas(r: usize, c: usize) bool {
     if (c == TRINKET_PRICE) return true;
     const col: TrinketCol = @enumFromInt(c);
-    return switch (item.LIVE[@intFromEnum(TRINKET_ROWS[r])].equip) {
+    return switch (item.equip(TRINKET_ROWS[r])) {
         .charm => switch (col) {
             .leech, .hpFrac, .spiritFp, .fpFrac => true,
             else => false,
@@ -616,23 +613,11 @@ comptime {
     ColsAre(UseCol, &USE_COLS);
 }
 
-fn useRowName(i: usize) [:0]const u8 {
-    return item.displayName(USE_ROWS[i]);
-}
-
-fn useRowKey(i: usize) []const u8 {
-    return @tagName(USE_ROWS[i]);
-}
-
-fn useFace(i: usize) u32 {
-    return @intFromEnum(USE_ROWS[i]);
-}
-
 fn useGet(r: usize, c: usize) f32 {
     const k = USE_ROWS[r];
     if (c == USE_PRICE) return priceGet(k);
     const col: UseCol = @enumFromInt(c);
-    return switch (item.LIVE[@intFromEnum(k)].use) {
+    return switch (item.use(k)) {
         .none, .purge => 0,
         .arrows => |q| if (col == .n) @floatFromInt(q.n) else 0,
         .regen => |q| switch (col) {
@@ -701,12 +686,12 @@ fn useSet(r: usize, c: usize, v: f32) void {
         return;
     }
     const g = &item.LIVE[@intFromEnum(k)];
-    const whole: u32 = @intFromFloat(@max(0, @round(v)));
+    const whole = wholeU32(v);
     const col: UseCol = @enumFromInt(c);
     switch (g.use) {
         .none, .purge => {},
         .arrows => if (col == .n) {
-            g.use.arrows.n = @intCast(@min(whole, 255));
+            g.use.arrows.n = wholeU8(v);
         },
         .regen => switch (col) {
             .secs => g.use.regen.secs = v,
@@ -778,7 +763,7 @@ fn useSet(r: usize, c: usize, v: f32) void {
 fn useHas(r: usize, c: usize) bool {
     if (c == USE_PRICE) return true;
     const col: UseCol = @enumFromInt(c);
-    return switch (item.LIVE[@intFromEnum(USE_ROWS[r])].use) {
+    return switch (item.use(USE_ROWS[r])) {
         .none, .purge => false,
         .bomb => col == .dmg or col == .poise or col == .fire or col == .radius or col == .secs,
         .arrows, .souls => col == .n,
@@ -834,11 +819,11 @@ fn nodeGet(r: usize, c: usize) f32 {
 fn nodeSet(r: usize, c: usize, v: f32) void {
     const n = &passivetree.NODES[r];
     if (@as(NodeCol, @enumFromInt(c)) == .rider) {
-        if (n.bump) |*b| b.n = @intFromFloat(mathx.clampF(@round(v), 0, 255));
+        if (n.bump) |*b| b.n = wholeU8(v);
         return;
     }
     switch (n.grant) {
-        .attr => n.grant.attr.n = @intFromFloat(mathx.clampF(@round(v), 0, 255)),
+        .attr => n.grant.attr.n = wholeU8(v),
         .sacrifice => n.grant.sacrifice.dmg = v,
         .res, .boltCloud => {},
         inline else => |_, tag| {
@@ -913,10 +898,10 @@ const BLOWS = [_]Blow{
     .{ .of = .ogre, .move = "slam", .p = &ogremod.SLAM_HIT },
     .{ .of = .ogre, .move = "swipe", .p = &ogremod.SWIPE_HIT },
     .{ .of = .ogre, .move = "drive", .p = &ogremod.DRIVE_HIT },
-    .{ .of = .shieldman, .move = "mace", .p = &warriormod.MOVES_SHIELDMAN[0].hit },
-    .{ .of = .greatsword, .move = "slam", .p = &warriormod.MOVES_GREATSWORD[0].hit },
-    .{ .of = .greatsword, .move = "lunge", .p = &warriormod.MOVES_GREATSWORD[1].hit },
-    .{ .of = .greatsword, .move = "sweep", .p = &warriormod.MOVES_GREATSWORD[2].hit },
+    .{ .of = .shieldman, .move = "mace", .p = &warriormod.MOVES_SHIELDMAN[warriormod.SH_MACE].hit },
+    .{ .of = .greatsword, .move = "slam", .p = &warriormod.MOVES_GREATSWORD[warriormod.GS_SLAM].hit },
+    .{ .of = .greatsword, .move = "lunge", .p = &warriormod.MOVES_GREATSWORD[warriormod.GS_LUNGE].hit },
+    .{ .of = .greatsword, .move = "sweep", .p = &warriormod.MOVES_GREATSWORD[warriormod.GS_SWEEP].hit },
     .{ .of = .shade, .move = "grasp", .p = &shademod.MOVES[shademod.GRASP].hit },
     .{ .of = .shade, .move = "wisp", .p = &shademod.MOVES[shademod.WISP].hit },
     .{ .of = .leechfly, .move = "stab", .p = &leechflymod.STAB_HIT },
@@ -1000,6 +985,7 @@ const BLOW_COLS = [_]Col{
 
 const BlowCol = enum { dmg, poise, stance, fire, cold, lightning, chaos, gore, launch };
 const BLOW_ELEM0 = @intFromEnum(BlowCol.fire);
+const BLOW_HIT0 = @intFromEnum(BlowCol.dmg);
 comptime {
     ColsAre(BlowCol, &BLOW_COLS);
 }
@@ -1019,10 +1005,7 @@ fn blowFace(i: usize) u32 {
 fn blowGet(r: usize, c: usize) f32 {
     const h = BLOWS[r].p;
     return switch (@as(BlowCol, @enumFromInt(c))) {
-        .dmg => h.dmg,
-        .poise => h.poise,
-        .stance => h.stance,
-        .fire, .cold, .lightning, .chaos => h.elem.v[c - BLOW_ELEM0],
+        .dmg, .poise, .stance, .fire, .cold, .lightning, .chaos => hitGet(h.*, c - BLOW_HIT0),
         .gore => h.gore,
         .launch => h.launch,
     };
@@ -1031,10 +1014,7 @@ fn blowGet(r: usize, c: usize) f32 {
 fn blowSet(r: usize, c: usize, v: f32) void {
     const h = BLOWS[r].p;
     switch (@as(BlowCol, @enumFromInt(c))) {
-        .dmg => h.dmg = v,
-        .poise => h.poise = v,
-        .stance => h.stance = v,
-        .fire, .cold, .lightning, .chaos => h.elem.v[c - BLOW_ELEM0] = v,
+        .dmg, .poise, .stance, .fire, .cold, .lightning, .chaos => hitSet(h, c - BLOW_HIT0, v),
         .gore => h.gore = v,
         .launch => h.launch = v,
     }
@@ -1130,7 +1110,7 @@ const FOE_COLS = [_]Col{
     .{ .name = "flinch", .hi = 1, .step = 0.02, .ratio = true, .tip = "The share of its stance one flinch bills. 0.40 is three flinches to a stagger, 0.25 is four, 0 is a body flinches alone never break" },
 };
 
-/// THE COLUMN IS NAMED, NOT COUNTED. The four functions under this switch on the same index, and a bare `else` arm on the last one meant appending a column silently landed it on `aggro`.
+/// THE COLUMN IS NAMED, NOT COUNTED: every function under this switches on it, and a bare `else` arm once landed an appended column on `aggro`.
 const FoeCol = enum { hp, poise, stance, souls, aggro, flinch };
 comptime {
     ColsAre(FoeCol, &FOE_COLS);
@@ -1176,7 +1156,7 @@ fn foeSet(r: usize, c: usize, v: f32) void {
             foestat.mult[i].stance = v / code.stance;
         },
         .souls => if (foeSouls(k)) |q| {
-            q.* = @intFromFloat(@max(0, @round(v)));
+            q.* = wholeU32(v);
         },
         .aggro => if (foeAggro(k)) |q| {
             q.* = v;
@@ -1280,18 +1260,6 @@ const DROP_COLS = [_]Col{
 const DropCol = enum { common, odds, rare, chance, purse };
 comptime {
     ColsAre(DropCol, &DROP_COLS);
-}
-
-fn dropRowName(i: usize) [:0]const u8 {
-    return wf.foeName(@enumFromInt(i));
-}
-
-fn dropRowKey(i: usize) []const u8 {
-    return @tagName(@as(wf.FoeKind, @enumFromInt(i)));
-}
-
-fn dropFace(i: usize) u32 {
-    return @intCast(i);
 }
 
 fn dropGet(r: usize, c: usize) f32 {
@@ -1412,12 +1380,12 @@ pub const TABLES = [_]Table{
         .tip = "Every dial is a multiple of the bare stroke - the straight sword is 1 on all of them",
         .n = ARM_ROWS.len,
         .cols = &ARM_COLS,
-        .rowName = armRowName,
-        .rowKey = armRowKey,
+        .rowName = ItemRows(ARM_ROWS).name,
+        .rowKey = ItemRows(ARM_ROWS).key,
         .get = armGet,
         .set = armSet,
         .face = .item,
-        .faceOf = armFace,
+        .faceOf = ItemRows(ARM_ROWS).face,
         .has = armHas,
     },
     .{
@@ -1426,26 +1394,26 @@ pub const TABLES = [_]Table{
         .tip = "The armour value, the four columns, the pace and the one meter a piece slows",
         .n = PLATE_ROWS.len,
         .cols = &PLATE_COLS,
-        .rowName = plateRowName,
-        .rowKey = plateRowKey,
+        .rowName = ItemRows(PLATE_ROWS).name,
+        .rowKey = ItemRows(PLATE_ROWS).key,
         .get = plateGet,
         .set = plateSet,
         .face = .item,
-        .faceOf = plateFace,
+        .faceOf = ItemRows(PLATE_ROWS).face,
         .has = plateHas,
     },
     .{
         .name = "Trinkets",
         .key = "trinket",
-        .tip = "Rings, charms and the neck - what they give and what they cost",
+        .tip = "Charms, boons and the binding ring - what they give and what they cost",
         .n = TRINKET_ROWS.len,
         .cols = &TRINKET_COLS,
-        .rowName = trinketRowName,
-        .rowKey = trinketRowKey,
+        .rowName = ItemRows(TRINKET_ROWS).name,
+        .rowKey = ItemRows(TRINKET_ROWS).key,
         .get = trinketGet,
         .set = trinketSet,
         .face = .item,
-        .faceOf = trinketFace,
+        .faceOf = ItemRows(TRINKET_ROWS).face,
         .has = trinketHas,
     },
     .{
@@ -1454,12 +1422,12 @@ pub const TABLES = [_]Table{
         .tip = "Everything the bag spends. Each row shows only the dials its own payload has",
         .n = USE_ROWS.len,
         .cols = &USE_COLS,
-        .rowName = useRowName,
-        .rowKey = useRowKey,
+        .rowName = ItemRows(USE_ROWS).name,
+        .rowKey = ItemRows(USE_ROWS).key,
         .get = useGet,
         .set = useSet,
         .face = .item,
-        .faceOf = useFace,
+        .faceOf = ItemRows(USE_ROWS).face,
         .has = useHas,
     },
     .{
@@ -1523,12 +1491,12 @@ pub const TABLES = [_]Table{
         .tip = "How often a body leaves what it carries. One row per creature",
         .n = drops.BANK.len,
         .cols = &DROP_COLS,
-        .rowName = dropRowName,
-        .rowKey = dropRowKey,
+        .rowName = foeName,
+        .rowKey = foeKey,
         .get = dropGet,
         .set = dropSet,
         .face = .foe,
-        .faceOf = dropFace,
+        .faceOf = foeFace,
         .has = dropHas,
     },
     .{
@@ -1595,10 +1563,6 @@ pub fn init() void {
         }
     }
     armed = true;
-}
-
-pub fn table(t: usize) Table {
-    return TABLES[t];
 }
 
 pub fn tableIndex(key: []const u8) ?usize {
@@ -1688,37 +1652,31 @@ pub fn revertAll() void {
 
 pub const PATH = "tuning.cfg";
 
+fn tokenByte(ch: u8) ?u8 {
+    return switch (ch) {
+        ' ' => '_',
+        '\'', '"' => null,
+        else => ch,
+    };
+}
+
 fn writeToken(w: anytype, s: []const u8) !void {
     for (s) |ch| {
-        try w.writeByte(switch (ch) {
-            ' ' => '_',
-            '\'', '"' => continue,
-            else => ch,
-        });
+        if (tokenByte(ch)) |b| try w.writeByte(b);
     }
 }
 
 fn tokenEql(a: []const u8, b: []const u8) bool {
     var i: usize = 0;
     var j: usize = 0;
-    while (i < a.len and j < b.len) {
-        const x = a[i];
-        const y = b[j];
-        if (x == '\'' or x == '"') {
-            i += 1;
-            continue;
-        }
-        if (y == '\'' or y == '"') {
-            j += 1;
-            continue;
-        }
-        const xa: u8 = if (x == ' ') '_' else x;
-        const ya: u8 = if (y == ' ') '_' else y;
-        if (xa != ya) return false;
+    while (true) {
+        while (i < a.len and tokenByte(a[i]) == null) i += 1;
+        while (j < b.len and tokenByte(b[j]) == null) j += 1;
+        if (i == a.len or j == b.len) return i == a.len and j == b.len;
+        if (tokenByte(a[i]).? != tokenByte(b[j]).?) return false;
         i += 1;
         j += 1;
     }
-    return i == a.len and j == b.len;
 }
 
 pub fn writeDiff(w: anytype) !void {
@@ -1906,12 +1864,7 @@ test "an edited cell writes one line, and reading it back puts the number where 
 test "a pool is typed in absolute and kept as a ratio, so a re-authored creature stays as tough as you made it" {
     init();
     defer revertAll();
-    const foes = blk: {
-        for (TABLES, 0..) |tb, i| {
-            if (std.mem.eql(u8, tb.key, "foe")) break :blk i;
-        }
-        unreachable;
-    };
+    const foes = tableIndex("foe").?;
     const deer: usize = @intFromEnum(wf.FoeKind.fungal_deer);
     foestat.mult[deer] = .{};
 
@@ -1936,12 +1889,7 @@ test "a pool is typed in absolute and kept as a ratio, so a re-authored creature
 test "A MULTIPLIER ON A KIND NO BODY WAS MADE OF THIS SESSION IS STILL WRITTEN, and still reverts" {
     init();
     defer revertAll();
-    const foes = blk: {
-        for (TABLES, 0..) |tb, i| {
-            if (std.mem.eql(u8, tb.key, "foe")) break :blk i;
-        }
-        unreachable;
-    };
+    const foes = tableIndex("foe").?;
     const k = wf.FoeKind.salt_husk;
     const r: usize = @intFromEnum(k);
     foestat.forget(k);

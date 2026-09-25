@@ -149,7 +149,7 @@ comptime {
                 " band, or name it in `NO_PURSE` with a reason");
         }
     }
-    const rungs = [_]Coin{ .few, .purse, .heavy, .hoard };
+    const rungs = std.enums.values(Coin)[1..];
     for (rungs[1..], 0..) |hi, i| {
         if (hi.band()[0] <= rungs[i].band()[1]) @compileError("drops: the coin bands overlap");
     }
@@ -188,7 +188,7 @@ pub fn roll(k: wf.FoeKind, luck: u8, rng: *mathx.Rng, out: *[MAX_PER_BODY]item.K
     return out[0..n];
 }
 
-/// **WHAT THE BODY'S PURSE ACTUALLY HELD**, or 0. **LUCK DOES NOT READ THIS** (`stats.inert`'s note).
+/// **WHAT THE BODY'S PURSE ACTUALLY HELD**, or 0. **LUCK DOES NOT READ THIS**.
 pub fn rollGold(k: wf.FoeKind, rng: *mathx.Rng) u32 {
     const hit = rng.float();
     const pick = rng.float();
@@ -272,12 +272,10 @@ test "THE STREAM ADVANCES BY THE SAME AMOUNT PER KILL WHATEVER DIED" {
 
 test "A MAN CARRIES COIN AND A MUSHROOM DOES NOT — what each nature actually pays a body" {
     var rng = mathx.Rng.init(0xC0FFEE);
-    const NATS = [_]foe.Nature{ .humanoid, .undead, .beast, .plant, .demon };
     std.debug.print("\n", .{});
     var humanTotal: f64 = 0;
-    var plantTotal: f64 = 0;
     var best: f64 = 0;
-    for (NATS) |nat| {
+    for (std.enums.values(foe.Nature)) |nat| {
         var bodies: usize = 0;
         var paid: u64 = 0;
         var dropped: usize = 0;
@@ -299,7 +297,6 @@ test "A MAN CARRIES COIN AND A MUSHROOM DOES NOT — what each nature actually p
         });
         const freq = 100.0 * @as(f64, @floatFromInt(dropped)) / rolls;
         if (nat == .humanoid) humanTotal = freq else best = @max(best, freq);
-        _ = &plantTotal;
     }
     std.debug.print("  humanoids pay on {d:.0}% of corpses against {d:.0}% for the next nature up\n", .{ humanTotal, best });
     try std.testing.expect(humanTotal > best);

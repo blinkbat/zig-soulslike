@@ -626,7 +626,7 @@ pub const Shade = struct {
 
     fn takeParry(self: *Shade) bool {
         const reach = self.parryable() orelse self.parry.reach() orelse return false;
-        if (!foe.caught(self, reach, self.toImpact(), null)) return false;
+        if (!foe.caught(self, reach, if (self.dealt) null else self.toImpact(), null)) return false;
         self.cds[GRASP] = MOVES[GRASP].cd;
         self.dealt = true;
         self.enterStun(if (foe.parryBroke(self)) .stunheavy else .stunlight);

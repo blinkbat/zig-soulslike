@@ -498,9 +498,14 @@ pub const Bonus = struct {
         return combat.spellFp(s) * self.spellCost;
     }
 
-    /// As `Hero.castBlow` scales it; a spell billed over time is printed at its authored rate.
+    /// What `Hero.castBlow` scales a thrown spell's whole blow by.
+    pub fn spellK(self: Bonus, sh: stats.Sheet) f32 {
+        return self.spellDmg * sh.scale(.intelligence);
+    }
+
+    /// A spell billed over time is printed at its authored rate.
     pub fn spellDamage(self: Bonus, s: combat.Spell, sh: stats.Sheet) f32 {
-        const k: f32 = if (combat.spellBlow(s) != null) self.spellDmg * sh.scale(.intelligence) else 1.0;
+        const k: f32 = if (combat.spellBlow(s) != null) self.spellK(sh) else 1.0;
         return combat.spellDamage(s) * k;
     }
 };
@@ -572,9 +577,7 @@ pub const Tree = struct {
             if (!on) continue;
             switch (NODES[i].grant) {
                 .attr => |x| b.attrs[@intFromEnum(x.a)] += x.n,
-                .res => |r| for (r.v, 0..) |amt, e| {
-                    b.res.v[e] += amt;
-                },
+                .res => |r| b.res = b.res.plus(r),
                 .guard => |x| b.guard += x,
                 .iframe => |x| b.iframe += x,
                 .poison => |x| b.poison *= x,
@@ -1225,7 +1228,7 @@ test "IT IS PAID FOR IN SOULS, and one short buys nothing" {
     const c = t.cost();
     try std.testing.expect(t.locked(0, c - 1) != null);
     for (0..N) |i| {
-        for ([_]u32{ 0, 100, 359, 360, 1000, RICH }) |purse| {
+        for ([_]u32{ 0, 100, c - 1, c, 1000, RICH }) |purse| {
             try std.testing.expectEqual(t.canTake(i, purse), t.locked(i, purse) == null);
         }
     }

@@ -285,6 +285,7 @@ pub const Mage = struct {
     hop: f32 = 0,
     hopDone: f32 = 0,
     hopDir: rl.Vector3 = mathx.zero3,
+    cutFall: foe.Fall = .{},
     heroHit: ?combat.Hit = null,
     heroLatch: bool = false,
     flamed: bool = false,
@@ -438,10 +439,11 @@ pub const Mage = struct {
     }
 
     fn enter(self: *Mage, s: State) void {
+        if (self.state == .hop and s != .hop) self.cutFall.carry(self.hop, self.t / HOP_DUR, HOP_UP * self.scale, HOP_DUR);
         self.state = s;
         self.t = 0;
         if (s != .hop) {
-            self.hop = 0;
+            self.hop = self.cutFall.lift;
             self.hopDone = 0;
         }
     }
@@ -474,6 +476,7 @@ pub const Mage = struct {
 
         self.elapsed += dt;
         self.t += dt;
+        if (self.state != .hop and self.cutFall.lift > 0) self.hop = self.cutFall.step(dt);
         self.vit.tick(dt);
         self.lobCd = mathx.maxF(0, self.lobCd - dt);
         self.flickCd = mathx.maxF(0, self.flickCd - dt);
@@ -838,7 +841,8 @@ pub const SHOVE = foe.Push{ .light = 1.35, .heavy = 3.10 };
 
 
 fn buildBones() [N]rl.Mesh {
-    var mesh: [N]rl.Mesh = undefined;
+    // A slot nothing draws still holds a mesh: `gfx.uploadAll` walks every one.
+    var mesh = [_]rl.Mesh{std.mem.zeroes(rl.Mesh)} ** N;
     mesh[ROOT] = pelvisMesh();
     mesh[SPINE] = lumbarMesh();
     mesh[CHEST] = chestMesh();

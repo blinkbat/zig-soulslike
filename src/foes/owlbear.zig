@@ -254,6 +254,7 @@ pub const Owlbear = struct {
     slamCd: f32 = 0,
     burstCd: f32 = 0,
     hop: f32 = 0,
+    cutFall: foe.Fall = .{},
     burstYaw: f32 = 0,
     loosed: bool = false,
     threw: bool = false,
@@ -426,11 +427,11 @@ pub const Owlbear = struct {
         var movedDist: f32 = 0;
         var moveSpeed: f32 = 0;
         var moveYaw: ?f32 = null;
+        if (self.state != .burst and self.cutFall.lift > 0) self.hop = self.cutFall.step(dt);
 
         switch (self.state) {
             .dead => {
                 self.speed = 0;
-                self.hop = 0;
                 foe.dissipate(self, dt, DEATH_DUR, DISS_DUR, DISSOLVE);
             },
             .stone => self.tickStone(dt, quarry),
@@ -446,7 +447,7 @@ pub const Owlbear = struct {
                 self.rouse = mathx.clampF(1.0 - self.t / SEAT_DUR, 0, 1);
                 foe.faceToward(self.pos, &self.facing, mathx.addV(self.pos, mathx.headingDir(self.perchYaw)), TURN_RATE, dt);
                 if (self.rouse <= 0) {
-                    _ = self.vit.heal(HP_MAX);
+                    _ = self.vit.heal(self.vit.hpMax);
                     self.enter(.stone);
                 }
             },
@@ -602,16 +603,20 @@ pub const Owlbear = struct {
         self.state = s;
         self.t = 0;
     }
+    fn cutBurst(self: *Owlbear) void {
+        if (self.state == .burst) self.cutFall.carry(self.hop, self.leapU(), BURST_RISE * self.scale, BURST_FLIGHT);
+        self.hop = self.cutFall.lift;
+    }
     fn enterStun(self: *Owlbear, s: State) void {
         self.heroLatch = false;
-        self.hop = 0;
+        self.cutBurst();
         self.threw = false;
         self.enter(s);
     }
     fn enterDeath(self: *Owlbear) void {
         if (self.state == .dead) return;
         self.heroLatch = false;
-        self.hop = 0;
+        self.cutBurst();
         self.threw = false;
         self.rouse = 1.0;
         self.enter(.dead);

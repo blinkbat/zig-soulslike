@@ -1265,8 +1265,8 @@ fn masonBreak(run: f32, h: f32) [2]Part {
 /// The gap is `mason.DOOR_W` wide and the head is solid above it — a doorway that reads open is open.
 fn masonDoorway(run: f32, h: f32) [3]Part {
     return .{
-        .{ .ax = -run * 0.5 + MASON_R, .bx = -mason.DOOR_W * 0.5 - 0.10, .r = MASON_R, .h = h, .flat = true },
-        .{ .ax = mason.DOOR_W * 0.5 + 0.10, .bx = run * 0.5 - MASON_R, .r = MASON_R, .h = h, .flat = true },
+        .{ .ax = -run * 0.5 + MASON_R, .bx = -mason.DOOR_W * 0.5 - MASON_R, .r = MASON_R, .h = h, .flat = true },
+        .{ .ax = mason.DOOR_W * 0.5 + MASON_R, .bx = run * 0.5 - MASON_R, .r = MASON_R, .h = h, .flat = true },
         .{ .ax = -mason.DOOR_W * 0.5, .bx = mason.DOOR_W * 0.5, .r = MASON_R, .h = h, .y0 = mason.DOOR_H, .flat = true },
     };
 }
@@ -1277,9 +1277,17 @@ const MASON_CORNER_PARTS = [_]Part{
 };
 
 const MASON_JAMB_PARTS = [_]Part{
-    .{ .ax = -mason.DOOR_W * 0.5 - 0.16, .bx = -mason.DOOR_W * 0.5 - 0.16, .r = 0.30, .h = mason.DOOR_H, .flat = true },
-    .{ .ax = mason.DOOR_W * 0.5 + 0.16, .bx = mason.DOOR_W * 0.5 + 0.16, .r = 0.30, .h = mason.DOOR_H, .flat = true },
+    jambPart(-1),
+    jambPart(1),
 };
+
+/// The stone's own footprint: a `flat` part stands `r` past both ends of its segment, so the segment runs along z and `r` is half the width.
+fn jambPart(side: f32) Part {
+    const x = side * (mason.DOOR_W * 0.5 + mason.JAMB_OFF);
+    const half = mason.JAMB_W * 0.5;
+    const z = mason.JAMB_D * 0.5 - half;
+    return .{ .ax = x, .az = -z, .bx = x, .bz = z, .r = half, .h = mason.DOOR_H, .flat = true };
+}
 
 /// A PIER'S COLLIDER IS A SHARE OF THE PIER, so the gate and the arcade answer one number rather than two hand-picked radii.
 const PIER_R_K: f32 = 0.62;
@@ -1298,15 +1306,15 @@ const MASON_ARCADE_PARTS = blk: {
     break :blk out;
 };
 
-const MASON_SLAB_DECK = [_]Deck{.{ .r = mason.SLAB * 0.5, .y = mason.SLAB_T }};
+const MASON_SLAB_DECK = [_]Deck{.{ .r = mason.SLAB * 0.5 * std.math.sqrt2, .half = mason.SLAB * 0.5, .y = mason.SLAB_T }};
 
 fn shellParts(hw: f32, hl: f32, h: f32, doorX0: f32, doorX1: f32) [5]Part {
     return .{
         .{ .ax = -hw, .az = -hl + MASON_R, .bx = -hw, .bz = hl - MASON_R, .r = MASON_R, .h = h, .flat = true },
         .{ .ax = hw, .az = -hl + MASON_R, .bx = hw, .bz = hl - MASON_R, .r = MASON_R, .h = h, .flat = true },
         .{ .ax = -hw, .az = hl, .bx = hw, .bz = hl, .r = MASON_R, .h = h, .flat = true },
-        .{ .ax = -hw, .az = -hl, .bx = doorX0 - 0.10, .bz = -hl, .r = MASON_R, .h = h, .flat = true },
-        .{ .ax = doorX1 + 0.10, .az = -hl, .bx = hw, .bz = -hl, .r = MASON_R, .h = h, .flat = true },
+        .{ .ax = -hw, .az = -hl, .bx = doorX0 - MASON_R, .bz = -hl, .r = MASON_R, .h = h, .flat = true },
+        .{ .ax = doorX1 + MASON_R, .az = -hl, .bx = hw, .bz = -hl, .r = MASON_R, .h = h, .flat = true },
     };
 }
 
@@ -1593,8 +1601,8 @@ pub const INFO = [NK]Info{
         .{ .ax = -2.6, .az = -3.2, .bx = -2.6, .bz = 3.2, .r = 0.42, .h = 4.4, .flat = true },
         .{ .ax = 2.45, .az = -3.2, .bx = 2.45, .bz = 3.2, .r = 0.55, .h = 4.4, .flat = true },
         .{ .ax = -2.6, .az = 3.6, .bx = 2.6, .bz = 3.6, .r = 0.42, .h = 4.4, .flat = true },
-        .{ .ax = -2.6, .az = -3.55, .bx = -1.45, .bz = -3.55, .r = 0.42, .h = 4.4, .flat = true },
-        .{ .ax = 1.45, .az = -3.65, .bx = 2.6, .bz = -3.65, .r = 0.50, .h = 4.4, .flat = true },
+        .{ .ax = -2.6, .az = -3.55, .bx = -1.15 - 0.42, .bz = -3.55, .r = 0.42, .h = 4.4, .flat = true },
+        .{ .ax = 1.15 + 0.50, .az = -3.65, .bx = 2.6, .bz = -3.65, .r = 0.50, .h = 4.4, .flat = true },
         .{ .ax = -1.40, .az = 2.75, .bx = 1.40, .bz = 2.75, .r = 0.55, .h = 1.1, .flat = true },
         .{ .ax = 1.55, .az = -1.90, .bx = 1.55, .bz = -1.90, .r = 0.40, .h = 1.6 },
         .{ .ax = 0.40, .az = -2.45, .bx = 1.00, .bz = -2.45, .r = 0.50, .h = 0.8, .flat = true },

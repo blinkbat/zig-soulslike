@@ -487,7 +487,34 @@ pub fn fitFloor(land: f32, head: f32) f32 {
 pub const MOUTH_SLACK: f32 = 0.02;
 
 /// FOUR-CONNECTED, which is what a body walking a passage is: `--fix-caves`'s components and the editor's walk-in both step this way.
-pub const STEP4 = [4][2]i32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } };
+const STEP4 = [4][2]i32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 } };
+
+pub const Steps = struct {
+    at: [4]usize = undefined,
+    n: usize = 0,
+
+    pub fn slice(self: *const Steps) []const usize {
+        return self.at[0..self.n];
+    }
+};
+
+/// The excavated neighbours of point `i` whose floor is within `wf.STEP_UP` of its own.
+pub fn stepsFrom(cov: []const u8, floor: []const u8, i: usize) Steps {
+    var s = Steps{};
+    const ix = i % N;
+    const iz = i / N;
+    const here = wf.caveH(floor[i]);
+    for (STEP4) |d| {
+        const nx = @as(i32, @intCast(ix)) + d[0];
+        const nz = @as(i32, @intCast(iz)) + d[1];
+        if (nx < 0 or nz < 0 or nx >= N or nz >= N) continue;
+        const j = @as(usize, @intCast(nz)) * N + @as(usize, @intCast(nx));
+        if (cov[j] < EDGE or @abs(wf.caveH(floor[j]) - here) > wf.STEP_UP) continue;
+        s.at[s.n] = j;
+        s.n += 1;
+    }
+    return s;
+}
 
 /// A MOUTH: an excavated point whose ceiling has come up through the hill. No flag decides it and none can — the roof against the land is the whole test.
 pub fn mouthAt(f: Fields, land: f32, px: f32, pz: f32) bool {
@@ -534,16 +561,8 @@ pub fn reachOut(f: Fields, land: anytype, mark: []u8, queue: []u32) Reach {
         const i: usize = queue[head];
         head += 1;
         r.walkable += 1;
-        const ix = i % N;
-        const iz = i / N;
-        const floor = wf.caveH(f.floor[i]);
-        for (STEP4) |d| {
-            const nx = @as(i32, @intCast(ix)) + d[0];
-            const nz = @as(i32, @intCast(iz)) + d[1];
-            if (nx < 0 or nz < 0 or nx >= N or nz >= N) continue;
-            const j = @as(usize, @intCast(nz)) * N + @as(usize, @intCast(nx));
-            if (f.cov[j] < EDGE or mark[j] != 0) continue;
-            if (@abs(wf.caveH(f.floor[j]) - floor) > wf.STEP_UP) continue;
+        for (stepsFrom(f.cov, f.floor, i).slice()) |j| {
+            if (mark[j] != 0) continue;
             mark[j] = 1;
             queue[tail] = @intCast(j);
             tail += 1;

@@ -1055,7 +1055,9 @@ pub const Swordsman = struct {
     }
 
     pub fn takeParry(self: *Swordsman) void {
-        const reach = foe.hurtReach(SW_KIT_R, self.scale) + SW_BLADE_LEN * self.scale * 0.5;
+        // Off the LIVE tip as well: at the lunge's far band the edge crosses him with the body 3.4 m out, past kit + half a blade.
+        const kit = foe.hurtReach(SW_KIT_R, self.scale);
+        const reach = mathx.maxF(kit + SW_BLADE_LEN * self.scale * 0.5, mathx.distXZ(self.pos, self.bladeSeg()[1]) + kit);
         const swinging = swSwinging(self.state);
         const touching = swinging and self.t > 0.03 and !self.dealt and
             foe.weaponReaches(self.wpnWas, self.bladeSeg(), self.parry.at, foe.hurtReach(SW_KIT_R, self.scale));

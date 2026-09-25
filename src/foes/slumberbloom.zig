@@ -263,6 +263,7 @@ pub const Bloom = struct {
         // Every DECISION reads the bent range; `breath` keeps the raw metres, because the gas is a place and not a choice.
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         var wantVent: f32 = 0;
+        const was = self.state;
 
         switch (self.state) {
             .dormant => {
@@ -321,7 +322,7 @@ pub const Bloom = struct {
         }
 
         self.vent = if (wantVent > self.vent) wantVent else mathx.approach(self.vent, wantVent, dt * 9.0);
-        if (self.state == .swell and !self.swelled and self.t < dt * 1.5) self.swelled = true;
+        if (self.state == .swell and was != .swell) self.swelled = true;
         self.breathe = mathx.sinf((self.elapsed + self.seed * 5.0) * BREATHE_HZ * std.math.tau);
         self.sway = mathx.sinf((self.elapsed + self.seed * 7.0) * SWAY_HZ * std.math.tau) * SWAY_DEG * self.open;
         self.emitVent(dt);
@@ -335,8 +336,8 @@ pub const Bloom = struct {
         self.t = 0;
     }
 
+    /// `swelled` is the puff's voice: `game` plays it.
     fn beginWake(self: *Bloom) void {
-        sfx.world(.shroom_puff, self.centerWorld());
         self.enter(.wake);
         self.swelled = true;
     }

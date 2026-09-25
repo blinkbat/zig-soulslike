@@ -210,10 +210,15 @@ fn lintelInto(b: *Builder, rng: *Rng, cx: f32, y: f32, w: f32) void {
     b.addBox(v3(cx, y + 0.17, 0), v3(w * 0.5, rng.signed() * 0.008, 0), v3(0, 0.17, 0), v3(0, 0, TH * 1.08), STONE_LT);
 }
 
+/// A jamb stone stands `JAMB_OFF` past the gap's edge to its centre, `JAMB_W` wide and `JAMB_D` deep; `props.MASON_JAMB_PARTS` reads the same three.
+pub const JAMB_OFF: f32 = 0.16;
+pub const JAMB_W: f32 = 0.34;
+pub const JAMB_D: f32 = TH * 1.10;
+
 fn jambsInto(b: *Builder, rng: *Rng, w: f32, h: f32) void {
     for ([_]f32{ -1, 1 }) |s| {
-        const x = s * (w * 0.5 + 0.16);
-        _ = art.courseStack(b, rng, x, 0, 0, 0.34, TH * 1.10, 0.42, coursesFor(h), 0.03, null);
+        const x = s * (w * 0.5 + JAMB_OFF);
+        _ = art.courseStack(b, rng, x, 0, 0, JAMB_W, JAMB_D, 0.42, coursesFor(h), 0.03, null);
     }
 }
 

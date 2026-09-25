@@ -1541,6 +1541,9 @@ pub const Knight = struct {
     farT: f32 = 0,
     windHold: f32 = 0,
     riposteCd: f32 = 0,
+    /// This frame's sensed `d` and bearing, for the riposte a block chooses from inside `tryHit`.
+    sensedD: f32 = std.math.floatMax(f32),
+    sensedBearing: f32 = 0,
     strung: u8 = 0,
     strungUsed: [MOVES.len]bool = [_]bool{false} ** MOVES.len,
     opener: usize = SWEEP_I,
@@ -1936,7 +1939,8 @@ pub const Knight = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer if (!self.airborne()) grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed) foe.staggerFrom(self, true);
+        // `staggered()` counts the floor, so `staggerFrom` would arm a poise-immune clock on a body his `stagger` refused.
+        if (grip.downed and !self.floored()) foe.staggerFrom(self, true);
         self.elapsed += dt;
         self.t += dt;
         self.vit.tick(dt);
@@ -1957,6 +1961,8 @@ pub const Knight = struct {
         const a = self.move();
         const d = foe.senseHero(&self.leash, self.pos, hero, AGGRO_R);
         const bearing = self.bearingTo(hero);
+        self.sensedD = d;
+        self.sensedBearing = bearing;
         const faceWas = self.facing;
         var movedDist: f32 = 0;
         var moveYaw: ?f32 = null;
@@ -2737,6 +2743,7 @@ pub const Knight = struct {
     }
 
     fn tryCrush(self: *Knight, hero: rl.Vector3, h: combat.Hit) void {
+        if (foe.acrossDrop(self.pos, hero)) return;
         const to = v3(hero.x - self.pos.x, 0, hero.z - self.pos.z);
         const back = mathx.scaleV(self.fdir(), -1);
         const axial = to.x * back.x + to.z * back.z;
@@ -2778,7 +2785,12 @@ pub const Knight = struct {
         switch (self.vit.hit(.{ .stance = PARRY_STANCE })) {
             .death => self.enterDeath(),
             .heavy => self.enterStun(.stunheavy),
-            .light, .none => self.enterStun(.stunlight),
+            .light => self.enterStun(.stunlight),
+            // `foe.parryBroke`'s rule: the reel `Vitals.hit` did not start still refuses the punish blows' poise.
+            .none => {
+                self.vit.beginStun(.light);
+                self.enterStun(.stunlight);
+            },
         }
     }
 
@@ -2824,7 +2836,7 @@ pub const Knight = struct {
                         // discards every later pour — so a body that kept swinging would be immune to poise AND stance for 2.40 s off a floored heavy.
             .heavy => if (self.floored() or self.transforming()) self.vit.refuseFlinch(poiseWas) else self.enterStun(.stunheavy),
             .light => if (self.floored() or self.inString() or self.transforming()) self.vit.refuseFlinch(poiseWas) else self.enterStun(.stunlight),
-            .none => self.counterFlank(s),
+            .none => if (!blade.bearingless()) self.counterFlank(s),
         }
     }
 
@@ -2875,7 +2887,9 @@ pub const Knight = struct {
             if (!self.floored()) self.enterStun(.stunheavy);
             return;
         }
-        if ((self.state == .idle or self.state == .approach) and self.riposteCd <= 0 and self.aiRng.float() < 0.60) {
+        // `classify`'s own thrust gate: a blocked arrow from past the band, or a man inside its dead zone, is not a riposte.
+        const inBand = self.sensedD >= nearR(THRUST, self.scale) and self.sensedD <= thrustBandR(self.scale) and @abs(self.sensedBearing) <= THRUST.bearing;
+        if ((self.state == .idle or self.state == .approach) and self.riposteCd <= 0 and self.aiRng.float() < 0.60 and inBand) {
             self.riposteCd = 3.5;
             self.atk = THRUST_I;
             self.opener = THRUST_I;
@@ -5923,26 +5937,34 @@ test "NO FOLLOW-UP CHAINS AT A MAN WHO IS ALREADY BEHIND HIM" {
 }
 
 test "THE GUARD COUNTER ANSWERS THE DOOR AND ONLY THE DOOR — and never off a body already committed" {
-    var found = false;
-    var seed: f32 = 0.03;
-    while (seed < 1.0) : (seed += 0.11) {
-        var k = Knight.spawn(mathx.zero3, 0, 1.0, seed);
-        k.state = .idle;
-        k.covered = true;
-        const p = v3(0, 2.6, k.hurtRadius() * 0.5);
-        k.tryHit(.{ .active = true, .r = 0.2, .a = p, .b = p, .a0 = p, .b0 = p, .hit = .{ .dmg = 10, .poise = 5, .stance = 4 } });
-        try std.testing.expectEqual(@as(u32, 1), k.blocks);
-        if (k.state == .thrustwind) {
-            found = true;
-            try std.testing.expect(k.riposteCd > 0);
-        } else {
-            try std.testing.expectEqual(State.idle, k.state);
+    const sc = Knight.spawn(mathx.zero3, 0, 1.0, 0).scale;
+    const inBand = (nearR(THRUST, sc) + thrustBandR(sc)) * 0.5;
+    for ([_]f32{ inBand, thrustBandR(sc) + 4.0 }) |stand| {
+        var found = false;
+        var seed: f32 = 0.03;
+        while (seed < 1.0) : (seed += 0.11) {
+            var k = Knight.spawn(mathx.zero3, 0, 1.0, seed);
+            k.state = .idle;
+            k.covered = true;
+            k.sensedD = stand;
+            k.sensedBearing = 0;
+            const p = v3(0, 2.6, k.hurtRadius() * 0.5);
+            k.tryHit(.{ .active = true, .r = 0.2, .a = p, .b = p, .a0 = p, .b0 = p, .hit = .{ .dmg = 10, .poise = 5, .stance = 4 } });
+            try std.testing.expectEqual(@as(u32, 1), k.blocks);
+            if (k.state == .thrustwind) {
+                found = true;
+                try std.testing.expect(k.riposteCd > 0);
+            } else {
+                try std.testing.expectEqual(State.idle, k.state);
+            }
         }
+        // across nine seeds the 60% roll must fire at least once, and never at a man past the thrust's band
+        try std.testing.expectEqual(stand == inBand, found);
     }
-    try std.testing.expect(found); // across nine seeds the 60% roll must fire at least once
     var mid = Knight.spawn(mathx.zero3, 0, 1.0, 0.3);
     mid.debugSweep();
     mid.covered = true;
+    mid.sensedD = inBand;
     const q = v3(0, 2.6, mid.hurtRadius() * 0.5);
     mid.tryHit(.{ .active = true, .r = 0.2, .a = q, .b = q, .a0 = q, .b0 = q, .hit = .{ .dmg = 10, .poise = 5, .stance = 4 } });
     try std.testing.expectEqual(State.sweepwind, mid.state);

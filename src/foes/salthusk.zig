@@ -654,7 +654,8 @@ pub const Pan = struct {
 };
 
 fn buildBones() [N]rl.Mesh {
-    var mesh: [N]rl.Mesh = undefined;
+    // A slot nothing draws still holds a mesh: `gfx.uploadAll` walks every one.
+    var mesh = [_]rl.Mesh{std.mem.zeroes(rl.Mesh)} ** N;
     mesh[ROOT] = pelvisMesh();
     mesh[SPINE] = lumbarMesh();
     mesh[CHEST] = chestMesh();

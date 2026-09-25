@@ -136,7 +136,7 @@ const LAY_BACK = 0.95; // how far behind the seat the sac lands (pre-scale)
 pub const MAX_SACS: usize = 3;
 pub const PER_SAC: usize = 1;
 
-const RESISTS = combat.resists(.{ .fire = -25, .cold = 35, .chaos = 75 });
+const RESISTS = combat.resists(.{ .fire = -25, .cold = 35, .chaos = combat.RES_CAP });
 pub const M_SPIT_HIT = combat.Hit{ .dmg = 2, .poise = 5 };
 pub const M_SPIT_BUILD: f32 = 36.0;
 pub const M_BITE_HIT = combat.Hit{ .dmg = 26, .poise = 22, .stance = 7 };
@@ -1200,7 +1200,7 @@ pub const Spider = struct {
         return v3(self.pos.x - d.x * LAY_BACK * self.scale, self.pos.y, self.pos.z - d.z * LAY_BACK * self.scale);
     }
     fn tetherOut(self: *const Spider) f32 {
-        return mathx.distXZ(self.pos, self.guard orelse self.home);
+        return mathx.distXZ(self.pos, self.guard orelse foe.tetherFor(self));
     }
 
     fn enter(self: *Spider, s: State) void {
@@ -1271,6 +1271,9 @@ pub const Spider = struct {
         if (self.role == .mother) {
             switch (act) {
                 .spit => act = if (self.staggered()) .none else .{ .spit = self.mouthWorld() },
+                .lay => if (self.staggered()) {
+                    act = .none;
+                },
                 else => {},
             }
 
@@ -1336,15 +1339,14 @@ pub const Spider = struct {
             },
             .lay => {
                 self.resolveLay();
+                // The cooldown is spent at the DROP: a stagger in the tail would otherwise hand her another sac the moment it ended.
                 if (!self.fired and self.t >= LAY_DUR * LAY_DROP) {
                     self.fired = true;
+                    self.layCd = LAY_CD;
                     act = .{ .lay = self.layWorld() };
                     sfx.world(.sac_lay, self.pos);
                 }
-                if (self.t >= LAY_DUR) {
-                    self.layCd = LAY_CD;
-                    self.enterIdle(0.08);
-                }
+                if (self.t >= LAY_DUR) self.enterIdle(0.08);
             },
             .stunlight => {
                 self.resolveStun(false);

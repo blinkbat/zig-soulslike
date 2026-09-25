@@ -146,7 +146,7 @@ fn runFixLurkers(alloc: std.mem.Allocator, path: []const u8) !void {
     const e = try alloc.create(env.Env);
     defer alloc.destroy(e);
     env.blankForTest(e);
-    const moved = env.Env.digPools(m, 5.0);
+    const moved = env.Env.digPools(m, env.Env.POOL_DIG_R);
     e.uploadWater(m);
     e.adoptHeight(m);
     for (m.foes[0..m.nfoes]) |f| {
@@ -308,16 +308,8 @@ fn runFixCaves(alloc: std.mem.Allocator, path: []const u8, write: bool) !void {
             top -= 1;
             const i: usize = stack[top];
             n += 1;
-            const ix = i % caves.N;
-            const iz = i / caves.N;
-            const floor = wf.caveH(m.caveFloor[i]);
-            for (caves.STEP4) |d| {
-                const nx = @as(i32, @intCast(ix)) + d[0];
-                const nz = @as(i32, @intCast(iz)) + d[1];
-                if (nx < 0 or nz < 0 or nx >= caves.N or nz >= caves.N) continue;
-                const j = @as(usize, @intCast(nz)) * caves.N + @as(usize, @intCast(nx));
-                if (m.caveCov[j] < wf.CAVE_EDGE or mark[j] != 0) continue;
-                if (@abs(wf.caveH(m.caveFloor[j]) - floor) > wf.STEP_UP) continue;
+            for (caves.stepsFrom(&m.caveCov, &m.caveFloor, i).slice()) |j| {
+                if (mark[j] != 0) continue;
                 mark[j] = tag;
                 stack[top] = @intCast(j);
                 top += 1;
@@ -485,6 +477,17 @@ fn runGrow(alloc: std.mem.Allocator, path: []const u8, want: f32, write: bool) !
         .{ .dst = &m.caveFloor, .src = &src.caveFloor, .n = wf.CAVE_N, .kind = .point, .smooth = false },
         .{ .dst = &m.caveRoof, .src = &src.caveRoof, .n = wf.CAVE_N, .kind = .point, .smooth = false },
     };
+    comptime {
+        var n: usize = 0;
+        for (@typeInfo(wf.Map).@"struct".fields) |f| {
+            const t = @typeInfo(f.type);
+            if (t != .array) continue;
+            const len = t.array.len;
+            if (len == wf.SOIL_CELLS or len == wf.WATER_CELLS or len == wf.HEIGHT_CELLS or len == wf.CAVE_CELLS) n += 1;
+        }
+        // Every grid on the map, and `height` and `waterBase` beside the list.
+        if (n != @typeInfo(@TypeOf(grids)).array.len + 2) @compileError("--grow: a grid on `wf.Map` is not regridded here");
+    }
     for (grids) |g| wf.regrid(u8, g.dst, g.n, half, g.src, g.n, was, g.kind, g.smooth);
     wf.regrid(wf.Hgt, &m.height, wf.HEIGHT_N, half, &src.height, wf.HEIGHT_N, was, .point, true);
     // NEAREST, never smoothed: a level is the body's, and a blend between two bodies is a sheet neither stands at.

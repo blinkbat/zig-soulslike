@@ -541,9 +541,9 @@ pub const Ember = struct {
     }
 };
 
-/// THE WHOLE FIELD'S TRAIL IN ONE RING. At `CHASE_SPEED` one wake keeps 27 embers alive (asserted).
-const TRAIL_CAP: usize = 256;
-const PER_WAKE = @as(usize, @intFromFloat(@ceil(CHASE_SPEED * EMBER_LIFE / TRAIL_SPACING)));
+/// THE WHOLE FIELD'S TRAIL IN ONE RING. The pace is world metres and the spacing is the body's, so the smallest post keeps the most alive: 54 a wake.
+const TRAIL_CAP: usize = 512;
+const PER_WAKE = @as(usize, @intFromFloat(@ceil(CHASE_SPEED * EMBER_LIFE / (TRAIL_SPACING * wf.FOE_SCALE_LO))));
 comptime {
     std.debug.assert(TRAIL_CAP >= PER_WAKE * 9);
 }
@@ -704,7 +704,8 @@ pub const Scorch = struct {
 };
 
 fn buildBones() [N]rl.Mesh {
-    var mesh: [N]rl.Mesh = undefined;
+    // A slot nothing draws still holds a mesh: `gfx.uploadAll` walks every one.
+    var mesh = [_]rl.Mesh{std.mem.zeroes(rl.Mesh)} ** N;
     mesh[ROOT] = pelvisMesh();
     mesh[SPINE] = lumbarMesh();
     mesh[CHEST] = chestMesh();

@@ -112,7 +112,7 @@ comptime {
     std.debug.assert(UNDER_DEPTH - CENTER_F * H - HURT_R > 0.8);
     std.debug.assert(SURGE_DUR > DIVE_WIND and DIVE_WIND >= foe.TELL_MIN and CLAW_WIND >= foe.TELL_MIN);
     // He starts at the CENTRE, so he must clear the radius plus his own footprint. A RUN and a ROLL do it; a WALK covers 1.96 m of the 2.26 and is deliberately not enough.
-    std.debug.assert(SURGE_DUR * 3.4 > BURST_R + foe.HERO_R);
+    std.debug.assert(SURGE_DUR * heromod.RUN_SPEED_BANK > BURST_R + foe.HERO_R);
     std.debug.assert(SURGE_DUR > 0.70 + 0.30);
 }
 
@@ -1544,7 +1544,7 @@ test "TWO WAYS OUT OF THE BURROW: under him it BURSTS, out in front of him it PL
         d.debugDive();
         var fr: u32 = 0;
         while (fr < 60 * 20 and d.state != .surge and d.state != .plough) : (fr += 1) {
-            hero.z += 5.1 * (1.0 / 60.0);
+            hero.z += heromod.SPRINT_SPEED_BANK * (1.0 / 60.0);
             _ = d.update(1.0 / 60.0, hero, 400, .{});
         }
         try std.testing.expectEqual(State.plough, d.state);

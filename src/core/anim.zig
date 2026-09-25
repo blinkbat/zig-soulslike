@@ -25,21 +25,30 @@ pub fn easeAt(e: Ease, f: f32) f32 {
     };
 }
 
-pub fn keyAt(keys: []const Key, u: f32) f32 {
-    if (keys.len == 0) return 0;
-    if (u <= keys[0].t) return keys[0].v;
-    const last = keys[keys.len - 1];
-    if (u >= last.t) return last.v;
+const Seg = union(enum) {
+    at: usize,
+    into: struct { i: usize, f: f32 },
+};
+
+/// Which key `u` sits on, or how far into the segment ending at key `i`; `keys` is not empty.
+fn locate(keys: anytype, u: f32) Seg {
+    if (u <= keys[0].t) return .{ .at = 0 };
+    if (u >= keys[keys.len - 1].t) return .{ .at = keys.len - 1 };
     var i: usize = 1;
     while (i < keys.len) : (i += 1) {
         if (u > keys[i].t) continue;
-        const a = keys[i - 1];
-        const b = keys[i];
-        const span = b.t - a.t;
-        const f = if (span > 1e-6) (u - a.t) / span else 1.0;
-        return a.v + (b.v - a.v) * easeAt(b.ease, mathx.clampF(f, 0, 1));
+        const span = keys[i].t - keys[i - 1].t;
+        return .{ .into = .{ .i = i, .f = if (span > 1e-6) mathx.clampF((u - keys[i - 1].t) / span, 0, 1) else 1.0 } };
     }
-    return last.v;
+    return .{ .at = keys.len - 1 };
+}
+
+pub fn keyAt(keys: []const Key, u: f32) f32 {
+    if (keys.len == 0) return 0;
+    return switch (locate(keys, u)) {
+        .at => |i| keys[i].v,
+        .into => |s| keys[s.i - 1].v + (keys[s.i].v - keys[s.i - 1].v) * easeAt(keys[s.i].ease, s.f),
+    };
 }
 
 pub fn Pose(comptime P: type) type {
@@ -49,23 +58,15 @@ pub fn Pose(comptime P: type) type {
 
         pub fn sample(keys: []const PoseKey, u: f32) Chan {
             if (keys.len == 0) return (P{}).chan();
-            if (u <= keys[0].t) return keys[0].p.chan();
-            const last = keys[keys.len - 1];
-            if (u >= last.t) return last.p.chan();
-            var i: usize = 1;
-            while (i < keys.len) : (i += 1) {
-                if (u > keys[i].t) continue;
-                const a = keys[i - 1];
-                const b = keys[i];
-                const span = b.t - a.t;
-                const f = if (span > 1e-6) mathx.clampF((u - a.t) / span, 0, 1) else 1.0;
-                const ca = a.p.chan();
-                const cb = b.p.chan();
-                var out: Chan = undefined;
-                for (&out, ca, cb) |*o, va, vb| o.* = va + (vb - va) * easeAt(b.ease, f);
-                return out;
+            switch (locate(keys, u)) {
+                .at => |i| return keys[i].p.chan(),
+                .into => |s| {
+                    const b = keys[s.i];
+                    var out: Chan = undefined;
+                    for (&out, keys[s.i - 1].p.chan(), b.p.chan()) |*o, va, vb| o.* = va + (vb - va) * easeAt(b.ease, s.f);
+                    return out;
+                },
             }
-            return last.p.chan();
         }
     };
 }

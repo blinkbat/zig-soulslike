@@ -104,7 +104,7 @@ pub const Pickups = struct {
     /// Refuses an empty list, so `nloot > 0` stays the honest test for "this one is a drop".
     /// A FULL LIST RECYCLES A SPENT SLOT, ELSE THE UNTAKEN DROP FARTHEST PAST ITS KIND'S OWN `view` — body drops outlive a rest, so a list that only
     /// ever refused filled with purses he walked away from and then refused a boss's hoard. A glow he could still see is never overwritten.
-    pub fn spawn(self: *Pickups, at: rl.Vector3, kinds: []const item.Kind, gold: u32) void {
+    pub fn spawn(self: *Pickups, at: rl.Vector3, eye: rl.Vector3, kinds: []const item.Kind, gold: u32) void {
         if (kinds.len == 0 and gold == 0) return;
         const n = @min(kinds.len, DROP_MAX);
         var p: *Pickup = undefined;
@@ -119,7 +119,7 @@ pub const Pickups = struct {
                 for (self.list[self.mapped..self.n]) |*q| {
                     if (q.spent()) break :blk q;
                     if (q.taken) continue;
-                    const d = mathx.dist2XZ(q.pos, at);
+                    const d = mathx.dist2XZ(q.pos, eye);
                     if (d > farD) {
                         farD = d;
                         far = q;
@@ -149,9 +149,7 @@ pub const Pickups = struct {
         p.taken = true;
         self.near = null;
         if (p.dropped()) return .{ .at = p.topWorld(), .loot = p.loot[0..p.nloot], .gold = p.gold };
-        const op = p.op;
-        const loot: []const item.Kind = if (op < m.nops) m.ops[op].loot[0..m.ops[op].nloot] else &.{};
-        return .{ .at = p.topWorld(), .loot = loot, .gold = if (op < m.nops) m.ops[op].gold else 0 };
+        return .{ .at = p.topWorld(), .loot = m.lootOf(p.op), .gold = m.goldOf(p.op) };
     }
 };
 
@@ -245,14 +243,14 @@ test "A DROPPED GLOW IS A GLOW — it stands where the body fell, hands back its
     try std.testing.expectEqual(@as(usize, 1), ps.mapped);
     try std.testing.expectEqual(@as(usize, 0), ps.droppedOnes().len);
 
-    ps.spawn(v3(0, 0, 0), &.{ .bloodgrass, .toadflesh_broth }, 0);
+    ps.spawn(v3(0, 0, 0), v3(0, 0, 0), &.{ .bloodgrass, .toadflesh_broth }, 0);
     try std.testing.expectEqual(@as(usize, 2), ps.n);
     try std.testing.expectEqual(@as(usize, 1), ps.mapped);
     try std.testing.expectEqual(@as(usize, 1), ps.droppedOnes().len);
     try std.testing.expect(ps.droppedOnes()[0].dropped());
     try std.testing.expect(!ps.liveConst()[0].dropped());
 
-    ps.spawn(v3(9, 0, 9), &.{}, 0);
+    ps.spawn(v3(9, 0, 9), v3(9, 0, 9), &.{}, 0);
     try std.testing.expectEqual(@as(usize, 2), ps.n);
 
     const m = try std.testing.allocator.create(wf.Map);
@@ -276,15 +274,15 @@ test "A DROPPED GLOW IS A GLOW — it stands where the body fell, hands back its
 test "A FULL LIST RECYCLES A SPENT SLOT AND NEVER OVERWRITES ONE YOU CAN STILL SEE" {
     var ps = Pickups{};
     ps.reset(&.{});
-    for (0..CAP) |_| ps.spawn(v3(0, 0, 0), &.{.bloodgrass}, 0);
+    for (0..CAP) |_| ps.spawn(v3(0, 0, 0), v3(0, 0, 0), &.{.bloodgrass}, 0);
     try std.testing.expectEqual(CAP, ps.n);
-    ps.spawn(v3(1, 0, 1), &.{.kobold_fang}, 0);
+    ps.spawn(v3(1, 0, 1), v3(1, 0, 1), &.{.kobold_fang}, 0);
     for (ps.liveConst()) |p| try std.testing.expectEqual(item.Kind.bloodgrass, p.loot[0]);
     ps.list[7].taken = true;
     var t: f32 = 0;
     while (t < FADE_DUR * 2.0) : (t += 1.0 / 60.0) ps.update(1.0 / 60.0, v3(900, 0, 900));
     try std.testing.expect(ps.list[7].spent());
-    ps.spawn(v3(1, 0, 1), &.{.kobold_fang}, 0);
+    ps.spawn(v3(1, 0, 1), v3(1, 0, 1), &.{.kobold_fang}, 0);
     try std.testing.expectEqual(item.Kind.kobold_fang, ps.list[7].loot[0]);
     try std.testing.expect(!ps.list[7].taken);
     try std.testing.expectEqual(CAP, ps.n);
@@ -294,26 +292,35 @@ test "A FULL LIST TAKES BACK A DROP HE CANNOT SEE BEFORE IT REFUSES A NEW ONE" {
     var ps = Pickups{};
     ps.reset(&.{});
     const far = props.info(.pickup).view + 40;
-    for (0..CAP) |i| ps.spawn(v3(if (i == 11) far else 0, 0, 0), &.{.bloodgrass}, 0);
-    ps.spawn(v3(0, 0, 1), &.{.soul_binding_ring}, 0);
+    for (0..CAP) |i| ps.spawn(v3(if (i == 11) far else 0, 0, 0), v3(0, 0, 0), &.{.bloodgrass}, 0);
+    ps.spawn(v3(0, 0, 1), v3(0, 0, 0), &.{.soul_binding_ring}, 0);
     try std.testing.expectEqual(item.Kind.soul_binding_ring, ps.list[11].loot[0]);
     try std.testing.expectEqual(CAP, ps.n);
-    ps.spawn(v3(0, 0, 1), &.{.kobold_fang}, 0);
+    ps.spawn(v3(0, 0, 1), v3(0, 0, 0), &.{.kobold_fang}, 0);
     for (ps.liveConst()) |p| try std.testing.expect(p.loot[0] != .kobold_fang);
+}
+
+test "THE GLOW HE CAN STILL SEE IS MEASURED FROM HIM, NOT FROM THE NEW DROP" {
+    var ps = Pickups{};
+    ps.reset(&.{});
+    const behind = props.info(.pickup).view - 20;
+    for (0..CAP) |i| ps.spawn(v3(if (i == 5) -behind else 0, 0, 0), v3(0, 0, 0), &.{.bloodgrass}, 0);
+    ps.spawn(v3(60, 0, 0), v3(0, 0, 0), &.{.kobold_fang}, 0);
+    try std.testing.expectEqual(item.Kind.bloodgrass, ps.list[5].loot[0]);
 }
 
 test "A PURSE ALONE IS A DROP — coin lands on the ground and is carried by the glow, not credited on the kill" {
     var ps = Pickups{};
     ps.reset(&.{});
-    ps.spawn(v3(0, 0, 0), &.{}, 0);
+    ps.spawn(v3(0, 0, 0), v3(0, 0, 0), &.{}, 0);
     try std.testing.expectEqual(@as(usize, 0), ps.n);
 
-    ps.spawn(v3(0, 0, 0), &.{}, 30);
+    ps.spawn(v3(0, 0, 0), v3(0, 0, 0), &.{}, 30);
     try std.testing.expectEqual(@as(usize, 1), ps.n);
     try std.testing.expect(ps.list[0].dropped());
     try std.testing.expectEqual(@as(u32, 30), ps.list[0].gold);
 
-    ps.spawn(v3(20, 0, 0), &.{.bloodgrass}, 45);
+    ps.spawn(v3(20, 0, 0), v3(20, 0, 0), &.{.bloodgrass}, 45);
     try std.testing.expectEqual(@as(usize, 2), ps.n);
     try std.testing.expectEqual(@as(u8, 1), ps.list[1].nloot);
     try std.testing.expectEqual(@as(u32, 45), ps.list[1].gold);

@@ -634,7 +634,7 @@ pub fn scatter(d: *const Data, s: Slot) void {
         p.fade = if (p.taken) 1 else 0;
     }
     s.pickups.clearDropped();
-    for (d.ground[0..d.groundN]) |g| s.pickups.spawn(g.at, g.loot[0..g.n], g.gold);
+    for (d.ground[0..d.groundN]) |g| s.pickups.spawn(g.at, g.at, g.loot[0..g.n], g.gold);
     s.bosses.* = d.bossDead;
     s.award.seen = d.seen;
     s.award.clearPending();
@@ -1396,8 +1396,8 @@ test "THE SLOT CARRIES EVERY FIELD IT NAMES — live game out, text, live game b
 test "A PURSE ON THE GROUND IS SAVED — `pickup.spawn` makes a glow with coin and no item, and the filter was `nloot`" {
     var a = Live.blank(0);
     a.pickups.reset(&.{});
-    a.pickups.spawn(.{ .x = 5.5, .y = 0.25, .z = -2.0 }, &.{}, 63);
-    a.pickups.spawn(.{ .x = -9.0, .y = 0, .z = 3.5 }, &.{.kobold_fang}, 18);
+    a.pickups.spawn(.{ .x = 5.5, .y = 0.25, .z = -2.0 }, .{ .x = 5.5, .y = 0.25, .z = -2.0 }, &.{}, 63);
+    a.pickups.spawn(.{ .x = -9.0, .y = 0, .z = 3.5 }, .{ .x = -9.0, .y = 0, .z = 3.5 }, &.{.kobold_fang}, 18);
 
     const out = gather(a.slot());
     try testing.expectEqual(@as(usize, 2), out.groundN);

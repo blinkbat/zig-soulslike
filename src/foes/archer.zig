@@ -700,8 +700,9 @@ pub const Archer = struct {
     pub fn flashFrac(self: *const Archer) f32 {
         return foe.flashFrac(self.flash);
     }
+    /// Off `hop` alone: a backstep cut by a stagger is still falling on `cutFall`.
     pub fn airborne(self: *const Archer) bool {
-        return self.state == .backstep and self.hop > foe.AIRBORNE_LIFT;
+        return self.hop > foe.AIRBORNE_LIFT;
     }
 
     fn faceToward(self: *Archer, target: rl.Vector3, dt: f32) void {
@@ -1030,6 +1031,7 @@ pub const Archer = struct {
     pub fn reraise(self: *Archer, frac: f32) void {
         foe.rekindle(self, frac);
         self.enterStun(.stunlight);
+        self.vit.beginStun(.light);
         self.pose();
     }
 

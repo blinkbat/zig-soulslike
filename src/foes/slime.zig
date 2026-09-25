@@ -354,7 +354,9 @@ pub const Slime = struct {
         self.ext = 0;
         self.enter(s);
     }
+    /// A proc may not cancel the divide `tryHit` refuses a flinch through.
     pub fn stagger(self: *Slime, heavy: bool) void {
+        if (self.state == .splitting or self.state == .dead) return;
         self.enterStun(if (heavy) .stunheavy else .stunlight);
     }
     fn enterDeath(self: *Slime) void {
@@ -694,8 +696,10 @@ pub const Mire = struct {
                 .split => |s| {
                     // The bar comes off the body still in the slot: a `Vitals` on the one-frame union is 288 B per slab slot.
                     const vit = childVit(self.slimes[i].vit);
-                    // The map's `when=` is the line's, like its `scale=`.
+                    // The map's `when=`, orders and post are the line's, like its `scale=`.
                     const when = self.slimes[i].leash.win.when;
+                    const home = self.slimes[i].home;
+                    const post = self.slimes[i].post;
                     // Kept across `seatInto`, which reuses the parent's slot: the ooze `divide` threw is in this pool.
                     const motes = self.slimes[i].parts;
                     const head = self.slimes[i].fxHead;
@@ -708,6 +712,8 @@ pub const Mire = struct {
                         const seed = mathx.wrap01(s.seed + 0.37 * @as(f32, @floatFromInt(k + 1)));
                         var child = Slime.spawnGen(at, s.facing, s.scale, seed, s.gen, vit);
                         child.leash.win.when = when;
+                        child.home = home;
+                        child.post = post;
                         self.seat(child);
                     }
                     if (!self.slimes[i].gone) {

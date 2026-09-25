@@ -123,12 +123,17 @@ const STEEL = rgba(98, 104, 114, 255);
 const STEEL_DK = rgba(58, 62, 70, 255);
 const BRASS = art.BRASS;
 
-/// One stride's samples; a finer table is silently truncated to the first 8.
+/// One stride's samples.
 pub const GAIT_N = 8;
 
 /// Antiphase with the same side's hip flex; unit amplitude for the LEFT arm. NOT `sin` — a quarter-cycle off.
 pub fn armSwing(phase: f32) f32 {
     return mathx.cosf(std.math.tau * phase);
+}
+
+/// The left leg is the one out front at `phase`.
+pub fn leftLeads(phase: f32) bool {
+    return sampleCurve(HIP_FLEX, phase) > sampleCurve(HIP_FLEX, phase + 0.5);
 }
 
 test "THE ARM OPPOSES ITS OWN LEG — the swing and the hip flex are antiphase, measured off the curve" {
@@ -393,13 +398,13 @@ pub fn fireTipped(h: combat.Hit) combat.Hit {
     return out;
 }
 
-/// THE BOW'S ONE BLOW, asked by the shot, the card and the compare. The perks land BEFORE the row where the sword's land after, so `TIER_FLAT` is
-/// unperked here and perked there; that asymmetry is a retune, not a bug.
 /// What the page prints; `attackHit` adds what is on him this second.
 pub fn swingBlow(heavy: bool, perk: ptree.Bonus, row: item.Arm, sheet: statsmod.Sheet, tier: u8) combat.Hit {
     return weigh(if (heavy) ATK_HEAVY_HIT else ATK_LIGHT_HIT, row, sheet, tier).scaled(perk.dmg);
 }
 
+/// THE BOW'S ONE BLOW, asked by the shot, the card and the compare. The perks land BEFORE the row where the sword's land after, so `TIER_FLAT` is
+/// unperked here and perked there; that asymmetry is a retune, not a bug.
 pub fn bowBlow(k: combat.ArrowKind, aimed: bool, perk: ptree.Bonus, row: item.Arm, sheet: statsmod.Sheet, tier: u8) combat.Hit {
     const base = (if (aimed) BOW_AIMED_HIT else BOW_QUICK_HIT).scaled(perk.bowDmg * perk.dmg);
     return weigh(switch (k) {
@@ -802,6 +807,10 @@ pub fn fpMaxOf(sheet: statsmod.Sheet, worn: Worn, perk: ptree.Bonus) f32 {
     return fpMaxFrom(sheet, charmOf(worn), perk);
 }
 
+pub fn stamMaxOf(sheet: statsmod.Sheet, perk: ptree.Bonus) f32 {
+    return sheet.stamina() * perk.stamMax;
+}
+
 pub fn boonsOnto(worn: Worn, sheet: *statsmod.Sheet) void {
     inline for (@typeInfo(item.Wear).@"enum".fields) |f| {
         if (worn.at(@enumFromInt(f.value))) |k| {
@@ -1021,9 +1030,9 @@ const FIST_Z = 0.005 * H;
 fn bladeAt(t: f32) rl.Vector3 {
     return v3(-GRIP_SA * OUT_SA * t * H, FIST_Y - GRIP_CA * t * H, FIST_Z + GRIP_SA * OUT_CA * t * H);
 }
-/// `t` is the fraction of STATURE along the grip axis (`bladeAt`); `r` is the fight capsule, not visible geometry.
 pub const Blade = enum { sword, dagger, club };
 
+/// `base`/`tip` are fractions of STATURE along the grip axis (`bladeAt`); `r` is the fight capsule, not visible geometry.
 const BladeSpec = struct { blade: Blade, base: f32, tip: f32, r: f32 };
 
 const BLADES = [_]BladeSpec{
@@ -1137,10 +1146,10 @@ pub fn drawSecs(aimed: bool, row: item.Arm) f32 {
     return @as(f32, if (aimed) BOW_SHOT_DUR else BOW_QUICK_DUR) * row.dur;
 }
 
-/// Degrees except `dip`, which is metres the pelvis drops. Signs are the AUTHORED (right-hand) side's; `armSide`'s mirror times `lat` carries the LATERAL channels over.
-/// `sh` is the weapon shoulder RAISED, `sweep` its yaw across the body (negative = cocked back), `grip` the pitch out of the grip axis (`GRIP_PITCH` levels the blade).
 const MCH_N = 14;
 
+/// Degrees except `dip`, which is metres the pelvis drops. Signs are the AUTHORED (right-hand) side's; `armSide`'s mirror times `lat` carries the LATERAL channels over.
+/// `sh` is the weapon shoulder RAISED, `sweep` its yaw across the body (negative = cocked back), `grip` the pitch out of the grip axis (`GRIP_PITCH` levels the blade).
 const MK = struct {
     dip: f32 = 0,
     yaw: f32 = 0,
@@ -1157,7 +1166,6 @@ const MK = struct {
     brace: f32 = 0,
     grip: f32 = 0,
 
-    /// Two literal orders, here and in `mkAt`: a field inserted in the middle silently renames every channel after it.
     pub fn chan(self: MK) [MCH_N]f32 {
         var c: [MCH_N]f32 = undefined;
         inline for (@typeInfo(MK).@"struct".fields, 0..) |f, i| c[i] = @field(self, f.name);
@@ -1185,7 +1193,7 @@ fn mkAt(keys: []const MKey, u: f32) MK {
 const FLICK_REST = MK{ .sh = 22, .elbow = 44, .sweep = -10, .grip = GRIP_PITCH };
 const FLICK_COCK = MK{ .sh = 52, .elbow = 92, .sweep = -36, .roll = 28, .wrist = 16, .yaw = -8, .chest = -13, .dip = 0.012 * H, .pitch = -4, .free = -14, .brace = 4, .abd = 6, .grip = GRIP_PITCH };
 
-/// DS1's dagger "jabbed in rapid succession". The whole gather is 0.075 s at the dial the fight runs it at.
+/// DS1's dagger "jabbed in rapid succession".
 const FLICK_KEYS = [_]MKey{
     .{ .t = 0.00, .p = FLICK_REST },
     .{ .t = 0.16, .p = FLICK_COCK, .ease = .decel },
@@ -1199,7 +1207,7 @@ const THRUST_REST = MK{ .sh = 12, .elbow = 42, .grip = GRIP_PITCH };
 /// `sh` IS MEASURED FROM ARM-HANGING-DOWN, SO 90 IS HORIZONTAL FORWARD. The drive is `sh` + `elbow` + the step.
 const THRUST_COIL = MK{ .sh = 26, .elbow = 104, .sweep = -4, .roll = 8, .wrist = 14, .yaw = -9, .chest = -11, .dip = 0.030 * H, .pitch = -7, .free = -20, .brace = 10, .abd = 4, .grip = GRIP_PITCH };
 
-/// DS1's dagger R2; ER's Main-gauche / Miséricorde / Scorpion's Stinger. The 1.35 m step is the reach.
+/// DS1's dagger R2; ER's Main-gauche / Miséricorde / Scorpion's Stinger. The 1.55 m step is the reach.
 const THRUST_KEYS = [_]MKey{
     .{ .t = 0.00, .p = THRUST_REST },
     .{ .t = 0.22, .p = THRUST_COIL, .ease = .decel },
@@ -1305,12 +1313,12 @@ const IDLE_ELBOW = 6.0;
 const MOVING_EASE = 10.0;
 
 pub fn sampleCurve(tbl: [GAIT_N]f32, phase: f32) f32 {
-    const ph = phase - @floor(phase);
+    const ph = mathx.wrap01(phase);
     const t = ph * @as(f32, GAIT_N);
     const base: usize = @intFromFloat(@floor(t));
     const a = base % GAIT_N;
     const b = (base + 1) % GAIT_N;
-    const f = t - @floor(t);
+    const f = mathx.wrap01(t);
     return tbl[a] + (tbl[b] - tbl[a]) * f;
 }
 
@@ -1446,8 +1454,6 @@ pub const Attack = enum { light, heavy };
 pub const Armament = enum { sword, dagger, club, bow, bell, shield, wand, torch };
 pub const NARM = @typeInfo(Armament).@"enum".fields.len;
 
-pub const Arm = Armament;
-pub const Off = Armament;
 
 pub const RIGHT: usize = 0;
 pub const LEFT: usize = 1;
@@ -1575,7 +1581,6 @@ pub const Hero = struct {
     mantling: bool = false,
     /// 0 at the last rung, 1 standing on the lip. Written by `game.updateMantle`.
     mantlePhase: f32 = 0,
-    jumps: u32 = 0,
     airYaw: f32 = 0,
     airSpeed: f32 = 0,
     landed: bool = false,
@@ -1640,7 +1645,6 @@ pub const Hero = struct {
     atkArm: Armament = .sword,
     shotRow: item.Arm = item.bareArm(.hand_bow),
     loosed: bool = false,
-    shots: u32 = 0,
     drawAmt: f32 = 0,
     stringXf: [2]rl.Matrix = undefined,
     nockXf: rl.Matrix = undefined,
@@ -1751,8 +1755,7 @@ pub const Hero = struct {
         self.vit.poiseMax = POISE_MAX * self.perk.poiseMax;
         self.vit.poise = self.vit.poiseMax;
         self.refitHp();
-        self.stam.max = self.sheet.stamina() * self.perk.stamMax;
-        self.fp.max = fpMaxOf(self.sheet, self.worn, self.perk);
+        self.stam.max = stamMaxOf(self.sheet, self.perk);
         self.stam.reset();
         self.fp.reset();
         self.regen.reset();
@@ -1831,7 +1834,6 @@ pub const Hero = struct {
     pub fn startJump(self: *Hero, dir: rl.Vector3, speed: f32) bool {
         if (!self.bodyFree()) return false;
         self.jumping = true;
-        self.jumps +%= 1;
         self.airY = self.pos.y;
         self.airTop = self.airY;
         self.vertVel = JUMP_V0;
@@ -1864,29 +1866,37 @@ pub const Hero = struct {
         return true;
     }
 
-    pub fn startClimb(self: *Hero, lift: f32, facing: f32) void {
+    fn mount(self: *Hero, lift: f32, facing: f32) void {
         self.dropActions();
         self.clearAir();
         self.sprinting = false;
-        self.climbing = true;
-        self.climbPhase = 0;
         self.lift = mathx.maxF(lift, 0);
         self.facing = facing;
         self.moving = 0;
         self.speed = 0;
         self.speedS = 0;
+    }
+
+    fn tickMounted(self: *Hero, dt: f32, lift: f32) void {
+        self.tickClocks(dt);
+        self.tickFogGrace(dt);
+        self.lift = mathx.maxF(lift, 0);
+        self.speed = 0;
+        self.speedS = 0;
+        self.moving = 0;
+    }
+
+    pub fn startClimb(self: *Hero, lift: f32, facing: f32) void {
+        self.mount(lift, facing);
+        self.climbing = true;
+        self.climbPhase = 0;
         self.startXfade();
     }
 
     /// `climbed` is SIGNED metres this frame — down the ladder runs the same hands backwards.
     pub fn tickClimb(self: *Hero, dt: f32, lift: f32, climbed: f32) void {
-        self.tickClocks(dt);
-        self.tickFogGrace(dt);
-        self.lift = mathx.maxF(lift, 0);
+        self.tickMounted(dt, lift);
         self.climbPhase = @mod(self.climbPhase + climbed / CLIMB_RUNG + 1.0, 1.0);
-        self.speed = 0;
-        self.speedS = 0;
-        self.moving = 0;
     }
 
     /// `lift` IS DERIVED and goes stale the frame the ground moves: `tickAir` recomputes it next frame, `game.groundActor` writes `pos.y` at the bottom of this one.
@@ -1903,28 +1913,16 @@ pub const Hero = struct {
     }
 
     pub fn startMantle(self: *Hero, lift: f32, facing: f32) void {
-        self.dropActions();
-        self.clearAir();
-        self.sprinting = false;
+        self.mount(lift, facing);
         self.mantling = true;
         self.mantlePhase = 0;
-        self.lift = mathx.maxF(lift, 0);
-        self.facing = facing;
-        self.moving = 0;
-        self.speed = 0;
-        self.speedS = 0;
         self.startXfade();
     }
 
     /// `u` is the haul's own 0..1 and belongs to `game.Mantle`.
     pub fn tickMantle(self: *Hero, dt: f32, lift: f32, u: f32) void {
-        self.tickClocks(dt);
-        self.tickFogGrace(dt);
-        self.lift = mathx.maxF(lift, 0);
+        self.tickMounted(dt, lift);
         self.mantlePhase = mathx.clampF(u, 0, 1);
-        self.speed = 0;
-        self.speedS = 0;
-        self.moving = 0;
     }
 
     pub fn startFall(self: *Hero, fromY: f32, dir: rl.Vector3, speed: f32) void {
@@ -1994,7 +1992,7 @@ pub const Hero = struct {
             self.enterDeath();
             return r;
         }
-        self.enterStun(.light);
+        if (self.stun != .heavy) self.enterStun(.light);
         return r;
     }
 
@@ -2036,10 +2034,10 @@ pub const Hero = struct {
         self.rollT = 0;
         self.rollDir = d;
         self.rollYaw = mathx.headingXZ(d);
-        const leadL = sampleCurve(HIP_FLEX, self.phase) > sampleCurve(HIP_FLEX, self.phase + 0.5);
+        const leadL = leftLeads(self.phase);
         self.rollSide = if (self.moving > 0.5 and leadL) 1.0 else -1.0;
         const h = (self.phase + self.elapsed * 0.61) * 7.31;
-        self.rollVar = mathx.lerpF(ROLL_VAR_LO, ROLL_VAR_HI, h - @floor(h));
+        self.rollVar = mathx.lerpF(ROLL_VAR_LO, ROLL_VAR_HI, mathx.wrap01(h));
         self.startXfade();
     }
 
@@ -2243,7 +2241,6 @@ pub const Hero = struct {
         self.shotAimed = aimed;
         self.shotT = 0;
         self.loosed = false;
-        self.shots +%= 1;
         self.startXfade();
     }
 
@@ -2376,25 +2373,27 @@ pub const Hero = struct {
 
     fn parrySparks(self: *Hero) void {
         const o = self.sparkOrigin();
-        const side = o.side;
-        const up = o.up;
-        const at = o.at;
         var rng = foemod.fxStream(@floatFromInt(self.parries), 733.0, 0x8B06);
+        self.sparkFan(o, &rng, PARRY_SPARKS, 1.0, 0.72, 0.45);
+        foemod.contactFlash(&self.fx, &self.fxHead, o.at, o.n, .parry, 1.0);
+    }
+
+    fn sparkFan(self: *Hero, o: anytype, rng: *mathx.Rng, n: u32, fanK: f32, lifeHi: f32, hot: f32) void {
         var i: u32 = 0;
-        while (i < PARRY_SPARKS) : (i += 1) {
+        while (i < n) : (i += 1) {
             const a = rng.angle();
-            const fan = rng.range(0.35, 1.0) * PARRY_SPARK_FAN;
+            const fan = rng.range(0.35, 1.0) * PARRY_SPARK_FAN * fanK;
             const v = mathx.addV(
                 mathx.scaleV(o.n, rng.range(PARRY_SPARK_OUT_LO, PARRY_SPARK_OUT_HI)),
-                mathx.addV(mathx.scaleV(side, mathx.cosf(a) * fan), mathx.scaleV(up, mathx.sinf(a) * fan)),
+                mathx.addV(mathx.scaleV(o.side, mathx.cosf(a) * fan), mathx.scaleV(o.up, mathx.sinf(a) * fan)),
             );
             foemod.emitPart(&self.fx, &self.fxHead, .{
-                .p = at,
+                .p = o.at,
                 .v = v,
-                .life = rng.range(0.16, 0.72),
+                .life = rng.range(0.16, lifeHi),
                 .r0 = rng.range(PARRY_SPARK_R0_LO, PARRY_SPARK_R0_HI),
                 .r1 = 0.003,
-                .col = if (rng.float() < 0.45) PARRY_SPARK_HOT else PARRY_SPARK,
+                .col = if (rng.float() < hot) PARRY_SPARK_HOT else PARRY_SPARK,
                 .col1 = PARRY_SPARK_COOL,
                 .grav = PARRY_SPARK_GRAV,
                 .stretch = SPARK_STRETCH,
@@ -2402,7 +2401,6 @@ pub const Hero = struct {
                 .add = true,
             });
         }
-        foemod.contactFlash(&self.fx, &self.fxHead, at, o.n, .parry, 1.0);
     }
 
     pub fn fogWake(self: *Hero, at: rl.Vector3, along: rl.Vector3, n: u32) void {
@@ -2459,28 +2457,7 @@ pub const Hero = struct {
             });
         }
         const ns: u32 = @intFromFloat(mathx.lerpF(BLOCK_SPARK_MIN, BLOCK_SPARK_MAX, w));
-        var j: u32 = 0;
-        while (j < ns) : (j += 1) {
-            const a = rng.angle();
-            const fan = rng.range(0.35, 1.0) * PARRY_SPARK_FAN * BLOCK_SPARK_FAN_K;
-            const v = mathx.addV(
-                mathx.scaleV(o.n, rng.range(PARRY_SPARK_OUT_LO, PARRY_SPARK_OUT_HI)),
-                mathx.addV(mathx.scaleV(o.side, mathx.cosf(a) * fan), mathx.scaleV(o.up, mathx.sinf(a) * fan)),
-            );
-            foemod.emitPart(&self.fx, &self.fxHead, .{
-                .p = at,
-                .v = v,
-                .life = rng.range(0.16, 0.38),
-                .r0 = rng.range(PARRY_SPARK_R0_LO, PARRY_SPARK_R0_HI),
-                .r1 = 0.003,
-                .col = if (rng.float() < 0.34) PARRY_SPARK_HOT else PARRY_SPARK,
-                .col1 = PARRY_SPARK_COOL,
-                .grav = PARRY_SPARK_GRAV,
-                .stretch = SPARK_STRETCH,
-                .bounce = SPARK_BOUNCE,
-                .add = true,
-            });
-        }
+        self.sparkFan(o, &rng, ns, BLOCK_SPARK_FAN_K, 0.38, 0.34);
         foemod.emitPart(&self.fx, &self.fxHead, .{
             .p = at,
             .v = mathx.scaleV(o.n, 0.25),
@@ -2715,7 +2692,7 @@ pub const Hero = struct {
     /// SCALED WHOLE, not on the damage alone, or the poise stays at its level-1 figure. Null for the two that bill over time (`combat.spellBlow`).
     pub fn castBlow(self: *const Hero) ?combat.Hit {
         const base = combat.spellBlow(self.spell) orelse return null;
-        return base.scaled(self.perk.spellDmg * self.sheet.scale(.intelligence));
+        return base.scaled(self.perk.spellK(self.sheet));
     }
 
     pub fn requestAttack(self: *Hero, kind: Attack) void {
@@ -2780,7 +2757,8 @@ pub const Hero = struct {
         const tm = self.swingMove().t;
         const dur: f32 = self.atkDur(self.atkHeavy);
         const u = mathx.clampF(self.atkT / dur, 0, 1);
-        const speed: f32 = if (u >= tm.travelA and u < tm.travelB) tm.lunge / ((tm.travelB - tm.travelA) * dur) else 0;
+        const feet: f32 = if (self.snared()) 0 else self.vit.travelMult();
+        const speed: f32 = if (u >= tm.travelA and u < tm.travelB) feet * tm.lunge / ((tm.travelB - tm.travelA) * dur) else 0;
         const moved = speed * dt;
         mathx.stepXZ(&self.pos, mathx.headingDir(self.facing), moved, bounds);
         self.speed = speed;
@@ -2869,9 +2847,10 @@ pub const Hero = struct {
         const u = self.drinkT / combat.FLASK_DRINK_DUR;
         if (!self.poured and u >= combat.FLASK_POUR_AT) {
             self.poured = true;
+            const pour = combat.flaskPour(self.drinkKind, self.vit.hpMax, self.fp.max, self.perk.flaskHeal);
             switch (self.drinkKind) {
-                .crimson => _ = self.vit.heal(self.vit.hpMax * combat.FLASK_HP_FRAC * self.perk.flaskHeal),
-                .cerulean => _ = self.fp.restore(self.fp.max * combat.FLASK_FP_FRAC),
+                .crimson => _ = self.vit.heal(pour),
+                .cerulean => _ = self.fp.restore(pour),
             }
         }
         if (self.drinkT >= combat.FLASK_DRINK_DUR) {
@@ -3371,15 +3350,12 @@ pub const Hero = struct {
 
     fn refitBars(self: *Hero) void {
         self.refitHp();
-        refitPool(&self.stam.cur, &self.stam.max, self.sheet.stamina() * self.perk.stamMax);
-        refitPool(&self.fp.cur, &self.fp.max, fpMaxOf(self.sheet, self.worn, self.perk));
+        refitPool(&self.stam.cur, &self.stam.max, stamMaxOf(self.sheet, self.perk));
     }
 
     /// The FRACTION is kept across the resize: a ring off may not heal him, a ring on may not kill him.
     fn refitHp(self: *Hero) void {
-        const frac = if (self.vit.hpMax > 1e-4) self.vit.hp / self.vit.hpMax else 1.0;
-        self.vit.hpMax = hpMaxOf(self.sheet, self.worn, self.perk);
-        self.vit.hp = mathx.minF(self.vit.hpMax, self.vit.hpMax * frac);
+        refitPool(&self.vit.hp, &self.vit.hpMax, hpMaxOf(self.sheet, self.worn, self.perk));
     }
 
     pub fn drinkLeech(self: *Hero) f32 {
@@ -3531,9 +3507,7 @@ pub const Hero = struct {
         const suit = suitOf(self.worn);
         var r = self.baseRes;
         r.v[@intFromEnum(self.wardElem)] += self.ward.value(0);
-        const worn = combat.resistsOf(suit.plate.res);
-        for (&r.v, worn.v) |*x, w| x.* += w;
-        self.vit.res = r;
+        self.vit.res = r.plus(combat.resists(suit.plate.res));
         for (0..combat.NAIL) |i| {
             const perked: f32 = if (i == @intFromEnum(combat.Ail.poison)) self.perk.poison else 1.0;
             self.vit.ailRate[i] = perked * suit.rates[i];
@@ -3748,7 +3722,7 @@ pub const Hero = struct {
 
     fn poseCarryArm(self: *const Hero, wx: *[N]rl.Matrix, left: bool, c: Carry) void {
         const a = armSide(left, true);
-        const swing = ARM_SWING * mathx.cosf(std.math.tau * self.phase) * self.moving * self.fwdB;
+        const swing = ARM_SWING * armSwing(self.phase) * self.moving * self.fwdB;
         var p = wx.*;
         setLocal(&p, a.sh, self.rest, mul3(
             rx(-c.flex + c.swing * swing),
@@ -3763,7 +3737,7 @@ pub const Hero = struct {
     fn poseBowArms(self: *const Hero, wx: *[N]rl.Matrix, lean: f32, prot: f32, bank: f32) void {
         const lvl = self.bowLevels();
         const kick: f32 = if (self.loosedAlready()) BOW_KICK * (1.0 - self.shotU()) else 0;
-        const swing = ARM_SWING * mathx.cosf(std.math.tau * self.phase) * self.moving * self.fwdB * (1.0 - lvl.up);
+        const swing = ARM_SWING * armSwing(self.phase) * self.moving * self.fwdB * (1.0 - lvl.up);
         var bp = wx.*;
         const blade = BOW_BLADE * lvl.up;
         const stoop = BOW_STOOP * (1.0 - 0.75 * lvl.pull);
@@ -4077,15 +4051,16 @@ pub const Hero = struct {
         const lat = sd * sw;
         const facingDeg = mathx.degrees(self.facing);
         const hipY = self.rest[ROOT].y;
-        // The WAIST takes the fold, the pelvis stays near-upright (`ogre.PELVIS_SHARE`): a quarter of the pitch at the root.
-        const trunk = 0.5 * (0.75 * k.pitch + self.aimLean);
+        // The WAIST takes the fold, the pelvis stays near-upright: a quarter of the pitch at the root.
+        const pelvisShare: f32 = 0.25;
+        const trunk = 0.5 * ((1.0 - pelvisShare) * k.pitch + self.aimLean);
         const lead: f32 = if (lat > 0) 1.0 else 0.6;
         const trail: f32 = if (lat > 0) 0.6 else 1.0;
 
         var wx: [N]rl.Matrix = undefined;
         wx[ROOT] = mul3(
             ry(lat * k.yaw),
-            mul(tr(0, hipY - k.dip, 0), mul(rx(0.25 * k.pitch), ry(facingDeg))),
+            mul(tr(0, hipY - k.dip, 0), mul(rx(pelvisShare * k.pitch), ry(facingDeg))),
             rootAt(self.footPos()),
         );
         setLocal(&wx, SPINE, self.rest, mul3(rx(trunk), ry(lat * TRUNK_YAW_SPINE * k.chest), rz(lat * 0.5 * k.tilt)));
@@ -4325,7 +4300,7 @@ pub const Hero = struct {
         const t = self.restT;
         const phrase = 0.5 - 0.5 * mathx.cosf(t * 0.55);
         const beat = t * REST_BEAT;
-        const beatU = beat - @floor(beat);
+        const beatU = mathx.wrap01(beat);
         // Never a sine — a pick moves fast one way and drifts back.
         const sweep = if (beatU < 0.32) mathx.lerpF(-1.0, 1.0, mathx.smoothstep(0, 1,beatU / 0.32)) else mathx.lerpF(1.0, -1.0, mathx.smoothstep(0, 1,(beatU - 0.32) / 0.68));
         const attack = mathx.maxF(0, 1.0 - beatU / 0.18);
@@ -4565,7 +4540,7 @@ pub fn legChain(wx: []rl.Matrix, rest: []const rl.Vector3, groundY: f32, ph: f32
     const legLen = thigh + shank;
     const rigS = legLen / LEG_LEN;
     const reach = STRAFE_REACH * rigS;
-    const q = ph - @floor(ph);
+    const q = mathx.wrap01(ph);
     const swingLen = 1.0 - STRAFE_STANCE;
     var s: f32 = undefined;
     var w: f32 = -1.0;
@@ -4709,7 +4684,6 @@ fn rollArm(wx: *[N]rl.Matrix, rest: [N]rl.Vector3, tuck: f32, f: f32, side: f32,
     setLocal(wx, wr, rest, rl.math.matrixIdentity());
 }
 
-const ROUND_EDGES = true;
 pub const ROUND_E: f32 = 0.34;
 /// A fillet costs a box 6 quads → segs×sides; sized off the part's largest dimension in units of stature.
 pub fn roundGrid(size: rl.Vector3) struct { segs: i32, sides: i32 } {
@@ -4720,7 +4694,6 @@ pub fn roundGrid(size: rl.Vector3) struct { segs: i32, sides: i32 } {
 }
 
 pub fn slab(b: *Builder, c: rl.Vector3, size: rl.Vector3, col: rl.Color) void {
-    if (!ROUND_EDGES) return b.addCube(c, size, col);
     const g = roundGrid(size);
     b.addRoundBox(c, size, ROUND_E, g.segs, g.sides, col);
 }
@@ -6373,14 +6346,14 @@ test "THERE IS ONE LEFT HAND: the wand and the boards can never both be in it, a
     try std.testing.expect(h.canGuard());
     try std.testing.expect(!h.canCast());
     try std.testing.expect(h.swapOff());
-    try std.testing.expectEqual(Off.wand, h.off);
+    try std.testing.expectEqual(Armament.wand, h.off);
     try std.testing.expect(!h.canGuard());
     h.setGuard(true);
     try std.testing.expect(!h.guarding);
     try std.testing.expect(h.canCast());
     try std.testing.expect(h.swapArm());
     try std.testing.expect(h.bowOut());
-    try std.testing.expectEqual(Off.wand, h.off);
+    try std.testing.expectEqual(Armament.wand, h.off);
     try std.testing.expect(!h.offInHand() and !h.wandOut());
     try std.testing.expect(!h.canCast() and !h.canGuard());
     try std.testing.expect(h.swapArm());
@@ -6545,7 +6518,7 @@ test "a bonfire gives the FP back, and a respawn does not inherit the refusal fl
     try std.testing.expectApproxEqAbs(combat.FP_MAX, h.fp.cur, 1e-4);
     h.respawn();
     try std.testing.expectApproxEqAbs(@as(f32, 0), h.fpRefused, 1e-6);
-    try std.testing.expectEqual(Off.wand, h.off);
+    try std.testing.expectEqual(Armament.wand, h.off);
 }
 
 test "THE FLOOR IS A DRIP: standing in acid takes HP and never the poise refill" {
@@ -6603,7 +6576,7 @@ test "strafe: planted feet stay ON the ground and the swing foot actually leaves
     while (i < 200) : (i += 1) {
         const ph = @as(f32, @floatFromInt(i)) / 200.0;
         for ([_]f32{ 1.0, -1.0 }) |lat| {
-            const q = ph - @floor(ph);
+            const q = mathx.wrap01(ph);
             const a = testStrafeAnkle(ph, lat, 1.0, HIPL, KNEEL, BOOT_SOLE[0]);
             const err = @abs(a.y - restFootY);
             if (q < STRAFE_STANCE) {

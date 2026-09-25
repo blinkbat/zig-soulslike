@@ -173,7 +173,8 @@ pub const Model = struct {
     mat: rl.Material,
 
     pub fn init(shader: rl.Shader) Model {
-        var bone: [N]rl.Mesh = undefined;
+        // A slot nothing draws still holds a mesh: `gfx.uploadAll` walks every one.
+        var bone = [_]rl.Mesh{std.mem.zeroes(rl.Mesh)} ** N;
         bone[ROOT] = pelvisMesh();
         inline for (LEGS) |L| {
             bone[L.hip] = thighMesh(L.side);
@@ -327,7 +328,7 @@ pub const Mimic = struct {
         return foe.bearingDeg(self.pos, self.facing, hero);
     }
 
-        /// The man tried to open it, or hit it. Reported by `justWoke` for one frame.
+        /// The man tried to open it, or hit it. `justWoke` stays up until `game` plays the beat: Y and an arrow both wake it outside `update`.
     pub fn wake(self: *Mimic) void {
         if (self.state != .chest) return;
         self.justWoke = true;
@@ -354,7 +355,6 @@ pub const Mimic = struct {
 
     pub fn update(self: *Mimic, dt: f32, hero: rl.Vector3, bounds: f32, blade: foe.Blade) ?combat.Hit {
         self.heroHit = null;
-        self.justWoke = false;
         self.snapped = false;
         self.swept = false;
         if (self.gone) {
@@ -366,7 +366,7 @@ pub const Mimic = struct {
         const grip = foe.grip(&self.root, &self.chill, &self.vit, dt, self.pos);
         defer grip.hold(&self.pos);
         if (grip.killed) self.enterDeath();
-        if (grip.downed and self.state != .chest) self.stagger(true);
+        if (grip.downed) foe.staggerFrom(self, true);
         self.t += dt;
         self.elapsed += dt;
         self.vit.tick(dt);

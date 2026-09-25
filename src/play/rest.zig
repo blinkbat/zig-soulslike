@@ -270,18 +270,14 @@ pub fn navigate(self: *Rest, dx: f32, dy: f32) void {
 
 pub fn navigateSpells(self: *Rest, dy: f32, v: View) void {
     if (self.screen != .spells) return;
-    const dv = mathx.signI(dy);
-    if (dv == 0) return;
     const n: i32 = blk: {
         if (self.memPick == null) break :blk @intCast(combat.MEM_SLOTS);
         var buf: [MEM_CANDS]?combat.Spell = undefined;
         break :blk @intCast(memCands(v, &buf).len);
     };
-    if (n <= 0) return;
-    const at: i32 = @intCast(if (self.memPick) |i| i else self.memRow);
-    const next = @mod(at + dv + n, n);
-    if (next == at) return;
-    if (self.memPick != null) self.memPick = @intCast(next) else self.memRow = @intCast(next);
+    var row: usize = if (self.memPick) |i| i else self.memRow;
+    if (!cycleRow(&row, dy, n)) return;
+    if (self.memPick != null) self.memPick = @intCast(row) else self.memRow = @intCast(row);
     sfx.play(.menu_move);
 }
 

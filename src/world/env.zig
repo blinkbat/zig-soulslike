@@ -6,6 +6,7 @@ const mathx = @import("../core/mathx.zig");
 const collision = @import("../core/collision.zig");
 const props = @import("../props/props.zig");
 const propbuild = @import("../props/propbuild.zig");
+const propmason = @import("../props/propmason.zig");
 const propfx = @import("../props/propfx.zig");
 const art = @import("../props/propart.zig");
 const proprock = @import("../props/proprock.zig");
@@ -2524,6 +2525,7 @@ pub const Env = struct {
     }
 
     pub fn rayGround(self: *const Env, origin: rl.Vector3, dir: rl.Vector3) ?rl.Vector3 {
+        if (self.caveAny and self.spaceOf(origin) == .cave) return self.rayChamber(origin, dir);
         if (!self.heightAny) {
             if (@abs(dir.y) < 1e-6) return null;
             const t = (GROUND_Y - origin.y) / dir.y;
@@ -2559,6 +2561,40 @@ pub const Env = struct {
             }
             prev = cur;
             t = nt;
+        }
+        return null;
+    }
+
+    fn spaceOf(self: *const Env, p: rl.Vector3) caves.Space {
+        return caves.spaceAt(self.caveFields(), self.groundAt(p.x, p.z), p.x, p.y, p.z);
+    }
+
+    /// From an eye in a chamber the land march cannot start (it counts a crossing from ABOVE the hill): the rock the ray meets is the hit, and a ray out of a mouth hands on to the land.
+    fn rayChamber(self: *const Env, origin: rl.Vector3, dir: rl.Vector3) ?rl.Vector3 {
+        const step = caves.cellStep(self.caveHalf) * 0.5;
+        const len = mathx.lenV(dir);
+        if (len < 1e-6) return null;
+        const dt = step / len;
+        const MAX_T: f32 = 4.0 * GROUND_HALF / len;
+        var t: f32 = 0;
+        while (t < MAX_T) {
+            const nt = t + dt;
+            const p = v3(origin.x + dir.x * nt, origin.y + dir.y * nt, origin.z + dir.z * nt);
+            switch (self.spaceOf(p)) {
+                .cave => t = nt,
+                .sky => return self.rayGround(p, dir),
+                .rock => {
+                    var lo = t;
+                    var hi = nt;
+                    var k: usize = 0;
+                    while (k < 16) : (k += 1) {
+                        const mid = (lo + hi) * 0.5;
+                        const q = v3(origin.x + dir.x * mid, origin.y + dir.y * mid, origin.z + dir.z * mid);
+                        if (self.spaceOf(q) == .cave) lo = mid else hi = mid;
+                    }
+                    return v3(origin.x + dir.x * hi, origin.y + dir.y * hi, origin.z + dir.z * hi);
+                },
+            }
         }
         return null;
     }
@@ -2628,6 +2664,8 @@ pub const Env = struct {
     }
 
     /// Flattens every water dweller's pool floor to `dwellerFloor`, masked to the PAINTED water cells so the shore is never carved; eight passes converge the inner disc. Returns the lattice points moved (`--fix-lurkers`).
+    pub const POOL_DIG_R: f32 = 5.0;
+
     pub fn digPools(m: *wf.Map, radius: f32) usize {
         const step = m.heightStep();
         var moved: usize = 0;
@@ -5213,7 +5251,16 @@ fn buildDecks(e: *Env) void {
         for (nfo.decks) |d| {
             if (e.ndecks >= MAX_DECKS) @panic("env: MAX_DECKS exceeded — raise the cap");
             const at = fr.at(d.x, d.y, d.z);
-            e.deck_buf[e.ndecks] = .{ .x = at.x, .z = at.z, .r = d.r * pr.scale, .y = at.y, .hole = d.hole };
+            if (d.half > 0) {
+                // A square is a one-tread flight with no rise: from its local +Z edge, `2 * half` along local −Z.
+                const th = mathx.radians(pr.yaw);
+                const ax = -mathx.sinf(th);
+                const az = -mathx.cosf(th);
+                const h = d.half * pr.scale;
+                e.deck_buf[e.ndecks] = .{ .x = at.x - ax * h, .z = at.z - az * h, .r = d.r * pr.scale, .y = at.y, .hole = false, .run = 2 * h, .ax = ax, .az = az, .halfW = h, .treads = 1 };
+            } else {
+                e.deck_buf[e.ndecks] = .{ .x = at.x, .z = at.z, .r = d.r * pr.scale, .y = at.y, .hole = d.hole };
+            }
             e.ndecks += 1;
         }
     }
@@ -6581,6 +6628,25 @@ test "THE COAST IS DERIVED ONLY WHEN SOMETHING IT READS MOVED — the DIG is one
     try std.testing.expectEqual(first + 3, waterBuildCount());
 }
 
+test "A SLAB'S FLOOR IS THE WHOLE SQUARE — its corners, turned, and the seam between two laid side by side" {
+    const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++
+        "at: ceilingslab 0 0 0 1\nat: ceilingslab 6 0 0 1\nat: ceilingslab 0 30 45 1\n");
+    defer std.testing.allocator.destroy(m);
+    const e = try std.testing.allocator.create(Env);
+    defer std.testing.allocator.destroy(e);
+    blankForTest(e);
+    e.materialize(m);
+    const top = propmason.SLAB_T;
+    const c = propmason.SLAB * 0.5 - 0.2;
+    for ([_][2]f32{ .{ c, c }, .{ -c, c }, .{ -c, -c }, .{ c, -c } }) |p| {
+        try std.testing.expectEqual(@as(?f32, top), e.deckAt(p[0], p[1], top));
+    }
+    try std.testing.expectEqual(@as(?f32, top), e.deckAt(3.0, 2.0, top));
+    try std.testing.expectEqual(@as(?f32, null), e.deckAt(-propmason.SLAB * 0.5 - 0.3, 0, top));
+    try std.testing.expectEqual(@as(?f32, top), e.deckAt(0, 30 + 4.0, top));
+    try std.testing.expectEqual(@as(?f32, null), e.deckAt(2.9, 30 + 2.9, top));
+}
+
 test "A FLOOR IS A FLOOR AND ITS HATCH IS A HOLE, and neither is anything to a body on the ground" {
     const m = try wf.testMap(std.testing.allocator, wf.TEST_HEAD ++ "at: watchtower 0 0 0 1\n");
     defer std.testing.allocator.destroy(m);
@@ -7625,7 +7691,7 @@ test "DIGGING A POOL puts the dweller's floor at the dweller depth and leaves th
     defer std.testing.allocator.destroy(e);
     blankForTest(e);
     const dryBefore = m.heightAt(30, 0);
-    const moved = Env.digPools(m, 5.0);
+    const moved = Env.digPools(m, Env.POOL_DIG_R);
     try std.testing.expect(moved > 0);
     e.uploadWater(m);
     e.adoptHeight(m);

@@ -1485,8 +1485,15 @@ pub const Parry = struct {
     }
 };
 
+/// A blow billed on an EARLIER frame has landed, and `contact`'s arrival frame would still catch it; one billed THIS frame the catch voids.
 pub fn caught(self: anytype, reach: f32, until: ?f32, touching: ?bool) bool {
-    if (!self.parry.contact(self.pos, reach, until, touching)) return false;
+    const T = @TypeOf(self.*);
+    const latch: ?[]const u8 = comptime if (!@hasField(T, "heroHit")) null else if (@hasField(T, "heroLatch")) "heroLatch" else if (@hasField(T, "dealt")) "dealt" else null;
+    const open = if (comptime latch != null)
+        (if (@field(self, latch.?) and self.heroHit == null) null else until)
+    else
+        until;
+    if (!self.parry.contact(self.pos, reach, open, touching)) return false;
     self.parried = true;
     self.flash = FLASH_DUR;
     self.leash.noteCombat();
@@ -1547,6 +1554,23 @@ test "parry reservations expire on interruption, a new move, lost facing or lost
     try std.testing.expect(!early.contact(from, 2, PARRY_LEAD + 0.1, false));
     early.live = false;
     try std.testing.expect(!early.contact(from, 2, 0, true));
+}
+
+test "A CATCH CANNOT COME AFTER THE BLOW LANDED — a shield up the frame after the bill catches nothing, the bill's own frame still does" {
+    const Body = struct {
+        parry: Parry = .{ .live = true, .active = true },
+        pos: rl.Vector3 = v3(0, 0, 1.5),
+        heroLatch: bool = false,
+        heroHit: ?combat.Hit = null,
+        parried: bool = false,
+        flash: f32 = 0,
+        leash: Leash = .{},
+    };
+    var late = Body{ .heroLatch = true };
+    try std.testing.expect(!caught(&late, 2, -0.01, null));
+    var same = Body{ .heroLatch = true, .heroHit = .{ .dmg = 10 } };
+    try std.testing.expect(caught(&same, 2, -0.01, null));
+    try std.testing.expect(same.heroHit == null);
 }
 
 test "parry deflection moves continuously, overshoots and settles at every frame rate" {
@@ -3072,11 +3096,12 @@ pub fn armStats(f: anytype, k: wf.FoeKind) void {
 /// THE GROUND UNDER A POINT, ASKED THROUGH THE GAME: stamped onto any creature with a `ground` field (`game.stampRooms`). Unstamped — the test bench — every point is dry.
 pub const Ground = struct {
     ctx: ?*const anyopaque = null,
-    depthAt: ?*const fn (*const anyopaque, f32, f32) f32 = null,
+    depthAt: ?*const fn (*const anyopaque, f32, f32, f32) f32 = null,
 
-    pub fn depth(self: Ground, x: f32, z: f32) f32 {
+    /// `footY` because a chamber under a painted pool is dry.
+    pub fn depth(self: Ground, x: f32, z: f32, footY: f32) f32 {
         const f = self.depthAt orelse return 0;
-        return f(self.ctx.?, x, z);
+        return f(self.ctx.?, x, z, footY);
     }
 };
 

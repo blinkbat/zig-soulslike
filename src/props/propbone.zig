@@ -220,7 +220,7 @@ pub fn skullMesh(shader: rl.Shader) rl.Model {
         const r = rng.range(0.075, 0.135) * (1.0 - 0.30 * t);
         for ([_]f32{ -1.0, 1.0 }) |sd| {
             if (rng.float() < 0.24) continue;
-            b.addBlob(v3(x, y, sd * (0.36 - 0.13 * t)), v3(r, r * rng.range(1.0, 1.5), r), 3, 5, MARROW);
+            b.addBlob(put(o, c, sn, v3(x, y, sd * (0.36 - 0.13 * t))), v3(r, r * rng.range(1.0, 1.5), r), 3, 5, MARROW);
         }
     }
 
@@ -230,7 +230,7 @@ pub fn skullMesh(shader: rl.Shader) rl.Model {
     var t: i32 = 0;
     while (t < 5) : (t += 1) {
         const u = @as(f32, @floatFromInt(t)) / 4.0;
-        b.addBlob(v3(mathx.lerpF(0.5, 2.0, u), 0.31, mathx.lerpF(-1.42, -0.86, u)), v3(0.075, 0.11, 0.075), 2, 5, MARROW);
+        b.addBlob(put(o, c, sn, v3(mathx.lerpF(0.5, 2.0, u), 0.31, mathx.lerpF(-1.42, -0.86, u))), v3(0.075, 0.11, 0.075), 2, 5, MARROW);
     }
 
     art.crackInto(&b, put(o, c, sn, v3(-1.55, 1.70, -0.60)), put(mathx.zero3, c, sn, v3(0.75, -0.15, 1.0)), put(mathx.zero3, c, sn, v3(1, 0, 0)), 1.9, 0.09, 0.15);

@@ -183,7 +183,7 @@ pub const Counter = struct {
                     self.said = .maxed;
                     return;
                 }
-                if (!spend(&h.gold, r.coin)) {
+                if (!h.gold.spend(r.coin)) {
                     self.said = .no_coin;
                     return;
                 }
@@ -210,7 +210,7 @@ pub const Counter = struct {
                     self.said = .no_stones;
                     return;
                 }
-                if (!spend(&h.gold, r.coin)) {
+                if (!h.gold.spend(r.coin)) {
                     bag.add(STONE, @intCast(r.stones));
                     self.said = .no_coin;
                     return;
@@ -219,13 +219,6 @@ pub const Counter = struct {
                 self.said = .forged;
             },
         }
-    }
-
-    fn spend(purse: *combat.Gold, n: u32) bool {
-        if (purse.total < n) return false;
-        purse.total -= n;
-        purse.shown = @min(purse.shown, @as(f32, @floatFromInt(purse.total)));
-        return true;
     }
 
     pub fn move(self: *Counter, delta: i32, len: usize) void {

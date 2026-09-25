@@ -507,7 +507,7 @@ pub const Leechfly = struct {
 
     fn takeParry(self: *Leechfly) bool {
         const reach = self.parryable() orelse self.parry.reach() orelse return false;
-        if (!foe.caught(self, reach, self.toImpact(), null)) return false;
+        if (!foe.caught(self, reach, if (self.dealt) null else self.toImpact(), null)) return false;
         self.dealt = false;
         self.enterStun(if (foe.parryBroke(self)) .stunheavy else .stunlight);
         return true;

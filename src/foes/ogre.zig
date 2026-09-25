@@ -825,7 +825,7 @@ pub const Ogre = struct {
     }
 
     fn tryImpact(self: *Ogre, hero: rl.Vector3, h: combat.Hit) void {
-        if (self.heroLatch) return;
+        if (self.heroLatch or foe.acrossDrop(self.pos, hero)) return;
         const to = v3(hero.x - self.pos.x, 0, hero.z - self.pos.z);
         const fwd = self.fdir();
         const axial = to.x * fwd.x + to.z * fwd.z;
@@ -838,7 +838,7 @@ pub const Ogre = struct {
 
     /// The swipe's hurt test, shared with the RETURN — each passes its own measured sector.
     fn trySweep(self: *Ogre, hero: rl.Vector3, h: combat.Hit, mid: f32, arc: f32) void {
-        if (self.heroLatch) return;
+        if (self.heroLatch or foe.acrossDrop(self.pos, hero)) return;
         const d = mathx.distXZ(self.pos, hero);
         if (d < self.swipeInner() or d > self.swipeReach()) return;
         const slack = combat.subtendedArc(HERO_REACH, mathx.maxF(SWIPE_SLACK_MIN_D, d));

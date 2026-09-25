@@ -121,6 +121,11 @@ pub const Ctx = struct {
         if (was) |c| rl.beginScissorMode(@intFromFloat(c.x), @intFromFloat(c.y), @intFromFloat(c.width), @intFromFloat(c.height));
     }
 
+    /// A track holds the drag until the button is up, wherever the pointer has gone since.
+    pub fn dragging() bool {
+        return dragOwner != null;
+    }
+
     pub fn owns(ctx: *Ctx, r: rl.Rectangle) bool {
         if (ctx.pressed and ctx.over(r)) dragOwner = r;
         const o = dragOwner orelse return false;

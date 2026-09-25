@@ -1355,6 +1355,9 @@ pub const Editor = struct {
     pub fn adoptPath(self: *Editor, p: []const u8) void {
         self.setPath(p);
         self.dirty = false;
+        // `reloadNames`' reason, with no map in hand to read the names back off: the rows they held belong to the world that left.
+        self.trigSel = null;
+        self.scheduleSel = null;
         undoReset();
     }
 
@@ -1789,6 +1792,7 @@ pub const Editor = struct {
         }
         undoAt += 1;
         m.* = undoSlot(undoN - undoAt).*;
+        self.dirty = true;
         self.dropSelection();
         self.reloadNames(m);
         self.dropPendingRoom();
@@ -1800,6 +1804,7 @@ pub const Editor = struct {
         if (undoAt <= 1) return false;
         undoAt -= 1;
         m.* = undoSlot(undoN - undoAt).*;
+        self.dirty = true;
         self.dropSelection();
         self.reloadNames(m);
         self.dropPendingRoom();
@@ -4207,6 +4212,7 @@ pub const Editor = struct {
     fn adopt(self: *Editor, m: *const wf.Map, env: *envmod.Env, isDirty: bool) void {
         self.dropStroke();
         self.dropSelection();
+        self.dropPendingRoom();
         self.reloadNames(m);
         self.dirty = isDirty;
         undoReset();
@@ -5074,7 +5080,10 @@ pub fn drawOverlay(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene,
     // THE EDGE, NOT THE STATE: closing on every un-overlaid frame wiped `openId` before the next frame could draw the list.
     if (ed.wasOverlaid and !overlaid) ui.closeDropdown();
     ed.wasOverlaid = overlaid;
-    ed.hotFrame = ctx.anyHot or ui.dropdownOpen();
+    // A slider dragged off its panel still owns the drag: without `dragging` the world under the pointer took a stroke as well.
+    ed.hotFrame = ctx.anyHot or ui.dropdownOpen() or ui.Ctx.dragging();
+    // Each panel ends its own gesture, but only on a frame it is drawn: Tab or Esc mid-drag left `editing` up and the next gesture banked nothing.
+    if (ctx.buttonUp) ed.endGesture();
 }
 
 const BarRow = struct {
@@ -5881,46 +5890,47 @@ fn drawProperties(ed: *Editor, m: *wf.Map, env: *envmod.Env, ctx: *ui.Ctx, sw: i
                 y += ROW_H;
                 changed = ui.stepperF(ctx, x, y, w, "phase", &fo.seed, 0.05, 0, 1, "Its own seed - where in its idle it starts, and the wabi-sabi in its body. Two side by side should not match") or changed;
                 y += ROW_H;
-                hud.mono("orders", x, y, hud.MONO, ui.LABEL);
-                y += hud.monoLineH(hud.MONO) + 2;
-                var aiW: i32 = 0;
-                var aiX = x;
-                inline for (@typeInfo(wf.FoeAi).@"enum".fields) |af| {
-                    const a: wf.FoeAi = @enumFromInt(af.value);
-                    defer aiX += aiW;
-                    if (ui.chip(ctx, aiX, y, @tagName(a), fo.ai == a, &aiW, aiTip(a))) {
-                        ed.bank(m);
-                        ed.editing = true;
-                        fo.ai = a;
-                        changed = true;
+                // The fixtures take no orders (`game.NO_ORDERS`), and a chip that silently does nothing is the failure.
+                if (wf.canSchedule(fo.kind)) {
+                    hud.mono("orders", x, y, hud.MONO, ui.LABEL);
+                    y += hud.monoLineH(hud.MONO) + 2;
+                    var aiW: i32 = 0;
+                    var aiX = x;
+                    inline for (@typeInfo(wf.FoeAi).@"enum".fields) |af| {
+                        const a: wf.FoeAi = @enumFromInt(af.value);
+                        defer aiX += aiW;
+                        if (ui.chip(ctx, aiX, y, @tagName(a), fo.ai == a, &aiW, aiTip(a))) {
+                            ed.bank(m);
+                            ed.editing = true;
+                            fo.ai = a;
+                            changed = true;
+                        }
                     }
-                }
-                y += ROW_H + 4;
-                var wb: [56]u8 = undefined;
-                const wlab = std.fmt.bufPrintZ(&wb, "route: {d} of {d} legs", .{ fo.route().len, wf.MAX_WP }) catch "";
-                hud.mono(wlab, x, y, hud.MONO, if (fo.ai == .patrol and fo.nwp == 0) ui.HOT else ui.LABEL);
-                y += ROW_H;
-                const half2 = @divTrunc(w - 6, 2);
-                if (ui.button(ctx, ui.rect(x, y, half2, 22), if (ed.routing) "stop laying" else "lay route", hud.MONO, ed.routing, "Click the ground to drop each leg of the patrol. Click here again when you are done")) {
-                    ed.routing = !ed.routing;
-                    if (ed.routing) {
+                    y += ROW_H + 4;
+                    var wb: [56]u8 = undefined;
+                    const wlab = std.fmt.bufPrintZ(&wb, "route: {d} of {d} legs", .{ fo.route().len, wf.MAX_WP }) catch "";
+                    hud.mono(wlab, x, y, hud.MONO, if (fo.ai == .patrol and fo.nwp == 0) ui.HOT else ui.LABEL);
+                    y += ROW_H;
+                    const half2 = @divTrunc(w - 6, 2);
+                    if (ui.button(ctx, ui.rect(x, y, half2, 22), if (ed.routing) "stop laying" else "lay route", hud.MONO, ed.routing, "Click the ground to drop each leg of the patrol. Click here again when you are done")) {
+                        ed.routing = !ed.routing;
+                        if (ed.routing) {
+                            ed.bank(m);
+                            ed.editing = true;
+                            fo.nwp = 0;
+                            fo.ai = .patrol;
+                            changed = true;
+                            ed.say("click the ground for each leg");
+                        }
+                    }
+                    if (ui.button(ctx, ui.rect(x + half2 + 6, y, half2, 22), "clear route", hud.MONO, false, "Throw the legs away. The body keeps its orders")) {
                         ed.bank(m);
                         ed.editing = true;
                         fo.nwp = 0;
-                        fo.ai = .patrol;
+                        ed.routing = false;
                         changed = true;
-                        ed.say("click the ground for each leg");
                     }
-                }
-                if (ui.button(ctx, ui.rect(x + half2 + 6, y, half2, 22), "clear route", hud.MONO, false, "Throw the legs away. The body keeps its orders")) {
-                    ed.bank(m);
-                    ed.editing = true;
-                    fo.nwp = 0;
-                    ed.routing = false;
-                    changed = true;
-                }
-                y += ROW_H + 6;
-                if (wf.canSchedule(fo.kind)) {
+                    y += ROW_H + 6;
                     changed = drawSchedulePick(ed, ctx, m, &fo.schedule, x, y, w, f) or changed;
                     y += ROW_H + 6;
                 }
@@ -6663,7 +6673,8 @@ fn drawModal(ed: *Editor, m: *wf.Map, env: *envmod.Env, scene: *gfx.Scene, day: 
             }
             if (ui.button(ctx, ui.rect(box.x + 154, by, 120, DLG_BTN_H), "Discard", hud.MONO, false, "Throw the edits away and go on")) {
                 const what = ed.pending;
-                ed.dirty = false;
+                // Open and New only raise a dialog, and `adopt` owns `dirty` once a map is taken; cancelled, the edits are still his.
+                if (what == .leave or what == .quit) ed.dirty = false;
                 ed.modal = .none;
                 ed.commitPending(what);
                 return;
@@ -8172,13 +8183,10 @@ fn cmpRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, cmp: *wf.Cmp, x: i32, y: i32) b
 }
 
 fn foeRow(ed: *Editor, ctx: *ui.Ctx, m: *wf.Map, k: *wf.FoeKind, x: i32, y: i32, w: i32) bool {
-    const pick = ui.dropdown(ctx, ui.rect(x, y, @min(w, 176), 20), ui.ddId(7, ed.trigSel orelse 0, @intFromPtr(k) & 0xfff), &unitBrushes, @intFromEnum(k.*), "Which creature this counts") orelse return false;
+    const pick = ui.dropdown(ctx, ui.rect(x, y, @min(w, 176), 20), ui.ddId(7, ed.trigSel orelse 0, @intFromPtr(k) & 0xfff), unitBrushes[0..NFOE_KIND], @intFromEnum(k.*), "Which creature this counts") orelse return false;
     ed.bank(m);
-    if (pick < NFOE_KIND) {
-        k.* = @enumFromInt(pick);
-        return true;
-    }
-    return false;
+    k.* = @enumFromInt(pick);
+    return true;
 }
 
 /// Writes the slot too: the runtime opens `slot`, and `link` only resolves it at load.
@@ -8479,11 +8487,12 @@ fn levelOf(ed: *const Editor, m: *const wf.Map) ?bool {
         };
     }
     if (!ed.layer.opLayer()) return null;
-    const s = ed.sel orelse return null;
-    return if (s < m.nops) m.ops[s].under else null;
+    const s = selOnLayer(ed, m) orelse return null;
+    return m.ops[s].under;
 }
 
 fn selFoe(ed: *const Editor, m: *const wf.Map) ?usize {
+    if (ed.layer != .units) return null;
     const su = ed.selUnit orelse return null;
     return switch (su) {
         .foe => |i| if (i < m.nfoes) i else null,

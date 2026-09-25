@@ -438,6 +438,8 @@ pub const Shroom = struct {
     }
 
     fn updateArc(self: *Shroom, dt: f32, bounds: f32, coil: f32, flight: f32, land: f32, fling: bool) void {
+        // A root cast through the coil still refuses the leave; the fling re-asks at the end of its own gather.
+        if (!fling and foe.launchRefused(self, coil, dt)) return self.enterIdle(HOP_SETTLE);
         const total = coil + flight + land;
         const travelDt = mathx.sliceIn(self.t, dt, coil, coil + flight);
         if (travelDt > 0) foe.hopStep(self, travelDt, bounds, self.fdir(), flight);

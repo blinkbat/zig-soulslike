@@ -167,6 +167,7 @@ pub const CamRig = struct {
         c.eased = -1;
         c.easedVel = 0;
         c.seatFocus(null);
+        c.snapLift(0);
     }
 
     pub fn follow(c: *CamRig, shoulder: rl.Vector3) void {

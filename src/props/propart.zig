@@ -174,7 +174,8 @@ pub const LAVA_DEEP = rgba(255, 232, 148, 255);
 /// `flat` gives the capsule square ends (`collision.Solid.flat`): a wall or a block is its bounding rectangle, not a sausage.
 pub const Part = struct { ax: f32 = 0, az: f32 = 0, bx: f32 = 0, bz: f32 = 0, r: f32, h: f32, y0: f32 = 0, flat: bool = false };
 
-pub const Deck = struct { x: f32 = 0, z: f32 = 0, r: f32, y: f32, hole: bool = false };
+/// `half` > 0 is a SQUARE floor that far either side on the prop's own axes, and `r` its circumscribed radius; 0 is a disc of `r`.
+pub const Deck = struct { x: f32 = 0, z: f32 = 0, r: f32, y: f32, hole: bool = false, half: f32 = 0 };
 
 /// A STACKED kind that is walked rather than climbed: each section also advances `run` along local −Z and its walkable surface is `treads` level steps, `halfW` wide. Read with `Info.stack` (the section's rise).
 pub const Flight = struct { run: f32, halfW: f32, treads: u32 };
